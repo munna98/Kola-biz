@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { IconPlus, IconEdit, IconTrash } from '@tabler/icons-react';
 import { api, Product, CreateProduct } from './lib/tauri';
+import './App.css'; 
 
 function App() {
   const [products, setProducts] = useState<Product[]>([]);
