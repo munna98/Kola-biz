@@ -1,18 +1,30 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import { store, RootState, toggleSidebar, setActiveSection } from './store';
-import { IconPackage, IconUsers, IconTruck, IconReceipt, IconCreditCard, IconMenu2, IconChevronLeft } from '@tabler/icons-react';
+import { IconPackage, IconUsers, IconTruck, IconReceipt, IconCreditCard, IconMenu2, IconChevronLeft, IconRuler } from '@tabler/icons-react';
 import ProductsPage from './pages/ProductsPage';
 import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
+import UnitsPage from './pages/UnitsPage';
+import { Toaster } from '@/components/ui/sonner';
 import './App.css';
 
 function AppContent() {
   const dispatch = useDispatch();
   const { sidebarCollapsed, activeSection } = useSelector((state: RootState) => state.app);
 
+  // Reload data when switching to products page
+  const [productPageKey, setProductPageKey] = useState(0);
+
+  useEffect(() => {
+    if (activeSection === 'products') {
+      setProductPageKey(prev => prev + 1);
+    }
+  }, [activeSection]);
+
   const menuItems = [
     { id: 'products', label: 'Products', icon: IconPackage },
+    { id: 'units', label: 'Units', icon: IconRuler },
     { id: 'customers', label: 'Customers', icon: IconUsers },
     { id: 'suppliers', label: 'Suppliers', icon: IconTruck },
     { id: 'payments', label: 'Payments', icon: IconCreditCard },
@@ -21,7 +33,8 @@ function AppContent() {
 
   const renderContent = () => {
     switch (activeSection) {
-      case 'products': return <ProductsPage />;
+      case 'products': return <ProductsPage key={productPageKey} />;
+      case 'units': return <UnitsPage />;
       case 'customers': return <CustomersPage />;
       case 'suppliers': return <SuppliersPage />;
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
@@ -69,6 +82,9 @@ function AppContent() {
           {renderContent()}
         </main>
       </div>
+
+      {/* Toast Notifications */}
+      <Toaster />
     </div>
   );
 }

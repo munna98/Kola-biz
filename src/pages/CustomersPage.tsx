@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IconPlus, IconEdit, IconTrash } from '@tabler/icons-react';
 import { api, Customer, CreateCustomer } from '@/lib/tauri';
+import { toast } from 'sonner';
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -13,18 +14,35 @@ export default function CustomersPage() {
   const [form, setForm] = useState<CreateCustomer>({ name: '', email: '', phone: '', address: '' });
   const [editing, setEditing] = useState<number | null>(null);
 
-  const load = async () => setCustomers(await api.customers.list());
+  const load = async () => {
+    try {
+      setCustomers(await api.customers.list());
+    } catch (error) {
+      toast.error('Failed to load customers');
+      console.error(error);
+    }
+  };
 
   useEffect(() => { load(); }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editing) await api.customers.update(editing, form);
-    else await api.customers.create(form);
-    setOpen(false);
-    setForm({ name: '', email: '', phone: '', address: '' });
-    setEditing(null);
-    load();
+    try {
+      if (editing) {
+        await api.customers.update(editing, form);
+        toast.success('Customer updated successfully');
+      } else {
+        await api.customers.create(form);
+        toast.success('Customer created successfully');
+      }
+      setOpen(false);
+      setForm({ name: '', email: '', phone: '', address: '' });
+      setEditing(null);
+      load();
+    } catch (error) {
+      toast.error(editing ? 'Failed to update customer' : 'Failed to create customer');
+      console.error(error);
+    }
   };
 
   const handleEdit = (c: Customer) => {
@@ -35,15 +53,24 @@ export default function CustomersPage() {
 
   const handleDelete = async (id: number) => {
     if (confirm('Delete customer?')) {
-      await api.customers.delete(id);
-      load();
+      try {
+        await api.customers.delete(id);
+        toast.success('Customer deleted successfully');
+        load();
+      } catch (error) {
+        toast.error('Failed to delete customer');
+        console.error(error);
+      }
     }
   };
 
   return (
     <div className="p-6 space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Customers</h2>
+        <div>
+          <h2 className="text-2xl font-bold">Customers</h2>
+          <p className="text-sm text-muted-foreground mt-1">Manage your customer database</p>
+        </div>
         <Button onClick={() => { setOpen(true); setEditing(null); setForm({ name: '', email: '', phone: '', address: '' }); }}>
           <IconPlus size={16} /> Add Customer
         </Button>
@@ -62,18 +89,26 @@ export default function CustomersPage() {
               </tr>
             </thead>
             <tbody>
-              {customers.map(c => (
-                <tr key={c.id} className="border-b hover:bg-muted/30">
-                  <td className="p-3 font-medium">{c.name}</td>
-                  <td className="p-3 text-sm text-muted-foreground">{c.email || '-'}</td>
-                  <td className="p-3 text-sm">{c.phone || '-'}</td>
-                  <td className="p-3 text-sm">{c.address || '-'}</td>
-                  <td className="p-3 flex gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => handleEdit(c)}><IconEdit size={16} /></Button>
-                    <Button size="sm" variant="ghost" onClick={() => handleDelete(c.id)}><IconTrash size={16} /></Button>
+              {customers.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="p-6 text-center text-muted-foreground">
+                    No customers found. Add your first customer to get started.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                customers.map(c => (
+                  <tr key={c.id} className="border-b hover:bg-muted/30">
+                    <td className="p-3 font-medium">{c.name}</td>
+                    <td className="p-3 text-sm text-muted-foreground">{c.email || '-'}</td>
+                    <td className="p-3 text-sm">{c.phone || '-'}</td>
+                    <td className="p-3 text-sm">{c.address || '-'}</td>
+                    <td className="p-3 flex gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => handleEdit(c)}><IconEdit size={16} /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDelete(c.id)}><IconTrash size={16} /></Button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </CardContent>
@@ -86,7 +121,7 @@ export default function CustomersPage() {
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <Label>Name</Label>
+              <Label>Name *</Label>
               <Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} required />
             </div>
             <div>

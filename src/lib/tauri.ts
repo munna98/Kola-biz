@@ -4,6 +4,12 @@ export interface Unit {
   id: number;
   name: string;
   symbol: string;
+  created_at: string;
+}
+
+export interface CreateUnit {
+  name: string;
+  symbol: string;
 }
 
 export interface Product {
@@ -15,6 +21,7 @@ export interface Product {
   sales_rate: number;
   mrp: number;
   is_active: number;
+  created_at: string;
 }
 
 export interface CreateProduct {
@@ -32,6 +39,8 @@ export interface Customer {
   email?: string;
   phone?: string;
   address?: string;
+  is_active: number;
+  created_at: string;
 }
 
 export interface CreateCustomer {
@@ -47,6 +56,8 @@ export interface Supplier {
   email?: string;
   phone?: string;
   address?: string;
+  is_active: number;
+  created_at: string;
 }
 
 export interface CreateSupplier {
@@ -59,6 +70,9 @@ export interface CreateSupplier {
 export const api = {
   units: {
     list: () => invoke<Unit[]>('get_units'),
+    create: (data: CreateUnit) => invoke<Unit>('create_unit', { unit: data }),
+    update: (id: number, data: CreateUnit) => invoke<void>('update_unit', { id, unit: data }),
+    delete: (id: number) => invoke<void>('delete_unit', { id }),
   },
   products: {
     list: () => invoke<Product[]>('get_products'),

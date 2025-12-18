@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -9,34 +9,59 @@ import { IconPlus, IconEdit, IconTrash } from '@tabler/icons-react';
 import { api, Product, CreateProduct, Unit } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
+import { toast } from 'sonner';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<CreateProduct>({ code: '', name: '', unit_id: 1, purchase_rate: 0, sales_rate: 0, mrp: 0 });
   const [editing, setEditing] = useState<number | null>(null);
   const currentUser = useSelector((state: RootState) => state.app.currentUser);
 
   const load = async () => {
-    const [p, u] = await Promise.all([api.products.list(), api.units.list()]);
-    setProducts(p);
-    setUnits(u);
+    try {
+      setLoading(true);
+      const [p, u] = await Promise.all([api.products.list(), api.units.list()]);
+      console.log('Loaded units:', u);
+      console.log('Units count:', u.length);
+      setProducts(p);
+      setUnits(u);
+    } catch (error) {
+      toast.error('Failed to load data');
+      console.error('Load error:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { load(); }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (editing) {
-      await api.products.update(editing, form);
-    } else {
-      await api.products.create(form);
+    
+    if (units.length === 0) {
+      toast.error('Please create at least one unit before adding products');
+      return;
     }
-    setOpen(false);
-    setForm({ code: '', name: '', unit_id: 1, purchase_rate: 0, sales_rate: 0, mrp: 0 });
-    setEditing(null);
-    load();
+
+    try {
+      if (editing) {
+        await api.products.update(editing, form);
+        toast.success('Product updated successfully');
+      } else {
+        await api.products.create(form);
+        toast.success('Product created successfully');
+      }
+      setOpen(false);
+      setForm({ code: '', name: '', unit_id: units[0]?.id || 1, purchase_rate: 0, sales_rate: 0, mrp: 0 });
+      setEditing(null);
+      load();
+    } catch (error) {
+      toast.error(editing ? 'Failed to update product' : 'Failed to create product');
+      console.error(error);
+    }
   };
 
   const handleEdit = (p: Product) => {
@@ -47,19 +72,60 @@ export default function ProductsPage() {
 
   const handleDelete = async (id: number) => {
     if (confirm('Delete this product?')) {
-      await api.products.delete(id, currentUser);
-      load();
+      try {
+        await api.products.delete(id, currentUser);
+        toast.success('Product deleted successfully');
+        load();
+      } catch (error) {
+        toast.error('Failed to delete product');
+        console.error(error);
+      }
     }
   };
+
+  const handleOpenDialog = () => {
+    if (units.length === 0) {
+      toast.error('Please create at least one unit first', {
+        description: 'Go to Units page to add units like kg, pcs, L, etc.'
+      });
+      return;
+    }
+    setOpen(true);
+    setEditing(null);
+    setForm({ code: '', name: '', unit_id: units[0]?.id || 1, purchase_rate: 0, sales_rate: 0, mrp: 0 });
+  };
+
+  if (loading) {
+    return (
+      <div className="p-6">
+        <div className="flex items-center justify-center h-64">
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-2xl font-bold">Products</h2>
-        <Button onClick={() => { setOpen(true); setEditing(null); setForm({ code: '', name: '', unit_id: 1, purchase_rate: 0, sales_rate: 0, mrp: 0 }); }}>
+        <div>
+          <h2 className="text-2xl font-bold">Products</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            Manage your product inventory {units.length > 0 && `(${units.length} units available)`}
+          </p>
+        </div>
+        <Button onClick={handleOpenDialog}>
           <IconPlus size={16} /> Add Product
         </Button>
       </div>
+
+      {units.length === 0 && (
+        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+          <p className="text-sm text-yellow-800 dark:text-yellow-200">
+            ⚠️ No units available. Please create units (like kg, pcs, L) in the Units page before adding products.
+          </p>
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -77,21 +143,29 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {products.map(p => (
-                <tr key={p.id} className="border-b hover:bg-muted/30">
-                  <td className="p-3 font-mono text-sm">{p.code}</td>
-                  <td className="p-3">{p.name}</td>
-                  <td className="p-3">{units.find(u => u.id === p.unit_id)?.symbol}</td>
-                  <td className="p-3">₹{p.purchase_rate.toFixed(2)}</td>
-                  <td className="p-3">₹{p.sales_rate.toFixed(2)}</td>
-                  <td className="p-3">₹{p.mrp.toFixed(2)}</td>
-                  <td className="p-3">{p.is_active ? '✓' : '✗'}</td>
-                  <td className="p-3 flex gap-2">
-                    <Button size="sm" variant="ghost" onClick={() => handleEdit(p)}><IconEdit size={16} /></Button>
-                    <Button size="sm" variant="ghost" onClick={() => handleDelete(p.id)}><IconTrash size={16} /></Button>
+              {products.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="p-6 text-center text-muted-foreground">
+                    No products found. Add your first product to get started.
                   </td>
                 </tr>
-              ))}
+              ) : (
+                products.map(p => (
+                  <tr key={p.id} className="border-b hover:bg-muted/30">
+                    <td className="p-3 font-mono text-sm">{p.code}</td>
+                    <td className="p-3">{p.name}</td>
+                    <td className="p-3">{units.find(u => u.id === p.unit_id)?.symbol || '-'}</td>
+                    <td className="p-3">₹{p.purchase_rate.toFixed(2)}</td>
+                    <td className="p-3">₹{p.sales_rate.toFixed(2)}</td>
+                    <td className="p-3">₹{p.mrp.toFixed(2)}</td>
+                    <td className="p-3">{p.is_active ? '✓' : '✗'}</td>
+                    <td className="p-3 flex gap-2">
+                      <Button size="sm" variant="ghost" onClick={() => handleEdit(p)}><IconEdit size={16} /></Button>
+                      <Button size="sm" variant="ghost" onClick={() => handleDelete(p.id)}><IconTrash size={16} /></Button>
+                    </td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </CardContent>
