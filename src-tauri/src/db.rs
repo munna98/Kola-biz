@@ -14,18 +14,63 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
     
     let pool = SqlitePool::connect(&db_url).await?;
     
+    // Units table
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS units (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            symbol TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )"
+    ).execute(&pool).await?;
+    
+    // Products table
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            code TEXT UNIQUE NOT NULL,
             name TEXT NOT NULL,
-            sku TEXT UNIQUE NOT NULL,
-            price REAL NOT NULL,
-            stock INTEGER NOT NULL DEFAULT 0,
+            unit_id INTEGER NOT NULL,
+            purchase_rate REAL NOT NULL,
+            sales_rate REAL NOT NULL,
+            mrp REAL NOT NULL,
+            is_active INTEGER DEFAULT 1,
+            deleted_at DATETIME,
+            deleted_by TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (unit_id) REFERENCES units(id)
+        )"
+    ).execute(&pool).await?;
+    
+    // Customers table
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS customers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT,
+            phone TEXT,
+            address TEXT,
+            is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )"
-    )
-    .execute(&pool)
-    .await?;
+    ).execute(&pool).await?;
+    
+    // Suppliers table
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS suppliers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            email TEXT,
+            phone TEXT,
+            address TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )"
+    ).execute(&pool).await?;
+    
+    // Insert default units
+    sqlx::query("INSERT OR IGNORE INTO units (name, symbol) VALUES ('Piece', 'pcs'), ('Kilogram', 'kg'), ('Liter', 'L')")
+        .execute(&pool).await?;
     
     Ok(pool)
 }
