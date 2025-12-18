@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import { store, RootState, toggleSidebar, setActiveSection } from './store';
-import { IconPackage, IconUsers, IconTruck, IconReceipt, IconCreditCard, IconMenu2, IconChevronLeft, IconRuler } from '@tabler/icons-react';
+import { IconPackage, IconUsers, IconTruck, IconReceipt, IconCreditCard, IconMenu2, IconChevronLeft } from '@tabler/icons-react';
 import ProductsPage from './pages/ProductsPage';
 import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
-import UnitsPage from './pages/UnitsPage';
 import { Toaster } from '@/components/ui/sonner';
 import './App.css';
 
@@ -24,19 +23,20 @@ function AppContent() {
 
   const menuItems = [
     { id: 'products', label: 'Products', icon: IconPackage },
-    { id: 'units', label: 'Units', icon: IconRuler },
     { id: 'customers', label: 'Customers', icon: IconUsers },
     { id: 'suppliers', label: 'Suppliers', icon: IconTruck },
+    { id: 'purchase', label: 'Purchase', icon: IconTruck },
+    { id: 'sales', label: 'Sales', icon: IconReceipt },
     { id: 'payments', label: 'Payments', icon: IconCreditCard },
-    { id: 'receipts', label: 'Receipts', icon: IconReceipt },
   ];
 
   const renderContent = () => {
     switch (activeSection) {
       case 'products': return <ProductsPage key={productPageKey} />;
-      case 'units': return <UnitsPage />;
       case 'customers': return <CustomersPage />;
       case 'suppliers': return <SuppliersPage />;
+      case 'purchase': return <div className="p-6 text-muted-foreground">Purchase module coming soon...</div>;
+      case 'sales': return <div className="p-6 text-muted-foreground">Sales module coming soon...</div>;
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }
   };
@@ -56,9 +56,8 @@ function AppContent() {
             <button
               key={item.id}
               onClick={() => dispatch(setActiveSection(item.id))}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md mb-1 transition-colors ${
-                activeSection === item.id ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
-              }`}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md mb-1 transition-colors ${activeSection === item.id ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
+                }`}
             >
               <item.icon size={20} />
               {!sidebarCollapsed && <span>{item.label}</span>}

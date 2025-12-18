@@ -5,17 +5,19 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { IconPlus, IconEdit, IconTrash } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconRuler } from '@tabler/icons-react';
 import { api, Product, CreateProduct, Unit } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { toast } from 'sonner';
+import UnitsDialog from '@/dialogs/UnitsDialog';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
+  const [unitsOpen, setUnitsOpen] = useState(false);
   const [form, setForm] = useState<CreateProduct>({ code: '', name: '', unit_id: 1, purchase_rate: 0, sales_rate: 0, mrp: 0 });
   const [editing, setEditing] = useState<number | null>(null);
   const currentUser = useSelector((state: RootState) => state.app.currentUser);
@@ -104,6 +106,11 @@ export default function ProductsPage() {
     resetForm();
   };
 
+  const handleUnitsChange = () => {
+    // Reload units when they change in the dialog
+    load();
+  };
+
   if (loading) {
     return (
       <div className="p-6">
@@ -121,9 +128,14 @@ export default function ProductsPage() {
           <h2 className="text-2xl font-bold">Products</h2>
           <p className="text-sm text-muted-foreground mt-1">Manage your product inventory</p>
         </div>
-        <Button onClick={handleOpenDialog}>
-          <IconPlus size={16} /> Add Product
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setUnitsOpen(true)}>
+            <IconRuler size={16} /> Manage Units
+          </Button>
+          <Button onClick={handleOpenDialog}>
+            <IconPlus size={16} /> Add Product
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -170,6 +182,7 @@ export default function ProductsPage() {
         </CardContent>
       </Card>
 
+      {/* Product Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
@@ -222,6 +235,13 @@ export default function ProductsPage() {
           </form>
         </DialogContent>
       </Dialog>
+
+      {/* Units Management Dialog Component */}
+      <UnitsDialog 
+        open={unitsOpen} 
+        onOpenChange={setUnitsOpen}
+        onUnitsChange={handleUnitsChange}
+      />
     </div>
   );
 }
