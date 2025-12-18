@@ -24,8 +24,8 @@ export default function ProductsPage() {
     try {
       setLoading(true);
       const [p, u] = await Promise.all([api.products.list(), api.units.list()]);
+      console.log('Loaded products:', p);
       console.log('Loaded units:', u);
-      console.log('Units count:', u.length);
       setProducts(p);
       setUnits(u);
     } catch (error) {
@@ -36,15 +36,12 @@ export default function ProductsPage() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { 
+    load(); 
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    if (units.length === 0) {
-      toast.error('Please create at least one unit before adding products');
-      return;
-    }
 
     try {
       if (editing) {
@@ -55,7 +52,7 @@ export default function ProductsPage() {
         toast.success('Product created successfully');
       }
       setOpen(false);
-      setForm({ code: '', name: '', unit_id: units[0]?.id || 1, purchase_rate: 0, sales_rate: 0, mrp: 0 });
+      resetForm();
       setEditing(null);
       load();
     } catch (error) {
@@ -64,8 +61,26 @@ export default function ProductsPage() {
     }
   };
 
+  const resetForm = () => {
+    setForm({ 
+      code: '', 
+      name: '', 
+      unit_id: units.length > 0 ? units[0].id : 1, 
+      purchase_rate: 0, 
+      sales_rate: 0, 
+      mrp: 0 
+    });
+  };
+
   const handleEdit = (p: Product) => {
-    setForm({ code: p.code, name: p.name, unit_id: p.unit_id, purchase_rate: p.purchase_rate, sales_rate: p.sales_rate, mrp: p.mrp });
+    setForm({ 
+      code: p.code, 
+      name: p.name, 
+      unit_id: p.unit_id, 
+      purchase_rate: p.purchase_rate, 
+      sales_rate: p.sales_rate, 
+      mrp: p.mrp 
+    });
     setEditing(p.id);
     setOpen(true);
   };
@@ -84,15 +99,9 @@ export default function ProductsPage() {
   };
 
   const handleOpenDialog = () => {
-    if (units.length === 0) {
-      toast.error('Please create at least one unit first', {
-        description: 'Go to Units page to add units like kg, pcs, L, etc.'
-      });
-      return;
-    }
     setOpen(true);
     setEditing(null);
-    setForm({ code: '', name: '', unit_id: units[0]?.id || 1, purchase_rate: 0, sales_rate: 0, mrp: 0 });
+    resetForm();
   };
 
   if (loading) {
@@ -110,22 +119,12 @@ export default function ProductsPage() {
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold">Products</h2>
-          <p className="text-sm text-muted-foreground mt-1">
-            Manage your product inventory {units.length > 0 && `(${units.length} units available)`}
-          </p>
+          <p className="text-sm text-muted-foreground mt-1">Manage your product inventory</p>
         </div>
         <Button onClick={handleOpenDialog}>
           <IconPlus size={16} /> Add Product
         </Button>
       </div>
-
-      {units.length === 0 && (
-        <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
-          <p className="text-sm text-yellow-800 dark:text-yellow-200">
-            ⚠️ No units available. Please create units (like kg, pcs, L) in the Units page before adding products.
-          </p>
-        </div>
-      )}
 
       <Card>
         <CardContent className="p-0">
@@ -189,12 +188,19 @@ export default function ProductsPage() {
             </div>
             <div>
               <Label>Unit</Label>
-              <Select value={form.unit_id.toString()} onValueChange={v => setForm({...form, unit_id: +v})}>
+              <Select 
+                value={form.unit_id.toString()} 
+                onValueChange={v => setForm({...form, unit_id: +v})}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {units.map(u => <SelectItem key={u.id} value={u.id.toString()}>{u.name} ({u.symbol})</SelectItem>)}
+                  {units.map(u => (
+                    <SelectItem key={u.id} value={u.id.toString()}>
+                      {u.name} ({u.symbol})
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

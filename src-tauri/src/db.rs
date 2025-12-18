@@ -69,7 +69,7 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
     ).execute(&pool).await?;
     
     // Insert default units
-    sqlx::query("INSERT OR IGNORE INTO units (name, symbol) VALUES ('Piece', 'pcs'), ('Kilogram', 'kg'), ('Liter', 'L')")
+    sqlx::query("INSERT OR IGNORE INTO units (name, symbol) VALUES ('Piece', 'Pcs'), ('Kilogram', 'Kg'), ('Liter', 'L')")
         .execute(&pool).await?;
     
     Ok(pool)
