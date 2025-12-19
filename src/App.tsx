@@ -6,6 +6,7 @@ import ProductsPage from './pages/ProductsPage';
 import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
 import ChartOfAccountsPage from './pages/ChartOfAccountsPage';
+import PurchaseInvoicePage from './pages/PurchaseInvoicePage';
 import { Toaster } from '@/components/ui/sonner';
 import './App.css';
 
@@ -38,7 +39,7 @@ function AppContent() {
       case 'customers': return <CustomersPage />;
       case 'suppliers': return <SuppliersPage />;
       case 'coa': return <ChartOfAccountsPage />;
-      case 'purchase': return <div className="p-6 text-muted-foreground">Purchase module coming soon...</div>;
+      case 'purchase': return <PurchaseInvoicePage />;
       case 'sales': return <div className="p-6 text-muted-foreground">Sales module coming soon...</div>;
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }
