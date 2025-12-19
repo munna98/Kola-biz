@@ -1023,3 +1023,451 @@ pub async fn delete_purchase_invoice(
     
     Ok(())
 }
+
+// ============= PAYMENT COMMANDS =============
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct PaymentVoucher {
+    pub id: i64,
+    pub voucher_no: String,
+    pub voucher_date: String,
+    pub account_id: i64,
+    pub account_name: String,
+    pub payment_method: String, // 'cash' or 'bank'
+    pub reference_number: Option<String>,
+    pub total_amount: f64,
+    pub tax_amount: f64,
+    pub grand_total: f64,
+    pub narration: Option<String>,
+    pub status: String,
+    pub created_at: String,
+}
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct PaymentItem {
+    pub id: i64,
+    pub voucher_id: i64,
+    pub description: String,
+    pub amount: f64,
+    pub tax_rate: f64,
+    pub tax_amount: f64,
+    pub remarks: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreatePaymentItem {
+    pub description: String,
+    pub amount: f64,
+    pub tax_rate: f64,
+    pub remarks: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreatePayment {
+    pub account_id: i64,
+    pub voucher_date: String,
+    pub payment_method: String, // 'cash' or 'bank'
+    pub reference_number: Option<String>,
+    pub narration: Option<String>,
+    pub items: Vec<CreatePaymentItem>,
+}
+
+#[tauri::command]
+pub async fn create_payment(
+    pool: State<'_, SqlitePool>,
+    payment: CreatePayment,
+) -> Result<i64, String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    
+    // Generate voucher number
+    let voucher_no = get_next_voucher_number(&pool, "payment").await?;
+    
+    // Calculate totals
+    let mut total_amount = 0.0;
+    let mut total_tax = 0.0;
+    
+    for item in &payment.items {
+        total_amount += item.amount;
+        total_tax += item.amount * (item.tax_rate / 100.0);
+    }
+    
+    let grand_total = total_amount + total_tax;
+    
+    // Create voucher
+    let result = sqlx::query(
+        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, narration, status, metadata)
+         VALUES (?, 'payment', ?, ?, 'account', ?, ?, ?, 'draft', ?)"
+    )
+    .bind(&voucher_no)
+    .bind(&payment.voucher_date)
+    .bind(payment.account_id)
+    .bind(&payment.reference_number)
+    .bind(total_amount)
+    .bind(&payment.narration)
+    .bind(format!(r#"{{"method":"{}"}}"#, payment.payment_method))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    let voucher_id = result.last_insert_rowid();
+    
+    // Insert items
+    for item in &payment.items {
+        let tax_amount = item.amount * (item.tax_rate / 100.0);
+        
+        sqlx::query(
+            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount)
+             VALUES (?, ?, ?, ?, ?)"
+        )
+        .bind(voucher_id)
+        .bind(&item.description)
+        .bind(item.amount)
+        .bind(item.tax_rate)
+        .bind(tax_amount)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    
+    // Create journal entries
+    let account_id = payment.account_id;
+    
+    // Get or create cash/bank account
+    let cash_account: Option<i64> = if payment.payment_method == "cash" {
+        sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_code = '1001'"
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_code = '1002'"
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+    };
+    
+    if let Some(cash_acc) = cash_account {
+        // Credit: Cash/Bank Account
+        sqlx::query(
+            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, 0, ?, 'Payment made')"
+        )
+        .bind(voucher_id)
+        .bind(cash_acc)
+        .bind(grand_total)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    
+    // Debit: Expense/Payee Account
+    sqlx::query(
+        "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+         VALUES (?, ?, ?, 0, 'Payment for expenses')"
+    )
+    .bind(voucher_id)
+    .bind(account_id)
+    .bind(total_amount)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    // Debit: Tax Account if applicable
+    if total_tax > 0.0 {
+        let tax_account: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_code = '1005'"
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        
+        if let Some(tax_acc) = tax_account {
+            sqlx::query(
+                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0, 'Tax on payment')"
+            )
+            .bind(voucher_id)
+            .bind(tax_acc)
+            .bind(total_tax)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    
+    tx.commit().await.map_err(|e| e.to_string())?;
+    
+    Ok(voucher_id)
+}
+
+#[tauri::command]
+pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVoucher>, String> {
+    let payments = sqlx::query_as::<_, PaymentVoucher>(
+        "SELECT 
+            v.id,
+            v.voucher_no,
+            v.voucher_date,
+            v.party_id as account_id,
+            coa.name as account_name,
+            json_extract(v.metadata, '$.method') as payment_method,
+            v.reference,
+            v.total_amount,
+            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
+            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.narration,
+            v.status,
+            v.created_at
+        FROM vouchers v
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        WHERE v.voucher_type = 'payment'
+        GROUP BY v.id
+        ORDER BY v.voucher_date DESC, v.id DESC"
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    Ok(payments)
+}
+
+#[tauri::command]
+pub async fn delete_payment(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+) -> Result<(), String> {
+    sqlx::query("DELETE FROM vouchers WHERE id = ? AND voucher_type = 'payment'")
+        .bind(id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    Ok(())
+}
+
+// ============= RECEIPT COMMANDS =============
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct ReceiptVoucher {
+    pub id: i64,
+    pub voucher_no: String,
+    pub voucher_date: String,
+    pub account_id: i64,
+    pub account_name: String,
+    pub receipt_method: String, // 'cash' or 'bank'
+    pub reference_number: Option<String>,
+    pub total_amount: f64,
+    pub tax_amount: f64,
+    pub grand_total: f64,
+    pub narration: Option<String>,
+    pub status: String,
+    pub created_at: String,
+}
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct ReceiptItem {
+    pub id: i64,
+    pub voucher_id: i64,
+    pub description: String,
+    pub amount: f64,
+    pub tax_rate: f64,
+    pub tax_amount: f64,
+    pub remarks: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateReceiptItem {
+    pub description: String,
+    pub amount: f64,
+    pub tax_rate: f64,
+    pub remarks: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateReceipt {
+    pub account_id: i64,
+    pub voucher_date: String,
+    pub receipt_method: String, // 'cash' or 'bank'
+    pub reference_number: Option<String>,
+    pub narration: Option<String>,
+    pub items: Vec<CreateReceiptItem>,
+}
+
+#[tauri::command]
+pub async fn create_receipt(
+    pool: State<'_, SqlitePool>,
+    receipt: CreateReceipt,
+) -> Result<i64, String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    
+    // Generate voucher number
+    let voucher_no = get_next_voucher_number(&pool, "receipt").await?;
+    
+    // Calculate totals
+    let mut total_amount = 0.0;
+    let mut total_tax = 0.0;
+    
+    for item in &receipt.items {
+        total_amount += item.amount;
+        total_tax += item.amount * (item.tax_rate / 100.0);
+    }
+    
+    let grand_total = total_amount + total_tax;
+    
+    // Create voucher
+    let result = sqlx::query(
+        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, narration, status, metadata)
+         VALUES (?, 'receipt', ?, ?, 'account', ?, ?, ?, 'draft', ?)"
+    )
+    .bind(&voucher_no)
+    .bind(&receipt.voucher_date)
+    .bind(receipt.account_id)
+    .bind(&receipt.reference_number)
+    .bind(total_amount)
+    .bind(&receipt.narration)
+    .bind(format!(r#"{{"method":"{}"}}"#, receipt.receipt_method))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    let voucher_id = result.last_insert_rowid();
+    
+    // Insert items
+    for item in &receipt.items {
+        let tax_amount = item.amount * (item.tax_rate / 100.0);
+        
+        sqlx::query(
+            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount)
+             VALUES (?, ?, ?, ?, ?)"
+        )
+        .bind(voucher_id)
+        .bind(&item.description)
+        .bind(item.amount)
+        .bind(item.tax_rate)
+        .bind(tax_amount)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    
+    // Create journal entries
+    let account_id = receipt.account_id;
+    
+    // Get or create cash/bank account
+    let cash_account: Option<i64> = if receipt.receipt_method == "cash" {
+        sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_code = '1001'"
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_code = '1002'"
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+    };
+    
+    if let Some(cash_acc) = cash_account {
+        // Debit: Cash/Bank Account
+        sqlx::query(
+            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, 0, 'Receipt received')"
+        )
+        .bind(voucher_id)
+        .bind(cash_acc)
+        .bind(grand_total)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    
+    // Credit: Income/Payer Account
+    sqlx::query(
+        "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+         VALUES (?, ?, 0, ?, 'Receipt from income')"
+    )
+    .bind(voucher_id)
+    .bind(account_id)
+    .bind(total_amount)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    // Credit: Tax Account if applicable
+    if total_tax > 0.0 {
+        let tax_account: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_code = '1005'"
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        
+        if let Some(tax_acc) = tax_account {
+            sqlx::query(
+                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, 0, ?, 'Tax on receipt')"
+            )
+            .bind(voucher_id)
+            .bind(tax_acc)
+            .bind(total_tax)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
+    
+    tx.commit().await.map_err(|e| e.to_string())?;
+    
+    Ok(voucher_id)
+}
+
+#[tauri::command]
+pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVoucher>, String> {
+    let receipts = sqlx::query_as::<_, ReceiptVoucher>(
+        "SELECT 
+            v.id,
+            v.voucher_no,
+            v.voucher_date,
+            v.party_id as account_id,
+            coa.name as account_name,
+            json_extract(v.metadata, '$.method') as receipt_method,
+            v.reference,
+            v.total_amount,
+            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
+            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.narration,
+            v.status,
+            v.created_at
+        FROM vouchers v
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        WHERE v.voucher_type = 'receipt'
+        GROUP BY v.id
+        ORDER BY v.voucher_date DESC, v.id DESC"
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    Ok(receipts)
+}
+
+#[tauri::command]
+pub async fn delete_receipt(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+) -> Result<(), String> {
+    sqlx::query("DELETE FROM vouchers WHERE id = ? AND voucher_type = 'receipt'")
+        .bind(id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    Ok(())
+}

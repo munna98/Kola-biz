@@ -7,6 +7,8 @@ import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
 import ChartOfAccountsPage from './pages/ChartOfAccountsPage';
 import PurchaseInvoicePage from './pages/PurchaseInvoicePage';
+import PaymentPage from './pages/PaymentPage';
+import ReceiptPage from './pages/ReceiptPage';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider, useTheme } from './components/theme-provider';
 import './App.css';
@@ -46,6 +48,7 @@ function AppContent() {
     { id: 'purchase', label: 'Purchase', icon: IconTruck },
     { id: 'sales', label: 'Sales', icon: IconReceipt },
     { id: 'payments', label: 'Payments', icon: IconCreditCard },
+    { id: 'receipts', label: 'Receipts', icon: IconReceipt },
   ];
 
   const renderContent = () => {
@@ -55,6 +58,8 @@ function AppContent() {
       case 'suppliers': return <SuppliersPage />;
       case 'coa': return <ChartOfAccountsPage />;
       case 'purchase': return <PurchaseInvoicePage />;
+      case 'payments': return <PaymentPage />;
+      case 'receipts': return <ReceiptPage />;
       case 'sales': return <div className="p-6 text-muted-foreground">Sales module coming soon...</div>;
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }

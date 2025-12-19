@@ -137,6 +137,7 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             amount REAL NOT NULL,
             tax_rate REAL DEFAULT 0,
             tax_amount REAL DEFAULT 0,
+            remarks TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
             FOREIGN KEY (product_id) REFERENCES products(id)
