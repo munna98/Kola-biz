@@ -94,6 +94,143 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )"
     ).execute(&pool).await?;
+
+    // ==================== TRANSACTION TABLES ====================
+    
+    // Vouchers (Master Transaction Table)
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS vouchers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            voucher_no TEXT UNIQUE NOT NULL,
+            voucher_type TEXT NOT NULL,
+            voucher_date DATE NOT NULL,
+            reference TEXT,
+            party_id INTEGER,
+            party_type TEXT,
+            total_amount REAL DEFAULT 0,
+            narration TEXT,
+            status TEXT DEFAULT 'draft',
+            posted_at DATETIME,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )"
+    ).execute(&pool).await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_type ON vouchers(voucher_type)")
+        .execute(&pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_date ON vouchers(voucher_date)")
+        .execute(&pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_party ON vouchers(party_id, party_type)")
+        .execute(&pool).await?;
+
+    // Voucher Items (Invoice Line Items)
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS voucher_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    voucher_id INTEGER NOT NULL,
+    product_id INTEGER,
+    description TEXT,
+    initial_quantity REAL NOT NULL,
+    count INTEGER NOT NULL,
+    waste_per_unit REAL DEFAULT 0,
+    final_quantity REAL,
+    rate REAL NOT NULL,
+    amount REAL NOT NULL,
+    tax_rate REAL DEFAULT 0,
+    tax_amount REAL DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+    FOREIGN KEY (product_id) REFERENCES products(id)
+)"
+    ).execute(&pool).await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_voucher_items_voucher ON voucher_items(voucher_id)")
+        .execute(&pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_voucher_items_product ON voucher_items(product_id)")
+        .execute(&pool).await?;
+
+    // Journal Entries (Double Entry Records)
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS journal_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            voucher_id INTEGER NOT NULL,
+            account_id INTEGER NOT NULL,
+            debit REAL DEFAULT 0,
+            credit REAL DEFAULT 0,
+            is_manual INTEGER DEFAULT 0,
+            narration TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+            FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
+        )"
+    ).execute(&pool).await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_voucher ON journal_entries(voucher_id)")
+        .execute(&pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_account ON journal_entries(account_id)")
+        .execute(&pool).await?;
+
+    // Stock Movements
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS stock_movements (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            voucher_id INTEGER NOT NULL,
+            product_id INTEGER NOT NULL,
+            movement_type TEXT NOT NULL,
+            quantity REAL NOT NULL,
+            rate REAL NOT NULL,
+            amount REAL NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )"
+    ).execute(&pool).await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_stock_movements_voucher ON stock_movements(voucher_id)")
+        .execute(&pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id)")
+        .execute(&pool).await?;
+
+    // Opening Balances
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS opening_balances (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            account_id INTEGER NOT NULL,
+            opening_debit REAL DEFAULT 0,
+            opening_credit REAL DEFAULT 0,
+            financial_year TEXT NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(account_id, financial_year),
+            FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
+        )"
+    ).execute(&pool).await?;
+
+    // Voucher Sequences (Auto Number Generation)
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS voucher_sequences (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            voucher_type TEXT UNIQUE NOT NULL,
+            prefix TEXT NOT NULL,
+            next_number INTEGER DEFAULT 1,
+            padding INTEGER DEFAULT 4
+        )"
+    ).execute(&pool).await?;
+
+    // Insert default sequences
+    sqlx::query(
+        "INSERT OR IGNORE INTO voucher_sequences (voucher_type, prefix) VALUES
+        ('sales_invoice', 'SI'),
+        ('sales_return', 'SR'),
+        ('sales_quotation', 'SQ'),
+        ('purchase_invoice', 'PI'),
+        ('purchase_return', 'PR'),
+        ('purchase_quotation', 'PQ'),
+        ('payment', 'PAY'),
+        ('receipt', 'RCP'),
+        ('journal', 'JV')"
+    ).execute(&pool).await?;
+    
+    // ==================== SEED DATA ====================
     
     // Insert default account groups
     sqlx::query(
@@ -118,7 +255,7 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
         ('Discounts', 'Expense')"
     ).execute(&pool).await?;
     
-    // Insert default and additional chart of accounts
+    // Insert default chart of accounts
     sqlx::query(
         "INSERT OR IGNORE INTO chart_of_accounts (account_code, account_name, account_type, account_group, description) VALUES
         -- ASSETS
