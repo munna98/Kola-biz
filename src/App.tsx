@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import { store, RootState, toggleSidebar, setActiveSection } from './store';
-import { IconPackage, IconUsers, IconTruck, IconReceipt, IconCreditCard, IconMenu2, IconChevronLeft } from '@tabler/icons-react';
+import { IconPackage, IconUsers, IconTruck, IconReceipt, IconCreditCard, IconMenu2, IconChevronLeft, IconBook } from '@tabler/icons-react';
 import ProductsPage from './pages/ProductsPage';
 import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
+import ChartOfAccountsPage from './pages/ChartOfAccountsPage';
 import { Toaster } from '@/components/ui/sonner';
 import './App.css';
 
@@ -25,6 +26,7 @@ function AppContent() {
     { id: 'products', label: 'Products', icon: IconPackage },
     { id: 'customers', label: 'Customers', icon: IconUsers },
     { id: 'suppliers', label: 'Suppliers', icon: IconTruck },
+    { id: 'coa', label: 'Chart of Accounts', icon: IconBook },
     { id: 'purchase', label: 'Purchase', icon: IconTruck },
     { id: 'sales', label: 'Sales', icon: IconReceipt },
     { id: 'payments', label: 'Payments', icon: IconCreditCard },
@@ -35,6 +37,7 @@ function AppContent() {
       case 'products': return <ProductsPage key={productPageKey} />;
       case 'customers': return <CustomersPage />;
       case 'suppliers': return <SuppliersPage />;
+      case 'coa': return <ChartOfAccountsPage />;
       case 'purchase': return <div className="p-6 text-muted-foreground">Purchase module coming soon...</div>;
       case 'sales': return <div className="p-6 text-muted-foreground">Sales module coming soon...</div>;
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;

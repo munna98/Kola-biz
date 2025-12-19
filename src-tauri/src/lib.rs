@@ -35,6 +35,16 @@ pub fn run() {
             create_supplier,
             update_supplier,
             delete_supplier,
+            // Chart of Accounts
+            get_chart_of_accounts,
+            create_chart_of_account,
+            update_chart_of_account,
+            delete_chart_of_account,
+            get_account_types,
+            get_account_groups,
+            get_all_account_groups,
+            create_account_group,
+            delete_account_group,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

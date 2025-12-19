@@ -67,6 +67,41 @@ export interface CreateSupplier {
   address?: string;
 }
 
+export interface ChartOfAccount {
+  id: number;
+  account_code: string;
+  account_name: string;
+  account_type: string;
+  account_group: string;
+  description?: string;
+  opening_balance: number;
+  is_active: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateChartOfAccount {
+  account_code: string;
+  account_name: string;
+  account_type: string;
+  account_group: string;
+  description?: string;
+  opening_balance?: number;
+}
+
+export interface AccountGroup {
+  id: number;
+  name: string;
+  account_type: string;
+  is_active: number;
+  created_at: string;
+}
+
+export interface CreateAccountGroup {
+  name: string;
+  account_type: string;
+}
+
 export const api = {
   units: {
     list: () => invoke<Unit[]>('get_units'),
@@ -91,5 +126,18 @@ export const api = {
     create: (data: CreateSupplier) => invoke<Supplier>('create_supplier', { supplier: data }),
     update: (id: number, data: CreateSupplier) => invoke<void>('update_supplier', { id, supplier: data }),
     delete: (id: number) => invoke<void>('delete_supplier', { id }),
+  },
+  chartOfAccounts: {
+    list: () => invoke<ChartOfAccount[]>('get_chart_of_accounts'),
+    create: (data: CreateChartOfAccount) => invoke<ChartOfAccount>('create_chart_of_account', { account: data }),
+    update: (id: number, data: CreateChartOfAccount) => invoke<void>('update_chart_of_account', { id, account: data }),
+    delete: (id: number) => invoke<void>('delete_chart_of_account', { id }),
+    getTypes: () => invoke<string[]>('get_account_types'),
+    getGroups: () => invoke<string[]>('get_account_groups'),
+  },
+  accountGroups: {
+    list: () => invoke<AccountGroup[]>('get_all_account_groups'),
+    create: (data: CreateAccountGroup) => invoke<AccountGroup>('create_account_group', { group: data }),
+    delete: (id: number) => invoke<void>('delete_account_group', { id }),
   },
 };
