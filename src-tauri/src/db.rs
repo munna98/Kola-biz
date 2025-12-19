@@ -110,7 +110,6 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             total_amount REAL DEFAULT 0,
             narration TEXT,
             status TEXT DEFAULT 'draft',
-            posted_at DATETIME,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )"
@@ -126,22 +125,22 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
     // Voucher Items (Invoice Line Items)
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS voucher_items (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    voucher_id INTEGER NOT NULL,
-    product_id INTEGER,
-    description TEXT,
-    initial_quantity REAL NOT NULL,
-    count INTEGER NOT NULL,
-    waste_per_unit REAL DEFAULT 0,
-    final_quantity REAL,
-    rate REAL NOT NULL,
-    amount REAL NOT NULL,
-    tax_rate REAL DEFAULT 0,
-    tax_amount REAL DEFAULT 0,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
-    FOREIGN KEY (product_id) REFERENCES products(id)
-)"
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            voucher_id INTEGER NOT NULL,
+            product_id INTEGER,
+            description TEXT,
+            initial_quantity REAL NOT NULL,
+            count INTEGER NOT NULL,
+            deduction_per_unit REAL DEFAULT 0,
+            final_quantity REAL,
+            rate REAL NOT NULL,
+            amount REAL NOT NULL,
+            tax_rate REAL DEFAULT 0,
+            tax_amount REAL DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )"
     ).execute(&pool).await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_voucher_items_voucher ON voucher_items(voucher_id)")

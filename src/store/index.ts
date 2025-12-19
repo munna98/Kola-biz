@@ -31,9 +31,9 @@ export interface PurchaseInvoiceItem {
   product_id: number;
   product_name?: string;
   description: string;
-  initial_quantity: number;
+  initial_quantity: number; 
   count: number;
-  waste_per_unit: number;
+  deduction_per_unit: number;
   rate: number;
   tax_rate: number;
 }

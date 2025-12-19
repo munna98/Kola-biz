@@ -708,7 +708,7 @@ pub struct CreatePurchaseInvoiceItem {
     pub description: Option<String>,
     pub initial_quantity: f64,
     pub count: i64,
-    pub waste_per_unit: f64,
+    pub deduction_per_unit: f64,
     pub rate: f64,
     pub tax_rate: f64,
 }
@@ -823,7 +823,7 @@ pub async fn get_purchase_invoice_items(
             vi.description,
             vi.initial_quantity,
             vi.count,
-            vi.waste_per_unit,
+            vi.deduction_per_unit,
             vi.final_quantity,
             vi.rate,
             vi.amount,
@@ -855,7 +855,7 @@ pub async fn create_purchase_invoice(
     let mut total_amount = 0.0;
     
     for item in &invoice.items {
-        let final_qty = item.initial_quantity + (item.count as f64 * item.waste_per_unit);
+        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let amount = final_qty * item.rate;
         
         total_amount += amount;
@@ -880,12 +880,12 @@ pub async fn create_purchase_invoice(
     
     // Insert items
     for item in &invoice.items {
-        let final_qty = item.initial_quantity + (item.count as f64 * item.waste_per_unit);
+        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let amount = final_qty * item.rate;
         let tax_amount = amount * (item.tax_rate / 100.0);
         
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, product_id, description, initial_quantity, count, waste_per_unit, final_quantity, rate, amount, tax_rate, tax_amount)
+            "INSERT INTO voucher_items (voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(voucher_id)
@@ -893,7 +893,7 @@ pub async fn create_purchase_invoice(
         .bind(&item.description)
         .bind(item.initial_quantity)
         .bind(item.count)
-        .bind(item.waste_per_unit)
+        .bind(item.deduction_per_unit)
         .bind(final_qty)
         .bind(item.rate)
         .bind(amount)
@@ -904,38 +904,9 @@ pub async fn create_purchase_invoice(
         .map_err(|e| e.to_string())?;
     }
     
-    tx.commit().await.map_err(|e| e.to_string())?;
+    // ============= CREATE JOURNAL ENTRIES =============
     
-    Ok(voucher_id)
-}
-
-#[tauri::command]
-pub async fn post_purchase_invoice(
-    pool: State<'_, SqlitePool>,
-    voucher_id: i64,
-) -> Result<(), String> {
-    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    
-    // Get voucher details
-    let voucher = sqlx::query_as::<_, (i64, String, i64, f64)>(
-        "SELECT id, voucher_date, party_id, total_amount FROM vouchers WHERE id = ? AND voucher_type = 'purchase_invoice'"
-    )
-    .bind(voucher_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-    
-    let supplier_id = voucher.2;
-    let total_amount = voucher.3;
-    
-    // Get items for stock movement
-    let items = sqlx::query_as::<_, (i64, f64, f64, f64)>(
-        "SELECT product_id, final_quantity, rate, amount FROM voucher_items WHERE voucher_id = ?"
-    )
-    .bind(voucher_id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    let supplier_id = invoice.supplier_id;
     
     // Calculate total tax
     let total_tax: f64 = sqlx::query_scalar(
@@ -972,7 +943,6 @@ pub async fn post_purchase_invoice(
     .await
     .map_err(|e| format!("Supplier account not found: {}", e))?;
     
-    // Create journal entries (Double Entry)
     // Debit: Purchases Account
     sqlx::query(
         "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
@@ -1012,7 +982,15 @@ pub async fn post_purchase_invoice(
     .map_err(|e| e.to_string())?;
     
     // Create stock movements
-    for item in items {
+    let items_for_stock: Vec<(i64, f64, f64, f64)> = sqlx::query_as(
+        "SELECT product_id, final_quantity, rate, amount FROM voucher_items WHERE voucher_id = ?"
+    )
+    .bind(voucher_id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    for item in items_for_stock {
         sqlx::query(
             "INSERT INTO stock_movements (voucher_id, product_id, movement_type, quantity, rate, amount)
              VALUES (?, ?, 'IN', ?, ?, ?)"
@@ -1027,18 +1005,9 @@ pub async fn post_purchase_invoice(
         .map_err(|e| e.to_string())?;
     }
     
-    // Update voucher status
-    sqlx::query(
-        "UPDATE vouchers SET status = 'posted', posted_at = CURRENT_TIMESTAMP WHERE id = ?"
-    )
-    .bind(voucher_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-    
     tx.commit().await.map_err(|e| e.to_string())?;
     
-    Ok(())
+    Ok(voucher_id)
 }
 
 #[tauri::command]
@@ -1046,19 +1015,6 @@ pub async fn delete_purchase_invoice(
     pool: State<'_, SqlitePool>,
     id: i64,
 ) -> Result<(), String> {
-    // Check if posted
-    let status: String = sqlx::query_scalar(
-        "SELECT status FROM vouchers WHERE id = ?"
-    )
-    .bind(id)
-    .fetch_one(pool.inner())
-    .await
-    .map_err(|e| e.to_string())?;
-    
-    if status == "posted" {
-        return Err("Cannot delete a posted invoice. Please unpost it first.".to_string());
-    }
-    
     sqlx::query("DELETE FROM vouchers WHERE id = ?")
         .bind(id)
         .execute(pool.inner())

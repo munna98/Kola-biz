@@ -102,7 +102,7 @@ export default function PurchaseInvoicePage() {
         description: '',
         initial_quantity: 0,
         count: 1,
-        waste_per_unit: 0,
+        deduction_per_unit: 0,
         rate: 0,
         tax_rate: 0,
       })
@@ -114,7 +114,9 @@ export default function PurchaseInvoicePage() {
       toast.error('At least one item is required');
       return;
     }
+    const updatedItems = purchaseState.items.filter((_, i) => i !== index);
     dispatch(removeItem(index));
+    updateTotalsWithItems(updatedItems);
   };
 
   const handleUpdateItem = (index: number, field: string, value: any) => {
@@ -124,6 +126,14 @@ export default function PurchaseInvoicePage() {
       const product = products.find((p) => p.id === value);
       if (product) {
         finalValue = value;
+        // Update item with product details and recalculate totals
+        const updatedItems = [...purchaseState.items];
+        updatedItems[index] = {
+          ...updatedItems[index],
+          product_id: value,
+          product_name: product.name,
+          rate: product.purchase_rate || 0,
+        };
         dispatch(
           updateItem({
             index,
@@ -134,21 +144,24 @@ export default function PurchaseInvoicePage() {
             },
           })
         );
-        updateTotals();
+        updateTotalsWithItems(updatedItems);
         return;
       }
     }
 
+    // Update item and recalculate with updated items
+    const updatedItems = [...purchaseState.items];
+    updatedItems[index] = { ...updatedItems[index], [field]: finalValue };
     dispatch(updateItem({ index, data: { [field]: finalValue } }));
-    updateTotals();
+    updateTotalsWithItems(updatedItems);
   };
 
-  const updateTotals = () => {
+  const updateTotalsWithItems = (items: typeof purchaseState.items) => {
     let subtotal = 0;
     let totalTax = 0;
 
-    purchaseState.items.forEach((item) => {
-      const finalQty = item.initial_quantity - item.count * item.waste_per_unit;
+    items.forEach((item) => {
+      const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
       const amount = finalQty * item.rate;
       const taxAmount = amount * (item.tax_rate / 100);
       subtotal += amount;
@@ -357,7 +370,7 @@ export default function PurchaseInvoicePage() {
   }
 
   const getItemAmount = (item: typeof purchaseState.items[0]) => {
-    const finalQty = item.initial_quantity - item.count * item.waste_per_unit;
+    const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
     const amount = finalQty * item.rate;
     const taxAmount = amount * (item.tax_rate / 100);
     return { finalQty, amount, taxAmount, total: amount + taxAmount };
@@ -488,7 +501,7 @@ export default function PurchaseInvoicePage() {
                 <div>Unit</div>
                 <div>Rate</div>
                 <div>Count</div>
-                <div>Waste</div>
+                <div>Deduction</div>
                 <div>Final Qty</div>
                 <div className="text-right">Amount</div>
                 <div className="text-right">Total</div>
@@ -563,9 +576,9 @@ export default function PurchaseInvoicePage() {
                     <div>
                       <Input
                         type="number"
-                        value={item.waste_per_unit}
+                        value={item.deduction_per_unit}
                         onChange={(e) =>
-                          handleUpdateItem(idx, 'waste_per_unit', parseFloat(e.target.value) || 0)
+                          handleUpdateItem(idx, 'deduction_per_unit', parseFloat(e.target.value) || 0)
                         }
                         className="h-7 text-xs"
                         step="0.01"

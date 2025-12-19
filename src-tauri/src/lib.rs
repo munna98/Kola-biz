@@ -46,12 +46,11 @@ pub fn run() {
             create_account_group,
             delete_account_group,
             // Purchase Invoices
-    get_purchase_invoices,
-    get_purchase_invoice,
-    get_purchase_invoice_items,
-    create_purchase_invoice,
-    post_purchase_invoice,
-    delete_purchase_invoice,
+            get_purchase_invoices,
+            get_purchase_invoice,
+            get_purchase_invoice_items,
+            create_purchase_invoice,
+            delete_purchase_invoice,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
