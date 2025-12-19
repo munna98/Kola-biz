@@ -10,7 +10,7 @@ import { api, Product, CreateProduct, Unit } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { toast } from 'sonner';
-import UnitsDialog from '@/dialogs/UnitsDialog';
+import UnitsDialog from '@/components/dialogs/UnitsDialog';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
