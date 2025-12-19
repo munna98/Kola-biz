@@ -853,15 +853,12 @@ pub async fn create_purchase_invoice(
     
     // Calculate totals
     let mut total_amount = 0.0;
-    let mut total_tax = 0.0;
     
     for item in &invoice.items {
         let final_qty = item.initial_quantity + (item.count as f64 * item.waste_per_unit);
         let amount = final_qty * item.rate;
-        let tax = amount * (item.tax_rate / 100.0);
         
         total_amount += amount;
-        total_tax += tax;
     }
     
     // Create voucher

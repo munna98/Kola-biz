@@ -1,14 +1,29 @@
 import { useEffect, useState } from 'react';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import { store, RootState, toggleSidebar, setActiveSection } from './store';
-import { IconPackage, IconUsers, IconTruck, IconReceipt, IconCreditCard, IconMenu2, IconChevronLeft, IconBook } from '@tabler/icons-react';
+import { IconPackage, IconUsers, IconTruck, IconReceipt, IconCreditCard, IconMenu2, IconChevronLeft, IconBook, IconMoon, IconSun } from '@tabler/icons-react';
 import ProductsPage from './pages/ProductsPage';
 import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
 import ChartOfAccountsPage from './pages/ChartOfAccountsPage';
 import PurchaseInvoicePage from './pages/PurchaseInvoicePage';
 import { Toaster } from '@/components/ui/sonner';
+import { ThemeProvider, useTheme } from './components/theme-provider';
 import './App.css';
+
+function ThemeToggle() {
+  const { theme, setTheme } = useTheme();
+  
+  return (
+    <button
+      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+      className="p-2 hover:bg-accent rounded-md transition-colors"
+      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+    >
+      {theme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
+    </button>
+  );
+}
 
 function AppContent() {
   const dispatch = useDispatch();
@@ -77,7 +92,10 @@ function AppContent() {
           <button className="px-4 py-1.5 text-sm font-medium hover:bg-accent rounded">Inventory</button>
           <button className="px-4 py-1.5 text-sm font-medium hover:bg-accent rounded">Accounts</button>
           <button className="px-4 py-1.5 text-sm font-medium hover:bg-accent rounded">Reports</button>
-          <div className="ml-auto text-sm text-muted-foreground">Admin</div>
+          <div className="ml-auto flex items-center gap-3">
+            <ThemeToggle />
+            <div className="text-sm text-muted-foreground">Admin</div>
+          </div>
         </header>
 
         {/* Content Area */}
@@ -94,8 +112,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <Provider store={store}>
-      <AppContent />
-    </Provider>
+    <ThemeProvider defaultTheme="system" storageKey="erp-theme">
+      <Provider store={store}>
+        <AppContent />
+      </Provider>
+    </ThemeProvider>
   );
 }
