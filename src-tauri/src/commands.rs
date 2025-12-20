@@ -668,6 +668,23 @@ pub async fn delete_account_group(pool: State<'_, SqlitePool>, id: i64) -> Resul
     Ok(())
 }
 
+// ============= CASH & BANK ACCOUNTS =============
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct CashBankAccount {
+    pub id: i64,
+    pub name: String,
+}
+
+#[tauri::command]
+pub async fn get_cash_bank_accounts(pool: State<'_, SqlitePool>) -> Result<Vec<CashBankAccount>, String> {
+    sqlx::query_as::<_, CashBankAccount>(
+        "SELECT id, account_name as name FROM chart_of_accounts WHERE is_active = 1 AND (account_group = 'Cash' OR account_group = 'Bank Account') ORDER BY account_code ASC"
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())
+}
+
 // ============= PURCHASE INVOICE =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct PurchaseInvoice {
@@ -990,6 +1007,27 @@ pub async fn create_purchase_invoice(
     .await
     .map_err(|e| e.to_string())?;
     
+    // Credit: Discount Received (if discount applied)
+    if discount_amount > 0.0 {
+        let discount_account: i64 = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_code = '4004'"
+        )
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        
+        sqlx::query(
+            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, 0, ?, 'Discount received from supplier')"
+        )
+        .bind(voucher_id)
+        .bind(discount_account)
+        .bind(discount_amount)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    
     // Create stock movements
     let items_for_stock: Vec<(i64, f64, f64, f64)> = sqlx::query_as(
         "SELECT product_id, final_quantity, rate, amount FROM voucher_items WHERE voucher_id = ?"
@@ -1104,8 +1142,8 @@ pub async fn create_payment(
     
     // Create voucher
     let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, narration, status, metadata)
-         VALUES (?, 'payment', ?, ?, 'account', ?, ?, ?, 'draft', ?)"
+        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, narration, status)
+         VALUES (?, 'payment', ?, ?, 'account', ?, ?, ?, 'draft')"
     )
     .bind(&voucher_no)
     .bind(&payment.voucher_date)
@@ -1113,7 +1151,6 @@ pub async fn create_payment(
     .bind(&payment.reference_number)
     .bind(total_amount)
     .bind(&payment.narration)
-    .bind(format!(r#"{{"method":"{}"}}"#, payment.payment_method))
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -1125,64 +1162,60 @@ pub async fn create_payment(
         let tax_amount = item.amount * (item.tax_rate / 100.0);
         
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount)
-             VALUES (?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, initial_quantity, count, rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(voucher_id)
         .bind(&item.description)
         .bind(item.amount)
         .bind(item.tax_rate)
         .bind(tax_amount)
+        .bind(1.0)
+        .bind(1.0)
+        .bind(item.amount)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     }
     
     // Create journal entries
-    let account_id = payment.account_id;
-    
-    // Get or create cash/bank account
-    let cash_account: Option<i64> = if payment.payment_method == "cash" {
-        sqlx::query_scalar(
-            "SELECT id FROM chart_of_accounts WHERE account_code = '1001'"
-        )
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?
-    } else {
-        sqlx::query_scalar(
-            "SELECT id FROM chart_of_accounts WHERE account_code = '1002'"
-        )
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?
-    };
-    
-    if let Some(cash_acc) = cash_account {
-        // Credit: Cash/Bank Account
-        sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, 0, ?, 'Payment made')"
-        )
-        .bind(voucher_id)
-        .bind(cash_acc)
-        .bind(grand_total)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    }
-    
-    // Debit: Expense/Payee Account
+    // Credit: Cash/Bank Account (the account user selected to pay from)
     sqlx::query(
         "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, 0, 'Payment for expenses')"
+         VALUES (?, ?, 0, ?, 'Payment made')"
     )
     .bind(voucher_id)
-    .bind(account_id)
-    .bind(total_amount)
+    .bind(payment.account_id)
+    .bind(grand_total)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
+    
+    // Debit: Each Payee/Ledger Account from items
+    for item in &payment.items {
+        // Look up the account by name
+        let payee_account: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1"
+        )
+        .bind(&item.description)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        
+        if let Some(payee_acc) = payee_account {
+            sqlx::query(
+                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0, ?)"
+            )
+            .bind(voucher_id)
+            .bind(payee_acc)
+            .bind(item.amount)
+            .bind(format!("Payment to {}", item.description))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
     
     // Debit: Tax Account if applicable
     if total_tax > 0.0 {
@@ -1328,8 +1361,8 @@ pub async fn create_receipt(
     
     // Create voucher
     let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, narration, status, metadata)
-         VALUES (?, 'receipt', ?, ?, 'account', ?, ?, ?, 'draft', ?)"
+        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, narration, status)
+         VALUES (?, 'receipt', ?, ?, 'account', ?, ?, ?, 'draft')"
     )
     .bind(&voucher_no)
     .bind(&receipt.voucher_date)
@@ -1337,7 +1370,6 @@ pub async fn create_receipt(
     .bind(&receipt.reference_number)
     .bind(total_amount)
     .bind(&receipt.narration)
-    .bind(format!(r#"{{"method":"{}"}}"#, receipt.receipt_method))
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -1349,64 +1381,60 @@ pub async fn create_receipt(
         let tax_amount = item.amount * (item.tax_rate / 100.0);
         
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount)
-             VALUES (?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, initial_quantity, count, rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(voucher_id)
         .bind(&item.description)
         .bind(item.amount)
         .bind(item.tax_rate)
         .bind(tax_amount)
+        .bind(1.0)
+        .bind(1.0)
+        .bind(item.amount)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     }
     
     // Create journal entries
-    let account_id = receipt.account_id;
-    
-    // Get or create cash/bank account
-    let cash_account: Option<i64> = if receipt.receipt_method == "cash" {
-        sqlx::query_scalar(
-            "SELECT id FROM chart_of_accounts WHERE account_code = '1001'"
-        )
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?
-    } else {
-        sqlx::query_scalar(
-            "SELECT id FROM chart_of_accounts WHERE account_code = '1002'"
-        )
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?
-    };
-    
-    if let Some(cash_acc) = cash_account {
-        // Debit: Cash/Bank Account
-        sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, 'Receipt received')"
-        )
-        .bind(voucher_id)
-        .bind(cash_acc)
-        .bind(grand_total)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    }
-    
-    // Credit: Income/Payer Account
+    // Debit: Cash/Bank Account (the account user selected to receive payment)
     sqlx::query(
         "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, 0, ?, 'Receipt from income')"
+         VALUES (?, ?, ?, 0, 'Receipt received')"
     )
     .bind(voucher_id)
-    .bind(account_id)
-    .bind(total_amount)
+    .bind(receipt.account_id)
+    .bind(grand_total)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
+    
+    // Credit: Each Payer/Ledger Account from items
+    for item in &receipt.items {
+        // Look up the account by name
+        let payer_account: Option<i64> = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1"
+        )
+        .bind(&item.description)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        
+        if let Some(payer_acc) = payer_account {
+            sqlx::query(
+                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, 0, ?, ?)"
+            )
+            .bind(voucher_id)
+            .bind(payer_acc)
+            .bind(item.amount)
+            .bind(format!("Receipt from {}", item.description))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
     
     // Credit: Tax Account if applicable
     if total_tax > 0.0 {

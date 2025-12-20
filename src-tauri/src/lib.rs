@@ -45,6 +45,8 @@ pub fn run() {
             get_all_account_groups,
             create_account_group,
             delete_account_group,
+            // Cash & Bank Accounts
+            get_cash_bank_accounts,
             // Purchase Invoices
             get_purchase_invoices,
             get_purchase_invoice,

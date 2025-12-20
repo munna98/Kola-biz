@@ -70,7 +70,7 @@ function AppContent() {
       {/* Sidebar */}
       <aside className={`bg-card border-r transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-56'}`}>
         <div className="flex items-center justify-between p-4 border-b h-14">
-          {!sidebarCollapsed && <h1 className="font-bold text-lg">Kola ERP</h1>}
+          {!sidebarCollapsed && <h1 className="font-bold text-lg">KolaBiz ERP</h1>}
           <button onClick={() => dispatch(toggleSidebar())} className="p-1 hover:bg-accent rounded">
             {sidebarCollapsed ? <IconMenu2 size={20} /> : <IconChevronLeft size={20} />}
           </button>

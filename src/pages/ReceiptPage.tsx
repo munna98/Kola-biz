@@ -25,7 +25,6 @@ import {
     IconCheck,
     IconX,
     IconKeyboard,
-    IconReceipt,
 } from '@tabler/icons-react';
 
 interface AccountData {
@@ -33,12 +32,17 @@ interface AccountData {
     name: string;
 }
 
+interface LedgerAccount {
+    id: number;
+    account_name: string;
+}
+
 export default function ReceiptPage() {
     const dispatch = useDispatch<AppDispatch>();
     const receiptState = useSelector((state: RootState) => state.receipt);
 
     const [depositToAccounts, setDepositToAccounts] = useState<AccountData[]>([]);
-    const [receivedFromLedgers, setReceivedFromLedgers] = useState<AccountData[]>([]);
+    const [receivedFromLedgers, setReceivedFromLedgers] = useState<LedgerAccount[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
 
@@ -51,7 +55,7 @@ export default function ReceiptPage() {
             try {
                 const [cashBankData, allLedgersData] = await Promise.all([
                     invoke<AccountData[]>('get_cash_bank_accounts').catch(() => []),
-                    invoke<AccountData[]>('get_chart_of_accounts').catch(() => []),
+                    invoke<LedgerAccount[]>('get_chart_of_accounts').catch(() => []),
                 ]);
                 setDepositToAccounts(cashBankData);
                 setReceivedFromLedgers(allLedgersData);
@@ -67,6 +71,13 @@ export default function ReceiptPage() {
         };
         loadData();
     }, [dispatch]);
+
+    // Auto-add first item when data is loaded
+    useEffect(() => {
+        if (receivedFromLedgers.length > 0 && receiptState.items.length === 0) {
+            handleAddItem();
+        }
+    }, [receivedFromLedgers.length]);
 
     // Calculations
     const calculateTotals = useCallback((items: ReceiptItem[]) => {
@@ -89,7 +100,10 @@ export default function ReceiptPage() {
     };
 
     const handleRemoveItem = (index: number) => {
-        if (receiptState.items.length === 1) return;
+        if (receiptState.items.length === 1) {
+            toast.error('At least one item is required');
+            return;
+        }
         const updatedItems = receiptState.items.filter((_, i) => i !== index);
         dispatch(removeReceiptItem(index));
         dispatch(setReceiptTotals(calculateTotals(updatedItems)));
@@ -99,161 +113,421 @@ export default function ReceiptPage() {
         e.preventDefault();
         if (!receiptState.form.account_id) return toast.error('Select "Deposit To" account');
 
+        if (receiptState.items.length === 0) {
+            toast.error('Add at least one item');
+            return;
+        }
+
         try {
             dispatch(setReceiptLoading(true));
             await invoke('create_receipt', { receipt: { ...receiptState.form, items: receiptState.items } });
             toast.success('Receipt saved successfully');
             dispatch(resetReceiptForm());
             handleAddItem();
+            
+            // Focus back to deposit to after save
+            setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
         } catch (error) {
-            toast.error('Failed to save receipt');
+            toast.error('Failed to save');
         } finally {
             dispatch(setReceiptLoading(false));
         }
     };
 
-    if (isInitializing) return <div className="p-6">Loading...</div>;
+    // Global keyboard shortcuts
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Ctrl/Cmd + N: New item
+            if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+                e.preventDefault();
+                handleAddItem();
+                setTimeout(() => {
+                    const lastRow = formRef.current?.querySelector('[data-row-index]:last-child');
+                    lastRow?.querySelector('button')?.focus();
+                }, 50);
+            }
+            
+            // Ctrl/Cmd + S: Save
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                formRef.current?.requestSubmit();
+            }
+            
+            // Ctrl/Cmd + K: Clear form
+            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+                e.preventDefault();
+                dispatch(resetReceiptForm());
+                handleAddItem();
+                setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
+            }
+            
+            // Ctrl/Cmd + /: Show shortcuts
+            if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+                e.preventDefault();
+                setShowShortcuts(prev => !prev);
+            }
+
+            // Escape: Close shortcuts panel
+            if (e.key === 'Escape' && showShortcuts) {
+                setShowShortcuts(false);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [showShortcuts, dispatch]);
+
+    // Row keyboard navigation
+    const handleRowKeyDown = (e: React.KeyboardEvent, rowIndex: number) => {
+        const currentRow = e.currentTarget;
+        const inputs = Array.from(currentRow.querySelectorAll('input, button')) as HTMLElement[];
+        const currentIndex = inputs.indexOf(document.activeElement as HTMLElement);
+        
+        // Ctrl/Cmd + D: Delete current row
+        if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+            e.preventDefault();
+            handleRemoveItem(rowIndex);
+            return;
+        }
+        
+        const moveToNext = () => {
+            if (currentIndex < inputs.length - 1) {
+                e.preventDefault();
+                const nextInput = inputs[currentIndex + 1];
+                nextInput?.focus();
+                if (nextInput instanceof HTMLInputElement) {
+                    nextInput.select();
+                }
+            } else {
+                e.preventDefault();
+                const nextRow = currentRow.nextElementSibling;
+                if (nextRow) {
+                    const firstInput = nextRow.querySelector('button') as HTMLElement;
+                    firstInput?.focus();
+                    firstInput?.click();
+                } else {
+                    handleAddItem();
+                    setTimeout(() => {
+                        const newRow = currentRow.parentElement?.lastElementChild;
+                        const firstInput = newRow?.querySelector('button') as HTMLElement;
+                        firstInput?.focus();
+                        firstInput?.click();
+                    }, 50);
+                }
+            }
+        };
+        
+        if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'Enter') {
+            moveToNext();
+        }
+        
+        if (e.key === 'Tab' && e.shiftKey) {
+            if (currentIndex === 0) {
+                e.preventDefault();
+                const prevRow = currentRow.previousElementSibling;
+                if (prevRow) {
+                    const prevInputs = Array.from(prevRow.querySelectorAll('input, button')) as HTMLElement[];
+                    const lastInput = prevInputs[prevInputs.length - 1];
+                    lastInput?.focus();
+                    if (lastInput instanceof HTMLInputElement) {
+                        lastInput.select();
+                    }
+                }
+            } else {
+                e.preventDefault();
+                const prevInput = inputs[currentIndex - 1];
+                prevInput?.focus();
+                if (prevInput instanceof HTMLInputElement) {
+                    prevInput.select();
+                }
+            }
+        }
+
+        if (e.key === 'ArrowDown' && e.ctrlKey) {
+            e.preventDefault();
+            const nextRow = currentRow.nextElementSibling;
+            if (nextRow) {
+                const nextInputs = Array.from(nextRow.querySelectorAll('input, button')) as HTMLElement[];
+                const targetInput = nextInputs[currentIndex];
+                targetInput?.focus();
+                if (targetInput instanceof HTMLInputElement) {
+                    targetInput.select();
+                } else if (currentIndex === 0) {
+                    targetInput?.click();
+                }
+            }
+        }
+        
+        if (e.key === 'ArrowUp' && e.ctrlKey) {
+            e.preventDefault();
+            const prevRow = currentRow.previousElementSibling;
+            if (prevRow) {
+                const prevInputs = Array.from(prevRow.querySelectorAll('input, button')) as HTMLElement[];
+                const targetInput = prevInputs[currentIndex];
+                targetInput?.focus();
+                if (targetInput instanceof HTMLInputElement) {
+                    targetInput.select();
+                } else if (currentIndex === 0) {
+                    targetInput?.click();
+                }
+            }
+        }
+    };
+
+    if (isInitializing) {
+        return (
+            <div className="flex items-center justify-center h-full bg-background">
+                <p className="text-sm text-muted-foreground">Loading...</p>
+            </div>
+        );
+    }
 
     return (
-        <div className="flex flex-col h-full bg-background overflow-hidden">
+        <div className="h-full flex flex-col bg-background">
             {/* Header */}
-            <div className="p-6 pb-0 flex justify-between items-center">
-                <div>
-                    <h1 className="text-xl font-bold flex items-center gap-2"> Receipt</h1>
-                    <p className="text-sm text-muted-foreground">Record money received into bank or cash</p>
+            <div className="border-b bg-card/50 px-5 py-3 backdrop-blur-sm">
+                <div className="flex items-center justify-between">
+                    <div>
+                        <h1 className="text-base font-semibold">Receipt Voucher</h1>
+                        <p className="text-xs text-muted-foreground">Record money received into bank or cash</p>
+                    </div>
+                    <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setShowShortcuts(!showShortcuts)}
+                        className="h-7 text-xs"
+                    >
+                        <IconKeyboard size={14} />
+                        Shortcuts (Ctrl+/)
+                    </Button>
                 </div>
-                <Button variant="outline" size="sm" onClick={() => setShowShortcuts(!showShortcuts)}>
-                    <IconKeyboard size={16} className="mr-2" /> Shortcuts
-                </Button>
             </div>
 
-            <form ref={formRef} onSubmit={handleSubmit} className="flex flex-col flex-1 p-6 gap-4 overflow-hidden">
-
-                {/* Master Header Section */}
-                <div className="grid grid-cols-4 gap-4 p-4 border rounded-lg bg-card shadow-sm">
-                    <div className="col-span-2" ref={depositToRef}>
-                        <Label className="text-xs">Deposit To (Bank/Cash) *</Label>
-                        <Combobox
-                            value={receiptState.form.account_id}
-                            options={depositToAccounts.map(a => ({ value: a.id, label: a.name }))}
-                            onChange={(val) => {
-                                const acc = depositToAccounts.find(a => a.id === val);
-                                if (acc) dispatch(setReceiptAccount({ id: acc.id, name: acc.name }));
-                            }}
-                            placeholder="Select destination account"
-                        />
-                    </div>
-                    <div>
-                        <Label className="text-xs">Date</Label>
-                        <Input type="date" value={receiptState.form.voucher_date} onChange={(e) => dispatch(setReceiptDate(e.target.value))} />
-                    </div>
-                    <div>
-                        <Label className="text-xs">Reference Number</Label>
-                        <Input value={receiptState.form.reference_number} onChange={(e) => dispatch(setReceiptReference(e.target.value))} placeholder="Cheque/Ref No" />
-                    </div>
-                    <div className="col-span-4">
-                        <Label className="text-xs">Narration (Overall Notes)</Label>
-                        <Input
-                            value={receiptState.form.narration}
-                            onChange={(e) => dispatch(setReceiptNarration(e.target.value))}
-                            placeholder="Enter details about this receipt..."
-                        />
+            {/* Shortcuts Panel */}
+            {showShortcuts && (
+                <div className="border-b bg-muted/50 px-5 py-3">
+                    <div className="grid grid-cols-3 gap-4 text-xs">
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+N</kbd>
+                                <span>New item</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+S</kbd>
+                                <span>Save receipt</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+K</kbd>
+                                <span>Clear form</span>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+D</kbd>
+                                <span>Delete row (in row)</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Tab/Enter</kbd>
+                                <span>Next field/row</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Shift+Tab</kbd>
+                                <span>Previous field/row</span>
+                            </div>
+                        </div>
+                        <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+↑/↓</kbd>
+                                <span>Navigate rows (same column)</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Esc</kbd>
+                                <span>Close this panel</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
+            )}
 
-                {/* Shortcuts Bar */}
-                {showShortcuts && (
-                    <div className="text-[10px] flex gap-4 text-muted-foreground px-2">
-                        <span><kbd className="border px-1 rounded bg-muted">Ctrl+S</kbd> Save</span>
-                        <span><kbd className="border px-1 rounded bg-muted">Ctrl+N</kbd> Add Line</span>
-                        <span><kbd className="border px-1 rounded bg-muted">Tab</kbd> Next Field</span>
+            {/* Form Content */}
+            <div className="flex-1 overflow-hidden">
+                <form ref={formRef} onSubmit={handleSubmit} className="h-full p-5 max-w-7xl mx-auto flex flex-col gap-4">
+                    {/* Master Section */}
+                    <div className="bg-card border rounded-lg p-3 space-y-3 shrink-0">
+                        <div className="grid grid-cols-6 gap-3">
+                            {/* Deposit To */}
+                            <div ref={depositToRef} className="col-span-2">
+                                <Label className="text-xs font-medium mb-1 block">Deposit To (Bank/Cash) *</Label>
+                                <Combobox
+                                    value={receiptState.form.account_id}
+                                    options={depositToAccounts.map(a => ({ value: a.id, label: a.name }))}
+                                    onChange={(val) => {
+                                        const acc = depositToAccounts.find(a => a.id === val);
+                                        if (acc) dispatch(setReceiptAccount({ id: acc.id, name: acc.name }));
+                                    }}
+                                    placeholder="Select destination account"
+                                    searchPlaceholder="Search accounts..."
+                                />
+                            </div>
+
+                            {/* Date */}
+                            <div>
+                                <Label className="text-xs font-medium mb-1 block">Date *</Label>
+                                <Input 
+                                    type="date" 
+                                    value={receiptState.form.voucher_date} 
+                                    onChange={(e) => dispatch(setReceiptDate(e.target.value))}
+                                    className="h-8 text-sm"
+                                />
+                            </div>
+
+                            {/* Reference */}
+                            <div className="col-span-2">
+                                <Label className="text-xs font-medium mb-1 block">Reference Number</Label>
+                                <Input 
+                                    value={receiptState.form.reference_number} 
+                                    onChange={(e) => dispatch(setReceiptReference(e.target.value))} 
+                                    placeholder="Cheque/Ref No"
+                                    className="h-8 text-sm"
+                                />
+                            </div>
+                        </div>
+
+                        {/* Narration */}
+                        <div>
+                            <Label className="text-xs font-medium mb-1 block">Narration (Overall Notes)</Label>
+                            <Input
+                                value={receiptState.form.narration}
+                                onChange={(e) => dispatch(setReceiptNarration(e.target.value))}
+                                placeholder="Enter details about this receipt..."
+                                className="h-8 text-sm"
+                            />
+                        </div>
                     </div>
-                )}
 
-                {/* Items Table */}
-                <div className="flex-1 border rounded-lg overflow-hidden flex flex-col bg-card shadow-sm">
-                    <table className="w-full text-sm">
-                        <thead className="bg-muted/50 border-b sticky top-0 z-10">
-                            <tr>
-                                <th className="text-left p-3 font-medium text-muted-foreground w-1/3">Received From (Account/Ledger)</th>
-                                <th className="text-right p-3 font-medium text-muted-foreground w-32">Amount</th>
-                                <th className="text-left p-3 font-medium text-muted-foreground">Remarks (Line Info)</th>
-                                <th className="p-3 w-12"></th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y overflow-y-auto">
+                    {/* Items Section */}
+                    <div className="bg-card border rounded-lg overflow-hidden flex flex-col shrink-0" style={{ height: 'calc(5 * 3.25rem + 2.5rem + 2.5rem)' }}>
+                        {/* Table Header */}
+                        <div className="bg-muted/50 border-b shrink-0">
+                            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground">
+                                <div className="col-span-5">Received From (Account/Ledger)</div>
+                                <div className="col-span-2 text-right">Amount</div>
+                                <div className="col-span-4">Remarks (Line Info)</div>
+                                <div className="w-8"></div>
+                            </div>
+                        </div>
+
+                        {/* Items - Scrollable */}
+                        <div className="divide-y overflow-y-auto flex-1">
                             {receiptState.items.map((item, index) => (
-                                <tr key={item.id || index} className="hover:bg-muted/30 transition-colors group">
-                                    <td className="p-2">
+                                <div 
+                                    key={item.id || index}
+                                    data-row-index={index}
+                                    className="grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50"
+                                    onKeyDown={(e) => handleRowKeyDown(e, index)}
+                                >
+                                    {/* Received From Ledger */}
+                                    <div className="col-span-5">
                                         <Combobox
                                             value={item.description}
-                                            options={receivedFromLedgers.map(l => ({ value: l.name, label: l.name }))}
+                                            options={receivedFromLedgers.map(l => ({ value: l.account_name, label: l.account_name }))}
                                             onChange={(val) => handleUpdateItem(index, 'description', val)}
                                             placeholder="Select Ledger"
-                                            className="h-8"
+                                            searchPlaceholder="Search ledgers..."
                                         />
-                                    </td>
-                                    <td className="p-2">
+                                    </div>
+
+                                    {/* Amount */}
+                                    <div className="col-span-2">
                                         <Input
                                             type="number"
                                             value={item.amount || ''}
                                             onChange={(e) => handleUpdateItem(index, 'amount', parseFloat(e.target.value) || 0)}
-                                            className="h-8 text-right font-mono"
+                                            className="h-7 text-xs text-right font-mono"
                                             placeholder="0.00"
+                                            step="0.01"
                                         />
-                                    </td>
-                                    <td className="p-2">
+                                    </div>
+
+                                    {/* Remarks */}
+                                    <div className="col-span-4">
                                         <Input
                                             value={(item as any).remarks || ''}
                                             onChange={(e) => handleUpdateItem(index, 'remarks', e.target.value)}
-                                            className="h-8 text-xs"
+                                            className="h-7 text-xs"
                                             placeholder="e.g. For Invoice #001"
                                         />
-                                    </td>
-                                    <td className="p-2 text-center">
+                                    </div>
+
+                                    {/* Delete */}
+                                    <div className="flex justify-end">
                                         <Button
                                             type="button"
                                             variant="ghost"
-                                            size="icon"
-                                            className="h-6 w-6 p-0"
+                                            size="sm"
                                             onClick={() => handleRemoveItem(index)}
+                                            className="h-6 w-6 p-0"
+                                            title="Delete (Ctrl+D)"
                                         >
                                             <IconTrash size={14} />
                                         </Button>
-                                    </td>
-                                </tr>
+                                    </div>
+                                </div>
                             ))}
-                        </tbody>
-                    </table>
-                    <div className="p-2 border-t bg-muted/10">
-                        <Button type="button" variant="ghost" size="sm" onClick={handleAddItem} className="text-xs h-8">
-                            <IconPlus size={14} className="mr-1" /> Add Line
-                        </Button>
-                    </div>
-                </div>
+                        </div>
 
-                {/* Footer Actions */}
-                <div className="flex items-center justify-between border-t pt-4 bg-background">
-                    <div className="flex flex-col">
-                        <span className="text-xs text-muted-foreground uppercase tracking-wider font-semibold">Total Receipt</span>
-                        <span className="text-2xl font-mono font-bold text-primary">
-                            ₹ {receiptState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                        </span>
+                        {/* Add Item Button */}
+                        <div className="bg-muted/30 border-t px-3 py-2 shrink-0">
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={handleAddItem}
+                                className="text-xs h-7"
+                            >
+                                <IconPlus size={14} />
+                                Add Item (Ctrl+N)
+                            </Button>
+                        </div>
                     </div>
-                    <div className="flex gap-3">
-                        <Button type="button" variant="outline" onClick={() => dispatch(resetReceiptForm())} className="px-6">
-                            <IconX size={16} className="mr-2" /> Clear
-                        </Button>
-                        <Button type="submit" disabled={receiptState.loading} className="px-8 shadow-lg">
-                            {receiptState.loading ? 'Saving...' : (
-                                <>
-                                    <IconCheck size={16} className="mr-2" /> Save Receipt
-                                </>
-                            )}
-                        </Button>
+
+                    {/* Bottom Actions */}
+                    <div className="flex items-center justify-between border-t pt-4 shrink-0">
+                        <div className="flex flex-col">
+                            <span className="text-xs text-muted-foreground font-medium">Total Receipt</span>
+                            <span className="text-2xl font-mono font-bold text-primary">
+                                ₹ {receiptState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            </span>
+                        </div>
+                        <div className="flex gap-2">
+                            <Button 
+                                type="button" 
+                                variant="outline" 
+                                onClick={() => {
+                                    dispatch(resetReceiptForm());
+                                    handleAddItem();
+                                    setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
+                                }}
+                                className="h-9"
+                                title="Clear (Ctrl+K)"
+                            >
+                                <IconX size={16} />
+                                Clear Form
+                            </Button>
+                            <Button 
+                                type="submit" 
+                                disabled={receiptState.loading} 
+                                className="h-9"
+                                title="Save (Ctrl+S)"
+                            >
+                                <IconCheck size={16} />
+                                {receiptState.loading ? 'Saving...' : 'Save Receipt'}
+                            </Button>
+                        </div>
                     </div>
-                </div>
-            </form>
+                </form>
+            </div>
         </div>
     );
 }
