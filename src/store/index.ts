@@ -45,12 +45,15 @@ export interface PurchaseInvoiceState {
     voucher_date: string;
     reference: string;
     narration: string;
+    discount_rate: number;
+    discount_amount: number;
   };
   items: PurchaseInvoiceItem[];
   loading: boolean;
   savedInvoices: any[];
   totals: {
     subtotal: number;
+    discount: number;
     tax: number;
     grandTotal: number;
   };
@@ -63,12 +66,15 @@ const purchaseInitialState: PurchaseInvoiceState = {
     voucher_date: new Date().toISOString().split('T')[0],
     reference: '',
     narration: '',
+    discount_rate: 0,
+    discount_amount: 0,
   },
   items: [],
   loading: false,
   savedInvoices: [],
   totals: {
     subtotal: 0,
+    discount: 0,
     tax: 0,
     grandTotal: 0,
   },
@@ -91,6 +97,12 @@ const purchaseInvoiceSlice = createSlice({
     setNarration: (state, action: PayloadAction<string>) => {
       state.form.narration = action.payload;
     },
+    setDiscountRate: (state, action: PayloadAction<number>) => {
+      state.form.discount_rate = action.payload;
+    },
+    setDiscountAmount: (state, action: PayloadAction<number>) => {
+      state.form.discount_amount = action.payload;
+    },
     addItem: (state, action: PayloadAction<PurchaseInvoiceItem>) => {
       state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
     },
@@ -100,7 +112,7 @@ const purchaseInvoiceSlice = createSlice({
     removeItem: (state, action: PayloadAction<number>) => {
       state.items.splice(action.payload, 1);
     },
-    setTotals: (state, action: PayloadAction<{ subtotal: number; tax: number; grandTotal: number }>) => {
+    setTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; grandTotal: number }>) => {
       state.totals = action.payload;
     },
     resetForm: (state) => {
@@ -110,9 +122,11 @@ const purchaseInvoiceSlice = createSlice({
         voucher_date: new Date().toISOString().split('T')[0],
         reference: '',
         narration: '',
+        discount_rate: 0,
+        discount_amount: 0,
       };
       state.items = [];
-      state.totals = { subtotal: 0, tax: 0, grandTotal: 0 };
+      state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
     },
     setSavedInvoices: (state, action: PayloadAction<any[]>) => {
       state.savedInvoices = action.payload;
@@ -128,6 +142,8 @@ export const {
   setVoucherDate,
   setReference,
   setNarration,
+  setDiscountRate,
+  setDiscountAmount,
   addItem,
   updateItem,
   removeItem,

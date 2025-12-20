@@ -7,6 +7,8 @@ import {
   setVoucherDate,
   setReference,
   setNarration,
+  setDiscountRate,
+  setDiscountAmount,
   addItem,
   updateItem,
   removeItem,
@@ -155,7 +157,7 @@ export default function PurchaseInvoicePage() {
     updateTotalsWithItems(updatedItems);
   };
 
-  const updateTotalsWithItems = (items: typeof purchaseState.items) => {
+  const updateTotalsWithItems = (items: typeof purchaseState.items, discountRate?: number, discountAmount?: number) => {
     let subtotal = 0;
     let totalTax = 0;
 
@@ -167,7 +169,34 @@ export default function PurchaseInvoicePage() {
       totalTax += taxAmount;
     });
 
-    dispatch(setTotals({ subtotal, tax: totalTax, grandTotal: subtotal + totalTax }));
+    // Round to 2 decimals
+    subtotal = Math.round(subtotal * 100) / 100;
+    totalTax = Math.round(totalTax * 100) / 100;
+
+    // Calculate discount
+    let finalDiscountRate = discountRate !== undefined ? discountRate : purchaseState.form.discount_rate;
+    let finalDiscountAmount = discountAmount !== undefined ? discountAmount : purchaseState.form.discount_amount;
+
+    // If rate is provided, calculate amount from rate
+    if (discountRate !== undefined && discountRate > 0) {
+      finalDiscountAmount = Math.round(subtotal * (discountRate / 100) * 100) / 100;
+    } 
+    // If amount is provided, keep it as absolute value
+    else if (discountAmount !== undefined && discountAmount > 0) {
+      finalDiscountAmount = Math.round(discountAmount * 100) / 100;
+      finalDiscountRate = subtotal > 0 ? Math.round((discountAmount / subtotal) * 100 * 100) / 100 : 0;
+    } else {
+      // Reset if both are 0 or not provided
+      finalDiscountAmount = Math.round(finalDiscountAmount * 100) / 100;
+      finalDiscountRate = Math.round(finalDiscountRate * 100) / 100;
+    }
+
+    const grandTotal = Math.round((subtotal - finalDiscountAmount + totalTax) * 100) / 100;
+
+    // Update Redux with both synchronized values
+    dispatch(setDiscountRate(finalDiscountRate));
+    dispatch(setDiscountAmount(finalDiscountAmount));
+    dispatch(setTotals({ subtotal, discount: finalDiscountAmount, tax: totalTax, grandTotal }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -191,6 +220,8 @@ export default function PurchaseInvoicePage() {
           voucher_date: purchaseState.form.voucher_date,
           reference: purchaseState.form.reference || null,
           narration: purchaseState.form.narration || null,
+          discount_rate: purchaseState.form.discount_rate || null,
+          discount_amount: purchaseState.form.discount_amount || null,
           items: purchaseState.items,
         },
       });
@@ -629,28 +660,58 @@ export default function PurchaseInvoicePage() {
           {/* Totals and Notes */}
           <div className="grid grid-cols-3 gap-4 shrink-0">
             {/* Notes */}
-            <div className="col-span-2 bg-card border rounded-lg p-3">
-              <Label className="text-xs font-medium mb-2 block">Notes / Narration</Label>
+            <div className="col-span-1 bg-card border rounded-lg p-2.5">
+              <Label className="text-xs font-medium mb-1 block">Notes / Narration</Label>
               <Textarea
                 value={purchaseState.form.narration}
                 onChange={(e) => dispatch(setNarration(e.target.value))}
                 placeholder="Additional notes or remarks..."
-                className="min-h-16 text-sm"
+                className="min-h-14 text-xs"
               />
             </div>
 
             {/* Totals */}
-            <div className="bg-card border rounded-lg p-3 space-y-2">
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
+            <div className="col-span-2 bg-card border rounded-lg p-2.5 space-y-1.5">
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Subtotal:</span>
                   <span className="font-medium">₹{purchaseState.totals.subtotal.toFixed(2)}</span>
                 </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-muted-foreground">Tax:</span>
-                  <span className="font-medium">₹{purchaseState.totals.tax.toFixed(2)}</span>
+                
+                {/* Discount */}
+                <div className="space-y-1 text-xs">
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <Label className="text-xs font-medium mb-1 block">Discount %</Label>
+                      <Input
+                        type="number"
+                        value={purchaseState.form.discount_rate || ''}
+                        onChange={(e) => {
+                          const rate = parseFloat(e.target.value) || 0;
+                          updateTotalsWithItems(purchaseState.items, rate, undefined);
+                        }}
+                        placeholder="0"
+                        className="h-6.5 text-xs"
+                        step="0.01"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <Label className="text-xs font-medium mb-1 block">Discount ₹</Label>
+                      <Input
+                        type="number"
+                        value={purchaseState.form.discount_amount || ''}
+                        onChange={(e) => {
+                          const amount = parseFloat(e.target.value) || 0;
+                          updateTotalsWithItems(purchaseState.items, undefined, amount);
+                        }}
+                        placeholder="0"
+                        className="h-6.5 text-xs"
+                        step="0.01"
+                      />
+                    </div>
+                  </div>
                 </div>
-                <div className="border-t pt-2 flex justify-between text-base">
+                <div className="border-t pt-1.5 flex justify-between text-sm">
                   <span className="font-semibold">Grand Total:</span>
                   <span className="font-bold text-primary">₹{purchaseState.totals.grandTotal.toFixed(2)}</span>
                 </div>

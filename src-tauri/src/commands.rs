@@ -719,6 +719,8 @@ pub struct CreatePurchaseInvoice {
     pub voucher_date: String,
     pub reference: Option<String>,
     pub narration: Option<String>,
+    pub discount_rate: Option<f64>,
+    pub discount_amount: Option<f64>,
     pub items: Vec<CreatePurchaseInvoiceItem>,
 }
 
@@ -852,24 +854,31 @@ pub async fn create_purchase_invoice(
     let voucher_no = get_next_voucher_number(pool.inner(), "purchase_invoice").await?;
     
     // Calculate totals
-    let mut total_amount = 0.0;
+    let mut subtotal = 0.0;
     
     for item in &invoice.items {
         let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let amount = final_qty * item.rate;
         
-        total_amount += amount;
+        subtotal += amount;
     }
+    
+    // Apply discounts
+    let discount_amount = invoice.discount_amount.unwrap_or(0.0);
+    let total_amount = subtotal - discount_amount;
     
     // Create voucher
     let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, narration, status)
-         VALUES (?, 'purchase_invoice', ?, ?, 'supplier', ?, ?, ?, 'draft')"
+        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, total_amount, narration, status)
+         VALUES (?, 'purchase_invoice', ?, ?, 'supplier', ?, ?, ?, ?, ?, ?, 'draft')"
     )
     .bind(&voucher_no)
     .bind(&invoice.voucher_date)
     .bind(invoice.supplier_id)
     .bind(&invoice.reference)
+    .bind(subtotal)
+    .bind(invoice.discount_rate.unwrap_or(0.0))
+    .bind(discount_amount)
     .bind(total_amount)
     .bind(&invoice.narration)
     .execute(&mut *tx)
