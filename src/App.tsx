@@ -12,6 +12,7 @@ import ReceiptPage from './pages/ReceiptPage';
 import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider, useTheme } from './components/theme-provider';
 import './App.css';
+import JournalEntryPage from './pages/JournalEntryPage';
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -49,6 +50,7 @@ function AppContent() {
     { id: 'sales', label: 'Sales', icon: IconReceipt },
     { id: 'payments', label: 'Payments', icon: IconCreditCard },
     { id: 'receipts', label: 'Receipts', icon: IconReceipt },
+    { id: 'journal', label: 'Journal Entries', icon: IconBook },
   ];
 
   const renderContent = () => {
@@ -58,9 +60,10 @@ function AppContent() {
       case 'suppliers': return <SuppliersPage />;
       case 'coa': return <ChartOfAccountsPage />;
       case 'purchase': return <PurchaseInvoicePage />;
+      case 'sales': return <div className="p-6 text-muted-foreground">Sales Module Coming Soon...</div>;
       case 'payments': return <PaymentPage />;
       case 'receipts': return <ReceiptPage />;
-      case 'sales': return <div className="p-6 text-muted-foreground">Sales module coming soon...</div>;
+      case 'journal': return <JournalEntryPage />;
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }
   };

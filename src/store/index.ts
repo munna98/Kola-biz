@@ -383,14 +383,115 @@ export const {
 
 export const { toggleSidebar, setActiveSection } = appSlice.actions;
 
+// ========== JOURNAL ENTRY SLICE ==========
+export interface JournalEntryLine {
+  id?: string;
+  account_id: number;
+  account_name: string;
+  debit: number;
+  credit: number;
+  narration: string;
+}
+
+export interface JournalEntryState {
+  form: {
+    voucher_date: string;
+    reference: string;
+    narration: string;
+  };
+  lines: JournalEntryLine[];
+  loading: boolean;
+  savedEntries: any[];
+  totals: {
+    totalDebit: number;
+    totalCredit: number;
+    difference: number;
+  };
+}
+
+const journalInitialState: JournalEntryState = {
+  form: {
+    voucher_date: new Date().toISOString().split('T')[0],
+    reference: '',
+    narration: '',
+  },
+  lines: [],
+  loading: false,
+  savedEntries: [],
+  totals: {
+    totalDebit: 0,
+    totalCredit: 0,
+    difference: 0,
+  },
+};
+
+const journalEntrySlice = createSlice({
+  name: 'journalEntry',
+  initialState: journalInitialState,
+  reducers: {
+    setJournalDate: (state, action: PayloadAction<string>) => {
+      state.form.voucher_date = action.payload;
+    },
+    setJournalReference: (state, action: PayloadAction<string>) => {
+      state.form.reference = action.payload;
+    },
+    setJournalNarration: (state, action: PayloadAction<string>) => {
+      state.form.narration = action.payload;
+    },
+    addJournalLine: (state, action: PayloadAction<JournalEntryLine>) => {
+      state.lines.push({ ...action.payload, id: `temp-${Date.now()}` });
+    },
+    updateJournalLine: (state, action: PayloadAction<{ index: number; data: Partial<JournalEntryLine> }>) => {
+      state.lines[action.payload.index] = { ...state.lines[action.payload.index], ...action.payload.data };
+    },
+    removeJournalLine: (state, action: PayloadAction<number>) => {
+      state.lines.splice(action.payload, 1);
+    },
+    setJournalTotals: (state, action: PayloadAction<{ totalDebit: number; totalCredit: number; difference: number }>) => {
+      state.totals = action.payload;
+    },
+    resetJournalForm: (state) => {
+      state.form = {
+        voucher_date: new Date().toISOString().split('T')[0],
+        reference: '',
+        narration: '',
+      };
+      state.lines = [];
+      state.totals = { totalDebit: 0, totalCredit: 0, difference: 0 };
+    },
+    setSavedJournalEntries: (state, action: PayloadAction<any[]>) => {
+      state.savedEntries = action.payload;
+    },
+    setJournalLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+  },
+});
+
+export const {
+  setJournalDate,
+  setJournalReference,
+  setJournalNarration,
+  addJournalLine,
+  updateJournalLine,
+  removeJournalLine,
+  setJournalTotals,
+  resetJournalForm,
+  setSavedJournalEntries,
+  setJournalLoading,
+} = journalEntrySlice.actions;
+
 export const store = configureStore({
   reducer: {
     app: appSlice.reducer,
     purchaseInvoice: purchaseInvoiceSlice.reducer,
     payment: paymentSlice.reducer,
     receipt: receiptSlice.reducer,
+    journalEntry: journalEntrySlice.reducer,
   },
 });
+
+
 
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;

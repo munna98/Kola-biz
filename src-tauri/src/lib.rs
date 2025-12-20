@@ -61,6 +61,11 @@ pub fn run() {
             create_receipt,
             get_receipts,
             delete_receipt,
+            create_journal_entry,
+            get_journal_entries,
+            get_journal_entry,
+            get_journal_entry_lines,
+            delete_journal_entry,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

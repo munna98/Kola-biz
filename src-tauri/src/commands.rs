@@ -1508,3 +1508,222 @@ pub async fn delete_receipt(
     
     Ok(())
 }
+
+// ============= JOURNAL ENTRY COMMANDS =============
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct JournalEntry {
+    pub id: i64,
+    pub voucher_no: String,
+    pub voucher_date: String,
+    pub reference: Option<String>,
+    pub narration: Option<String>,
+    pub total_debit: f64,
+    pub total_credit: f64,
+    pub status: String,
+    pub created_at: String,
+}
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct JournalEntryLine {
+    pub id: i64,
+    pub voucher_id: i64,
+    pub account_id: i64,
+    pub account_name: String,
+    pub debit: f64,
+    pub credit: f64,
+    pub narration: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateJournalEntryLine {
+    pub account_id: i64,
+    pub debit: f64,
+    pub credit: f64,
+    pub narration: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct CreateJournalEntry {
+    pub voucher_date: String,
+    pub reference: Option<String>,
+    pub narration: Option<String>,
+    pub lines: Vec<CreateJournalEntryLine>,
+}
+
+#[tauri::command]
+pub async fn create_journal_entry(
+    pool: State<'_, SqlitePool>,
+    entry: CreateJournalEntry,
+) -> Result<i64, String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    
+    // Generate voucher number
+    let voucher_no = get_next_voucher_number(&pool, "journal").await?;
+    
+    // Calculate totals
+    let total_debit: f64 = entry.lines.iter().map(|l| l.debit).sum();
+    let total_credit: f64 = entry.lines.iter().map(|l| l.credit).sum();
+    
+    // Validate balanced entry
+    let difference = (total_debit - total_credit).abs();
+    if difference > 0.01 {
+        return Err("Journal entry must be balanced (debits must equal credits)".to_string());
+    }
+    
+    // Validate all lines
+    for line in &entry.lines {
+        if line.debit == 0.0 && line.credit == 0.0 {
+            return Err("Each line must have either debit or credit amount".to_string());
+        }
+        if line.debit > 0.0 && line.credit > 0.0 {
+            return Err("Each line cannot have both debit and credit amounts".to_string());
+        }
+    }
+    
+    // Create voucher
+    let result = sqlx::query(
+        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, reference, total_amount, narration, status)
+         VALUES (?, 'journal', ?, ?, ?, ?, 'draft')"
+    )
+    .bind(&voucher_no)
+    .bind(&entry.voucher_date)
+    .bind(&entry.reference)
+    .bind(total_debit) // or total_credit, they should be equal
+    .bind(&entry.narration)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    let voucher_id = result.last_insert_rowid();
+    
+    // Insert journal entries
+    for line in &entry.lines {
+        sqlx::query(
+            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, is_manual, narration)
+             VALUES (?, ?, ?, ?, 1, ?)"
+        )
+        .bind(voucher_id)
+        .bind(line.account_id)
+        .bind(line.debit)
+        .bind(line.credit)
+        .bind(&line.narration)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    
+    tx.commit().await.map_err(|e| e.to_string())?;
+    
+    Ok(voucher_id)
+}
+
+#[tauri::command]
+pub async fn get_journal_entries(pool: State<'_, SqlitePool>) -> Result<Vec<JournalEntry>, String> {
+    let entries = sqlx::query_as::<_, JournalEntry>(
+        "SELECT 
+            v.id,
+            v.voucher_no,
+            v.voucher_date,
+            v.reference,
+            v.narration,
+            COALESCE(SUM(je.debit), 0) as total_debit,
+            COALESCE(SUM(je.credit), 0) as total_credit,
+            v.status,
+            v.created_at
+        FROM vouchers v
+        LEFT JOIN journal_entries je ON v.id = je.voucher_id
+        WHERE v.voucher_type = 'journal'
+        GROUP BY v.id
+        ORDER BY v.voucher_date DESC, v.id DESC"
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    Ok(entries)
+}
+
+#[tauri::command]
+pub async fn get_journal_entry(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+) -> Result<JournalEntry, String> {
+    let entry = sqlx::query_as::<_, JournalEntry>(
+        "SELECT 
+            v.id,
+            v.voucher_no,
+            v.voucher_date,
+            v.reference,
+            v.narration,
+            COALESCE(SUM(je.debit), 0) as total_debit,
+            COALESCE(SUM(je.credit), 0) as total_credit,
+            v.status,
+            v.created_at
+        FROM vouchers v
+        LEFT JOIN journal_entries je ON v.id = je.voucher_id
+        WHERE v.id = ? AND v.voucher_type = 'journal'
+        GROUP BY v.id"
+    )
+    .bind(id)
+    .fetch_one(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    Ok(entry)
+}
+
+#[tauri::command]
+pub async fn get_journal_entry_lines(
+    pool: State<'_, SqlitePool>,
+    voucher_id: i64,
+) -> Result<Vec<JournalEntryLine>, String> {
+    let lines = sqlx::query_as::<_, JournalEntryLine>(
+        "SELECT 
+            je.id,
+            je.voucher_id,
+            je.account_id,
+            coa.account_name,
+            je.debit,
+            je.credit,
+            je.narration
+        FROM journal_entries je
+        LEFT JOIN chart_of_accounts coa ON je.account_id = coa.id
+        WHERE je.voucher_id = ? AND je.is_manual = 1
+        ORDER BY je.id ASC"
+    )
+    .bind(voucher_id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    Ok(lines)
+}
+
+#[tauri::command]
+pub async fn delete_journal_entry(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+) -> Result<(), String> {
+    // Check if this is a manual journal entry
+    let voucher_type: String = sqlx::query_scalar(
+        "SELECT voucher_type FROM vouchers WHERE id = ?"
+    )
+    .bind(id)
+    .fetch_one(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    if voucher_type != "journal" {
+        return Err("Can only delete manual journal entries".to_string());
+    }
+    
+    // Delete voucher (cascade will delete journal entries)
+    sqlx::query("DELETE FROM vouchers WHERE id = ?")
+        .bind(id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    Ok(())
+}
