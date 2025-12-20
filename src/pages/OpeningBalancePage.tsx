@@ -375,7 +375,7 @@ export default function OpeningBalancePage() {
             <div className="border-b bg-card/50 px-5 py-3 backdrop-blur-sm">
                 <div className="flex items-center justify-between">
                     <div>
-                        <h1 className="text-base font-semibold">Opening Balance Entry</h1>
+                        <h1 className="text-base font-semibold">Opening Balance</h1>
                         <p className="text-xs text-muted-foreground">Set up initial account balances for the financial year</p>
                     </div>
                     <Button
