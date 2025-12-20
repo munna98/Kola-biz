@@ -231,7 +231,8 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
         ('purchase_quotation', 'PQ'),
         ('payment', 'PAY'),
         ('receipt', 'RCP'),
-        ('journal', 'JV')"
+        ('journal', 'JV'),
+        ('opening_balance', 'OB')"
     ).execute(&pool).await?;
     
     // ==================== SEED DATA ====================
@@ -280,6 +281,7 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
         ('3001', 'Capital', 'Equity', 'Equity', 'Owner capital'),
         ('3002', 'Retained Earnings', 'Equity', 'Equity', 'Accumulated profits'),
         ('3003', 'Drawings', 'Equity', 'Equity', 'Owner withdrawals'),
+        ('3004', 'Opening Balance Adjustment', 'Equity', 'Equity', 'System account for opening balance auto-balancing'),
         
         -- INCOME / REVENUE
         ('4001', 'Sales', 'Income', 'Revenue', 'Product sales revenue'),

@@ -481,6 +481,104 @@ export const {
   setJournalLoading,
 } = journalEntrySlice.actions;
 
+// ========== OPENING BALANCE SLICE ==========
+export interface OpeningBalanceLine {
+  id?: string;
+  account_id: number;
+  account_name: string;
+  debit: number;
+  credit: number;
+  narration: string;
+}
+
+export interface OpeningBalanceState {
+  form: {
+    voucher_date: string;
+    reference: string;
+    narration: string;
+  };
+  lines: OpeningBalanceLine[];
+  loading: boolean;
+  savedEntries: any[];
+  totals: {
+    totalDebit: number;
+    totalCredit: number;
+    difference: number;
+  };
+}
+
+const openingBalanceInitialState: OpeningBalanceState = {
+  form: {
+    voucher_date: new Date().toISOString().split('T')[0],
+    reference: '',
+    narration: '',
+  },
+  lines: [],
+  loading: false,
+  savedEntries: [],
+  totals: {
+    totalDebit: 0,
+    totalCredit: 0,
+    difference: 0,
+  },
+};
+
+const openingBalanceSlice = createSlice({
+  name: 'openingBalance',
+  initialState: openingBalanceInitialState,
+  reducers: {
+    setOpeningBalanceDate: (state, action: PayloadAction<string>) => {
+      state.form.voucher_date = action.payload;
+    },
+    setOpeningBalanceReference: (state, action: PayloadAction<string>) => {
+      state.form.reference = action.payload;
+    },
+    setOpeningBalanceNarration: (state, action: PayloadAction<string>) => {
+      state.form.narration = action.payload;
+    },
+    addOpeningBalanceLine: (state, action: PayloadAction<OpeningBalanceLine>) => {
+      state.lines.push({ ...action.payload, id: `temp-${Date.now()}` });
+    },
+    updateOpeningBalanceLine: (state, action: PayloadAction<{ index: number; data: Partial<OpeningBalanceLine> }>) => {
+      state.lines[action.payload.index] = { ...state.lines[action.payload.index], ...action.payload.data };
+    },
+    removeOpeningBalanceLine: (state, action: PayloadAction<number>) => {
+      state.lines.splice(action.payload, 1);
+    },
+    setOpeningBalanceTotals: (state, action: PayloadAction<{ totalDebit: number; totalCredit: number; difference: number }>) => {
+      state.totals = action.payload;
+    },
+    resetOpeningBalanceForm: (state) => {
+      state.form = {
+        voucher_date: new Date().toISOString().split('T')[0],
+        reference: '',
+        narration: '',
+      };
+      state.lines = [];
+      state.totals = { totalDebit: 0, totalCredit: 0, difference: 0 };
+    },
+    setSavedOpeningBalances: (state, action: PayloadAction<any[]>) => {
+      state.savedEntries = action.payload;
+    },
+    setOpeningBalanceLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+  },
+});
+
+export const {
+  setOpeningBalanceDate,
+  setOpeningBalanceReference,
+  setOpeningBalanceNarration,
+  addOpeningBalanceLine,
+  updateOpeningBalanceLine,
+  removeOpeningBalanceLine,
+  setOpeningBalanceTotals,
+  resetOpeningBalanceForm,
+  setSavedOpeningBalances,
+  setOpeningBalanceLoading,
+} = openingBalanceSlice.actions;
+
 export const store = configureStore({
   reducer: {
     app: appSlice.reducer,
@@ -488,6 +586,7 @@ export const store = configureStore({
     payment: paymentSlice.reducer,
     receipt: receiptSlice.reducer,
     journalEntry: journalEntrySlice.reducer,
+    openingBalance: openingBalanceSlice.reducer,
   },
 });
 

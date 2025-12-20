@@ -66,6 +66,10 @@ pub fn run() {
             get_journal_entry,
             get_journal_entry_lines,
             delete_journal_entry,
+            // Opening Balance
+            create_opening_balance,
+            get_opening_balances,
+            delete_opening_balance,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

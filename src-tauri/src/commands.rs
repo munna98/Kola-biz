@@ -1727,3 +1727,91 @@ pub async fn delete_journal_entry(
     
     Ok(())
 }
+
+// ============= OPENING BALANCE COMMANDS =============
+
+#[derive(Serialize, Deserialize)]
+pub struct OpeningBalanceLine {
+    pub account_id: i64,
+    pub account_name: String,
+    pub debit: f64,
+    pub credit: f64,
+    pub narration: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateOpeningBalance {
+    pub form: serde_json::Value,
+    pub lines: Vec<OpeningBalanceLine>,
+}
+
+#[tauri::command]
+pub async fn create_opening_balance(
+    pool: State<'_, SqlitePool>,
+    entry: CreateOpeningBalance,
+) -> Result<i64, String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    
+    // Get next voucher number
+    let voucher_no = get_next_voucher_number(&pool, "opening_balance").await?;
+    
+    // Create voucher master record
+    let result = sqlx::query(
+        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, reference, narration, status)
+         VALUES (?, ?, ?, ?, ?, 'posted')"
+    )
+    .bind(&voucher_no)
+    .bind("opening_balance")
+    .bind(entry.form.get("voucher_date").and_then(|v| v.as_str()).unwrap_or(""))
+    .bind(entry.form.get("reference").and_then(|v| v.as_str()).unwrap_or(""))
+    .bind(entry.form.get("narration").and_then(|v| v.as_str()).unwrap_or(""))
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    
+    let voucher_id = result.last_insert_rowid();
+    
+    // Insert journal entries for each line
+    for line in entry.lines {
+        sqlx::query(
+            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
+             VALUES (?, ?, ?, ?, ?, 1)"
+        )
+        .bind(voucher_id)
+        .bind(line.account_id)
+        .bind(line.debit)
+        .bind(line.credit)
+        .bind(&line.narration)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(voucher_id)
+}
+
+#[tauri::command]
+pub async fn get_opening_balances(pool: State<'_, SqlitePool>) -> Result<Vec<serde_json::Value>, String> {
+    sqlx::query_as::<_, (i64, String)>(
+        "SELECT v.id, v.voucher_no FROM vouchers v WHERE v.voucher_type = 'opening_balance' ORDER BY v.voucher_date DESC"
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map(|rows| rows.into_iter().map(|(id, no)| serde_json::json!({"id": id, "voucher_no": no})).collect())
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_opening_balance(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+) -> Result<(), String> {
+    sqlx::query("DELETE FROM vouchers WHERE id = ? AND voucher_type = 'opening_balance'")
+        .bind(id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    Ok(())
+}

@@ -13,6 +13,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { ThemeProvider, useTheme } from './components/theme-provider';
 import './App.css';
 import JournalEntryPage from './pages/JournalEntryPage';
+import OpeningBalancePage from './pages/OpeningBalancePage';
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -51,6 +52,7 @@ function AppContent() {
     { id: 'payments', label: 'Payments', icon: IconCreditCard },
     { id: 'receipts', label: 'Receipts', icon: IconReceipt },
     { id: 'journal', label: 'Journal Entries', icon: IconBook },
+    { id: 'opening', label: 'Opening Balance', icon: IconBook },
   ];
 
   const renderContent = () => {
@@ -64,6 +66,7 @@ function AppContent() {
       case 'payments': return <PaymentPage />;
       case 'receipts': return <ReceiptPage />;
       case 'journal': return <JournalEntryPage />;
+      case 'opening': return <OpeningBalancePage />;
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }
   };
