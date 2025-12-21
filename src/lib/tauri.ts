@@ -104,6 +104,42 @@ export interface CreateAccountGroup {
   account_type: string;
 }
 
+export interface SalesInvoiceItem {
+  product_id: number;
+  product_name?: string;
+  description: string;
+  initial_quantity: number;
+  count: number;
+  deduction_per_unit: number;
+  rate: number;
+  tax_rate: number;
+}
+
+export interface CreateSalesInvoice {
+  customer_id: number;
+  voucher_date: string;
+  reference?: string;
+  narration?: string;
+  discount_rate?: number;
+  discount_amount?: number;
+  items: SalesInvoiceItem[];
+}
+
+export interface SalesInvoice {
+  id: number;
+  customer_id: number;
+  voucher_number: string;
+  voucher_date: string;
+  reference?: string;
+  narration?: string;
+  discount_rate?: number;
+  discount_amount?: number;
+  subtotal: number;
+  tax: number;
+  grand_total: number;
+  created_at: string;
+}
+
 export const api = {
   units: {
     list: () => invoke<Unit[]>('get_units'),

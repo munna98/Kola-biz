@@ -14,6 +14,7 @@ import { ThemeProvider, useTheme } from './components/theme-provider';
 import './App.css';
 import JournalEntryPage from './pages/JournalEntryPage';
 import OpeningBalancePage from './pages/OpeningBalancePage';
+import SalesInvoicePage from './pages/SalesInvoicePage';
 
 function ThemeToggle() {
   const { theme, setTheme } = useTheme();
@@ -62,7 +63,7 @@ function AppContent() {
       case 'suppliers': return <SuppliersPage />;
       case 'coa': return <ChartOfAccountsPage />;
       case 'purchase': return <PurchaseInvoicePage />;
-      case 'sales': return <div className="p-6 text-muted-foreground">Sales Module Coming Soon...</div>;
+      case 'sales': return <SalesInvoicePage />;
       case 'payments': return <PaymentPage />;
       case 'receipts': return <ReceiptPage />;
       case 'journal': return <JournalEntryPage />;

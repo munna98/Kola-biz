@@ -53,6 +53,12 @@ pub fn run() {
             get_purchase_invoice_items,
             create_purchase_invoice,
             delete_purchase_invoice,
+            // Sales Invoices 
+            get_sales_invoices,
+            get_sales_invoice,
+            get_sales_invoice_items,
+            create_sales_invoice,
+            delete_sales_invoice,
             // Payments
             create_payment,
             get_payments,
@@ -61,6 +67,7 @@ pub fn run() {
             create_receipt,
             get_receipts,
             delete_receipt,
+            // Journal Entries
             create_journal_entry,
             get_journal_entries,
             get_journal_entry,

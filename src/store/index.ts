@@ -579,10 +579,140 @@ export const {
   setOpeningBalanceLoading,
 } = openingBalanceSlice.actions;
 
+// ========== SALES INVOICE SLICE ==========
+export interface SalesInvoiceItem {
+  id?: string;
+  product_id: number;
+  product_name?: string;
+  description: string;
+  initial_quantity: number;
+  count: number;
+  deduction_per_unit: number;
+  rate: number;
+  tax_rate: number;
+}
+
+export interface SalesInvoiceState {
+  form: {
+    customer_id: number;
+    customer_name: string;
+    voucher_date: string;
+    reference: string;
+    narration: string;
+    discount_rate: number;
+    discount_amount: number;
+  };
+  items: SalesInvoiceItem[];
+  loading: boolean;
+  savedInvoices: any[];
+  totals: {
+    subtotal: number;
+    discount: number;
+    tax: number;
+    grandTotal: number;
+  };
+}
+
+const salesInitialState: SalesInvoiceState = {
+  form: {
+    customer_id: 0,
+    customer_name: '',
+    voucher_date: new Date().toISOString().split('T')[0],
+    reference: '',
+    narration: '',
+    discount_rate: 0,
+    discount_amount: 0,
+  },
+  items: [],
+  loading: false,
+  savedInvoices: [],
+  totals: {
+    subtotal: 0,
+    discount: 0,
+    tax: 0,
+    grandTotal: 0,
+  },
+};
+
+const salesInvoiceSlice = createSlice({
+  name: 'salesInvoice',
+  initialState: salesInitialState,
+  reducers: {
+    setSalesCustomer: (state, action: PayloadAction<{ id: number; name: string }>) => {
+      state.form.customer_id = action.payload.id;
+      state.form.customer_name = action.payload.name;
+    },
+    setSalesVoucherDate: (state, action: PayloadAction<string>) => {
+      state.form.voucher_date = action.payload;
+    },
+    setSalesReference: (state, action: PayloadAction<string>) => {
+      state.form.reference = action.payload;
+    },
+    setSalesNarration: (state, action: PayloadAction<string>) => {
+      state.form.narration = action.payload;
+    },
+    setSalesDiscountRate: (state, action: PayloadAction<number>) => {
+      state.form.discount_rate = action.payload;
+    },
+    setSalesDiscountAmount: (state, action: PayloadAction<number>) => {
+      state.form.discount_amount = action.payload;
+    },
+    addSalesItem: (state, action: PayloadAction<SalesInvoiceItem>) => {
+      state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
+    },
+    updateSalesItem: (state, action: PayloadAction<{ index: number; data: Partial<SalesInvoiceItem> }>) => {
+      state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
+    },
+    removeSalesItem: (state, action: PayloadAction<number>) => {
+      state.items.splice(action.payload, 1);
+    },
+    setSalesTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; grandTotal: number }>) => {
+      state.totals = action.payload;
+    },
+    resetSalesForm: (state) => {
+      state.form = {
+        customer_id: 0,
+        customer_name: '',
+        voucher_date: new Date().toISOString().split('T')[0],
+        reference: '',
+        narration: '',
+        discount_rate: 0,
+        discount_amount: 0,
+      };
+      state.items = [];
+      state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+    },
+    setSavedSalesInvoices: (state, action: PayloadAction<any[]>) => {
+      state.savedInvoices = action.payload;
+    },
+    setSalesLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+  },
+});
+
+export const {
+  setSalesCustomer,
+  setSalesVoucherDate,
+  setSalesReference,
+  setSalesNarration,
+  setSalesDiscountRate,
+  setSalesDiscountAmount,
+  addSalesItem,
+  updateSalesItem,
+  removeSalesItem,
+  setSalesTotals,
+  resetSalesForm,
+  setSavedSalesInvoices,
+  setSalesLoading,
+} = salesInvoiceSlice.actions;
+
+
 export const store = configureStore({
   reducer: {
     app: appSlice.reducer,
     purchaseInvoice: purchaseInvoiceSlice.reducer,
+    salesInvoice: salesInvoiceSlice.reducer,
     payment: paymentSlice.reducer,
     receipt: receiptSlice.reducer,
     journalEntry: journalEntrySlice.reducer,
