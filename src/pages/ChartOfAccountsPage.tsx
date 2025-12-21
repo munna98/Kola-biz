@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { IconPlus, IconEdit, IconTrash, IconSettings } from '@tabler/icons-react';
 import { api, ChartOfAccount, CreateChartOfAccount } from '@/lib/tauri';
 import { toast } from 'sonner';
@@ -24,6 +25,7 @@ export default function ChartOfAccountsPage() {
     account_group: 'Current Assets',
     description: '',
     opening_balance: 0,
+    opening_balance_type: 'Dr',
   });
   const [editing, setEditing] = useState<number | null>(null);
 
@@ -79,6 +81,7 @@ export default function ChartOfAccountsPage() {
       account_group: 'Current Assets',
       description: '',
       opening_balance: 0,
+      opening_balance_type: 'Dr',
     });
   };
 
@@ -90,6 +93,7 @@ export default function ChartOfAccountsPage() {
       account_group: account.account_group,
       description: account.description,
       opening_balance: account.opening_balance,
+      opening_balance_type: account.opening_balance_type || 'Dr',
     });
     setEditing(account.id);
     setOpen(true);
@@ -176,7 +180,7 @@ export default function ChartOfAccountsPage() {
                     </td>
                     <td className="p-3 text-sm">{account.account_group}</td>
                     <td className="p-3 text-sm text-muted-foreground">{account.description || '-'}</td>
-                    <td className="p-3 text-right">₹{account.opening_balance.toFixed(2)}</td>
+                    <td className="p-3 text-right">₹{account.opening_balance.toFixed(2)} <span className="text-xs font-medium text-primary">{account.opening_balance_type}</span></td>
                     <td className="p-3">{account.is_active ? '✓' : '✗'}</td>
                     <td className="p-3 flex gap-2">
                       <Button size="sm" variant="ghost" onClick={() => handleEdit(account)}>
@@ -267,14 +271,34 @@ export default function ChartOfAccountsPage() {
               />
             </div>
 
-            <div>
-              <Label>Opening Balance</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={form.opening_balance || 0}
-                onChange={e => setForm({ ...form, opening_balance: parseFloat(e.target.value) })}
-              />
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Opening Balance</Label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  value={form.opening_balance || 0}
+                  onChange={e => setForm({ ...form, opening_balance: parseFloat(e.target.value) })}
+                />
+              </div>
+
+              <div>
+                <Label>Balance Type</Label>
+                <RadioGroup 
+                  value={form.opening_balance_type || 'Dr'}
+                  onValueChange={(value) => setForm({ ...form, opening_balance_type: value as 'Dr' | 'Cr' })}
+                  className="flex gap-4 mt-2"
+                >
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="Dr" id="debit" />
+                    <Label htmlFor="debit" className="font-normal cursor-pointer">Dr</Label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <RadioGroupItem value="Cr" id="credit" />
+                    <Label htmlFor="credit" className="font-normal cursor-pointer">Cr</Label>
+                  </div>
+                </RadioGroup>
+              </div>
             </div>
 
             <Button type="submit" className="w-full">

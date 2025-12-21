@@ -439,6 +439,7 @@ pub struct ChartOfAccount {
     pub account_group: String,
     pub description: Option<String>,
     pub opening_balance: f64,
+    pub opening_balance_type: String,
     pub is_active: i64,
     pub created_at: String,
     pub updated_at: String,
@@ -452,6 +453,7 @@ pub struct CreateChartOfAccount {
     pub account_group: String,
     pub description: Option<String>,
     pub opening_balance: Option<f64>,
+    pub opening_balance_type: Option<String>,
 }
 
 #[tauri::command]
@@ -470,10 +472,11 @@ pub async fn create_chart_of_account(
     account: CreateChartOfAccount,
 ) -> Result<ChartOfAccount, String> {
     let opening_balance = account.opening_balance.unwrap_or(0.0);
+    let opening_balance_type = account.opening_balance_type.unwrap_or_else(|| "Dr".to_string());
     
     let result = sqlx::query(
-        "INSERT INTO chart_of_accounts (account_code, account_name, account_type, account_group, description, opening_balance) 
-         VALUES (?, ?, ?, ?, ?, ?)"
+        "INSERT INTO chart_of_accounts (account_code, account_name, account_type, account_group, description, opening_balance, opening_balance_type) 
+         VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&account.account_code)
     .bind(&account.account_name)
@@ -481,11 +484,107 @@ pub async fn create_chart_of_account(
     .bind(&account.account_group)
     .bind(&account.description)
     .bind(opening_balance)
+    .bind(&opening_balance_type)
     .execute(pool.inner())
     .await
     .map_err(|e| e.to_string())?;
     
     let id = result.last_insert_rowid();
+    
+    // If opening balance is provided, create voucher and journal entries
+    if opening_balance > 0.0 {
+        let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+        
+        // Get next voucher number
+        let voucher_no = get_next_voucher_number(&pool, "opening_balance").await?;
+        
+        // Create voucher entry
+        let voucher_result = sqlx::query(
+            "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, reference, narration, status)
+             VALUES (?, ?, ?, ?, ?, 'posted')"
+        )
+        .bind(&voucher_no)
+        .bind("opening_balance")
+        .bind("2025-12-21")
+        .bind(format!("Opening balance for {}", account.account_name))
+        .bind(format!("Initial balance for account: {}", account.account_name))
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        
+        let voucher_id = voucher_result.last_insert_rowid();
+        
+        // Find Opening Balance Adjustment account (code 3004)
+        let ob_account = sqlx::query_as::<_, (i64,)>(
+            "SELECT id FROM chart_of_accounts WHERE account_code = '3004' LIMIT 1"
+        )
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| "Opening Balance Adjustment account not found".to_string())?;
+        
+        let ob_account_id = ob_account.0;
+        
+        // Create journal entry for the account
+        if opening_balance_type == "Dr" {
+            sqlx::query(
+                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
+                 VALUES (?, ?, ?, ?, ?, 0)"
+            )
+            .bind(voucher_id)
+            .bind(id)
+            .bind(opening_balance)
+            .bind(0.0)
+            .bind(format!("Opening balance: {}", account.account_name))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+            
+            // Create balancing entry in Opening Balance Adjustment account
+            sqlx::query(
+                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
+                 VALUES (?, ?, ?, ?, ?, 0)"
+            )
+            .bind(voucher_id)
+            .bind(ob_account_id)
+            .bind(0.0)
+            .bind(opening_balance)
+            .bind("Auto-generated balancing entry")
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        } else {
+            // Credit balance
+            sqlx::query(
+                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
+                 VALUES (?, ?, ?, ?, ?, 0)"
+            )
+            .bind(voucher_id)
+            .bind(id)
+            .bind(0.0)
+            .bind(opening_balance)
+            .bind(format!("Opening balance: {}", account.account_name))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+            
+            // Create balancing entry in Opening Balance Adjustment account
+            sqlx::query(
+                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
+                 VALUES (?, ?, ?, ?, ?, 0)"
+            )
+            .bind(voucher_id)
+            .bind(ob_account_id)
+            .bind(opening_balance)
+            .bind(0.0)
+            .bind("Auto-generated balancing entry")
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+        
+        tx.commit().await.map_err(|e| e.to_string())?;
+    }
     
     sqlx::query_as::<_, ChartOfAccount>(
         "SELECT * FROM chart_of_accounts WHERE id = ?"
@@ -502,9 +601,11 @@ pub async fn update_chart_of_account(
     id: i64,
     account: CreateChartOfAccount,
 ) -> Result<(), String> {
+    let opening_balance_type = account.opening_balance_type.unwrap_or_else(|| "Dr".to_string());
+    
     sqlx::query(
         "UPDATE chart_of_accounts 
-         SET account_code = ?, account_name = ?, account_type = ?, account_group = ?, description = ?, opening_balance = ?, updated_at = CURRENT_TIMESTAMP 
+         SET account_code = ?, account_name = ?, account_type = ?, account_group = ?, description = ?, opening_balance = ?, opening_balance_type = ?, updated_at = CURRENT_TIMESTAMP 
          WHERE id = ?"
     )
     .bind(&account.account_code)
@@ -513,6 +614,7 @@ pub async fn update_chart_of_account(
     .bind(&account.account_group)
     .bind(&account.description)
     .bind(account.opening_balance.unwrap_or(0.0))
+    .bind(&opening_balance_type)
     .bind(id)
     .execute(pool.inner())
     .await
@@ -1771,17 +1873,44 @@ pub async fn create_opening_balance(
     
     let voucher_id = result.last_insert_rowid();
     
-    // Insert journal entries for each line
+    // Find Opening Balance Adjustment account (code 3004)
+    let ob_account = sqlx::query_as::<_, (i64,)>(
+        "SELECT id FROM chart_of_accounts WHERE account_code = '3004' LIMIT 1"
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Opening Balance Adjustment account not found".to_string())?;
+    
+    let ob_account_id = ob_account.0;
+    
+    // Insert journal entries for each line - create dual entries
     for line in entry.lines {
+        // First entry: user's account with their debit/credit (auto-generated, not manual)
         sqlx::query(
             "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
-             VALUES (?, ?, ?, ?, ?, 1)"
+             VALUES (?, ?, ?, ?, ?, 0)"
         )
         .bind(voucher_id)
         .bind(line.account_id)
         .bind(line.debit)
         .bind(line.credit)
         .bind(&line.narration)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+        
+        // Second entry: balancing entry in Opening Balance Adjustment account (auto-generated)
+        // If user has debit, this is credit (and vice versa)
+        sqlx::query(
+            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
+             VALUES (?, ?, ?, ?, ?, 0)"
+        )
+        .bind(voucher_id)
+        .bind(ob_account_id)
+        .bind(line.credit)  // Reverse: credit becomes debit
+        .bind(line.debit)   // Reverse: debit becomes credit
+        .bind("Auto-generated balancing entry")
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;

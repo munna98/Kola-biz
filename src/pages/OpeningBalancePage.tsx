@@ -41,7 +41,6 @@ export default function OpeningBalancePage() {
     const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
-    const [obAdjustmentAccountId, setObAdjustmentAccountId] = useState<number | null>(null);
 
     const formRef = useRef<HTMLFormElement>(null);
     const dateRef = useRef<HTMLInputElement>(null);
@@ -52,12 +51,6 @@ export default function OpeningBalancePage() {
             try {
                 const accountsData = await invoke<LedgerAccount[]>('get_chart_of_accounts').catch(() => []);
                 setAccounts(accountsData);
-                
-                // Find Opening Balance Adjustment account
-                const obAccount = accountsData.find(a => a.account_code === '3004');
-                if (obAccount) {
-                    setObAdjustmentAccountId(obAccount.id);
-                }
             } catch (error) {
                 toast.error('Failed to load accounts');
             } finally {
@@ -119,40 +112,16 @@ export default function OpeningBalancePage() {
             updatedLines[index] = { ...updatedLines[index], [field]: value };
         }
 
-        // Remove existing auto-balance line before recalculating
-        const linesWithoutBalance = updatedLines.filter(
-            line => line.account_id !== obAdjustmentAccountId || line.narration !== 'Auto-generated balancing entry'
-        );
+        // Calculate totals from actual entries only (no auto-balance)
+        const totals = calculateTotals(updatedLines);
 
-        const totals = calculateTotals(linesWithoutBalance);
-
-        // Add auto-balance line if needed
-        if (Math.abs(totals.difference) > 0.01 && obAdjustmentAccountId) {
-            const balancingLine: OpeningBalanceLine = {
-                account_id: obAdjustmentAccountId,
-                account_name: 'Opening Balance Adjustment',
-                debit: totals.difference > 0 ? 0 : Math.abs(totals.difference),
-                credit: totals.difference > 0 ? totals.difference : 0,
-                narration: 'Auto-generated balancing entry',
-            };
-            linesWithoutBalance.push(balancingLine);
-        }
-
-        // Dispatch all lines including auto-balance line
-        dispatch(updateOpeningBalanceLine({ index, data: linesWithoutBalance[index] }));
-        const finalTotals = calculateTotals(linesWithoutBalance);
+        // Dispatch the update
+        dispatch(updateOpeningBalanceLine({ index, data: updatedLines[index] }));
         dispatch(setOpeningBalanceTotals({
-            totalDebit: finalTotals.totalDebit,
-            totalCredit: finalTotals.totalCredit,
-            difference: 0,
+            totalDebit: totals.totalDebit,
+            totalCredit: totals.totalCredit,
+            difference: totals.difference,
         }));
-
-        // Sync entire lines array back to Redux state
-        linesWithoutBalance.forEach((line, idx) => {
-            if (idx !== index) {
-                dispatch(updateOpeningBalanceLine({ index: idx, data: line }));
-            }
-        });
     };
 
     const handleAddLine = () => {
@@ -183,23 +152,14 @@ export default function OpeningBalancePage() {
             return;
         }
 
-        // Validate balanced entry
-        if (Math.abs(openingBalanceState.totals.difference) > 0.01) {
-            toast.error('Opening balance must be balanced (Debits = Credits)');
-            return;
-        }
-
-        // Validate all lines (except auto-balance) have accounts
-        const nonBalanceLines = openingBalanceState.lines.filter(
-            line => line.account_id !== obAdjustmentAccountId
-        );
-        if (nonBalanceLines.some(line => !line.account_id)) {
+        // Validate all lines have accounts
+        if (openingBalanceState.lines.some(line => !line.account_id)) {
             toast.error('All lines must have an account selected');
             return;
         }
 
         // Validate all lines have either debit or credit
-        if (nonBalanceLines.some(line => line.debit === 0 && line.credit === 0)) {
+        if (openingBalanceState.lines.some(line => line.debit === 0 && line.credit === 0)) {
             toast.error('All lines must have either debit or credit amount');
             return;
         }
@@ -284,19 +244,21 @@ export default function OpeningBalancePage() {
                     nextInput.select();
                 }
             } else {
+                // Last field in row - move to next row or add new row
                 e.preventDefault();
                 const nextRow = currentRow.nextElementSibling;
                 if (nextRow) {
                     const firstInput = nextRow.querySelector('button') as HTMLElement;
                     firstInput?.focus();
-                    firstInput?.click();
+                    firstInput?.click(); // Auto-open combobox
                 } else {
+                    // Last row - add new row
                     handleAddLine();
                     setTimeout(() => {
                         const newRow = currentRow.parentElement?.lastElementChild;
                         const firstInput = newRow?.querySelector('button') as HTMLElement;
                         firstInput?.focus();
-                        firstInput?.click();
+                        firstInput?.click(); // Auto-open combobox
                     }, 50);
                 }
             }
@@ -366,8 +328,6 @@ export default function OpeningBalancePage() {
             </div>
         );
     }
-
-    const isBalanced = openingBalanceState.totals.difference < 0.01;
 
     return (
         <div className="h-full flex flex-col bg-background">
@@ -479,12 +439,6 @@ export default function OpeningBalancePage() {
 
                             {/* Balance Status */}
                             <div className="col-span-3 flex items-end">
-                                {!isBalanced && openingBalanceState.lines.length > 0 && (
-                                    <div className="flex items-center gap-2 text-xs text-destructive">
-                                        <IconAlertTriangle size={16} />
-                                        <span>Unbalanced: Difference of ₹{openingBalanceState.totals.difference.toFixed(2)}</span>
-                                    </div>
-                                )}
                             </div>
                         </div>
                     </div>
@@ -504,101 +458,76 @@ export default function OpeningBalancePage() {
 
                         {/* Lines - Scrollable */}
                         <div className="divide-y overflow-y-auto flex-1">
-                            {openingBalanceState.lines.map((line, index) => {
-                                const isAutoBalanceLine = line.account_id === obAdjustmentAccountId;
-                                return (
+                            {openingBalanceState.lines.map((line, index) => (
                                     <div 
                                         key={line.id || index}
                                         data-row-index={index}
-                                        className={`grid grid-cols-12 gap-2 px-3 py-2 items-center ${isAutoBalanceLine ? 'bg-muted/20' : 'hover:bg-muted/30'} focus-within:bg-muted/50`}
+                                        className={`grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50`}
                                         onKeyDown={(e) => handleRowKeyDown(e, index)}
                                     >
                                         {/* Account */}
                                         <div className="col-span-4">
-                                            {!isAutoBalanceLine ? (
-                                                <Combobox
-                                                    value={line.account_id}
-                                                    options={accounts.map(a => ({ 
-                                                        value: a.id, 
-                                                        label: `${a.account_code} - ${a.account_name}` 
-                                                    }))}
-                                                    onChange={(val) => handleUpdateLine(index, 'account_id', val)}
-                                                    placeholder="Select Account"
-                                                    searchPlaceholder="Search accounts..."
-                                                />
-                                            ) : (
-                                                <div className="text-xs text-muted-foreground">{line.account_name}</div>
-                                            )}
+                                            <Combobox
+                                                value={line.account_id}
+                                                options={accounts.map(a => ({ 
+                                                    value: a.id, 
+                                                    label: `${a.account_code} - ${a.account_name}` 
+                                                }))}
+                                                onChange={(val) => handleUpdateLine(index, 'account_id', val)}
+                                                placeholder="Select Account"
+                                                searchPlaceholder="Search accounts..."
+                                            />
                                         </div>
 
                                         {/* Debit */}
                                         <div className="col-span-2">
-                                            {!isAutoBalanceLine ? (
-                                                <Input
-                                                    type="number"
-                                                    value={line.debit || ''}
-                                                    onChange={(e) => handleUpdateLine(index, 'debit', e.target.value)}
-                                                    className="h-7 text-xs text-right font-mono"
-                                                    placeholder="0.00"
-                                                    step="0.01"
-                                                />
-                                            ) : (
-                                                <div className="text-xs text-right font-mono text-muted-foreground">
-                                                    {(line.debit || 0).toFixed(2)}
-                                                </div>
-                                            )}
+                                            <Input
+                                                type="number"
+                                                value={line.debit || ''}
+                                                onChange={(e) => handleUpdateLine(index, 'debit', e.target.value)}
+                                                className="h-7 text-xs text-right font-mono"
+                                                placeholder="0.00"
+                                                step="0.01"
+                                            />
                                         </div>
 
                                         {/* Credit */}
                                         <div className="col-span-2">
-                                            {!isAutoBalanceLine ? (
-                                                <Input
-                                                    type="number"
-                                                    value={line.credit || ''}
-                                                    onChange={(e) => handleUpdateLine(index, 'credit', e.target.value)}
-                                                    className="h-7 text-xs text-right font-mono"
-                                                    placeholder="0.00"
-                                                    step="0.01"
-                                                />
-                                            ) : (
-                                                <div className="text-xs text-right font-mono text-muted-foreground">
-                                                    {(line.credit || 0).toFixed(2)}
-                                                </div>
-                                            )}
+                                            <Input
+                                                type="number"
+                                                value={line.credit || ''}
+                                                onChange={(e) => handleUpdateLine(index, 'credit', e.target.value)}
+                                                className="h-7 text-xs text-right font-mono"
+                                                placeholder="0.00"
+                                                step="0.01"
+                                            />
                                         </div>
 
                                         {/* Narration */}
                                         <div className="col-span-3">
-                                            {!isAutoBalanceLine ? (
-                                                <Input
-                                                    value={line.narration || ''}
-                                                    onChange={(e) => handleUpdateLine(index, 'narration', e.target.value)}
-                                                    className="h-7 text-xs"
-                                                    placeholder="Line description"
-                                                />
-                                            ) : (
-                                                <div className="text-xs text-muted-foreground italic">{line.narration}</div>
-                                            )}
+                                            <Input
+                                                value={line.narration || ''}
+                                                onChange={(e) => handleUpdateLine(index, 'narration', e.target.value)}
+                                                className="h-7 text-xs"
+                                                placeholder="Line description"
+                                            />
                                         </div>
 
                                         {/* Delete */}
                                         <div className="flex justify-end">
-                                            {!isAutoBalanceLine && (
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => handleRemoveLine(index)}
-                                                    className="h-6 w-6 p-0"
-                                                    title="Delete (Ctrl+D)"
-                                                >
-                                                    <IconTrash size={14} />
-                                                </Button>
-                                            )}
+                                            <Button
+                                                type="button"
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => handleRemoveLine(index)}
+                                                className="h-6 w-6 p-0"
+                                                title="Delete (Ctrl+D)"
+                                            >
+                                                <IconTrash size={14} />
+                                            </Button>
                                         </div>
                                     </div>
-                                );
-                            })}
+                                ))}
                         </div>
 
                         {/* Add Line Button */}
@@ -646,7 +575,7 @@ export default function OpeningBalancePage() {
                         </Button>
                         <Button 
                             type="submit" 
-                            disabled={openingBalanceState.loading || !isBalanced} 
+                            disabled={openingBalanceState.loading} 
                             className="h-9"
                             title="Save (Ctrl+S)"
                         >

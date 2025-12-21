@@ -75,6 +75,7 @@ export interface ChartOfAccount {
   account_group: string;
   description?: string;
   opening_balance: number;
+  opening_balance_type: string;
   is_active: number;
   created_at: string;
   updated_at: string;
@@ -87,6 +88,7 @@ export interface CreateChartOfAccount {
   account_group: string;
   description?: string;
   opening_balance?: number;
+  opening_balance_type?: string;
 }
 
 export interface AccountGroup {
