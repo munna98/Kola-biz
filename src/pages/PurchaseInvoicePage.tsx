@@ -576,7 +576,7 @@ export default function PurchaseInvoicePage() {
                     </div>
 
                     {/* Unit */}
-                    <div className="h-7 text-xs flex items-center justify-center bg-muted/50 border border-input rounded-md font-medium text-muted-foreground">
+                    <div className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-medium text-muted-foreground">
                       {units.find(u => u.id === product?.unit_id)?.symbol || '-'}
                     </div>
 
