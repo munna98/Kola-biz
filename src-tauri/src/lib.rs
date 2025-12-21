@@ -1,5 +1,5 @@
-mod db;
 mod commands;
+mod db;
 
 use commands::*;
 use tauri::Manager;
@@ -8,9 +8,7 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let pool = tauri::async_runtime::block_on(async {
-                db::init_db(app.handle()).await
-            })?;
+            let pool = tauri::async_runtime::block_on(async { db::init_db(app.handle()).await })?;
             app.manage(pool);
             Ok(())
         })
@@ -53,7 +51,7 @@ pub fn run() {
             get_purchase_invoice_items,
             create_purchase_invoice,
             delete_purchase_invoice,
-            // Sales Invoices 
+            // Sales Invoices
             get_sales_invoices,
             get_sales_invoice,
             get_sales_invoice_items,
@@ -62,10 +60,12 @@ pub fn run() {
             // Payments
             create_payment,
             get_payments,
+            get_payment_items,
             delete_payment,
             // Receipts
             create_receipt,
             get_receipts,
+            get_receipt_items,
             delete_receipt,
             // Journal Entries
             create_journal_entry,

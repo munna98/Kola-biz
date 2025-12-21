@@ -31,7 +31,7 @@ export interface PurchaseInvoiceItem {
   product_id: number;
   product_name?: string;
   description: string;
-  initial_quantity: number; 
+  initial_quantity: number;
   count: number;
   deduction_per_unit: number;
   rate: number;
@@ -153,12 +153,12 @@ export const {
   setLoading,
 } = purchaseInvoiceSlice.actions;
 
-// ========== PAYMENT SLICE ==========
 export interface PaymentItem {
   id?: string;
   description: string;
   amount: number;
   tax_rate: number;
+  remarks?: string;
 }
 
 export interface PaymentState {
@@ -258,6 +258,7 @@ export interface ReceiptItem {
   description: string;
   amount: number;
   tax_rate: number;
+  remarks?: string;
 }
 
 export interface ReceiptState {

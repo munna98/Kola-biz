@@ -1,19 +1,21 @@
-use sqlx::{sqlite::SqlitePool, migrate::MigrateDatabase, Sqlite};
+use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool, Sqlite};
 use tauri::Manager;
 
-pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dyn std::error::Error>> {
+pub async fn init_db(
+    app_handle: &tauri::AppHandle,
+) -> Result<SqlitePool, Box<dyn std::error::Error>> {
     let app_dir = app_handle.path().app_data_dir()?;
     std::fs::create_dir_all(&app_dir)?;
-    
+
     let db_path = app_dir.join("erp.db");
     let db_url = format!("sqlite:{}", db_path.display());
-    
+
     if !Sqlite::database_exists(&db_url).await? {
         Sqlite::create_database(&db_url).await?;
     }
-    
+
     let pool = SqlitePool::connect(&db_url).await?;
-    
+
     // Units table
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS units (
@@ -21,9 +23,11 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             name TEXT UNIQUE NOT NULL,
             symbol TEXT NOT NULL,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )"
-    ).execute(&pool).await?;
-    
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
     // Products table
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS products (
@@ -39,9 +43,11 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             deleted_by TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (unit_id) REFERENCES units(id)
-        )"
-    ).execute(&pool).await?;
-    
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
     // Customers table
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS customers (
@@ -52,9 +58,11 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             address TEXT,
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )"
-    ).execute(&pool).await?;
-    
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
     // Suppliers table
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS suppliers (
@@ -65,9 +73,11 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             address TEXT,
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )"
-    ).execute(&pool).await?;
-    
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
     // Account Groups table
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS account_groups (
@@ -76,9 +86,11 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             account_type TEXT NOT NULL,
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )"
-    ).execute(&pool).await?;
-    
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
     // Chart of Accounts table
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS chart_of_accounts (
@@ -93,11 +105,13 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )"
-    ).execute(&pool).await?;
+        )",
+    )
+    .execute(&pool)
+    .await?;
 
     // ==================== TRANSACTION TABLES ====================
-    
+
     // Vouchers (Master Transaction Table)
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS vouchers (
@@ -113,19 +127,30 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             discount_amount REAL DEFAULT 0,
             tax_amount REAL DEFAULT 0,
             total_amount REAL DEFAULT 0,
+            metadata TEXT,
             narration TEXT,
             status TEXT DEFAULT 'draft',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )"
-    ).execute(&pool).await?;
+        )",
+    )
+    .execute(&pool)
+    .await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_type ON vouchers(voucher_type)")
-        .execute(&pool).await?;
+        .execute(&pool)
+        .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_date ON vouchers(voucher_date)")
-        .execute(&pool).await?;
+        .execute(&pool)
+        .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_party ON vouchers(party_id, party_type)")
-        .execute(&pool).await?;
+        .execute(&pool)
+        .await?;
+
+    // Migration: Add metadata column to vouchers if it doesn't exist
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN metadata TEXT")
+        .execute(&pool)
+        .await;
 
     // Voucher Items (Invoice Line Items)
     sqlx::query(
@@ -146,13 +171,26 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
             FOREIGN KEY (product_id) REFERENCES products(id)
-        )"
-    ).execute(&pool).await?;
+        )",
+    )
+    .execute(&pool)
+    .await?;
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_voucher_items_voucher ON voucher_items(voucher_id)")
-        .execute(&pool).await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_voucher_items_product ON voucher_items(product_id)")
-        .execute(&pool).await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_voucher_items_voucher ON voucher_items(voucher_id)",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_voucher_items_product ON voucher_items(product_id)",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Migration: Add remarks column to voucher_items if it doesn't exist
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN remarks TEXT")
+        .execute(&pool)
+        .await;
 
     // Journal Entries (Double Entry Records)
     sqlx::query(
@@ -167,13 +205,17 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
             FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
-        )"
-    ).execute(&pool).await?;
+        )",
+    )
+    .execute(&pool)
+    .await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_voucher ON journal_entries(voucher_id)")
-        .execute(&pool).await?;
+        .execute(&pool)
+        .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_account ON journal_entries(account_id)")
-        .execute(&pool).await?;
+        .execute(&pool)
+        .await?;
 
     // Stock Movements
     sqlx::query(
@@ -188,13 +230,21 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
             FOREIGN KEY (product_id) REFERENCES products(id)
-        )"
-    ).execute(&pool).await?;
+        )",
+    )
+    .execute(&pool)
+    .await?;
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_stock_movements_voucher ON stock_movements(voucher_id)")
-        .execute(&pool).await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id)")
-        .execute(&pool).await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_stock_movements_voucher ON stock_movements(voucher_id)",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id)",
+    )
+    .execute(&pool)
+    .await?;
 
     // Opening Balances
     sqlx::query(
@@ -207,8 +257,10 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(account_id, financial_year),
             FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
-        )"
-    ).execute(&pool).await?;
+        )",
+    )
+    .execute(&pool)
+    .await?;
 
     // Voucher Sequences (Auto Number Generation)
     sqlx::query(
@@ -218,8 +270,10 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             prefix TEXT NOT NULL,
             next_number INTEGER DEFAULT 1,
             padding INTEGER DEFAULT 4
-        )"
-    ).execute(&pool).await?;
+        )",
+    )
+    .execute(&pool)
+    .await?;
 
     // Insert default sequences
     sqlx::query(
@@ -233,11 +287,13 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
         ('payment', 'PAY'),
         ('receipt', 'RCP'),
         ('journal', 'JV'),
-        ('opening_balance', 'OB')"
-    ).execute(&pool).await?;
-    
+        ('opening_balance', 'OB')",
+    )
+    .execute(&pool)
+    .await?;
+
     // ==================== SEED DATA ====================
-    
+
     // Insert default account groups
     sqlx::query(
         "INSERT OR IGNORE INTO account_groups (name, account_type) VALUES
@@ -258,9 +314,11 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
         ('Cost of Sales', 'Expense'),
         ('Operating Expenses', 'Expense'),
         ('Financial Expenses', 'Expense'),
-        ('Discounts', 'Expense')"
-    ).execute(&pool).await?;
-    
+        ('Discounts', 'Expense')",
+    )
+    .execute(&pool)
+    .await?;
+
     // Insert default chart of accounts
     sqlx::query(
         "INSERT OR IGNORE INTO chart_of_accounts (account_code, account_name, account_type, account_group, description) VALUES
@@ -302,10 +360,10 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
         ('5009', 'Rent Expense', 'Expense', 'Operating Expenses', 'Office or shop rent'),
         ('5010', 'Utilities Expense', 'Expense', 'Operating Expenses', 'Electricity, water, internet')"
     ).execute(&pool).await?;
-    
+
     // Insert default units
     sqlx::query("INSERT OR IGNORE INTO units (name, symbol) VALUES ('Piece', 'Pcs'), ('Kilogram', 'Kg'), ('Liter', 'L')")
         .execute(&pool).await?;
-    
+
     Ok(pool)
 }

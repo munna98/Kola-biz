@@ -1233,16 +1233,20 @@ pub async fn create_payment(
 
     let grand_total = total_amount + total_tax;
 
+    // Create voucher metadata
+    let metadata = serde_json::json!({ "method": payment.payment_method }).to_string();
+
     // Create voucher
     let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, narration, status)
-         VALUES (?, 'payment', ?, ?, 'account', ?, ?, ?, 'draft')"
+        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status)
+         VALUES (?, 'payment', ?, ?, 'account', ?, ?, ?, ?, 'draft')"
     )
     .bind(&voucher_no)
     .bind(&payment.voucher_date)
     .bind(payment.account_id)
     .bind(&payment.reference_number)
     .bind(total_amount)
+    .bind(metadata)
     .bind(&payment.narration)
     .execute(&mut *tx)
     .await
@@ -1255,14 +1259,15 @@ pub async fn create_payment(
         let tax_amount = item.amount * (item.tax_rate / 100.0);
 
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, initial_quantity, count, rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(voucher_id)
         .bind(&item.description)
         .bind(item.amount)
         .bind(item.tax_rate)
         .bind(tax_amount)
+        .bind(&item.remarks)
         .bind(1.0)
         .bind(1.0)
         .bind(item.amount)
@@ -1369,6 +1374,31 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
 }
 
 #[tauri::command]
+pub async fn get_payment_items(
+    pool: State<'_, SqlitePool>,
+    voucher_id: i64,
+) -> Result<Vec<PaymentItem>, String> {
+    let items = sqlx::query_as::<_, PaymentItem>(
+        "SELECT 
+            id,
+            voucher_id,
+            description,
+            amount,
+            tax_rate,
+            tax_amount,
+            remarks
+        FROM voucher_items
+        WHERE voucher_id = ?",
+    )
+    .bind(voucher_id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(items)
+}
+
+#[tauri::command]
 pub async fn delete_payment(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
     sqlx::query("DELETE FROM vouchers WHERE id = ? AND voucher_type = 'payment'")
         .bind(id)
@@ -1448,16 +1478,20 @@ pub async fn create_receipt(
 
     let grand_total = total_amount + total_tax;
 
+    // Create voucher metadata
+    let metadata = serde_json::json!({ "method": receipt.receipt_method }).to_string();
+
     // Create voucher
     let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, narration, status)
-         VALUES (?, 'receipt', ?, ?, 'account', ?, ?, ?, 'draft')"
+        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status)
+         VALUES (?, 'receipt', ?, ?, 'account', ?, ?, ?, ?, 'draft')"
     )
     .bind(&voucher_no)
     .bind(&receipt.voucher_date)
     .bind(receipt.account_id)
     .bind(&receipt.reference_number)
     .bind(total_amount)
+    .bind(metadata)
     .bind(&receipt.narration)
     .execute(&mut *tx)
     .await
@@ -1470,14 +1504,15 @@ pub async fn create_receipt(
         let tax_amount = item.amount * (item.tax_rate / 100.0);
 
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, initial_quantity, count, rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(voucher_id)
         .bind(&item.description)
         .bind(item.amount)
         .bind(item.tax_rate)
         .bind(tax_amount)
+        .bind(&item.remarks)
         .bind(1.0)
         .bind(1.0)
         .bind(item.amount)
@@ -1581,6 +1616,31 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
     .map_err(|e| e.to_string())?;
 
     Ok(receipts)
+}
+
+#[tauri::command]
+pub async fn get_receipt_items(
+    pool: State<'_, SqlitePool>,
+    voucher_id: i64,
+) -> Result<Vec<ReceiptItem>, String> {
+    let items = sqlx::query_as::<_, ReceiptItem>(
+        "SELECT 
+            id,
+            voucher_id,
+            description,
+            amount,
+            tax_rate,
+            tax_amount,
+            remarks
+        FROM voucher_items
+        WHERE voucher_id = ?",
+    )
+    .bind(voucher_id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(items)
 }
 
 #[tauri::command]
