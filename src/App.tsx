@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import { store, RootState, toggleSidebar, setActiveSection } from './store';
-import { IconPackage, IconUsers, IconTruck, IconReceipt, IconCreditCard, IconMenu2, IconChevronLeft, IconBook, IconMoon, IconSun } from '@tabler/icons-react';
+import { IconPackage, IconUserMinus, IconTruck, IconUserPlus, IconShoppingBag, IconCashBanknoteMoveBack, IconCashBanknoteMove, IconMenu2, IconChevronLeft, IconBook, IconMoon, IconSun } from '@tabler/icons-react';
 import ProductsPage from './pages/ProductsPage';
 import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
@@ -45,13 +45,13 @@ function AppContent() {
 
   const menuItems = [
     { id: 'products', label: 'Products', icon: IconPackage },
-    { id: 'customers', label: 'Customers', icon: IconUsers },
-    { id: 'suppliers', label: 'Suppliers', icon: IconTruck },
+    { id: 'customers', label: 'Customers', icon: IconUserMinus },
+    { id: 'suppliers', label: 'Suppliers', icon: IconUserPlus },
     { id: 'coa', label: 'Chart of Accounts', icon: IconBook },
     { id: 'purchase', label: 'Purchase', icon: IconTruck },
-    { id: 'sales', label: 'Sales', icon: IconReceipt },
-    { id: 'payments', label: 'Payments', icon: IconCreditCard },
-    { id: 'receipts', label: 'Receipts', icon: IconReceipt },
+    { id: 'sales', label: 'Sales', icon: IconShoppingBag },
+    { id: 'payments', label: 'Payments', icon: IconCashBanknoteMove },
+    { id: 'receipts', label: 'Receipts', icon: IconCashBanknoteMoveBack },
     { id: 'journal', label: 'Journal Entries', icon: IconBook },
     { id: 'opening', label: 'Opening Balance', icon: IconBook },
   ];
