@@ -430,7 +430,7 @@ export default function JournalEntryPage() {
                             </div>
 
                             {/* Balance Status */}
-                            <div className="col-span-3 flex items-end">
+                            <div className="col-span-1 flex items-end">
                                 {!isBalanced && journalState.lines.length > 0 && (
                                     <div className="flex items-center gap-2 text-xs text-destructive">
                                         <IconAlertTriangle size={16} />

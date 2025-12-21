@@ -57,7 +57,7 @@ export default function PurchaseInvoicePage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
-  
+
   // Refs for keyboard navigation
   const formRef = useRef<HTMLFormElement>(null);
   const supplierRef = useRef<HTMLDivElement>(null);
@@ -180,7 +180,7 @@ export default function PurchaseInvoicePage() {
     // If rate is provided, calculate amount from rate
     if (discountRate !== undefined && discountRate > 0) {
       finalDiscountAmount = Math.round(subtotal * (discountRate / 100) * 100) / 100;
-    } 
+    }
     // If amount is provided, keep it as absolute value
     else if (discountAmount !== undefined && discountAmount > 0) {
       finalDiscountAmount = Math.round(discountAmount * 100) / 100;
@@ -229,7 +229,7 @@ export default function PurchaseInvoicePage() {
       toast.success('Purchase invoice created successfully');
       dispatch(resetForm());
       handleAddItem();
-      
+
       // Focus back to supplier after save
       setTimeout(() => supplierRef.current?.querySelector('button')?.focus(), 100);
     } catch (error) {
@@ -253,13 +253,13 @@ export default function PurchaseInvoicePage() {
           lastRow?.querySelector('button')?.focus();
         }, 50);
       }
-      
+
       // Ctrl/Cmd + S: Save
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
         formRef.current?.requestSubmit();
       }
-      
+
       // Ctrl/Cmd + K: Clear form
       if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
         e.preventDefault();
@@ -267,7 +267,7 @@ export default function PurchaseInvoicePage() {
         handleAddItem();
         setTimeout(() => supplierRef.current?.querySelector('button')?.focus(), 100);
       }
-      
+
       // Ctrl/Cmd + /: Show shortcuts
       if ((e.ctrlKey || e.metaKey) && e.key === '/') {
         e.preventDefault();
@@ -289,14 +289,14 @@ export default function PurchaseInvoicePage() {
     const currentRow = e.currentTarget;
     const inputs = Array.from(currentRow.querySelectorAll('input, button')) as HTMLElement[];
     const currentIndex = inputs.indexOf(document.activeElement as HTMLElement);
-    
+
     // Ctrl/Cmd + D: Delete current row
     if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
       e.preventDefault();
       handleRemoveItem(rowIndex);
       return;
     }
-    
+
     // Helper function to move to next field/row
     const moveToNext = () => {
       if (currentIndex < inputs.length - 1) {
@@ -327,12 +327,12 @@ export default function PurchaseInvoicePage() {
         }
       }
     };
-    
+
     // Tab OR Enter: Move to next field/row
     if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'Enter') {
       moveToNext();
     }
-    
+
     // Shift+Tab: Move to previous field/row
     if (e.key === 'Tab' && e.shiftKey) {
       if (currentIndex === 0) {
@@ -373,7 +373,7 @@ export default function PurchaseInvoicePage() {
         }
       }
     }
-    
+
     if (e.key === 'ArrowUp' && e.ctrlKey) {
       e.preventDefault();
       const prevRow = currentRow.previousElementSibling;
@@ -420,7 +420,7 @@ export default function PurchaseInvoicePage() {
             variant="outline"
             size="sm"
             onClick={() => setShowShortcuts(!showShortcuts)}
-            className="h-7 text-xs"
+            className="h-7 text-xs font-mono"
           >
             <IconKeyboard size={14} />
             Shortcuts (Ctrl+/)
@@ -545,8 +545,8 @@ export default function PurchaseInvoicePage() {
                 const calc = getItemAmount(item);
                 const product = products.find(p => p.id === item.product_id);
                 return (
-                  <div 
-                    key={item.id} 
+                  <div
+                    key={item.id}
                     data-row-index={idx}
                     className="grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50"
                     onKeyDown={(e) => handleRowKeyDown(e, idx)}
@@ -570,13 +570,13 @@ export default function PurchaseInvoicePage() {
                         onChange={(e) =>
                           handleUpdateItem(idx, 'initial_quantity', parseFloat(e.target.value) || 0)
                         }
-                        className="h-7 text-xs"
+                        className="h-7 text-xs text-right font-mono"
                         step="0.01"
                       />
                     </div>
 
                     {/* Unit */}
-                    <div className="text-xs text-muted-foreground text-center font-medium">
+                    <div className="h-7 text-xs flex items-center justify-center bg-muted/50 border border-input rounded-md font-medium text-muted-foreground">
                       {units.find(u => u.id === product?.unit_id)?.symbol || '-'}
                     </div>
 
@@ -586,7 +586,7 @@ export default function PurchaseInvoicePage() {
                         type="number"
                         value={item.rate}
                         onChange={(e) => handleUpdateItem(idx, 'rate', parseFloat(e.target.value) || 0)}
-                        className="h-7 text-xs"
+                        className="h-7 text-xs text-right font-mono"
                         step="0.01"
                       />
                     </div>
@@ -597,12 +597,12 @@ export default function PurchaseInvoicePage() {
                         type="number"
                         value={item.count}
                         onChange={(e) => handleUpdateItem(idx, 'count', parseFloat(e.target.value) || 0)}
-                        className="h-7 text-xs"
+                        className="h-7 text-xs text-right font-mono"
                         step="0.01"
                       />
                     </div>
 
-                    {/* Waste */}
+                    {/* Deduction */}
                     <div>
                       <Input
                         type="number"
@@ -610,19 +610,25 @@ export default function PurchaseInvoicePage() {
                         onChange={(e) =>
                           handleUpdateItem(idx, 'deduction_per_unit', parseFloat(e.target.value) || 0)
                         }
-                        className="h-7 text-xs"
+                        className="h-7 text-xs text-right font-mono"
                         step="0.01"
                       />
                     </div>
 
                     {/* Final Qty */}
-                    <div className="text-center text-xs font-medium">{calc.finalQty.toFixed(2)}</div>
+                    <div className="h-7 text-xs flex items-center justify-center bg-muted/50 border border-input rounded-md font-medium font-mono">
+                      {calc.finalQty.toFixed(2)}
+                    </div>
 
                     {/* Amount */}
-                    <div className="text-right text-xs font-medium">₹{calc.amount.toFixed(2)}</div>
+                    <div className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-medium font-mono">
+                      ₹{calc.amount.toFixed(2)}
+                    </div>
 
                     {/* Total */}
-                    <div className="text-right text-xs font-bold">₹{calc.total.toFixed(2)}</div>
+                    <div className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-bold font-mono">
+                      ₹{calc.total.toFixed(2)}
+                    </div>
 
                     {/* Delete */}
                     <div className="flex justify-end">
@@ -675,9 +681,9 @@ export default function PurchaseInvoicePage() {
               <div className="space-y-1.5">
                 <div className="flex justify-between text-xs">
                   <span className="text-muted-foreground">Subtotal:</span>
-                  <span className="font-medium">₹{purchaseState.totals.subtotal.toFixed(2)}</span>
+                  <span className="font-medium font-mono">₹{purchaseState.totals.subtotal.toFixed(2)}</span>
                 </div>
-                
+
                 {/* Discount */}
                 <div className="space-y-1 text-xs">
                   <div className="flex gap-2">
@@ -691,7 +697,7 @@ export default function PurchaseInvoicePage() {
                           updateTotalsWithItems(purchaseState.items, rate, undefined);
                         }}
                         placeholder="0"
-                        className="h-6.5 text-xs"
+                        className="h-6.5 font-mono text-xs"
                         step="0.01"
                       />
                     </div>
@@ -705,7 +711,7 @@ export default function PurchaseInvoicePage() {
                           updateTotalsWithItems(purchaseState.items, undefined, amount);
                         }}
                         placeholder="0"
-                        className="h-6.5 text-xs"
+                        className="h-6.5 font-mono text-xs"
                         step="0.01"
                       />
                     </div>
@@ -713,7 +719,7 @@ export default function PurchaseInvoicePage() {
                 </div>
                 <div className="border-t pt-1.5 flex justify-between text-sm">
                   <span className="font-semibold">Grand Total:</span>
-                  <span className="font-bold text-primary">₹{purchaseState.totals.grandTotal.toFixed(2)}</span>
+                  <span className="font-bold font-mono text-primary">₹{purchaseState.totals.grandTotal.toFixed(2)}</span>
                 </div>
               </div>
             </div>

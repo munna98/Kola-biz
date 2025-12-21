@@ -24,7 +24,6 @@ import {
     IconCheck,
     IconX,
     IconKeyboard,
-    IconAlertTriangle,
 } from '@tabler/icons-react';
 
 interface LedgerAccount {
@@ -435,10 +434,6 @@ export default function OpeningBalancePage() {
                                     placeholder="Description"
                                     className="h-8 text-sm"
                                 />
-                            </div>
-
-                            {/* Balance Status */}
-                            <div className="col-span-3 flex items-end">
                             </div>
                         </div>
                     </div>

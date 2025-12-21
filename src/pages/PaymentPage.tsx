@@ -5,7 +5,6 @@ import { toast } from 'sonner';
 import {
     setPaymentAccount,
     setPaymentDate,
-    setPaymentMethod,
     setPaymentReference,
     setPaymentNarration,
     addPaymentItem,
@@ -125,13 +124,13 @@ export default function PaymentPage() {
             toast.success('Payment saved successfully');
             dispatch(resetPaymentForm());
             handleAddItem();
-            
+
             // Focus back to pay from after save
             setTimeout(() => payFromRef.current?.querySelector('button')?.focus(), 100);
         } catch (error) {
-    console.error('Payment save error:', error);
-    toast.error(error instanceof Error ? error.message : 'Failed to save');
-} finally {
+            console.error('Payment save error:', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to save');
+        } finally {
             dispatch(setPaymentLoading(false));
         }
     };
@@ -148,13 +147,13 @@ export default function PaymentPage() {
                     lastRow?.querySelector('button')?.focus();
                 }, 50);
             }
-            
+
             // Ctrl/Cmd + S: Save
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
                 formRef.current?.requestSubmit();
             }
-            
+
             // Ctrl/Cmd + K: Clear form
             if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
                 e.preventDefault();
@@ -162,7 +161,7 @@ export default function PaymentPage() {
                 handleAddItem();
                 setTimeout(() => payFromRef.current?.querySelector('button')?.focus(), 100);
             }
-            
+
             // Ctrl/Cmd + /: Show shortcuts
             if ((e.ctrlKey || e.metaKey) && e.key === '/') {
                 e.preventDefault();
@@ -184,14 +183,14 @@ export default function PaymentPage() {
         const currentRow = e.currentTarget;
         const inputs = Array.from(currentRow.querySelectorAll('input, button')) as HTMLElement[];
         const currentIndex = inputs.indexOf(document.activeElement as HTMLElement);
-        
+
         // Ctrl/Cmd + D: Delete current row
         if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
             e.preventDefault();
             handleRemoveItem(rowIndex);
             return;
         }
-        
+
         const moveToNext = () => {
             if (currentIndex < inputs.length - 1) {
                 e.preventDefault();
@@ -218,11 +217,11 @@ export default function PaymentPage() {
                 }
             }
         };
-        
+
         if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'Enter') {
             moveToNext();
         }
-        
+
         if (e.key === 'Tab' && e.shiftKey) {
             if (currentIndex === 0) {
                 e.preventDefault();
@@ -259,7 +258,7 @@ export default function PaymentPage() {
                 }
             }
         }
-        
+
         if (e.key === 'ArrowUp' && e.ctrlKey) {
             e.preventDefault();
             const prevRow = currentRow.previousElementSibling;
@@ -376,35 +375,35 @@ export default function PaymentPage() {
                             {/* Date */}
                             <div>
                                 <Label className="text-xs font-medium mb-1 block">Date *</Label>
-                                <Input 
-                                    type="date" 
-                                    value={paymentState.form.voucher_date} 
+                                <Input
+                                    type="date"
+                                    value={paymentState.form.voucher_date}
                                     onChange={(e) => dispatch(setPaymentDate(e.target.value))}
                                     className="h-8 text-sm"
                                 />
                             </div>
 
                             {/* Reference */}
-                            <div className="col-span-2">
+                            <div className="col-span-1">
                                 <Label className="text-xs font-medium mb-1 block">Reference Number</Label>
-                                <Input 
-                                    value={paymentState.form.reference_number} 
-                                    onChange={(e) => dispatch(setPaymentReference(e.target.value))} 
+                                <Input
+                                    value={paymentState.form.reference_number}
+                                    onChange={(e) => dispatch(setPaymentReference(e.target.value))}
                                     placeholder="Cheque/Ref No"
                                     className="h-8 text-sm"
                                 />
                             </div>
-                        </div>
 
-                        {/* Narration */}
-                        <div>
-                            <Label className="text-xs font-medium mb-1 block">Narration (Overall Notes)</Label>
-                            <Input
-                                value={paymentState.form.narration}
-                                onChange={(e) => dispatch(setPaymentNarration(e.target.value))}
-                                placeholder="Enter details about this payment..."
-                                className="h-8 text-sm"
-                            />
+                            {/* Narration */}
+                            <div className="col-span-2">
+                                <Label className="text-xs font-medium mb-1 block">Narration</Label>
+                                <Input
+                                    value={paymentState.form.narration}
+                                    onChange={(e) => dispatch(setPaymentNarration(e.target.value))}
+                                    placeholder="Enter details about this payment..."
+                                    className="h-8 text-sm"
+                                />
+                            </div>
                         </div>
                     </div>
 
@@ -423,7 +422,7 @@ export default function PaymentPage() {
                         {/* Items - Scrollable */}
                         <div className="divide-y overflow-y-auto flex-1">
                             {paymentState.items.map((item, index) => (
-                                <div 
+                                <div
                                     key={item.id || index}
                                     data-row-index={index}
                                     className="grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50"
@@ -494,39 +493,43 @@ export default function PaymentPage() {
                         </div>
                     </div>
 
+                    {/* Totals */}
+                    <div className="bg-card border rounded-lg p-3 shrink-0">
+                        <div className="flex justify-end">
+                            <div className="text-right">
+                                <div className="text-xs text-muted-foreground mb-1">Total Payment</div>
+                                <div className="text-lg font-mono font-bold">
+                                    ₹ {paymentState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Bottom Actions */}
-                    <div className="flex items-center justify-between border-t pt-4 shrink-0">
-                        <div className="flex flex-col">
-                            <span className="text-xs text-muted-foreground font-medium">Total Payment</span>
-                            <span className="text-2xl font-mono font-bold text-primary">
-                                ₹ {paymentState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </span>
-                        </div>
-                        <div className="flex gap-2">
-                            <Button 
-                                type="button" 
-                                variant="outline" 
-                                onClick={() => {
-                                    dispatch(resetPaymentForm());
-                                    handleAddItem();
-                                    setTimeout(() => payFromRef.current?.querySelector('button')?.focus(), 100);
-                                }}
-                                className="h-9"
-                                title="Clear (Ctrl+K)"
-                            >
-                                <IconX size={16} />
-                                Clear Form
-                            </Button>
-                            <Button 
-                                type="submit" 
-                                disabled={paymentState.loading} 
-                                className="h-9"
-                                title="Save (Ctrl+S)"
-                            >
-                                <IconCheck size={16} />
-                                {paymentState.loading ? 'Saving...' : 'Save Payment'}
-                            </Button>
-                        </div>
+                    <div className="flex justify-end gap-2 pt-4 border-t shrink-0">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                dispatch(resetPaymentForm());
+                                handleAddItem();
+                                setTimeout(() => payFromRef.current?.querySelector('button')?.focus(), 100);
+                            }}
+                            className="h-9"
+                            title="Clear (Ctrl+K)"
+                        >
+                            <IconX size={16} />
+                            Clear Form
+                        </Button>
+                        <Button
+                            type="submit"
+                            disabled={paymentState.loading}
+                            className="h-9"
+                            title="Save (Ctrl+S)"
+                        >
+                            <IconCheck size={16} />
+                            {paymentState.loading ? 'Saving...' : 'Save Payment'}
+                        </Button>
                     </div>
                 </form>
             </div>

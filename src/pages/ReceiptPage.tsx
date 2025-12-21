@@ -124,7 +124,7 @@ export default function ReceiptPage() {
             toast.success('Receipt saved successfully');
             dispatch(resetReceiptForm());
             handleAddItem();
-            
+
             // Focus back to deposit to after save
             setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
         } catch (error) {
@@ -146,13 +146,13 @@ export default function ReceiptPage() {
                     lastRow?.querySelector('button')?.focus();
                 }, 50);
             }
-            
+
             // Ctrl/Cmd + S: Save
             if ((e.ctrlKey || e.metaKey) && e.key === 's') {
                 e.preventDefault();
                 formRef.current?.requestSubmit();
             }
-            
+
             // Ctrl/Cmd + K: Clear form
             if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
                 e.preventDefault();
@@ -160,7 +160,7 @@ export default function ReceiptPage() {
                 handleAddItem();
                 setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
             }
-            
+
             // Ctrl/Cmd + /: Show shortcuts
             if ((e.ctrlKey || e.metaKey) && e.key === '/') {
                 e.preventDefault();
@@ -182,14 +182,14 @@ export default function ReceiptPage() {
         const currentRow = e.currentTarget;
         const inputs = Array.from(currentRow.querySelectorAll('input, button')) as HTMLElement[];
         const currentIndex = inputs.indexOf(document.activeElement as HTMLElement);
-        
+
         // Ctrl/Cmd + D: Delete current row
         if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
             e.preventDefault();
             handleRemoveItem(rowIndex);
             return;
         }
-        
+
         const moveToNext = () => {
             if (currentIndex < inputs.length - 1) {
                 e.preventDefault();
@@ -216,11 +216,11 @@ export default function ReceiptPage() {
                 }
             }
         };
-        
+
         if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'Enter') {
             moveToNext();
         }
-        
+
         if (e.key === 'Tab' && e.shiftKey) {
             if (currentIndex === 0) {
                 e.preventDefault();
@@ -257,7 +257,7 @@ export default function ReceiptPage() {
                 }
             }
         }
-        
+
         if (e.key === 'ArrowUp' && e.ctrlKey) {
             e.preventDefault();
             const prevRow = currentRow.previousElementSibling;
@@ -374,35 +374,35 @@ export default function ReceiptPage() {
                             {/* Date */}
                             <div>
                                 <Label className="text-xs font-medium mb-1 block">Date *</Label>
-                                <Input 
-                                    type="date" 
-                                    value={receiptState.form.voucher_date} 
+                                <Input
+                                    type="date"
+                                    value={receiptState.form.voucher_date}
                                     onChange={(e) => dispatch(setReceiptDate(e.target.value))}
                                     className="h-8 text-sm"
                                 />
                             </div>
 
                             {/* Reference */}
-                            <div className="col-span-2">
+                            <div className="col-span-1">
                                 <Label className="text-xs font-medium mb-1 block">Reference Number</Label>
-                                <Input 
-                                    value={receiptState.form.reference_number} 
-                                    onChange={(e) => dispatch(setReceiptReference(e.target.value))} 
+                                <Input
+                                    value={receiptState.form.reference_number}
+                                    onChange={(e) => dispatch(setReceiptReference(e.target.value))}
                                     placeholder="Cheque/Ref No"
                                     className="h-8 text-sm"
                                 />
                             </div>
-                        </div>
 
-                        {/* Narration */}
-                        <div>
-                            <Label className="text-xs font-medium mb-1 block">Narration (Overall Notes)</Label>
-                            <Input
-                                value={receiptState.form.narration}
-                                onChange={(e) => dispatch(setReceiptNarration(e.target.value))}
-                                placeholder="Enter details about this receipt..."
-                                className="h-8 text-sm"
-                            />
+                            {/* Narration */}
+                            <div className="col-span-2">
+                                <Label className="text-xs font-medium mb-1 block">Narration</Label>
+                                <Input
+                                    value={receiptState.form.narration}
+                                    onChange={(e) => dispatch(setReceiptNarration(e.target.value))}
+                                    placeholder="Enter details about this receipt..."
+                                    className="h-8 text-sm"
+                                />
+                            </div>
                         </div>
                     </div>
 
@@ -421,7 +421,7 @@ export default function ReceiptPage() {
                         {/* Items - Scrollable */}
                         <div className="divide-y overflow-y-auto flex-1">
                             {receiptState.items.map((item, index) => (
-                                <div 
+                                <div
                                     key={item.id || index}
                                     data-row-index={index}
                                     className="grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50"
@@ -492,39 +492,43 @@ export default function ReceiptPage() {
                         </div>
                     </div>
 
+                    {/* Totals */}
+                    <div className="bg-card border rounded-lg p-3 shrink-0">
+                        <div className="flex justify-end">
+                            <div className="text-right">
+                                <div className="text-xs text-muted-foreground mb-1">Total Receipt</div>
+                                <div className="text-lg font-mono font-bold">
+                                    ₹ {receiptState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Bottom Actions */}
-                    <div className="flex items-center justify-between border-t pt-4 shrink-0">
-                        <div className="flex flex-col">
-                            <span className="text-xs text-muted-foreground font-medium">Total Receipt</span>
-                            <span className="text-2xl font-mono font-bold text-primary">
-                                ₹ {receiptState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                            </span>
-                        </div>
-                        <div className="flex gap-2">
-                            <Button 
-                                type="button" 
-                                variant="outline" 
-                                onClick={() => {
-                                    dispatch(resetReceiptForm());
-                                    handleAddItem();
-                                    setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
-                                }}
-                                className="h-9"
-                                title="Clear (Ctrl+K)"
-                            >
-                                <IconX size={16} />
-                                Clear Form
-                            </Button>
-                            <Button 
-                                type="submit" 
-                                disabled={receiptState.loading} 
-                                className="h-9"
-                                title="Save (Ctrl+S)"
-                            >
-                                <IconCheck size={16} />
-                                {receiptState.loading ? 'Saving...' : 'Save Receipt'}
-                            </Button>
-                        </div>
+                    <div className="flex justify-end gap-2 pt-4 border-t shrink-0">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                                dispatch(resetReceiptForm());
+                                handleAddItem();
+                                setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
+                            }}
+                            className="h-9"
+                            title="Clear (Ctrl+K)"
+                        >
+                            <IconX size={16} />
+                            Clear Form
+                        </Button>
+                        <Button
+                            type="submit"
+                            disabled={receiptState.loading}
+                            className="h-9"
+                            title="Save (Ctrl+S)"
+                        >
+                            <IconCheck size={16} />
+                            {receiptState.loading ? 'Saving...' : 'Save Receipt'}
+                        </Button>
                     </div>
                 </form>
             </div>
