@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { IconEdit, IconTrash } from '@tabler/icons-react';
 import { api, Unit, CreateUnit } from '@/lib/tauri';
 import { toast } from 'sonner';
+import { formatDate } from '@/lib/utils';
 
 interface UnitsDialogProps {
   open: boolean;
@@ -87,24 +88,24 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
         <DialogHeader>
           <DialogTitle>Manage Units of Measurement</DialogTitle>
         </DialogHeader>
-        
+
         <div className="space-y-4">
           {/* Unit Form */}
           <form onSubmit={handleUnitSubmit} className="grid grid-cols-[1fr_1fr_auto] gap-3 pb-4 border-b">
             <div>
-              <Input 
-                placeholder="Unit name (e.g., Kilogram)" 
-                value={unitForm.name} 
-                onChange={e => setUnitForm({...unitForm, name: e.target.value})} 
-                required 
+              <Input
+                placeholder="Unit name (e.g., Kilogram)"
+                value={unitForm.name}
+                onChange={e => setUnitForm({ ...unitForm, name: e.target.value })}
+                required
               />
             </div>
             <div>
-              <Input 
-                placeholder="Symbol (e.g., kg)" 
-                value={unitForm.symbol} 
-                onChange={e => setUnitForm({...unitForm, symbol: e.target.value})} 
-                required 
+              <Input
+                placeholder="Symbol (e.g., kg)"
+                value={unitForm.symbol}
+                onChange={e => setUnitForm({ ...unitForm, symbol: e.target.value })}
+                required
               />
             </div>
             <div className="flex gap-2">
@@ -146,7 +147,7 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
                         <td className="p-3 font-medium">{u.name}</td>
                         <td className="p-3 font-mono text-sm">{u.symbol}</td>
                         <td className="p-3 text-sm text-muted-foreground">
-                          {new Date(u.created_at).toLocaleDateString()}
+                          {formatDate(u.created_at)}
                         </td>
                         <td className="p-3 flex gap-2">
                           <Button size="sm" variant="ghost" onClick={() => handleEditUnit(u)}>

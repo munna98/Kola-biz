@@ -77,6 +77,9 @@ pub fn run() {
             create_opening_balance,
             get_opening_balances,
             delete_opening_balance,
+            // Reports
+            get_trial_balance,
+            get_ledger_report,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

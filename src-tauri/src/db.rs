@@ -88,7 +88,7 @@ pub async fn init_db(app_handle: &tauri::AppHandle) -> Result<SqlitePool, Box<dy
             account_type TEXT NOT NULL,
             account_group TEXT NOT NULL,
             description TEXT,
-            opening_balance REAL DEFAULT 0,
+            opening_balance REAL DEFAULT 0.0,
             opening_balance_type TEXT DEFAULT 'Dr',
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
