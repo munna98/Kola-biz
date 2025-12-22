@@ -6,6 +6,30 @@ interface AppState {
   currentUser: string;
 }
 
+export interface VoucherNavigationState {
+  mode: 'new' | 'viewing' | 'editing';
+  currentVoucherId: number | null;
+  hasUnsavedChanges: boolean;
+  navigationData: {
+    hasPrevious: boolean;
+    hasNext: boolean;
+    previousId: number | null;
+    nextId: number | null;
+  };
+}
+
+const initialNavigationState: VoucherNavigationState = {
+  mode: 'new',
+  currentVoucherId: null,
+  hasUnsavedChanges: false,
+  navigationData: {
+    hasPrevious: false,
+    hasNext: false,
+    previousId: null,
+    nextId: null, // Fixed: removed invalid character
+  },
+};
+
 const initialState: AppState = {
   sidebarCollapsed: false,
   activeSection: 'products',
@@ -38,7 +62,7 @@ export interface PurchaseInvoiceItem {
   tax_rate: number;
 }
 
-export interface PurchaseInvoiceState {
+export interface PurchaseInvoiceState extends VoucherNavigationState {
   form: {
     supplier_id: number;
     supplier_name: string;
@@ -60,6 +84,7 @@ export interface PurchaseInvoiceState {
 }
 
 const purchaseInitialState: PurchaseInvoiceState = {
+  ...initialNavigationState,
   form: {
     supplier_id: 0,
     supplier_name: '',
@@ -84,6 +109,18 @@ const purchaseInvoiceSlice = createSlice({
   name: 'purchaseInvoice',
   initialState: purchaseInitialState,
   reducers: {
+    setPurchaseMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
+      state.mode = action.payload;
+    },
+    setPurchaseCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+      state.currentVoucherId = action.payload;
+    },
+    setPurchaseHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setPurchaseNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+      state.navigationData = action.payload;
+    },
     setSupplier: (state, action: PayloadAction<{ id: number; name: string }>) => {
       state.form.supplier_id = action.payload.id;
       state.form.supplier_name = action.payload.name;
@@ -138,6 +175,10 @@ const purchaseInvoiceSlice = createSlice({
 });
 
 export const {
+  setPurchaseMode,
+  setPurchaseCurrentVoucherId,
+  setPurchaseHasUnsavedChanges,
+  setPurchaseNavigationData,
   setSupplier,
   setVoucherDate,
   setReference,
@@ -161,7 +202,7 @@ export interface PaymentItem {
   remarks?: string;
 }
 
-export interface PaymentState {
+export interface PaymentState extends VoucherNavigationState {
   form: {
     account_id: number;
     account_name: string;
@@ -181,6 +222,7 @@ export interface PaymentState {
 }
 
 const paymentInitialState: PaymentState = {
+  ...initialNavigationState,
   form: {
     account_id: 0,
     account_name: '',
@@ -203,6 +245,18 @@ const paymentSlice = createSlice({
   name: 'payment',
   initialState: paymentInitialState,
   reducers: {
+    setPaymentMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
+      state.mode = action.payload;
+    },
+    setPaymentCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+      state.currentVoucherId = action.payload;
+    },
+    setPaymentHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setPaymentNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+      state.navigationData = action.payload;
+    },
     setPaymentAccount: (state, action: PayloadAction<{ id: number; name: string }>) => {
       state.form.account_id = action.payload.id;
       state.form.account_name = action.payload.name;
@@ -261,7 +315,7 @@ export interface ReceiptItem {
   remarks?: string;
 }
 
-export interface ReceiptState {
+export interface ReceiptState extends VoucherNavigationState {
   form: {
     account_id: number;
     account_name: string;
@@ -281,6 +335,7 @@ export interface ReceiptState {
 }
 
 const receiptInitialState: ReceiptState = {
+  ...initialNavigationState,
   form: {
     account_id: 0,
     account_name: '',
@@ -303,6 +358,18 @@ const receiptSlice = createSlice({
   name: 'receipt',
   initialState: receiptInitialState,
   reducers: {
+    setReceiptMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
+      state.mode = action.payload;
+    },
+    setReceiptCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+      state.currentVoucherId = action.payload;
+    },
+    setReceiptHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setReceiptNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+      state.navigationData = action.payload;
+    },
     setReceiptAccount: (state, action: PayloadAction<{ id: number; name: string }>) => {
       state.form.account_id = action.payload.id;
       state.form.account_name = action.payload.name;
@@ -353,6 +420,10 @@ const receiptSlice = createSlice({
 });
 
 export const {
+  setPaymentMode,
+  setPaymentCurrentVoucherId,
+  setPaymentHasUnsavedChanges,
+  setPaymentNavigationData,
   setPaymentAccount,
   setPaymentDate,
   setPaymentMethod,
@@ -368,6 +439,10 @@ export const {
 } = paymentSlice.actions;
 
 export const {
+  setReceiptMode,
+  setReceiptCurrentVoucherId,
+  setReceiptHasUnsavedChanges,
+  setReceiptNavigationData,
   setReceiptAccount,
   setReceiptDate,
   setReceiptMethod,
@@ -394,7 +469,7 @@ export interface JournalEntryLine {
   narration: string;
 }
 
-export interface JournalEntryState {
+export interface JournalEntryState extends VoucherNavigationState {
   form: {
     voucher_date: string;
     reference: string;
@@ -411,6 +486,7 @@ export interface JournalEntryState {
 }
 
 const journalInitialState: JournalEntryState = {
+  ...initialNavigationState,
   form: {
     voucher_date: new Date().toISOString().split('T')[0],
     reference: '',
@@ -430,6 +506,18 @@ const journalEntrySlice = createSlice({
   name: 'journalEntry',
   initialState: journalInitialState,
   reducers: {
+    setJournalMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
+      state.mode = action.payload;
+    },
+    setJournalCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+      state.currentVoucherId = action.payload;
+    },
+    setJournalHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setJournalNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+      state.navigationData = action.payload;
+    },
     setJournalDate: (state, action: PayloadAction<string>) => {
       state.form.voucher_date = action.payload;
     },
@@ -470,6 +558,10 @@ const journalEntrySlice = createSlice({
 });
 
 export const {
+  setJournalMode,
+  setJournalCurrentVoucherId,
+  setJournalHasUnsavedChanges,
+  setJournalNavigationData,
   setJournalDate,
   setJournalReference,
   setJournalNarration,
@@ -492,7 +584,7 @@ export interface OpeningBalanceLine {
   narration: string;
 }
 
-export interface OpeningBalanceState {
+export interface OpeningBalanceState extends VoucherNavigationState {
   form: {
     voucher_date: string;
     reference: string;
@@ -509,6 +601,7 @@ export interface OpeningBalanceState {
 }
 
 const openingBalanceInitialState: OpeningBalanceState = {
+  ...initialNavigationState,
   form: {
     voucher_date: new Date().toISOString().split('T')[0],
     reference: '',
@@ -528,6 +621,18 @@ const openingBalanceSlice = createSlice({
   name: 'openingBalance',
   initialState: openingBalanceInitialState,
   reducers: {
+    setOpeningBalanceMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
+      state.mode = action.payload;
+    },
+    setOpeningBalanceCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+      state.currentVoucherId = action.payload;
+    },
+    setOpeningBalanceHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setOpeningBalanceNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+      state.navigationData = action.payload;
+    },
     setOpeningBalanceDate: (state, action: PayloadAction<string>) => {
       state.form.voucher_date = action.payload;
     },
@@ -568,6 +673,10 @@ const openingBalanceSlice = createSlice({
 });
 
 export const {
+  setOpeningBalanceMode,
+  setOpeningBalanceCurrentVoucherId,
+  setOpeningBalanceHasUnsavedChanges,
+  setOpeningBalanceNavigationData,
   setOpeningBalanceDate,
   setOpeningBalanceReference,
   setOpeningBalanceNarration,
@@ -593,7 +702,7 @@ export interface SalesInvoiceItem {
   tax_rate: number;
 }
 
-export interface SalesInvoiceState {
+export interface SalesInvoiceState extends VoucherNavigationState {
   form: {
     customer_id: number;
     customer_name: string;
@@ -615,6 +724,7 @@ export interface SalesInvoiceState {
 }
 
 const salesInitialState: SalesInvoiceState = {
+  ...initialNavigationState,
   form: {
     customer_id: 0,
     customer_name: '',
@@ -639,6 +749,18 @@ const salesInvoiceSlice = createSlice({
   name: 'salesInvoice',
   initialState: salesInitialState,
   reducers: {
+    setSalesMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
+      state.mode = action.payload;
+    },
+    setSalesCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+      state.currentVoucherId = action.payload;
+    },
+    setSalesHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setSalesNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+      state.navigationData = action.payload;
+    },
     setSalesCustomer: (state, action: PayloadAction<{ id: number; name: string }>) => {
       state.form.customer_id = action.payload.id;
       state.form.customer_name = action.payload.name;
@@ -693,6 +815,10 @@ const salesInvoiceSlice = createSlice({
 });
 
 export const {
+  setSalesMode,
+  setSalesCurrentVoucherId,
+  setSalesHasUnsavedChanges,
+  setSalesNavigationData,
   setSalesCustomer,
   setSalesVoucherDate,
   setSalesReference,

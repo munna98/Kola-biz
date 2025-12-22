@@ -37,7 +37,8 @@ export function Combobox({
   placeholder = "Select option...",
   searchPlaceholder = "Search...",
   className,
-}: ComboboxProps) {
+  disabled = false,
+}: ComboboxProps & { disabled?: boolean }) {
   const [open, setOpen] = React.useState(false)
 
   const selectedOption = options.find((opt) => opt.value === value)
@@ -50,6 +51,7 @@ export function Combobox({
           role="combobox"
           aria-expanded={open}
           className={cn("justify-between h-8 text-sm w-full font-normal", className)}
+          disabled={disabled}
         >
           <span className="truncate text-left">
             {selectedOption?.label || placeholder}
@@ -57,8 +59,8 @@ export function Combobox({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent 
-        className="p-0 w-[var(--radix-popover-trigger-width)]" 
+      <PopoverContent
+        className="p-0 w-[var(--radix-popover-trigger-width)]"
         align="start"
       >
         <Command>

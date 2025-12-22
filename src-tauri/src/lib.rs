@@ -80,6 +80,11 @@ pub fn run() {
             // Reports
             get_trial_balance,
             get_ledger_report,
+            // Voucher Navigation
+            list_vouchers,
+            get_previous_voucher_id,
+            get_next_voucher_id,
+            get_voucher_by_id,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

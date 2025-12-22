@@ -793,6 +793,8 @@ pub struct PurchaseInvoice {
     pub total_amount: f64,
     pub tax_amount: f64,
     pub grand_total: f64,
+    pub discount_rate: Option<f64>,
+    pub discount_amount: Option<f64>,
     pub narration: Option<String>,
     pub status: String,
     pub created_at: String,
@@ -878,6 +880,8 @@ pub async fn get_purchase_invoices(
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
             v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.discount_rate,
+            v.discount_amount,
             v.narration,
             v.status,
             v.created_at
@@ -911,6 +915,8 @@ pub async fn get_purchase_invoice(
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
             v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.discount_rate,
+            v.discount_amount,
             v.narration,
             v.status,
             v.created_at
@@ -1994,6 +2000,8 @@ pub struct SalesInvoice {
     pub total_amount: f64,
     pub tax_amount: f64,
     pub grand_total: f64,
+    pub discount_rate: Option<f64>,
+    pub discount_amount: Option<f64>,
     pub narration: Option<String>,
     pub status: String,
     pub created_at: String,
@@ -2051,6 +2059,8 @@ pub async fn get_sales_invoices(pool: State<'_, SqlitePool>) -> Result<Vec<Sales
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
             v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.discount_rate,
+            v.discount_amount,
             v.narration,
             v.status,
             v.created_at
@@ -2084,6 +2094,8 @@ pub async fn get_sales_invoice(
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
             v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.discount_rate,
+            v.discount_amount,
             v.narration,
             v.status,
             v.created_at
@@ -2491,4 +2503,151 @@ pub async fn get_ledger_report(
         opening_balance: report_opening_balance,
         closing_balance: running_balance,
     })
+}
+
+// ============= VOUCHER NAVIGATION =============
+
+#[derive(Serialize, sqlx::FromRow)]
+pub struct VoucherSummary {
+    pub id: i64,
+    pub voucher_no: String,
+    pub voucher_date: String,
+    pub party_name: Option<String>,
+    pub total_amount: f64,
+    pub status: String,
+    pub voucher_type: String,
+}
+
+#[tauri::command]
+pub async fn list_vouchers(
+    pool: State<'_, SqlitePool>,
+    voucher_type: String,
+    limit: i64,
+    offset: i64,
+    search_query: Option<String>,
+) -> Result<Vec<VoucherSummary>, String> {
+    let mut query = String::from(
+        "SELECT 
+            v.id,
+            v.voucher_no,
+            v.voucher_date,
+            CASE 
+                WHEN v.voucher_type = 'purchase_invoice' THEN s.name
+                WHEN v.voucher_type = 'sales_invoice' THEN c.name
+                WHEN v.voucher_type IN ('payment', 'receipt') THEN coa.account_name
+                ELSE NULL
+            END as party_name,
+            v.total_amount,
+            v.status,
+            v.voucher_type
+        FROM vouchers v
+        LEFT JOIN suppliers s ON v.party_id = s.id AND v.party_type = 'supplier'
+        LEFT JOIN customers c ON v.party_id = c.id AND v.party_type = 'customer'
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id AND v.party_type = 'account'
+        WHERE v.voucher_type = ? ",
+    );
+
+    if let Some(search) = &search_query {
+        if !search.is_empty() {
+            query.push_str("AND (v.voucher_no LIKE ? OR party_name LIKE ?) ");
+        }
+    }
+
+    query.push_str("ORDER BY v.voucher_date DESC, v.id DESC LIMIT ? OFFSET ?");
+
+    let search_pattern = search_query
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .map(|s| format!("%{}%", s));
+
+    let mut q = sqlx::query_as::<_, VoucherSummary>(&query).bind(&voucher_type);
+
+    if let Some(ref p) = search_pattern {
+        q = q.bind(p).bind(p);
+    }
+
+    q = q.bind(limit).bind(offset);
+
+    q.fetch_all(pool.inner()).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_previous_voucher_id(
+    pool: State<'_, SqlitePool>,
+    voucher_type: String,
+    current_id: i64,
+) -> Result<Option<i64>, String> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM vouchers WHERE voucher_type = ? AND id < ? ORDER BY id DESC LIMIT 1",
+    )
+    .bind(voucher_type)
+    .bind(current_id)
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_next_voucher_id(
+    pool: State<'_, SqlitePool>,
+    voucher_type: String,
+    current_id: i64,
+) -> Result<Option<i64>, String> {
+    sqlx::query_scalar::<_, i64>(
+        "SELECT id FROM vouchers WHERE voucher_type = ? AND id > ? ORDER BY id ASC LIMIT 1",
+    )
+    .bind(voucher_type)
+    .bind(current_id)
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_voucher_by_id(
+    pool: State<'_, SqlitePool>,
+    voucher_type: String,
+    id: i64,
+) -> Result<serde_json::Value, String> {
+    // Fetch generic voucher data
+    let voucher = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>, f64, String, String, i64, String)>(
+        "SELECT id, voucher_no, voucher_date, reference, narration, total_amount, status, created_at, party_id, party_type FROM vouchers WHERE id = ? AND voucher_type = ?"
+    )
+    .bind(id)
+    .bind(&voucher_type)
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if let Some(v) = voucher {
+        // Fetch items - basic info
+        let items = sqlx::query_as::<_, (i64, String, f64, f64, f64)>(
+             "SELECT id, description, final_quantity, rate, amount FROM voucher_items WHERE voucher_id = ?"
+        )
+        .bind(id)
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(serde_json::json!({
+            "id": v.0,
+            "voucher_no": v.1,
+            "voucher_date": v.2,
+            "reference": v.3,
+            "narration": v.4,
+            "total_amount": v.5,
+            "status": v.6,
+            "party_id": v.8,
+            "party_type": v.9,
+            "items": items.iter().map(|i| serde_json::json!({
+                "id": i.0,
+                "description": i.1,
+                "quantity": i.2,
+                "rate": i.3,
+                "amount": i.4
+            })).collect::<Vec<_>>()
+        }))
+    } else {
+        Err("Voucher not found".to_string())
+    }
 }

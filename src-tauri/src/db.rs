@@ -131,7 +131,8 @@ pub async fn init_db(
             narration TEXT,
             status TEXT DEFAULT 'draft',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME
         )",
     )
     .execute(&pool)
