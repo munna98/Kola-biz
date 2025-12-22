@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { IconPlus, IconEdit, IconTrash } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
 import { api, Customer, CreateCustomer } from '@/lib/tauri';
 import { toast } from 'sonner';
 
@@ -13,17 +13,18 @@ export default function CustomersPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<CreateCustomer>({ name: '', email: '', phone: '', address: '' });
   const [editing, setEditing] = useState<number | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const load = async () => {
     try {
-      setCustomers(await api.customers.list());
+      setCustomers(showDeleted ? await api.customers.listDeleted() : await api.customers.list());
     } catch (error) {
       toast.error('Failed to load customers');
       console.error(error);
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [showDeleted]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,13 +53,37 @@ export default function CustomersPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (confirm('Delete customer?')) {
+    if (confirm('Move this customer to Recycle Bin?')) {
       try {
         await api.customers.delete(id);
-        toast.success('Customer deleted successfully');
+        toast.success('Customer moved to Recycle Bin');
         load();
       } catch (error) {
         toast.error('Failed to delete customer');
+        console.error(error);
+      }
+    }
+  };
+
+  const handleRestore = async (id: number) => {
+    try {
+      await api.customers.restore(id);
+      toast.success('Customer restored successfully');
+      load();
+    } catch (error) {
+      toast.error('Failed to restore customer');
+      console.error(error);
+    }
+  };
+
+  const handleHardDelete = async (id: number) => {
+    if (confirm('PERMANENTLY delete this customer? This action cannot be undone.')) {
+      try {
+        await api.customers.hardDelete(id);
+        toast.success('Customer permanently deleted');
+        load();
+      } catch (error: any) {
+        toast.error(error.toString() || 'Failed to permanently delete customer');
         console.error(error);
       }
     }
@@ -68,12 +93,24 @@ export default function CustomersPage() {
     <div className="p-6 space-y-4">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold">Customers</h2>
-          <p className="text-sm text-muted-foreground mt-1">Manage your customer database</p>
+          <h2 className="text-2xl font-bold">{showDeleted ? 'Customers (Deleted)' : 'Customers'}</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            {showDeleted ? 'View and restore deleted customers' : 'Manage your customer database'}
+          </p>
         </div>
-        <Button onClick={() => { setOpen(true); setEditing(null); setForm({ name: '', email: '', phone: '', address: '' }); }}>
-          <IconPlus size={16} /> Add Customer
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() => setShowDeleted(!showDeleted)}
+          >
+            {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
+          </Button>
+          {!showDeleted && (
+            <Button onClick={() => { setOpen(true); setEditing(null); setForm({ name: '', email: '', phone: '', address: '' }); }}>
+              <IconPlus size={16} /> Add Customer
+            </Button>
+          )}
+        </div>
       </div>
 
       <Card>
@@ -103,8 +140,17 @@ export default function CustomersPage() {
                     <td className="p-3 text-sm">{c.phone || '-'}</td>
                     <td className="p-3 text-sm">{c.address || '-'}</td>
                     <td className="p-3 flex gap-2">
-                      <Button size="sm" variant="ghost" onClick={() => handleEdit(c)}><IconEdit size={16} /></Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleDelete(c.id)}><IconTrash size={16} /></Button>
+                      {!showDeleted ? (
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(c)}><IconEdit size={16} /></Button>
+                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(c.id)}><IconTrash size={16} /></Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-700" onClick={() => handleRestore(c.id)}><IconRefresh size={16} /></Button>
+                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleHardDelete(c.id)}><IconTrashFilled size={16} /></Button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -122,19 +168,19 @@ export default function CustomersPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label>Name *</Label>
-              <Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} required />
+              <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
             </div>
             <div>
               <Label>Email</Label>
-              <Input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
+              <Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
             </div>
             <div>
               <Label>Phone</Label>
-              <Input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
+              <Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
             </div>
             <div>
               <Label>Address</Label>
-              <Input value={form.address} onChange={e => setForm({...form, address: e.target.value})} />
+              <Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
             </div>
             <Button type="submit" className="w-full">{editing ? 'Update' : 'Create'}</Button>
           </form>

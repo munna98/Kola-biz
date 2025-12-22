@@ -4,7 +4,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { IconPlus, IconEdit, IconTrash } from '@tabler/icons-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
 import { api, Supplier, CreateSupplier } from '@/lib/tauri';
 import { toast } from 'sonner';
 
@@ -13,17 +14,18 @@ export default function SuppliersPage() {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState<CreateSupplier>({ name: '', email: '', phone: '', address: '' });
   const [editing, setEditing] = useState<number | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const load = async () => {
     try {
-      setSuppliers(await api.suppliers.list());
+      setSuppliers(showDeleted ? await api.suppliers.listDeleted() : await api.suppliers.list());
     } catch (error) {
       toast.error('Failed to load suppliers');
       console.error(error);
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [showDeleted]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -52,10 +54,10 @@ export default function SuppliersPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (confirm('Delete supplier?')) {
+    if (confirm('Move this supplier to Recycle Bin?')) {
       try {
         await api.suppliers.delete(id);
-        toast.success('Supplier deleted successfully');
+        toast.success('Supplier moved to Recycle Bin');
         load();
       } catch (error) {
         toast.error('Failed to delete supplier');
@@ -64,16 +66,62 @@ export default function SuppliersPage() {
     }
   };
 
+  const handleRestore = async (id: number) => {
+    try {
+      await api.suppliers.restore(id);
+      toast.success('Supplier restored successfully');
+      load();
+    } catch (error) {
+      toast.error('Failed to restore supplier');
+      console.error(error);
+    }
+  };
+
+  const handleHardDelete = async (id: number) => {
+    if (confirm('PERMANENTLY delete this supplier? This action cannot be undone.')) {
+      try {
+        await api.suppliers.hardDelete(id);
+        toast.success('Supplier permanently deleted');
+        load();
+      } catch (error: any) {
+        toast.error(error.toString() || 'Failed to permanently delete supplier');
+        console.error(error);
+      }
+    }
+  };
+
+
   return (
     <div className="p-6 space-y-4">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold">Suppliers</h2>
-          <p className="text-sm text-muted-foreground mt-1">Manage your supplier database</p>
+          <h2 className="text-2xl font-bold">{showDeleted ? 'Suppliers (Deleted)' : 'Suppliers'}</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            {showDeleted ? 'View and restore deleted suppliers' : 'Manage your supplier database'}
+          </p>
         </div>
-        <Button onClick={() => { setOpen(true); setEditing(null); setForm({ name: '', email: '', phone: '', address: '' }); }}>
-          <IconPlus size={16} /> Add Supplier
-        </Button>
+        <div className="flex gap-2">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDeleted(!showDeleted)}
+                >
+                  {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {showDeleted ? 'View Active Suppliers' : 'View Recycle Bin'}
+              </TooltipContent>
+            </Tooltip>
+            {!showDeleted && (
+              <Button onClick={() => { setOpen(true); setEditing(null); setForm({ name: '', email: '', phone: '', address: '' }); }}>
+                <IconPlus size={16} /> Add Supplier
+              </Button>
+            )}
+          </TooltipProvider>
+        </div>
       </div>
 
       <Card>
@@ -103,8 +151,17 @@ export default function SuppliersPage() {
                     <td className="p-3 text-sm">{s.phone || '-'}</td>
                     <td className="p-3 text-sm">{s.address || '-'}</td>
                     <td className="p-3 flex gap-2">
-                      <Button size="sm" variant="ghost" onClick={() => handleEdit(s)}><IconEdit size={16} /></Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleDelete(s.id)}><IconTrash size={16} /></Button>
+                      {!showDeleted ? (
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(s)}><IconEdit size={16} /></Button>
+                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(s.id)}><IconTrash size={16} /></Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-700" onClick={() => handleRestore(s.id)}><IconRefresh size={16} /></Button>
+                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleHardDelete(s.id)}><IconTrashFilled size={16} /></Button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -122,19 +179,19 @@ export default function SuppliersPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>
               <Label>Name *</Label>
-              <Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} required />
+              <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
             </div>
             <div>
               <Label>Email</Label>
-              <Input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
+              <Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
             </div>
             <div>
               <Label>Phone</Label>
-              <Input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
+              <Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
             </div>
             <div>
               <Label>Address</Label>
-              <Input value={form.address} onChange={e => setForm({...form, address: e.target.value})} />
+              <Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
             </div>
             <Button type="submit" className="w-full">{editing ? 'Update' : 'Create'}</Button>
           </form>

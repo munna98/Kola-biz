@@ -5,7 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { IconPlus, IconEdit, IconTrash, IconRuler } from '@tabler/icons-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconPlus, IconEdit, IconTrash, IconRuler, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
 import { api, Product, CreateProduct, Unit } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
@@ -20,14 +21,16 @@ export default function ProductsPage() {
   const [unitsOpen, setUnitsOpen] = useState(false);
   const [form, setForm] = useState<CreateProduct>({ code: '', name: '', unit_id: 1, purchase_rate: 0, sales_rate: 0, mrp: 0 });
   const [editing, setEditing] = useState<number | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
   const currentUser = useSelector((state: RootState) => state.app.currentUser);
 
   const load = async () => {
     try {
       setLoading(true);
-      const [p, u] = await Promise.all([api.products.list(), api.units.list()]);
-      console.log('Loaded products:', p);
-      console.log('Loaded units:', u);
+      const [p, u] = await Promise.all([
+        showDeleted ? api.products.listDeleted() : api.products.list(),
+        api.units.list()
+      ]);
       setProducts(p);
       setUnits(u);
     } catch (error) {
@@ -38,9 +41,9 @@ export default function ProductsPage() {
     }
   };
 
-  useEffect(() => { 
-    load(); 
-  }, []);
+  useEffect(() => {
+    load();
+  }, [showDeleted]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,37 +67,61 @@ export default function ProductsPage() {
   };
 
   const resetForm = () => {
-    setForm({ 
-      code: '', 
-      name: '', 
-      unit_id: units.length > 0 ? units[0].id : 1, 
-      purchase_rate: 0, 
-      sales_rate: 0, 
-      mrp: 0 
+    setForm({
+      code: '',
+      name: '',
+      unit_id: units.length > 0 ? units[0].id : 1,
+      purchase_rate: 0,
+      sales_rate: 0,
+      mrp: 0
     });
   };
 
   const handleEdit = (p: Product) => {
-    setForm({ 
-      code: p.code, 
-      name: p.name, 
-      unit_id: p.unit_id, 
-      purchase_rate: p.purchase_rate, 
-      sales_rate: p.sales_rate, 
-      mrp: p.mrp 
+    setForm({
+      code: p.code,
+      name: p.name,
+      unit_id: p.unit_id,
+      purchase_rate: p.purchase_rate,
+      sales_rate: p.sales_rate,
+      mrp: p.mrp
     });
     setEditing(p.id);
     setOpen(true);
   };
 
   const handleDelete = async (id: number) => {
-    if (confirm('Delete this product?')) {
+    if (confirm('Move this product to Recycle Bin?')) {
       try {
         await api.products.delete(id, currentUser);
-        toast.success('Product deleted successfully');
+        toast.success('Product moved to Recycle Bin');
         load();
       } catch (error) {
         toast.error('Failed to delete product');
+        console.error(error);
+      }
+    }
+  };
+
+  const handleRestore = async (id: number) => {
+    try {
+      await api.products.restore(id);
+      toast.success('Product restored successfully');
+      load();
+    } catch (error) {
+      toast.error('Failed to restore product');
+      console.error(error);
+    }
+  };
+
+  const handleHardDelete = async (id: number) => {
+    if (confirm('PERMANENTLY delete this product? This action cannot be undone.')) {
+      try {
+        await api.products.hardDelete(id);
+        toast.success('Product permanently deleted');
+        load();
+      } catch (error: any) {
+        toast.error(error.toString() || 'Failed to permanently delete product');
         console.error(error);
       }
     }
@@ -125,16 +152,42 @@ export default function ProductsPage() {
     <div className="p-6 space-y-4">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold">Products</h2>
-          <p className="text-sm text-muted-foreground mt-1">Manage your product inventory</p>
+          <h2 className="text-2xl font-bold">{showDeleted ? 'Products (Deleted)' : 'Products'}</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            {showDeleted ? 'View and restore deleted products' : 'Manage your product inventory'}
+          </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setUnitsOpen(true)}>
-            <IconRuler size={16} /> Manage Units
-          </Button>
-          <Button onClick={handleOpenDialog}>
-            <IconPlus size={16} /> Add Product
-          </Button>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDeleted(!showDeleted)}
+                >
+                  {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {showDeleted ? 'View Active Products' : 'View Recycle Bin'}
+              </TooltipContent>
+            </Tooltip>
+            {!showDeleted && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => setUnitsOpen(true)}>
+                      <IconRuler size={16} /> Manage Units
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Manage Units</TooltipContent>
+                </Tooltip>
+                <Button onClick={handleOpenDialog}>
+                  <IconPlus size={16} /> Add Product
+                </Button>
+              </>
+            )}
+          </TooltipProvider>
         </div>
       </div>
 
@@ -171,8 +224,17 @@ export default function ProductsPage() {
                     <td className="p-3">₹{p.mrp.toFixed(2)}</td>
                     <td className="p-3">{p.is_active ? '✓' : '✗'}</td>
                     <td className="p-3 flex gap-2">
-                      <Button size="sm" variant="ghost" onClick={() => handleEdit(p)}><IconEdit size={16} /></Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleDelete(p.id)}><IconTrash size={16} /></Button>
+                      {!showDeleted ? (
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(p)}><IconEdit size={16} /></Button>
+                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.id)}><IconTrash size={16} /></Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-700" onClick={() => handleRestore(p.id)}><IconRefresh size={16} /></Button>
+                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleHardDelete(p.id)}><IconTrashFilled size={16} /></Button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -192,18 +254,18 @@ export default function ProductsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <Label>Code</Label>
-                <Input value={form.code} onChange={e => setForm({...form, code: e.target.value})} required />
+                <Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} required />
               </div>
               <div>
                 <Label>Name</Label>
-                <Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} required />
+                <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
               </div>
             </div>
             <div>
               <Label>Unit</Label>
-              <Select 
-                value={form.unit_id.toString()} 
-                onValueChange={v => setForm({...form, unit_id: +v})}
+              <Select
+                value={form.unit_id.toString()}
+                onValueChange={v => setForm({ ...form, unit_id: +v })}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -220,15 +282,15 @@ export default function ProductsPage() {
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label>Purchase Rate</Label>
-                <Input type="number" step="0.01" value={form.purchase_rate} onChange={e => setForm({...form, purchase_rate: +e.target.value})} required />
+                <Input type="number" step="0.01" value={form.purchase_rate} onChange={e => setForm({ ...form, purchase_rate: +e.target.value })} required />
               </div>
               <div>
                 <Label>Sales Rate</Label>
-                <Input type="number" step="0.01" value={form.sales_rate} onChange={e => setForm({...form, sales_rate: +e.target.value})} required />
+                <Input type="number" step="0.01" value={form.sales_rate} onChange={e => setForm({ ...form, sales_rate: +e.target.value })} required />
               </div>
               <div>
                 <Label>MRP</Label>
-                <Input type="number" step="0.01" value={form.mrp} onChange={e => setForm({...form, mrp: +e.target.value})} required />
+                <Input type="number" step="0.01" value={form.mrp} onChange={e => setForm({ ...form, mrp: +e.target.value })} required />
               </div>
             </div>
             <Button type="submit" className="w-full">{editing ? 'Update' : 'Create'}</Button>
@@ -237,8 +299,8 @@ export default function ProductsPage() {
       </Dialog>
 
       {/* Units Management Dialog Component */}
-      <UnitsDialog 
-        open={unitsOpen} 
+      <UnitsDialog
+        open={unitsOpen}
         onOpenChange={setUnitsOpen}
         onUnitsChange={handleUnitsChange}
       />

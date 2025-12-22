@@ -170,6 +170,30 @@ pub async fn delete_product(
     id: i64,
     deleted_by: String,
 ) -> Result<(), String> {
+    // Check for references in voucher_items
+    let ref_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM voucher_items WHERE product_id = ?")
+            .bind(id)
+            .fetch_one(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if ref_count > 0 {
+        return Err("Cannot delete product as it is referenced in vouchers.".to_string());
+    }
+
+    // Check for references in stock_movements
+    let stock_ref_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM stock_movements WHERE product_id = ?")
+            .bind(id)
+            .fetch_one(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if stock_ref_count > 0 {
+        return Err("Cannot delete product as it has stock movement records.".to_string());
+    }
+
     sqlx::query(
         "UPDATE products 
          SET deleted_at = CURRENT_TIMESTAMP, deleted_by = ?, is_active = 0 
@@ -184,6 +208,72 @@ pub async fn delete_product(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn get_deleted_products(pool: State<'_, SqlitePool>) -> Result<Vec<Product>, String> {
+    sqlx::query_as::<_, Product>(
+        "SELECT id, code, name, unit_id, purchase_rate, sales_rate, mrp, is_active, created_at 
+         FROM products
+         WHERE deleted_at IS NOT NULL 
+         ORDER BY deleted_at DESC",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn restore_product(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+    sqlx::query(
+        "UPDATE products 
+         SET deleted_at = NULL, deleted_by = NULL, is_active = 1 
+         WHERE id = ?",
+    )
+    .bind(id)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn hard_delete_product(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+    // Reference checks (same as soft delete)
+    let ref_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM voucher_items WHERE product_id = ?")
+            .bind(id)
+            .fetch_one(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if ref_count > 0 {
+        return Err(
+            "Cannot permanently delete product as it is referenced in vouchers.".to_string(),
+        );
+    }
+
+    let stock_ref_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM stock_movements WHERE product_id = ?")
+            .bind(id)
+            .fetch_one(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if stock_ref_count > 0 {
+        return Err(
+            "Cannot permanently delete product as it has stock movement records.".to_string(),
+        );
+    }
+
+    sqlx::query("DELETE FROM products WHERE id = ?")
+        .bind(id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 // ============= CUSTOMERS =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct Customer {
@@ -193,6 +283,7 @@ pub struct Customer {
     pub phone: Option<String>,
     pub address: Option<String>,
     pub is_active: i64,
+    pub deleted_at: Option<String>,
     pub created_at: String,
 }
 
@@ -206,10 +297,12 @@ pub struct CreateCustomer {
 
 #[tauri::command]
 pub async fn get_customers(pool: State<'_, SqlitePool>) -> Result<Vec<Customer>, String> {
-    sqlx::query_as::<_, Customer>("SELECT * FROM customers WHERE is_active = 1 ORDER BY name ASC")
-        .fetch_all(pool.inner())
-        .await
-        .map_err(|e| e.to_string())
+    sqlx::query_as::<_, Customer>(
+        "SELECT * FROM customers WHERE deleted_at IS NULL ORDER BY name ASC",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -283,19 +376,126 @@ pub async fn update_customer(
 
 #[tauri::command]
 pub async fn delete_customer(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
-    sqlx::query("UPDATE customers SET is_active = 0 WHERE id = ?")
+    // Check for references in vouchers
+    let voucher_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM vouchers WHERE party_id = ? AND party_type = 'customer' AND deleted_at IS NULL")
+            .bind(id)
+            .fetch_one(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if voucher_count > 0 {
+        return Err("Cannot delete customer as they have associated vouchers.".to_string());
+    }
+
+    // Check for journal entries in the corresponding COA
+    let account_code = format!("1003-{}", id);
+    let journal_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entries WHERE account_id = (SELECT id FROM chart_of_accounts WHERE account_code = ?)",
+    )
+    .bind(&account_code)
+    .fetch_one(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if journal_count > 0 {
+        return Err("Cannot delete customer as their account has ledger entries.".to_string());
+    }
+
+    sqlx::query("UPDATE customers SET is_active = 0, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(id)
         .execute(pool.inner())
         .await
         .map_err(|e| e.to_string())?;
 
     // Delete corresponding account from chart of accounts
-    let account_code = format!("1003-{}", id);
-    sqlx::query("UPDATE chart_of_accounts SET is_active = 0 WHERE account_code = ?")
-        .bind(&account_code)
+    sqlx::query(
+        "UPDATE chart_of_accounts SET is_active = 0, deleted_at = CURRENT_TIMESTAMP WHERE account_code = ?",
+    )
+    .bind(&account_code)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_deleted_customers(pool: State<'_, SqlitePool>) -> Result<Vec<Customer>, String> {
+    sqlx::query_as::<_, Customer>(
+        "SELECT * FROM customers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn restore_customer(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+    sqlx::query("UPDATE customers SET is_active = 1, deleted_at = NULL WHERE id = ?")
+        .bind(id)
         .execute(pool.inner())
         .await
         .map_err(|e| e.to_string())?;
+
+    let account_code = format!("1003-{}", id);
+    sqlx::query(
+        "UPDATE chart_of_accounts SET is_active = 1, deleted_at = NULL WHERE account_code = ?",
+    )
+    .bind(&account_code)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn hard_delete_customer(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+    // Reference checks (same as soft delete)
+    let voucher_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM vouchers WHERE party_id = ? AND party_type = 'customer' AND deleted_at IS NULL")
+            .bind(id)
+            .fetch_one(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if voucher_count > 0 {
+        return Err(
+            "Cannot permanently delete customer as they have associated vouchers.".to_string(),
+        );
+    }
+
+    let account_code = format!("1003-{}", id);
+    let journal_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entries WHERE account_id = (SELECT id FROM chart_of_accounts WHERE account_code = ?)",
+    )
+    .bind(&account_code)
+    .fetch_one(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if journal_count > 0 {
+        return Err(
+            "Cannot permanently delete customer as their account has ledger entries.".to_string(),
+        );
+    }
+
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM customers WHERE id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM chart_of_accounts WHERE account_code = ?")
+        .bind(&account_code)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -309,6 +509,7 @@ pub struct Supplier {
     pub phone: Option<String>,
     pub address: Option<String>,
     pub is_active: i64,
+    pub deleted_at: Option<String>,
     pub created_at: String,
 }
 
@@ -322,10 +523,12 @@ pub struct CreateSupplier {
 
 #[tauri::command]
 pub async fn get_suppliers(pool: State<'_, SqlitePool>) -> Result<Vec<Supplier>, String> {
-    sqlx::query_as::<_, Supplier>("SELECT * FROM suppliers WHERE is_active = 1 ORDER BY name ASC")
-        .fetch_all(pool.inner())
-        .await
-        .map_err(|e| e.to_string())
+    sqlx::query_as::<_, Supplier>(
+        "SELECT * FROM suppliers WHERE deleted_at IS NULL ORDER BY name ASC",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -399,19 +602,126 @@ pub async fn update_supplier(
 
 #[tauri::command]
 pub async fn delete_supplier(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
-    sqlx::query("UPDATE suppliers SET is_active = 0 WHERE id = ?")
+    // Check for references in vouchers
+    let voucher_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM vouchers WHERE party_id = ? AND party_type = 'supplier' AND deleted_at IS NULL")
+            .bind(id)
+            .fetch_one(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if voucher_count > 0 {
+        return Err("Cannot delete supplier as they have associated vouchers.".to_string());
+    }
+
+    // Check for journal entries in the corresponding COA
+    let account_code = format!("2001-{}", id);
+    let journal_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entries WHERE account_id = (SELECT id FROM chart_of_accounts WHERE account_code = ?)",
+    )
+    .bind(&account_code)
+    .fetch_one(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if journal_count > 0 {
+        return Err("Cannot delete supplier as their account has ledger entries.".to_string());
+    }
+
+    sqlx::query("UPDATE suppliers SET is_active = 0, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(id)
         .execute(pool.inner())
         .await
         .map_err(|e| e.to_string())?;
 
     // Delete corresponding account from chart of accounts
-    let account_code = format!("2001-{}", id);
-    sqlx::query("UPDATE chart_of_accounts SET is_active = 0 WHERE account_code = ?")
-        .bind(&account_code)
+    sqlx::query(
+        "UPDATE chart_of_accounts SET is_active = 0, deleted_at = CURRENT_TIMESTAMP WHERE account_code = ?",
+    )
+    .bind(&account_code)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_deleted_suppliers(pool: State<'_, SqlitePool>) -> Result<Vec<Supplier>, String> {
+    sqlx::query_as::<_, Supplier>(
+        "SELECT * FROM suppliers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn restore_supplier(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+    sqlx::query("UPDATE suppliers SET is_active = 1, deleted_at = NULL WHERE id = ?")
+        .bind(id)
         .execute(pool.inner())
         .await
         .map_err(|e| e.to_string())?;
+
+    let account_code = format!("2001-{}", id);
+    sqlx::query(
+        "UPDATE chart_of_accounts SET is_active = 1, deleted_at = NULL WHERE account_code = ?",
+    )
+    .bind(&account_code)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn hard_delete_supplier(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+    // Reference checks (same as soft delete)
+    let voucher_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM vouchers WHERE party_id = ? AND party_type = 'supplier' AND deleted_at IS NULL")
+            .bind(id)
+            .fetch_one(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if voucher_count > 0 {
+        return Err(
+            "Cannot permanently delete supplier as they have associated vouchers.".to_string(),
+        );
+    }
+
+    let account_code = format!("2001-{}", id);
+    let journal_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entries WHERE account_id = (SELECT id FROM chart_of_accounts WHERE account_code = ?)",
+    )
+    .bind(&account_code)
+    .fetch_one(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if journal_count > 0 {
+        return Err(
+            "Cannot permanently delete supplier as their account has ledger entries.".to_string(),
+        );
+    }
+
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM suppliers WHERE id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM chart_of_accounts WHERE account_code = ?")
+        .bind(&account_code)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -428,6 +738,7 @@ pub struct ChartOfAccount {
     pub opening_balance: f64,
     pub opening_balance_type: String,
     pub is_active: i64,
+    pub deleted_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -448,7 +759,7 @@ pub async fn get_chart_of_accounts(
     pool: State<'_, SqlitePool>,
 ) -> Result<Vec<ChartOfAccount>, String> {
     sqlx::query_as::<_, ChartOfAccount>(
-        "SELECT id, account_code, account_name, account_type, account_group, description, CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, is_active, created_at, updated_at FROM chart_of_accounts WHERE is_active = 1 ORDER BY account_code ASC"
+        "SELECT id, account_code, account_name, account_type, account_group, description, CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, is_active, deleted_at, created_at, updated_at FROM chart_of_accounts WHERE deleted_at IS NULL ORDER BY account_code ASC"
     )
         .fetch_all(pool.inner())
         .await
@@ -634,6 +945,30 @@ pub async fn delete_chart_of_account(pool: State<'_, SqlitePool>, id: i64) -> Re
         return Err("Cannot delete default accounts".to_string());
     }
 
+    // Check for references in journal_entries
+    let journal_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE account_id = ?")
+            .bind(id)
+            .fetch_one(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if journal_count > 0 {
+        return Err("Cannot delete account as it has associated journal entries.".to_string());
+    }
+
+    // Check for references in opening_balances
+    let ob_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM opening_balances WHERE account_id = ?")
+            .bind(id)
+            .fetch_one(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if ob_count > 0 {
+        return Err("Cannot delete account as it has opening balance records.".to_string());
+    }
+
     // Check if account is linked to a customer (code pattern: 1003-{customer_id})
     if account.account_code.starts_with("1003-") {
         let customer_id_str = account.account_code.strip_prefix("1003-").unwrap_or("");
@@ -670,7 +1005,89 @@ pub async fn delete_chart_of_account(pool: State<'_, SqlitePool>, id: i64) -> Re
         }
     }
 
-    sqlx::query("UPDATE chart_of_accounts SET is_active = 0 WHERE id = ?")
+    sqlx::query(
+        "UPDATE chart_of_accounts SET is_active = 0, deleted_at = CURRENT_TIMESTAMP WHERE id = ?",
+    )
+    .bind(id)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_deleted_chart_of_accounts(
+    pool: State<'_, SqlitePool>,
+) -> Result<Vec<ChartOfAccount>, String> {
+    sqlx::query_as::<_, ChartOfAccount>(
+        "SELECT * FROM chart_of_accounts WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn restore_chart_of_account(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+    sqlx::query("UPDATE chart_of_accounts SET is_active = 1, deleted_at = NULL WHERE id = ?")
+        .bind(id)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn hard_delete_chart_of_account(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+) -> Result<(), String> {
+    // Reference checks (same as soft delete)
+    let account =
+        sqlx::query_as::<_, ChartOfAccount>("SELECT * FROM chart_of_accounts WHERE id = ?")
+            .bind(id)
+            .fetch_optional(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| "Account not found".to_string())?;
+
+    let default_codes = vec![
+        "1001", "1002", "1003", "2001", "3001", "4001", "4002", "5001", "5002", "5003",
+    ];
+
+    if default_codes.contains(&account.account_code.as_str()) {
+        return Err("Cannot permanently delete default accounts".to_string());
+    }
+
+    let journal_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE account_id = ?")
+            .bind(id)
+            .fetch_one(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if journal_count > 0 {
+        return Err(
+            "Cannot permanently delete account as it has associated journal entries.".to_string(),
+        );
+    }
+
+    let ob_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM opening_balances WHERE account_id = ?")
+            .bind(id)
+            .fetch_one(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if ob_count > 0 {
+        return Err(
+            "Cannot permanently delete account as it has opening balance records.".to_string(),
+        );
+    }
+
+    sqlx::query("DELETE FROM chart_of_accounts WHERE id = ?")
         .bind(id)
         .execute(pool.inner())
         .await
@@ -799,6 +1216,7 @@ pub struct PurchaseInvoice {
     pub narration: Option<String>,
     pub status: String,
     pub created_at: String,
+    pub deleted_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -816,6 +1234,7 @@ pub struct PurchaseInvoiceItem {
     pub amount: f64,
     pub tax_rate: f64,
     pub tax_amount: f64,
+    pub remarks: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -827,6 +1246,7 @@ pub struct CreatePurchaseInvoiceItem {
     pub deduction_per_unit: f64,
     pub rate: f64,
     pub tax_rate: f64,
+    pub remarks: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -943,31 +1363,16 @@ pub async fn get_purchase_invoice_items(
     pool: State<'_, SqlitePool>,
     voucher_id: i64,
 ) -> Result<Vec<PurchaseInvoiceItem>, String> {
-    let items = sqlx::query_as::<_, PurchaseInvoiceItem>(
-        "SELECT 
-            vi.id,
-            vi.voucher_id,
-            vi.product_id,
-            p.name as product_name,
-            vi.description,
-            vi.initial_quantity,
-            vi.count,
-            vi.deduction_per_unit,
-            vi.final_quantity,
-            vi.rate,
-            vi.amount,
-            vi.tax_rate,
-            vi.tax_amount
-        FROM voucher_items vi
-        LEFT JOIN products p ON vi.product_id = p.id
-        WHERE vi.voucher_id = ?",
+    sqlx::query_as::<_, PurchaseInvoiceItem>(
+        "SELECT vi.*, p.name as product_name 
+         FROM voucher_items vi
+         JOIN products p ON vi.product_id = p.id
+         WHERE vi.voucher_id = ?",
     )
     .bind(voucher_id)
     .fetch_all(pool.inner())
     .await
-    .map_err(|e| e.to_string())?;
-
-    Ok(items)
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -1022,8 +1427,8 @@ pub async fn create_purchase_invoice(
         let tax_amount = amount * (item.tax_rate / 100.0);
 
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount, remarks)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(voucher_id)
         .bind(item.product_id)
@@ -1036,6 +1441,7 @@ pub async fn create_purchase_invoice(
         .bind(amount)
         .bind(item.tax_rate)
         .bind(tax_amount)
+        .bind(&item.remarks)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -1171,7 +1577,7 @@ pub async fn create_purchase_invoice(
 
 #[tauri::command]
 pub async fn delete_purchase_invoice(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
-    sqlx::query("DELETE FROM vouchers WHERE id = ?")
+    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'purchase_invoice'")
         .bind(id)
         .execute(pool.inner())
         .await
@@ -1197,6 +1603,7 @@ pub struct PaymentVoucher {
     pub narration: Option<String>,
     pub status: String,
     pub created_at: String,
+    pub deleted_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -1374,11 +1781,12 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
             v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
             v.narration,
             v.status,
-            v.created_at
+            v.created_at,
+            v.deleted_at
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
-        WHERE v.voucher_type = 'payment'
+        WHERE v.voucher_type = 'payment' AND v.deleted_at IS NULL
         GROUP BY v.id
         ORDER BY v.voucher_date DESC, v.id DESC",
     )
@@ -1416,7 +1824,7 @@ pub async fn get_payment_items(
 
 #[tauri::command]
 pub async fn delete_payment(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
-    sqlx::query("DELETE FROM vouchers WHERE id = ? AND voucher_type = 'payment'")
+    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'payment'")
         .bind(id)
         .execute(pool.inner())
         .await
@@ -1442,6 +1850,7 @@ pub struct ReceiptVoucher {
     pub narration: Option<String>,
     pub status: String,
     pub created_at: String,
+    pub deleted_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -1619,11 +2028,12 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
             v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
             v.narration,
             v.status,
-            v.created_at
+            v.created_at,
+            v.deleted_at
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
-        WHERE v.voucher_type = 'receipt'
+        WHERE v.voucher_type = 'receipt' AND v.deleted_at IS NULL
         GROUP BY v.id
         ORDER BY v.voucher_date DESC, v.id DESC",
     )
@@ -1661,7 +2071,7 @@ pub async fn get_receipt_items(
 
 #[tauri::command]
 pub async fn delete_receipt(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
-    sqlx::query("DELETE FROM vouchers WHERE id = ? AND voucher_type = 'receipt'")
+    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'receipt'")
         .bind(id)
         .execute(pool.inner())
         .await
@@ -1683,6 +2093,7 @@ pub struct JournalEntry {
     pub total_credit: f64,
     pub status: String,
     pub created_at: String,
+    pub deleted_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -1791,10 +2202,11 @@ pub async fn get_journal_entries(pool: State<'_, SqlitePool>) -> Result<Vec<Jour
             COALESCE(SUM(je.debit), 0) as total_debit,
             COALESCE(SUM(je.credit), 0) as total_credit,
             v.status,
-            v.created_at
+            v.created_at,
+            v.deleted_at
         FROM vouchers v
         LEFT JOIN journal_entries je ON v.id = je.voucher_id
-        WHERE v.voucher_type = 'journal'
+        WHERE v.voucher_type = 'journal' AND v.deleted_at IS NULL
         GROUP BY v.id
         ORDER BY v.voucher_date DESC, v.id DESC",
     )
@@ -1820,10 +2232,11 @@ pub async fn get_journal_entry(
             COALESCE(SUM(je.debit), 0) as total_debit,
             COALESCE(SUM(je.credit), 0) as total_credit,
             v.status,
-            v.created_at
+            v.created_at,
+            v.deleted_at
         FROM vouchers v
         LEFT JOIN journal_entries je ON v.id = je.voucher_id
-        WHERE v.id = ? AND v.voucher_type = 'journal'
+        WHERE v.id = ? AND v.voucher_type = 'journal' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
     .bind(id)
@@ -1874,8 +2287,8 @@ pub async fn delete_journal_entry(pool: State<'_, SqlitePool>, id: i64) -> Resul
         return Err("Can only delete manual journal entries".to_string());
     }
 
-    // Delete voucher (cascade will delete journal entries)
-    sqlx::query("DELETE FROM vouchers WHERE id = ?")
+    // Soft delete voucher
+    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(id)
         .execute(pool.inner())
         .await
@@ -1979,7 +2392,7 @@ pub async fn get_opening_balances(
     pool: State<'_, SqlitePool>,
 ) -> Result<Vec<serde_json::Value>, String> {
     sqlx::query_as::<_, (i64, String)>(
-        "SELECT v.id, v.voucher_no FROM vouchers v WHERE v.voucher_type = 'opening_balance' ORDER BY v.voucher_date DESC"
+        "SELECT v.id, v.voucher_no FROM vouchers v WHERE v.voucher_type = 'opening_balance' AND v.deleted_at IS NULL ORDER BY v.voucher_date DESC"
     )
     .fetch_all(pool.inner())
     .await
@@ -1989,7 +2402,7 @@ pub async fn get_opening_balances(
 
 #[tauri::command]
 pub async fn delete_opening_balance(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
-    sqlx::query("DELETE FROM vouchers WHERE id = ? AND voucher_type = 'opening_balance'")
+    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'opening_balance'")
         .bind(id)
         .execute(pool.inner())
         .await
@@ -2016,6 +2429,7 @@ pub struct SalesInvoice {
     pub narration: Option<String>,
     pub status: String,
     pub created_at: String,
+    pub deleted_at: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -2033,6 +2447,7 @@ pub struct SalesInvoiceItem {
     pub amount: f64,
     pub tax_rate: f64,
     pub tax_amount: f64,
+    pub remarks: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -2044,6 +2459,7 @@ pub struct CreateSalesInvoiceItem {
     pub deduction_per_unit: f64,
     pub rate: f64,
     pub tax_rate: f64,
+    pub remarks: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -2060,34 +2476,24 @@ pub struct CreateSalesInvoice {
 
 #[tauri::command]
 pub async fn get_sales_invoices(pool: State<'_, SqlitePool>) -> Result<Vec<SalesInvoice>, String> {
-    let invoices = sqlx::query_as::<_, SalesInvoice>(
-        "SELECT 
-            v.id,
-            v.voucher_no,
-            v.voucher_date,
-            v.party_id as customer_id,
-            c.name as customer_name,
-            v.reference,
-            v.total_amount,
-            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
-            v.discount_rate,
-            v.discount_amount,
-            v.narration,
-            v.status,
-            v.created_at
-        FROM vouchers v
-        LEFT JOIN customers c ON v.party_id = c.id
-        LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
-        WHERE v.voucher_type = 'sales_invoice'
-        GROUP BY v.id
-        ORDER BY v.voucher_date DESC, v.id DESC",
+    sqlx::query_as::<_, SalesInvoice>(
+        "SELECT v.*, 
+                CASE 
+                    WHEN v.party_type = 'customer' THEN c.name 
+                    ELSE s.name 
+                END as customer_name,
+                v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total
+         FROM vouchers v
+         LEFT JOIN customers c ON v.party_id = c.id AND v.party_type = 'customer'
+         LEFT JOIN suppliers s ON v.party_id = s.id AND v.party_type = 'supplier'
+         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+         WHERE v.voucher_type = 'sales_invoice' AND v.deleted_at IS NULL
+         GROUP BY v.id
+         ORDER BY v.voucher_date DESC, v.id DESC",
     )
     .fetch_all(pool.inner())
     .await
-    .map_err(|e| e.to_string())?;
-
-    Ok(invoices)
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2111,12 +2517,13 @@ pub async fn get_sales_invoice(
             v.discount_amount,
             v.narration,
             v.status,
-            v.created_at
+            v.created_at,
+            v.deleted_at
         FROM vouchers v
         LEFT JOIN customers c ON v.party_id = c.id AND v.party_type = 'customer'
         LEFT JOIN suppliers s ON v.party_id = s.id AND v.party_type = 'supplier'
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
-        WHERE v.id = ? AND v.voucher_type = 'sales_invoice'
+        WHERE v.id = ? AND v.voucher_type = 'sales_invoice' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
     .bind(id)
@@ -2132,21 +2539,8 @@ pub async fn get_sales_invoice_items(
     pool: State<'_, SqlitePool>,
     voucher_id: i64,
 ) -> Result<Vec<SalesInvoiceItem>, String> {
-    let items = sqlx::query_as::<_, SalesInvoiceItem>(
-        "SELECT 
-            vi.id,
-            vi.voucher_id,
-            vi.product_id,
-            p.name as product_name,
-            vi.description,
-            vi.initial_quantity,
-            vi.count,
-            vi.deduction_per_unit,
-            vi.final_quantity,
-            vi.rate,
-            vi.amount,
-            vi.tax_rate,
-            vi.tax_amount
+    sqlx::query_as::<_, SalesInvoiceItem>(
+        "SELECT vi.*, p.name as product_name
         FROM voucher_items vi
         LEFT JOIN products p ON vi.product_id = p.id
         WHERE vi.voucher_id = ?",
@@ -2154,9 +2548,7 @@ pub async fn get_sales_invoice_items(
     .bind(voucher_id)
     .fetch_all(pool.inner())
     .await
-    .map_err(|e| e.to_string())?;
-
-    Ok(items)
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -2210,8 +2602,8 @@ pub async fn create_sales_invoice(
         let tax_amount = amount * (item.tax_rate / 100.0);
 
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount, remarks)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(voucher_id)
         .bind(item.product_id)
@@ -2224,6 +2616,7 @@ pub async fn create_sales_invoice(
         .bind(amount)
         .bind(item.tax_rate)
         .bind(tax_amount)
+        .bind(&item.remarks)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -2360,7 +2753,7 @@ pub async fn create_sales_invoice(
 
 #[tauri::command]
 pub async fn delete_sales_invoice(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
-    sqlx::query("DELETE FROM vouchers WHERE id = ?")
+    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'sales_invoice'")
         .bind(id)
         .execute(pool.inner())
         .await
@@ -2403,7 +2796,7 @@ pub async fn get_trial_balance(
         FROM chart_of_accounts coa
         LEFT JOIN journal_entries je ON coa.id = je.account_id
         LEFT JOIN vouchers v ON je.voucher_id = v.id
-        WHERE coa.is_active = 1 {}
+        WHERE coa.is_active = 1 AND v.deleted_at IS NULL {}
         GROUP BY coa.id, coa.account_code, coa.account_name, coa.opening_balance, coa.opening_balance_type
         HAVING debit > 0 OR credit > 0
         ORDER BY coa.account_code ASC",
@@ -2464,7 +2857,7 @@ pub async fn get_ledger_report(
             "SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL), CAST(COALESCE(SUM(je.credit), 0) AS REAL)
              FROM journal_entries je
              JOIN vouchers v ON je.voucher_id = v.id
-             WHERE je.account_id = ? AND v.voucher_date < ?",
+             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL",
         )
         .bind(account_id)
         .bind(from)
@@ -2498,7 +2891,7 @@ pub async fn get_ledger_report(
             0.0 as balance
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
-        WHERE je.account_id = ? {}
+        WHERE je.account_id = ? AND v.deleted_at IS NULL {}
         ORDER BY v.voucher_date ASC, v.id ASC",
         date_filter
     );
@@ -2568,7 +2961,7 @@ pub async fn list_vouchers(
         LEFT JOIN suppliers s ON v.party_id = s.id AND v.party_type = 'supplier'
         LEFT JOIN customers c ON v.party_id = c.id AND v.party_type = 'customer'
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id AND v.party_type = 'account'
-        WHERE v.voucher_type = ? ",
+        WHERE v.voucher_type = ? AND v.deleted_at IS NULL ",
     );
 
     if let Some(search) = &search_query {

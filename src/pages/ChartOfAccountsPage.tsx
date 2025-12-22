@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import { IconPlus, IconEdit, IconTrash, IconSettings } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconSettings, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
 import { api, ChartOfAccount, CreateChartOfAccount } from '@/lib/tauri';
 import { toast } from 'sonner';
 import AccountGroupsDialog from '@/components/dialogs/AccountGroupsDialog';
@@ -28,12 +28,13 @@ export default function ChartOfAccountsPage() {
     opening_balance_type: 'Dr',
   });
   const [editing, setEditing] = useState<number | null>(null);
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const load = async () => {
     try {
       setLoading(true);
       const [accountsData, types, groups] = await Promise.all([
-        api.chartOfAccounts.list(),
+        showDeleted ? api.chartOfAccounts.listDeleted() : api.chartOfAccounts.list(),
         api.chartOfAccounts.getTypes(),
         api.chartOfAccounts.getGroups(),
       ]);
@@ -50,7 +51,7 @@ export default function ChartOfAccountsPage() {
 
   useEffect(() => {
     load();
-  }, []);
+  }, [showDeleted]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -100,14 +101,38 @@ export default function ChartOfAccountsPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (confirm('Delete this account?')) {
+    if (confirm('Move this account to Recycle Bin?')) {
       try {
         await api.chartOfAccounts.delete(id);
-        toast.success('Account deleted successfully');
+        toast.success('Account moved to Recycle Bin');
         load();
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : 'Failed to delete account';
+        const errorMessage = error instanceof Error ? error.message : error?.toString() || 'Failed to delete account';
         toast.error(errorMessage);
+        console.error(error);
+      }
+    }
+  };
+
+  const handleRestore = async (id: number) => {
+    try {
+      await api.chartOfAccounts.restore(id);
+      toast.success('Account restored successfully');
+      load();
+    } catch (error) {
+      toast.error('Failed to restore account');
+      console.error(error);
+    }
+  };
+
+  const handleHardDelete = async (id: number) => {
+    if (confirm('PERMANENTLY delete this account? This action cannot be undone.')) {
+      try {
+        await api.chartOfAccounts.hardDelete(id);
+        toast.success('Account permanently deleted');
+        load();
+      } catch (error: any) {
+        toast.error(error.toString() || 'Failed to permanently delete account');
         console.error(error);
       }
     }
@@ -133,16 +158,28 @@ export default function ChartOfAccountsPage() {
     <div className="p-6 space-y-4">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold">Chart of Accounts</h2>
-          <p className="text-sm text-muted-foreground mt-1">Manage your accounting chart</p>
+          <h2 className="text-2xl font-bold">{showDeleted ? 'Recycle Bin - Accounts' : 'Chart of Accounts'}</h2>
+          <p className="text-sm text-muted-foreground mt-1">
+            {showDeleted ? 'View and restore deleted accounts' : 'Manage your accounting chart'}
+          </p>
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" onClick={() => setGroupsDialogOpen(true)}>
-            <IconSettings size={16} /> Manage Groups
+          <Button
+            variant='outline'
+            onClick={() => setShowDeleted(!showDeleted)}
+          >
+            {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
           </Button>
-          <Button onClick={handleOpenDialog}>
-            <IconPlus size={16} /> Add Account
-          </Button>
+          {!showDeleted && (
+            <>
+              <Button variant="outline" onClick={() => setGroupsDialogOpen(true)}>
+                <IconSettings size={16} /> Manage Groups
+              </Button>
+              <Button onClick={handleOpenDialog}>
+                <IconPlus size={16} /> Add Account
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
@@ -183,12 +220,25 @@ export default function ChartOfAccountsPage() {
                     <td className="p-3 text-right">₹{account.opening_balance.toFixed(2)} <span className="text-xs font-medium text-primary">{account.opening_balance_type}</span></td>
                     <td className="p-3">{account.is_active ? '✓' : '✗'}</td>
                     <td className="p-3 flex gap-2">
-                      <Button size="sm" variant="ghost" onClick={() => handleEdit(account)}>
-                        <IconEdit size={16} />
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleDelete(account.id)}>
-                        <IconTrash size={16} />
-                      </Button>
+                      {!showDeleted ? (
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => handleEdit(account)}>
+                            <IconEdit size={16} />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(account.id)}>
+                            <IconTrash size={16} />
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-700" onClick={() => handleRestore(account.id)}>
+                            <IconRefresh size={16} />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleHardDelete(account.id)}>
+                            <IconTrashFilled size={16} />
+                          </Button>
+                        </>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -284,7 +334,7 @@ export default function ChartOfAccountsPage() {
 
               <div>
                 <Label>Balance Type</Label>
-                <RadioGroup 
+                <RadioGroup
                   value={form.opening_balance_type || 'Dr'}
                   onValueChange={(value) => setForm({ ...form, opening_balance_type: value as 'Dr' | 'Cr' })}
                   className="flex gap-4 mt-2"

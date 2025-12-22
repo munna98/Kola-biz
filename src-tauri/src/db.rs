@@ -57,7 +57,8 @@ pub async fn init_db(
             phone TEXT,
             address TEXT,
             is_active INTEGER DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME
         )",
     )
     .execute(&pool)
@@ -72,7 +73,8 @@ pub async fn init_db(
             phone TEXT,
             address TEXT,
             is_active INTEGER DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME
         )",
     )
     .execute(&pool)
@@ -104,7 +106,8 @@ pub async fn init_db(
             opening_balance_type TEXT DEFAULT 'Dr',
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME
         )",
     )
     .execute(&pool)
@@ -150,6 +153,17 @@ pub async fn init_db(
 
     // Migration: Add metadata column to vouchers if it doesn't exist
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN metadata TEXT")
+        .execute(&pool)
+        .await;
+
+    // Migration: Add deleted_at to customers, suppliers, chart_of_accounts
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN deleted_at DATETIME")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN deleted_at DATETIME")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN deleted_at DATETIME")
         .execute(&pool)
         .await;
 
