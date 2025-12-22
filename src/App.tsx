@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import { store, RootState, toggleSidebar, setActiveSection } from './store';
-import { IconPackage, IconUserMinus, IconTruck, IconUserPlus, IconShoppingBag, IconCashBanknoteMoveBack, IconCashBanknoteMove, IconMenu2, IconChevronLeft, IconBook, IconMoon, IconSun } from '@tabler/icons-react';
+import { IconPackage, IconUserDown, IconTruck, IconUserUp, IconShoppingBag, IconCashBanknoteMoveBack, IconCashBanknoteMove, IconMenu2, IconChevronLeft, IconBook, IconMoon, IconSun } from '@tabler/icons-react';
 import ProductsPage from './pages/ProductsPage';
 import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
@@ -47,8 +47,8 @@ function AppContent() {
 
   const menuItems = [
     { id: 'products', label: 'Products', icon: IconPackage },
-    { id: 'customers', label: 'Customers', icon: IconUserMinus },
-    { id: 'suppliers', label: 'Suppliers', icon: IconUserPlus },
+    { id: 'customers', label: 'Customers', icon: IconUserDown },
+    { id: 'suppliers', label: 'Suppliers', icon: IconUserUp },
     { id: 'coa', label: 'Chart of Accounts', icon: IconBook },
     { id: 'purchase', label: 'Purchase', icon: IconTruck },
     { id: 'sales', label: 'Sales', icon: IconShoppingBag },
@@ -83,7 +83,7 @@ function AppContent() {
       {/* Sidebar */}
       <aside className={`bg-card border-r transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-56'}`}>
         <div className="flex items-center justify-between p-4 border-b h-14">
-          {!sidebarCollapsed && <h1 className="font-bold text-lg">KolaBiz ERP</h1>}
+          {!sidebarCollapsed && <h1 className="font-bold text-lg font-hammersmith"><span className="text-yellow-500">KolaB</span><span className="text-green-600">i</span><span className="text-yellow-500">z ERP</span></h1>}
           <button onClick={() => dispatch(toggleSidebar())} className="p-1 hover:bg-accent rounded">
             {sidebarCollapsed ? <IconMenu2 size={20} /> : <IconChevronLeft size={20} />}
           </button>

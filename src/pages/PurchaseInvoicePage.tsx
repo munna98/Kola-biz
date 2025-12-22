@@ -130,18 +130,10 @@ export default function PurchaseInvoicePage() {
       dispatch(setVoucherDate(voucher.voucher_date));
       dispatch(setReference(voucher.reference || ''));
       dispatch(setNarration(voucher.narration || ''));
-      // We cannot exact retrieve discount rate easily if not stored, but we can try
-      // Actually discount_rate is not in get_purchase_invoice response struct in backend command 
-      // Need to check backend `get_purchase_invoice` struct. 
-      // It has `total_amount`, tax stuff. 
-      // `PurchaseInvoice` struct doesn't seem to have `discount_rate` in `get_purchase_invoice` output?
-      // Let's assume 0 for now or update backend. 
-      // Backend `get_purchase_invoice` returns `PurchaseInvoice` struct which has `total_amount`, `grand_total`. 
-      // It does NOT have `discount_rate` or `discount_amount`.
-      // This is a missing feature in `get_purchase_invoice` command compared to `create_purchase_invoice`.
-      // For now, I will set discount to 0 to avoid breaking, but I should note this.
-      dispatch(setDiscountRate(0));
-      dispatch(setDiscountAmount(0));
+
+      // Load discount fields from backend
+      dispatch(setDiscountRate(voucher.discount_rate || 0));
+      dispatch(setDiscountAmount(voucher.discount_amount || 0));
 
       // Setup Items
       dispatch(resetForm()); // Clear items first
@@ -164,19 +156,7 @@ export default function PurchaseInvoicePage() {
         id: item.id.toString() // Ensure ID is string for UI
       }));
 
-      // We need to use `addItem` action or `setItems`? `addItem` pushes one by one.
-      // `items` in state is an array.
-      // I should probably iterate and dispatch `addItem`. 
-      // Since `resetForm` clears items, I can just push them.
-      // Ideally I'd have `setItems` action but `addItem` works.
-      // Wait, `items` slice in `store` has `addItem` but no `setItems` except `resetForm`.
-      // I will add items one by one.
 
-      // Also need to be careful about `markUnsaved` triggering.
-      // I should disable unsaved check during load.
-      // But `markUnsaved` logic is in handlers, not reducers.
-      // So dispatching actions here won't trigger `markUnsaved` unless I call the handlers.
-      // Dispatching actions directly is safe.
 
       mappedItems.forEach(item => dispatch(addItem(item)));
 
@@ -319,31 +299,56 @@ export default function PurchaseInvoicePage() {
 
     try {
       dispatch(setLoading(true));
-      await invoke<number>('create_purchase_invoice', {
-        invoice: {
-          supplier_id: purchaseState.form.supplier_id,
-          voucher_date: purchaseState.form.voucher_date,
-          reference: purchaseState.form.reference || null,
-          narration: purchaseState.form.narration || null,
-          discount_rate: purchaseState.form.discount_rate || null,
-          discount_amount: purchaseState.form.discount_amount || null,
-          items: purchaseState.items.map(item => ({
-            product_id: item.product_id,
-            description: item.description,
-            initial_quantity: item.initial_quantity,
-            count: item.count,
-            deduction_per_unit: item.deduction_per_unit,
-            rate: item.rate,
-            tax_rate: item.tax_rate
-          })),
-        },
-      });
+      if (purchaseState.mode === 'editing' && purchaseState.currentVoucherId) {
+        await invoke('update_purchase_invoice', {
+          id: purchaseState.currentVoucherId,
+          invoice: {
+            supplier_id: purchaseState.form.supplier_id,
+            voucher_date: purchaseState.form.voucher_date,
+            reference: purchaseState.form.reference || null,
+            narration: purchaseState.form.narration || null,
+            discount_rate: purchaseState.form.discount_rate || null,
+            discount_amount: purchaseState.form.discount_amount || null,
+            items: purchaseState.items.map(item => ({
+              product_id: item.product_id,
+              description: item.description,
+              initial_quantity: item.initial_quantity,
+              count: item.count,
+              deduction_per_unit: item.deduction_per_unit,
+              rate: item.rate,
+              tax_rate: item.tax_rate
+            })),
+          },
+        });
+        toast.success('Purchase invoice updated successfully');
+      } else {
+        await invoke<number>('create_purchase_invoice', {
+          invoice: {
+            supplier_id: purchaseState.form.supplier_id,
+            voucher_date: purchaseState.form.voucher_date,
+            reference: purchaseState.form.reference || null,
+            narration: purchaseState.form.narration || null,
+            discount_rate: purchaseState.form.discount_rate || null,
+            discount_amount: purchaseState.form.discount_amount || null,
+            items: purchaseState.items.map(item => ({
+              product_id: item.product_id,
+              description: item.description,
+              initial_quantity: item.initial_quantity,
+              count: item.count,
+              deduction_per_unit: item.deduction_per_unit,
+              rate: item.rate,
+              tax_rate: item.tax_rate
+            })),
+          },
+        });
+      }
 
-      toast.success('Purchase invoice created successfully');
-      nav.handleNew();
+      dispatch(setPurchaseHasUnsavedChanges(false));
+      nav.handleNew(true);
     } catch (error) {
-      toast.error('Failed to create purchase invoice');
+      toast.error('Failed to save purchase invoice');
       console.error(error);
+    } finally {
       dispatch(setLoading(false));
     }
   };
@@ -717,7 +722,7 @@ export default function PurchaseInvoicePage() {
               </Button>
               <Button type="submit" disabled={purchaseState.loading} className="h-9" title="Save (Ctrl+S)">
                 <IconCheck size={16} />
-                {purchaseState.loading ? 'Saving...' : 'Save Invoice'}
+                {purchaseState.loading ? 'Saving...' : (purchaseState.mode === 'editing' ? 'Update Invoice' : 'Save Invoice')}
               </Button>
             </div>
           )}

@@ -173,15 +173,15 @@ export default function TrialBalancePage() {
                       </td>
                     </tr>
                     {!isBalanced && (
-                      <tr className="bg-destructive/10">
-                        <td colSpan={4} className="p-3 text-center text-sm font-semibold text-destructive">
+                      <tr className="bg-muted/50">
+                        <td colSpan={4} className="p-3 text-center text-xs text-destructive">
                           ⚠️ UNBALANCED: Difference of ₹{difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                         </td>
                       </tr>
                     )}
                     {isBalanced && data.length > 0 && (
-                      <tr className="bg-green-50 dark:bg-green-950/20">
-                        <td colSpan={4} className="p-3 text-center text-sm font-semibold text-green-600 dark:text-green-400">
+                      <tr className="bg-muted/50">
+                        <td colSpan={4} className="p-3 text-center text-xs text-green-600 dark:text-green-400">
                           ✓ BALANCED: Debits equal Credits
                         </td>
                       </tr>

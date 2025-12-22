@@ -50,6 +50,7 @@ pub fn run() {
             get_purchase_invoice,
             get_purchase_invoice_items,
             create_purchase_invoice,
+            update_purchase_invoice,
             delete_purchase_invoice,
             // Sales Invoices
             get_sales_invoices,

@@ -93,8 +93,8 @@ export function useVoucherNavigation({
         await onLoadVoucher(id);
     };
 
-    const handleNew = async () => {
-        if (mode === 'editing') {
+    const handleNew = async (force: boolean = false) => {
+        if (!force && mode === 'editing') {
             if (!await confirmDiscardChanges()) return;
         }
         dispatch(actions.resetForm());
