@@ -98,6 +98,9 @@ pub fn run() {
             get_previous_voucher_id,
             get_next_voucher_id,
             get_voucher_by_id,
+            // Company Profile
+            get_company_profile,
+            update_company_profile,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

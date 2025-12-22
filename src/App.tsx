@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Provider, useDispatch, useSelector } from 'react-redux';
-import { store, RootState, toggleSidebar, setActiveSection } from './store';
-import { IconPackage, IconUserDown, IconTruck, IconUserUp, IconShoppingBag, IconCashBanknoteMoveBack, IconCashBanknoteMove, IconMenu2, IconChevronLeft, IconBook, IconMoon, IconSun } from '@tabler/icons-react';
+import { Provider, useSelector } from 'react-redux';
+import { store, RootState } from './store';
 import ProductsPage from './pages/ProductsPage';
 import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
@@ -10,31 +9,19 @@ import PurchaseInvoicePage from './pages/PurchaseInvoicePage';
 import PaymentPage from './pages/PaymentPage';
 import ReceiptPage from './pages/ReceiptPage';
 import { Toaster } from '@/components/ui/sonner';
-import { ThemeProvider, useTheme } from './components/theme-provider';
+import { ThemeProvider } from './components/theme-provider';
+import Sidebar from './components/layout/Sidebar';
+import Topbar from './components/layout/Topbar';
 import './App.css';
 import JournalEntryPage from './pages/JournalEntryPage';
 import OpeningBalancePage from './pages/OpeningBalancePage';
 import SalesInvoicePage from './pages/SalesInvoicePage';
-import TrialBalancePage from './pages/TrialBalancePage';
-import LedgerReportPage from './pages/LedgerReportPage';
-
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  
-  return (
-    <button
-      onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-      className="p-2 hover:bg-accent rounded-md transition-colors"
-      title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-    >
-      {theme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
-    </button>
-  );
-}
+import TrialBalancePage from './pages/reports/TrialBalancePage';
+import LedgerReportPage from './pages/reports/LedgerReportPage';
+import SettingsPage from './pages/SettingsPage';
 
 function AppContent() {
-  const dispatch = useDispatch();
-  const { sidebarCollapsed, activeSection } = useSelector((state: RootState) => state.app);
+  const { activeSection } = useSelector((state: RootState) => state.app);
 
   // Reload data when switching to products page
   const [productPageKey, setProductPageKey] = useState(0);
@@ -44,21 +31,6 @@ function AppContent() {
       setProductPageKey(prev => prev + 1);
     }
   }, [activeSection]);
-
-  const menuItems = [
-    { id: 'products', label: 'Products', icon: IconPackage },
-    { id: 'customers', label: 'Customers', icon: IconUserDown },
-    { id: 'suppliers', label: 'Suppliers', icon: IconUserUp },
-    { id: 'coa', label: 'Chart of Accounts', icon: IconBook },
-    { id: 'purchase', label: 'Purchase', icon: IconTruck },
-    { id: 'sales', label: 'Sales', icon: IconShoppingBag },
-    { id: 'payments', label: 'Payments', icon: IconCashBanknoteMove },
-    { id: 'receipts', label: 'Receipts', icon: IconCashBanknoteMoveBack },
-    { id: 'journal', label: 'Journal Entries', icon: IconBook },
-    { id: 'opening', label: 'Opening Balance', icon: IconBook },
-    { id: 'trial', label: 'Trial Balance', icon: IconBook },
-    { id: 'ledger', label: 'Ledger Report', icon: IconBook },
-  ];
 
   const renderContent = () => {
     switch (activeSection) {
@@ -74,47 +46,18 @@ function AppContent() {
       case 'opening': return <OpeningBalancePage />;
       case 'trial': return <TrialBalancePage />;
       case 'ledger': return <LedgerReportPage />;
+      case 'settings': return <SettingsPage />;
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }
   };
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      {/* Sidebar */}
-      <aside className={`bg-card border-r transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-56'}`}>
-        <div className="flex items-center justify-between p-4 border-b h-14">
-          {!sidebarCollapsed && <h1 className="font-bold text-lg font-hammersmith"><span className="text-yellow-500">KolaB</span><span className="text-green-600">i</span><span className="text-yellow-500">z ERP</span></h1>}
-          <button onClick={() => dispatch(toggleSidebar())} className="p-1 hover:bg-accent rounded">
-            {sidebarCollapsed ? <IconMenu2 size={20} /> : <IconChevronLeft size={20} />}
-          </button>
-        </div>
-        <nav className="p-2">
-          {menuItems.map(item => (
-            <button
-              key={item.id}
-              onClick={() => dispatch(setActiveSection(item.id))}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-md mb-1 transition-colors ${activeSection === item.id ? 'bg-primary text-primary-foreground' : 'hover:bg-accent'
-                }`}
-            >
-              <item.icon size={20} />
-              {!sidebarCollapsed && <span>{item.label}</span>}
-            </button>
-          ))}
-        </nav>
-      </aside>
+      <Sidebar />
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Top Bar */}
-        <header className="bg-card border-b h-14 flex items-center px-6 gap-4">
-          <button className="px-4 py-1.5 text-sm font-medium hover:bg-accent rounded">Inventory</button>
-          <button className="px-4 py-1.5 text-sm font-medium hover:bg-accent rounded">Accounts</button>
-          <button className="px-4 py-1.5 text-sm font-medium hover:bg-accent rounded">Reports</button>
-          <div className="ml-auto flex items-center gap-3">
-            <ThemeToggle />
-            <div className="text-sm text-muted-foreground">Admin</div>
-          </div>
-        </header>
+        <Topbar />
 
         {/* Content Area */}
         <main className="flex-1 overflow-auto">

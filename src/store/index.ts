@@ -844,6 +844,85 @@ export const {
   setSalesLoading,
 } = salesInvoiceSlice.actions;
 
+// ========== COMPANY PROFILE SLICE ==========
+export interface CompanyProfileState {
+  profile: {
+    id: number;
+    company_name: string;
+    business_type: string;
+    address_line1: string;
+    address_line2: string;
+    address_line3: string;
+    city: string;
+    state: string;
+    pincode: string;
+    country: string;
+    phone: string;
+    email: string;
+    website: string;
+    gstin: string;
+    pan: string;
+    cin: string;
+    logo_data: string;
+    bank_name: string;
+    bank_account_no: string;
+    bank_ifsc: string;
+    bank_branch: string;
+    terms_and_conditions: string;
+  };
+  loading: boolean;
+}
+
+const companyProfileInitialState: CompanyProfileState = {
+  profile: {
+    id: 1,
+    company_name: '',
+    business_type: '',
+    address_line1: '',
+    address_line2: '',
+    address_line3: '',
+    city: '',
+    state: '',
+    pincode: '',
+    country: 'India',
+    phone: '',
+    email: '',
+    website: '',
+    gstin: '',
+    pan: '',
+    cin: '',
+    logo_data: '',
+    bank_name: '',
+    bank_account_no: '',
+    bank_ifsc: '',
+    bank_branch: '',
+    terms_and_conditions: '',
+  },
+  loading: false,
+};
+
+const companyProfileSlice = createSlice({
+  name: 'companyProfile',
+  initialState: companyProfileInitialState,
+  reducers: {
+    setCompanyProfile: (state, action: PayloadAction<Partial<CompanyProfileState['profile']>>) => {
+      state.profile = { ...state.profile, ...action.payload };
+    },
+    updateCompanyField: (state, action: PayloadAction<{ field: keyof CompanyProfileState['profile']; value: string }>) => {
+      state.profile[action.payload.field] = action.payload.value as never;
+    },
+    setCompanyLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+  },
+});
+
+export const {
+  setCompanyProfile,
+  updateCompanyField,
+  setCompanyLoading,
+} = companyProfileSlice.actions;
+
 
 export const store = configureStore({
   reducer: {
@@ -854,6 +933,7 @@ export const store = configureStore({
     receipt: receiptSlice.reducer,
     journalEntry: journalEntrySlice.reducer,
     openingBalance: openingBalanceSlice.reducer,
+    companyProfile: companyProfileSlice.reducer,
   },
 });
 

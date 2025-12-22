@@ -380,5 +380,46 @@ pub async fn init_db(
     sqlx::query("INSERT OR IGNORE INTO units (name, symbol) VALUES ('Piece', 'Pcs'), ('Kilogram', 'Kg'), ('Liter', 'L')")
         .execute(&pool).await?;
 
+    // ==================== COMPANY PROFILE ====================
+
+    // Company/Business Profile table
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS company_profile (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            company_name TEXT NOT NULL,
+            business_type TEXT,
+            address_line1 TEXT,
+            address_line2 TEXT,
+            address_line3 TEXT,
+            city TEXT,
+            state TEXT,
+            pincode TEXT,
+            country TEXT DEFAULT 'India',
+            phone TEXT,
+            email TEXT,
+            website TEXT,
+            gstin TEXT,
+            pan TEXT,
+            cin TEXT,
+            logo_data TEXT,
+            bank_name TEXT,
+            bank_account_no TEXT,
+            bank_ifsc TEXT,
+            bank_branch TEXT,
+            terms_and_conditions TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Insert default company profile record
+    sqlx::query(
+        "INSERT OR IGNORE INTO company_profile (id, company_name) VALUES (1, 'My Company')",
+    )
+    .execute(&pool)
+    .await?;
+
     Ok(pool)
 }
