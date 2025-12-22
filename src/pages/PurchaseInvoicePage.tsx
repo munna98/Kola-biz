@@ -575,6 +575,7 @@ export default function PurchaseInvoicePage() {
                           handleUpdateItem(idx, 'initial_quantity', parseFloat(e.target.value) || 0)
                         }
                         className="h-7 text-xs text-right font-mono"
+                        placeholder="0.00"
                         step="0.01"
                         disabled={isReadOnly}
                       />
@@ -589,9 +590,10 @@ export default function PurchaseInvoicePage() {
                     <div>
                       <Input
                         type="number"
-                        value={item.rate}
+                        value={item.rate || ''}
                         onChange={(e) => handleUpdateItem(idx, 'rate', parseFloat(e.target.value) || 0)}
                         className="h-7 text-xs text-right font-mono"
+                        placeholder="0.00"
                         step="0.01"
                         disabled={isReadOnly}
                       />
@@ -601,9 +603,10 @@ export default function PurchaseInvoicePage() {
                     <div>
                       <Input
                         type="number"
-                        value={item.count}
+                        value={item.count || ''}
                         onChange={(e) => handleUpdateItem(idx, 'count', parseFloat(e.target.value) || 0)}
                         className="h-7 text-xs text-right font-mono"
+                        placeholder="1.00"
                         step="0.01"
                         disabled={isReadOnly}
                       />
@@ -613,11 +616,12 @@ export default function PurchaseInvoicePage() {
                     <div>
                       <Input
                         type="number"
-                        value={item.deduction_per_unit}
+                        value={item.deduction_per_unit || ''}
                         onChange={(e) =>
                           handleUpdateItem(idx, 'deduction_per_unit', parseFloat(e.target.value) || 0)
                         }
                         className="h-7 text-xs text-right font-mono"
+                        placeholder="0.00"
                         step="0.01"
                         disabled={isReadOnly}
                       />
@@ -709,7 +713,7 @@ export default function PurchaseInvoicePage() {
                           updateTotalsWithItems(purchaseState.items, rate, undefined);
                           markUnsaved();
                         }}
-                        placeholder="0"
+                        placeholder="0.00"
                         className="h-6.5 font-mono text-xs"
                         step="0.01"
                         disabled={isReadOnly}
@@ -725,7 +729,7 @@ export default function PurchaseInvoicePage() {
                           updateTotalsWithItems(purchaseState.items, undefined, amount);
                           markUnsaved();
                         }}
-                        placeholder="0"
+                        placeholder="0.00"
                         className="h-6.5 font-mono text-xs"
                         step="0.01"
                         disabled={isReadOnly}

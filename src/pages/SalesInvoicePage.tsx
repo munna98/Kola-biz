@@ -410,6 +410,7 @@ export default function SalesInvoicePage() {
                           handleUpdateItem(idx, 'initial_quantity', parseFloat(e.target.value) || 0)
                         }
                         className="h-7 text-xs text-right font-mono"
+                        placeholder="0.00"
                         step="0.01"
                       />
                     </div>
@@ -423,9 +424,10 @@ export default function SalesInvoicePage() {
                     <div>
                       <Input
                         type="number"
-                        value={item.rate}
+                        value={item.rate || ''}
                         onChange={(e) => handleUpdateItem(idx, 'rate', parseFloat(e.target.value) || 0)}
                         className="h-7 text-xs text-right font-mono"
+                        placeholder="0.00"
                         step="0.01"
                       />
                     </div>
@@ -434,9 +436,10 @@ export default function SalesInvoicePage() {
                     <div>
                       <Input
                         type="number"
-                        value={item.count}
+                        value={item.count || ''}
                         onChange={(e) => handleUpdateItem(idx, 'count', parseFloat(e.target.value) || 0)}
                         className="h-7 text-xs text-right font-mono"
+                        placeholder="1.00"
                         step="0.01"
                       />
                     </div>
@@ -445,11 +448,12 @@ export default function SalesInvoicePage() {
                     <div>
                       <Input
                         type="number"
-                        value={item.deduction_per_unit}
+                        value={item.deduction_per_unit || ''}
                         onChange={(e) =>
                           handleUpdateItem(idx, 'deduction_per_unit', parseFloat(e.target.value) || 0)
                         }
                         className="h-7 text-xs text-right font-mono"
+                        placeholder="0.00"
                         step="0.01"
                       />
                     </div>
@@ -535,7 +539,7 @@ export default function SalesInvoicePage() {
                           const rate = parseFloat(e.target.value) || 0;
                           updateTotalsWithItems(salesState.items, rate, undefined);
                         }}
-                        placeholder="0"
+                        placeholder="0.00"
                         className="h-6.5 font-mono text-xs"
                         step="0.01"
                       />
@@ -549,7 +553,7 @@ export default function SalesInvoicePage() {
                           const amount = parseFloat(e.target.value) || 0;
                           updateTotalsWithItems(salesState.items, undefined, amount);
                         }}
-                        placeholder="0"
+                        placeholder="0.00"
                         className="h-6.5 font-mono text-xs"
                         step="0.01"
                       />
