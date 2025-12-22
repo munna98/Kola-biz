@@ -27,8 +27,13 @@ import {
   IconTrash,
   IconCheck,
   IconX,
-  IconKeyboard,
 } from '@tabler/icons-react';
+
+// Global Voucher Components & Hooks
+import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
+import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
+import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
+import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 
 interface Product {
   id: number;
@@ -58,7 +63,7 @@ export default function SalesInvoicePage() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
 
-  // Refs for keyboard navigation
+  // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
   const customerRef = useRef<HTMLDivElement>(null);
 
@@ -75,7 +80,7 @@ export default function SalesInvoicePage() {
         setUnits(unitsData);
         setCustomers(customersData);
 
-        if (customersData.length > 0) {
+        if (customersData.length > 0 && salesState.form.customer_id === 0) {
           dispatch(setSalesCustomer({ id: customersData[0].id, name: customersData[0].name }));
         }
       } catch (error) {
@@ -190,8 +195,8 @@ export default function SalesInvoicePage() {
     dispatch(setSalesTotals({ subtotal, discount: finalDiscountAmount, tax: totalTax, grandTotal }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
 
     if (salesState.items.length === 0) {
       toast.error('Add at least one item');
@@ -205,7 +210,7 @@ export default function SalesInvoicePage() {
 
     try {
       dispatch(setSalesLoading(true));
-      const invoiceId = await invoke<number>('create_sales_invoice', {
+      await invoke<number>('create_sales_invoice', {
         invoice: {
           customer_id: salesState.form.customer_id,
           voucher_date: salesState.form.voucher_date,
@@ -230,139 +235,27 @@ export default function SalesInvoicePage() {
     }
   };
 
-  // Global keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-        e.preventDefault();
-        handleAddItem();
-        setTimeout(() => {
-          const lastRow = formRef.current?.querySelector('[data-row-index]:last-child');
-          lastRow?.querySelector('button')?.focus();
-        }, 50);
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        formRef.current?.requestSubmit();
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        dispatch(resetSalesForm());
-        handleAddItem();
-        setTimeout(() => customerRef.current?.querySelector('button')?.focus(), 100);
-      }
-
-      if ((e.ctrlKey || e.metaKey) && e.key === '/') {
-        e.preventDefault();
-        setShowShortcuts(prev => !prev);
-      }
-
-      if (e.key === 'Escape' && showShortcuts) {
-        setShowShortcuts(false);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showShortcuts, dispatch]);
-
-  // Row keyboard navigation
-  const handleRowKeyDown = (e: React.KeyboardEvent, rowIndex: number) => {
-    const currentRow = e.currentTarget;
-    const inputs = Array.from(currentRow.querySelectorAll('input, button')) as HTMLElement[];
-    const currentIndex = inputs.indexOf(document.activeElement as HTMLElement);
-
-    if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
-      e.preventDefault();
-      handleRemoveItem(rowIndex);
-      return;
-    }
-
-    const moveToNext = () => {
-      if (currentIndex < inputs.length - 1) {
-        e.preventDefault();
-        const nextInput = inputs[currentIndex + 1];
-        nextInput?.focus();
-        if (nextInput instanceof HTMLInputElement) {
-          nextInput.select();
-        }
-      } else {
-        e.preventDefault();
-        const nextRow = currentRow.nextElementSibling;
-        if (nextRow) {
-          const firstInput = nextRow.querySelector('button') as HTMLElement;
-          firstInput?.focus();
-          firstInput?.click();
-        } else {
-          handleAddItem();
-          setTimeout(() => {
-            const newRow = currentRow.parentElement?.lastElementChild;
-            const firstInput = newRow?.querySelector('button') as HTMLElement;
-            firstInput?.focus();
-            firstInput?.click();
-          }, 50);
-        }
-      }
-    };
-
-    if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'Enter') {
-      moveToNext();
-    }
-
-    if (e.key === 'Tab' && e.shiftKey) {
-      if (currentIndex === 0) {
-        e.preventDefault();
-        const prevRow = currentRow.previousElementSibling;
-        if (prevRow) {
-          const prevInputs = Array.from(prevRow.querySelectorAll('input, button')) as HTMLElement[];
-          const lastInput = prevInputs[prevInputs.length - 1];
-          lastInput?.focus();
-          if (lastInput instanceof HTMLInputElement) {
-            lastInput.select();
-          }
-        }
-      } else {
-        e.preventDefault();
-        const prevInput = inputs[currentIndex - 1];
-        prevInput?.focus();
-        if (prevInput instanceof HTMLInputElement) {
-          prevInput.select();
-        }
-      }
-    }
-
-    if (e.key === 'ArrowDown' && e.ctrlKey) {
-      e.preventDefault();
-      const nextRow = currentRow.nextElementSibling;
-      if (nextRow) {
-        const nextInputs = Array.from(nextRow.querySelectorAll('input, button')) as HTMLElement[];
-        const targetInput = nextInputs[currentIndex];
-        targetInput?.focus();
-        if (targetInput instanceof HTMLInputElement) {
-          targetInput.select();
-        } else if (currentIndex === 0) {
-          targetInput?.click();
-        }
-      }
-    }
-
-    if (e.key === 'ArrowUp' && e.ctrlKey) {
-      e.preventDefault();
-      const prevRow = currentRow.previousElementSibling;
-      if (prevRow) {
-        const prevInputs = Array.from(prevRow.querySelectorAll('input, button')) as HTMLElement[];
-        const targetInput = prevInputs[currentIndex];
-        targetInput?.focus();
-        if (targetInput instanceof HTMLInputElement) {
-          targetInput.select();
-        } else if (currentIndex === 0) {
-          targetInput?.click();
-        }
-      }
-    }
+  const handleClear = () => {
+    dispatch(resetSalesForm());
+    handleAddItem();
+    setTimeout(() => customerRef.current?.querySelector('button')?.focus(), 100);
   };
+
+  // Global keyboard shortcuts hook
+  useVoucherShortcuts({
+    onSave: () => formRef.current?.requestSubmit(),
+    onNewItem: handleAddItem,
+    onClear: handleClear,
+    onToggleShortcuts: () => setShowShortcuts(prev => !prev),
+    onCloseShortcuts: () => setShowShortcuts(false),
+    showShortcuts
+  });
+
+  // Row navigation hook
+  const { handleRowKeyDown } = useVoucherRowNavigation({
+    onRemoveItem: handleRemoveItem,
+    onAddItem: handleAddItem
+  });
 
   if (isInitializing) {
     return (
@@ -381,71 +274,15 @@ export default function SalesInvoicePage() {
 
   return (
     <div className="h-full flex flex-col bg-background">
-      {/* Header with Keyboard Hint */}
-      <div className="border-b bg-card/50 px-5 py-3 backdrop-blur-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-base font-semibold">Sales Invoice</h1>
-            <p className="text-xs text-muted-foreground">Create and manage sales invoices</p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setShowShortcuts(!showShortcuts)}
-            className="h-7 text-xs font-mono"
-          >
-            <IconKeyboard size={14} />
-            Shortcuts (Ctrl+/)
-          </Button>
-        </div>
-      </div>
+      <VoucherPageHeader
+        title="Sales Invoice"
+        description="Create and manage sales invoices"
+        onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
+      />
 
-      {/* Shortcuts Panel */}
-      {showShortcuts && (
-        <div className="border-b bg-muted/50 px-5 py-3">
-          <div className="grid grid-cols-3 gap-4 text-xs">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+N</kbd>
-                <span>New item</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+S</kbd>
-                <span>Save invoice</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+K</kbd>
-                <span>Clear form</span>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+D</kbd>
-                <span>Delete row (in row)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Tab/Enter</kbd>
-                <span>Next field/row</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Shift+Tab</kbd>
-                <span>Previous field/row</span>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+↑/↓</kbd>
-                <span>Navigate rows (same column)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Esc</kbd>
-                <span>Close this panel</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <VoucherShortcutPanel
+        show={showShortcuts}
+      />
 
       {/* Form Content */}
       <div className="flex-1 overflow-hidden">
@@ -703,11 +540,7 @@ export default function SalesInvoicePage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
-                dispatch(resetSalesForm());
-                handleAddItem();
-                setTimeout(() => customerRef.current?.querySelector('button')?.focus(), 100);
-              }}
+              onClick={handleClear}
               className="h-9"
               title="Clear (Ctrl+K)"
             >

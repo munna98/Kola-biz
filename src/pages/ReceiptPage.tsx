@@ -24,8 +24,13 @@ import {
     IconTrash,
     IconCheck,
     IconX,
-    IconKeyboard,
 } from '@tabler/icons-react';
+
+// Global Voucher Components & Hooks
+import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
+import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
+import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
+import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 
 interface AccountData {
     id: number;
@@ -109,8 +114,8 @@ export default function ReceiptPage() {
         dispatch(setReceiptTotals(calculateTotals(updatedItems)));
     };
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const handleSubmit = async (e?: React.FormEvent) => {
+        e?.preventDefault();
         if (!receiptState.form.account_id) return toast.error('Select "Deposit To" account');
 
         if (receiptState.items.length === 0) {
@@ -134,145 +139,27 @@ export default function ReceiptPage() {
         }
     };
 
-    // Global keyboard shortcuts
-    useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            // Ctrl/Cmd + N: New item
-            if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-                e.preventDefault();
-                handleAddItem();
-                setTimeout(() => {
-                    const lastRow = formRef.current?.querySelector('[data-row-index]:last-child');
-                    lastRow?.querySelector('button')?.focus();
-                }, 50);
-            }
-
-            // Ctrl/Cmd + S: Save
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                e.preventDefault();
-                formRef.current?.requestSubmit();
-            }
-
-            // Ctrl/Cmd + K: Clear form
-            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-                e.preventDefault();
-                dispatch(resetReceiptForm());
-                handleAddItem();
-                setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
-            }
-
-            // Ctrl/Cmd + /: Show shortcuts
-            if ((e.ctrlKey || e.metaKey) && e.key === '/') {
-                e.preventDefault();
-                setShowShortcuts(prev => !prev);
-            }
-
-            // Escape: Close shortcuts panel
-            if (e.key === 'Escape' && showShortcuts) {
-                setShowShortcuts(false);
-            }
-        };
-
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [showShortcuts, dispatch]);
-
-    // Row keyboard navigation
-    const handleRowKeyDown = (e: React.KeyboardEvent, rowIndex: number) => {
-        const currentRow = e.currentTarget;
-        const inputs = Array.from(currentRow.querySelectorAll('input, button')) as HTMLElement[];
-        const currentIndex = inputs.indexOf(document.activeElement as HTMLElement);
-
-        // Ctrl/Cmd + D: Delete current row
-        if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
-            e.preventDefault();
-            handleRemoveItem(rowIndex);
-            return;
-        }
-
-        const moveToNext = () => {
-            if (currentIndex < inputs.length - 1) {
-                e.preventDefault();
-                const nextInput = inputs[currentIndex + 1];
-                nextInput?.focus();
-                if (nextInput instanceof HTMLInputElement) {
-                    nextInput.select();
-                }
-            } else {
-                e.preventDefault();
-                const nextRow = currentRow.nextElementSibling;
-                if (nextRow) {
-                    const firstInput = nextRow.querySelector('button') as HTMLElement;
-                    firstInput?.focus();
-                    firstInput?.click();
-                } else {
-                    handleAddItem();
-                    setTimeout(() => {
-                        const newRow = currentRow.parentElement?.lastElementChild;
-                        const firstInput = newRow?.querySelector('button') as HTMLElement;
-                        firstInput?.focus();
-                        firstInput?.click();
-                    }, 50);
-                }
-            }
-        };
-
-        if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'Enter') {
-            moveToNext();
-        }
-
-        if (e.key === 'Tab' && e.shiftKey) {
-            if (currentIndex === 0) {
-                e.preventDefault();
-                const prevRow = currentRow.previousElementSibling;
-                if (prevRow) {
-                    const prevInputs = Array.from(prevRow.querySelectorAll('input, button')) as HTMLElement[];
-                    const lastInput = prevInputs[prevInputs.length - 1];
-                    lastInput?.focus();
-                    if (lastInput instanceof HTMLInputElement) {
-                        lastInput.select();
-                    }
-                }
-            } else {
-                e.preventDefault();
-                const prevInput = inputs[currentIndex - 1];
-                prevInput?.focus();
-                if (prevInput instanceof HTMLInputElement) {
-                    prevInput.select();
-                }
-            }
-        }
-
-        if (e.key === 'ArrowDown' && e.ctrlKey) {
-            e.preventDefault();
-            const nextRow = currentRow.nextElementSibling;
-            if (nextRow) {
-                const nextInputs = Array.from(nextRow.querySelectorAll('input, button')) as HTMLElement[];
-                const targetInput = nextInputs[currentIndex];
-                targetInput?.focus();
-                if (targetInput instanceof HTMLInputElement) {
-                    targetInput.select();
-                } else if (currentIndex === 0) {
-                    targetInput?.click();
-                }
-            }
-        }
-
-        if (e.key === 'ArrowUp' && e.ctrlKey) {
-            e.preventDefault();
-            const prevRow = currentRow.previousElementSibling;
-            if (prevRow) {
-                const prevInputs = Array.from(prevRow.querySelectorAll('input, button')) as HTMLElement[];
-                const targetInput = prevInputs[currentIndex];
-                targetInput?.focus();
-                if (targetInput instanceof HTMLInputElement) {
-                    targetInput.select();
-                } else if (currentIndex === 0) {
-                    targetInput?.click();
-                }
-            }
-        }
+    const handleClear = () => {
+        dispatch(resetReceiptForm());
+        handleAddItem();
+        setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
     };
+
+    // Global keyboard shortcuts hook
+    useVoucherShortcuts({
+        onSave: () => formRef.current?.requestSubmit(),
+        onNewItem: handleAddItem,
+        onClear: handleClear,
+        onToggleShortcuts: () => setShowShortcuts(prev => !prev),
+        onCloseShortcuts: () => setShowShortcuts(false),
+        showShortcuts
+    });
+
+    // Row navigation hook
+    const { handleRowKeyDown } = useVoucherRowNavigation({
+        onRemoveItem: handleRemoveItem,
+        onAddItem: handleAddItem
+    });
 
     if (isInitializing) {
         return (
@@ -284,71 +171,15 @@ export default function ReceiptPage() {
 
     return (
         <div className="h-full flex flex-col bg-background">
-            {/* Header */}
-            <div className="border-b bg-card/50 px-5 py-3 backdrop-blur-sm">
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-base font-semibold">Receipt Voucher</h1>
-                        <p className="text-xs text-muted-foreground">Record money received into bank or cash</p>
-                    </div>
-                    <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setShowShortcuts(!showShortcuts)}
-                        className="h-7 text-xs"
-                    >
-                        <IconKeyboard size={14} />
-                        Shortcuts (Ctrl+/)
-                    </Button>
-                </div>
-            </div>
+            <VoucherPageHeader
+                title="Receipt Voucher"
+                description="Record money received into bank or cash"
+                onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
+            />
 
-            {/* Shortcuts Panel */}
-            {showShortcuts && (
-                <div className="border-b bg-muted/50 px-5 py-3">
-                    <div className="grid grid-cols-3 gap-4 text-xs">
-                        <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+N</kbd>
-                                <span>New item</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+S</kbd>
-                                <span>Save receipt</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+K</kbd>
-                                <span>Clear form</span>
-                            </div>
-                        </div>
-                        <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+D</kbd>
-                                <span>Delete row (in row)</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Tab/Enter</kbd>
-                                <span>Next field/row</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Shift+Tab</kbd>
-                                <span>Previous field/row</span>
-                            </div>
-                        </div>
-                        <div className="space-y-1">
-                            <div className="flex items-center gap-2">
-                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+↑/↓</kbd>
-                                <span>Navigate rows (same column)</span>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <kbd className="px-2 py-1 bg-background border rounded font-mono">Esc</kbd>
-                                <span>Close this panel</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <VoucherShortcutPanel
+                show={showShortcuts}
+            />
 
             {/* Form Content */}
             <div className="flex-1 overflow-hidden">
@@ -509,11 +340,7 @@ export default function ReceiptPage() {
                         <Button
                             type="button"
                             variant="outline"
-                            onClick={() => {
-                                dispatch(resetReceiptForm());
-                                handleAddItem();
-                                setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
-                            }}
+                            onClick={handleClear}
                             className="h-9"
                             title="Clear (Ctrl+K)"
                         >

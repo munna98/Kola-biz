@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
@@ -27,8 +27,13 @@ import {
   IconTrash,
   IconCheck,
   IconX,
-  IconKeyboard,
 } from '@tabler/icons-react';
+
+// Global Voucher Components & Hooks
+import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
+import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
+import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
+import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 
 interface Product {
   id: number;
@@ -58,7 +63,7 @@ export default function PurchaseInvoicePage() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
 
-  // Refs for keyboard navigation
+  // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
   const supplierRef = useRef<HTMLDivElement>(null);
 
@@ -75,7 +80,7 @@ export default function PurchaseInvoicePage() {
         setUnits(unitsData);
         setSuppliers(suppliersData);
 
-        if (suppliersData.length > 0) {
+        if (suppliersData.length > 0 && purchaseState.form.supplier_id === 0) {
           dispatch(setSupplier({ id: suppliersData[0].id, name: suppliersData[0].name }));
         }
       } catch (error) {
@@ -127,7 +132,6 @@ export default function PurchaseInvoicePage() {
       const product = products.find((p) => p.id === value);
       if (product) {
         finalValue = value;
-        // Update item with product details and recalculate totals
         const updatedItems = [...purchaseState.items];
         updatedItems[index] = {
           ...updatedItems[index],
@@ -150,7 +154,6 @@ export default function PurchaseInvoicePage() {
       }
     }
 
-    // Update item and recalculate with updated items
     const updatedItems = [...purchaseState.items];
     updatedItems[index] = { ...updatedItems[index], [field]: finalValue };
     dispatch(updateItem({ index, data: { [field]: finalValue } }));
@@ -169,38 +172,31 @@ export default function PurchaseInvoicePage() {
       totalTax += taxAmount;
     });
 
-    // Round to 2 decimals
     subtotal = Math.round(subtotal * 100) / 100;
     totalTax = Math.round(totalTax * 100) / 100;
 
-    // Calculate discount
     let finalDiscountRate = discountRate !== undefined ? discountRate : purchaseState.form.discount_rate;
     let finalDiscountAmount = discountAmount !== undefined ? discountAmount : purchaseState.form.discount_amount;
 
-    // If rate is provided, calculate amount from rate
     if (discountRate !== undefined && discountRate > 0) {
       finalDiscountAmount = Math.round(subtotal * (discountRate / 100) * 100) / 100;
-    }
-    // If amount is provided, keep it as absolute value
-    else if (discountAmount !== undefined && discountAmount > 0) {
+    } else if (discountAmount !== undefined && discountAmount > 0) {
       finalDiscountAmount = Math.round(discountAmount * 100) / 100;
       finalDiscountRate = subtotal > 0 ? Math.round((discountAmount / subtotal) * 100 * 100) / 100 : 0;
     } else {
-      // Reset if both are 0 or not provided
       finalDiscountAmount = Math.round(finalDiscountAmount * 100) / 100;
       finalDiscountRate = Math.round(finalDiscountRate * 100) / 100;
     }
 
     const grandTotal = Math.round((subtotal - finalDiscountAmount + totalTax) * 100) / 100;
 
-    // Update Redux with both synchronized values
     dispatch(setDiscountRate(finalDiscountRate));
     dispatch(setDiscountAmount(finalDiscountAmount));
     dispatch(setTotals({ subtotal, discount: finalDiscountAmount, tax: totalTax, grandTotal }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
 
     if (purchaseState.items.length === 0) {
       toast.error('Add at least one item');
@@ -214,7 +210,7 @@ export default function PurchaseInvoicePage() {
 
     try {
       dispatch(setLoading(true));
-      const invoiceId = await invoke<number>('create_purchase_invoice', {
+      await invoke<number>('create_purchase_invoice', {
         invoice: {
           supplier_id: purchaseState.form.supplier_id,
           voucher_date: purchaseState.form.voucher_date,
@@ -230,7 +226,6 @@ export default function PurchaseInvoicePage() {
       dispatch(resetForm());
       handleAddItem();
 
-      // Focus back to supplier after save
       setTimeout(() => supplierRef.current?.querySelector('button')?.focus(), 100);
     } catch (error) {
       toast.error('Failed to create purchase invoice');
@@ -240,156 +235,27 @@ export default function PurchaseInvoicePage() {
     }
   };
 
-  // Global keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Ctrl/Cmd + N: New item
-      if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
-        e.preventDefault();
-        handleAddItem();
-        // Focus the product selector of the new item
-        setTimeout(() => {
-          const lastRow = formRef.current?.querySelector('[data-row-index]:last-child');
-          lastRow?.querySelector('button')?.focus();
-        }, 50);
-      }
-
-      // Ctrl/Cmd + S: Save
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        formRef.current?.requestSubmit();
-      }
-
-      // Ctrl/Cmd + K: Clear form
-      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
-        e.preventDefault();
-        dispatch(resetForm());
-        handleAddItem();
-        setTimeout(() => supplierRef.current?.querySelector('button')?.focus(), 100);
-      }
-
-      // Ctrl/Cmd + /: Show shortcuts
-      if ((e.ctrlKey || e.metaKey) && e.key === '/') {
-        e.preventDefault();
-        setShowShortcuts(prev => !prev);
-      }
-
-      // Escape: Close shortcuts panel
-      if (e.key === 'Escape' && showShortcuts) {
-        setShowShortcuts(false);
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showShortcuts, dispatch]);
-
-  // Row keyboard navigation
-  const handleRowKeyDown = (e: React.KeyboardEvent, rowIndex: number) => {
-    const currentRow = e.currentTarget;
-    const inputs = Array.from(currentRow.querySelectorAll('input, button')) as HTMLElement[];
-    const currentIndex = inputs.indexOf(document.activeElement as HTMLElement);
-
-    // Ctrl/Cmd + D: Delete current row
-    if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
-      e.preventDefault();
-      handleRemoveItem(rowIndex);
-      return;
-    }
-
-    // Helper function to move to next field/row
-    const moveToNext = () => {
-      if (currentIndex < inputs.length - 1) {
-        // Move to next field in same row
-        e.preventDefault();
-        const nextInput = inputs[currentIndex + 1];
-        nextInput?.focus();
-        // Select input text if it's an input element
-        if (nextInput instanceof HTMLInputElement) {
-          nextInput.select();
-        }
-      } else {
-        // Last field - go to next row or add new
-        e.preventDefault();
-        const nextRow = currentRow.nextElementSibling;
-        if (nextRow) {
-          const firstInput = nextRow.querySelector('button') as HTMLElement;
-          firstInput?.focus();
-          firstInput?.click(); // Auto-open combobox
-        } else {
-          handleAddItem();
-          setTimeout(() => {
-            const newRow = currentRow.parentElement?.lastElementChild;
-            const firstInput = newRow?.querySelector('button') as HTMLElement;
-            firstInput?.focus();
-            firstInput?.click(); // Auto-open combobox
-          }, 50);
-        }
-      }
-    };
-
-    // Tab OR Enter: Move to next field/row
-    if ((e.key === 'Tab' && !e.shiftKey) || e.key === 'Enter') {
-      moveToNext();
-    }
-
-    // Shift+Tab: Move to previous field/row
-    if (e.key === 'Tab' && e.shiftKey) {
-      if (currentIndex === 0) {
-        e.preventDefault();
-        const prevRow = currentRow.previousElementSibling;
-        if (prevRow) {
-          const prevInputs = Array.from(prevRow.querySelectorAll('input, button')) as HTMLElement[];
-          const lastInput = prevInputs[prevInputs.length - 1];
-          lastInput?.focus();
-          if (lastInput instanceof HTMLInputElement) {
-            lastInput.select();
-          }
-        }
-      } else {
-        // Navigate to previous field in same row
-        e.preventDefault();
-        const prevInput = inputs[currentIndex - 1];
-        prevInput?.focus();
-        if (prevInput instanceof HTMLInputElement) {
-          prevInput.select();
-        }
-      }
-    }
-
-    // Arrow keys for row navigation
-    if (e.key === 'ArrowDown' && e.ctrlKey) {
-      e.preventDefault();
-      const nextRow = currentRow.nextElementSibling;
-      if (nextRow) {
-        const nextInputs = Array.from(nextRow.querySelectorAll('input, button')) as HTMLElement[];
-        const targetInput = nextInputs[currentIndex];
-        targetInput?.focus();
-        if (targetInput instanceof HTMLInputElement) {
-          targetInput.select();
-        } else if (currentIndex === 0) {
-          // First column is combobox, click to open
-          targetInput?.click();
-        }
-      }
-    }
-
-    if (e.key === 'ArrowUp' && e.ctrlKey) {
-      e.preventDefault();
-      const prevRow = currentRow.previousElementSibling;
-      if (prevRow) {
-        const prevInputs = Array.from(prevRow.querySelectorAll('input, button')) as HTMLElement[];
-        const targetInput = prevInputs[currentIndex];
-        targetInput?.focus();
-        if (targetInput instanceof HTMLInputElement) {
-          targetInput.select();
-        } else if (currentIndex === 0) {
-          // First column is combobox, click to open
-          targetInput?.click();
-        }
-      }
-    }
+  const handleClear = () => {
+    dispatch(resetForm());
+    handleAddItem();
+    setTimeout(() => supplierRef.current?.querySelector('button')?.focus(), 100);
   };
+
+  // Global keyboard shortcuts hook
+  useVoucherShortcuts({
+    onSave: () => formRef.current?.requestSubmit(),
+    onNewItem: handleAddItem,
+    onClear: handleClear,
+    onToggleShortcuts: () => setShowShortcuts(prev => !prev),
+    onCloseShortcuts: () => setShowShortcuts(false),
+    showShortcuts
+  });
+
+  // Row navigation hook
+  const { handleRowKeyDown } = useVoucherRowNavigation({
+    onRemoveItem: handleRemoveItem,
+    onAddItem: handleAddItem
+  });
 
   if (isInitializing) {
     return (
@@ -408,71 +274,15 @@ export default function PurchaseInvoicePage() {
 
   return (
     <div className="h-full flex flex-col bg-background">
-      {/* Header with Keyboard Hint */}
-      <div className="border-b bg-card/50 px-5 py-3 backdrop-blur-sm">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-base font-semibold">Purchase Invoice</h1>
-            <p className="text-xs text-muted-foreground">Create and manage purchase invoices</p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setShowShortcuts(!showShortcuts)}
-            className="h-7 text-xs font-mono"
-          >
-            <IconKeyboard size={14} />
-            Shortcuts (Ctrl+/)
-          </Button>
-        </div>
-      </div>
+      <VoucherPageHeader
+        title="Purchase Invoice"
+        description="Create and manage purchase invoices"
+        onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
+      />
 
-      {/* Shortcuts Panel */}
-      {showShortcuts && (
-        <div className="border-b bg-muted/50 px-5 py-3">
-          <div className="grid grid-cols-3 gap-4 text-xs">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+N</kbd>
-                <span>New item</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+S</kbd>
-                <span>Save invoice</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+K</kbd>
-                <span>Clear form</span>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+D</kbd>
-                <span>Delete row (in row)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Tab/Enter</kbd>
-                <span>Next field/row</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Shift+Tab</kbd>
-                <span>Previous field/row</span>
-              </div>
-            </div>
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+↑/↓</kbd>
-                <span>Navigate rows (same column)</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <kbd className="px-2 py-1 bg-background border rounded font-mono">Esc</kbd>
-                <span>Close this panel</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <VoucherShortcutPanel
+        show={showShortcuts}
+      />
 
       {/* Form Content */}
       <div className="flex-1 overflow-hidden">
@@ -730,11 +540,7 @@ export default function PurchaseInvoicePage() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
-                dispatch(resetForm());
-                handleAddItem();
-                setTimeout(() => supplierRef.current?.querySelector('button')?.focus(), 100);
-              }}
+              onClick={handleClear}
               className="h-9"
               title="Clear (Ctrl+K)"
             >
