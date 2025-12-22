@@ -123,6 +123,13 @@ export default function PaymentPage() {
             return;
         }
 
+        // Validate each item
+        const hasEmptyItems = paymentState.items.some(item => !item.description || item.amount <= 0);
+        if (hasEmptyItems) {
+            toast.error('All items must have a ledger selected and a non-zero amount');
+            return;
+        }
+
         try {
             dispatch(setPaymentLoading(true));
             await invoke('create_payment', { payment: { ...paymentState.form, items: paymentState.items } });

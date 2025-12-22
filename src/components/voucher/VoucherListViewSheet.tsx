@@ -8,10 +8,9 @@ import {
     SheetTrigger
 } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { IconSearch, IconList } from '@tabler/icons-react';
-// import { cn } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 
 interface VoucherSummary {
     id: number;
@@ -19,7 +18,6 @@ interface VoucherSummary {
     voucher_date: string;
     party_name: string | null;
     total_amount: number;
-    status: string;
     voucher_type: string;
 }
 
@@ -104,7 +102,7 @@ export function VoucherListViewSheet({
                                 >
                                     <div className="flex items-center justify-between">
                                         <span className="font-mono font-medium text-sm">{voucher.voucher_no}</span>
-                                        <span className="text-xs text-muted-foreground">{voucher.voucher_date}</span>
+                                        <span className="text-xs text-muted-foreground">{formatDate(voucher.voucher_date)}</span>
                                     </div>
                                     <div className="flex items-center justify-between">
                                         <span className="text-sm truncate max-w-[200px]" title={voucher.party_name || 'N/A'}>
@@ -113,11 +111,6 @@ export function VoucherListViewSheet({
                                         <span className="font-bold text-sm">
                                             ₹{voucher.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                         </span>
-                                    </div>
-                                    <div className="flex justify-end mt-1">
-                                        <Badge variant="secondary" className="text-[10px] px-1.5 h-5 capitalize">
-                                            {voucher.status}
-                                        </Badge>
                                     </div>
                                 </button>
                             ))

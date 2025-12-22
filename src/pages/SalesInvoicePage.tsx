@@ -49,9 +49,10 @@ interface Unit {
   symbol: string;
 }
 
-interface Customer {
+interface Party {
   id: number;
   name: string;
+  type: 'customer' | 'supplier';
 }
 
 export default function SalesInvoicePage() {
@@ -59,7 +60,7 @@ export default function SalesInvoicePage() {
   const salesState = useSelector((state: RootState) => state.salesInvoice);
   const [products, setProducts] = useState<Product[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [parties, setParties] = useState<Party[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
 
@@ -71,17 +72,27 @@ export default function SalesInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, customersData] = await Promise.all([
+        const [productsData, unitsData, customersData, suppliersData] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
-          invoke<Customer[]>('get_customers'),
+          invoke<any[]>('get_customers'),
+          invoke<any[]>('get_suppliers'),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
-        setCustomers(customersData);
 
-        if (customersData.length > 0 && salesState.form.customer_id === 0) {
-          dispatch(setSalesCustomer({ id: customersData[0].id, name: customersData[0].name }));
+        const combinedParties: Party[] = [
+          ...customersData.map(c => ({ id: c.id, name: c.name, type: 'customer' as const })),
+          ...suppliersData.map(s => ({ id: s.id, name: s.name, type: 'supplier' as const })),
+        ];
+        setParties(combinedParties);
+
+        if (combinedParties.length > 0 && salesState.form.customer_id === 0) {
+          dispatch(setSalesCustomer({
+            id: combinedParties[0].id,
+            name: combinedParties[0].name,
+            type: combinedParties[0].type
+          }));
         }
       } catch (error) {
         toast.error('Failed to load data');
@@ -203,8 +214,19 @@ export default function SalesInvoicePage() {
       return;
     }
 
+    // Validate each item
+    const hasInvalidItems = salesState.items.some(item => {
+      const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
+      return !item.product_id || finalQty <= 0 || item.rate <= 0;
+    });
+
+    if (hasInvalidItems) {
+      toast.error('All items must have a product selected, a positive final quantity, and a non-zero rate');
+      return;
+    }
+
     if (!salesState.form.customer_id) {
-      toast.error('Select a customer');
+      toast.error('Select a party');
       return;
     }
 
@@ -213,12 +235,16 @@ export default function SalesInvoicePage() {
       await invoke<number>('create_sales_invoice', {
         invoice: {
           customer_id: salesState.form.customer_id,
+          party_type: salesState.form.party_type,
           voucher_date: salesState.form.voucher_date,
           reference: salesState.form.reference || null,
           narration: salesState.form.narration || null,
           discount_rate: salesState.form.discount_rate || null,
           discount_amount: salesState.form.discount_amount || null,
-          items: salesState.items,
+          items: salesState.items.map(item => ({
+            ...item,
+            id: undefined // Remove temp id before sending to rust
+          })),
         },
       });
 
@@ -292,18 +318,21 @@ export default function SalesInvoicePage() {
             <div className="grid grid-cols-6 gap-3">
               {/* Customer */}
               <div ref={customerRef} className="col-span-2">
-                <Label className="text-xs font-medium mb-1 block">Customer *</Label>
+                <Label className="text-xs font-medium mb-1 block">Party (Customer/Supplier) *</Label>
                 <Combobox
-                  options={customers.map(c => ({ value: c.id, label: c.name }))}
+                  options={parties.map(p => ({
+                    value: p.id,
+                    label: `${p.name} (${p.type === 'customer' ? 'Customer' : 'Supplier'})`
+                  }))}
                   value={salesState.form.customer_id}
                   onChange={(value) => {
-                    const customer = customers.find((c) => c.id === value);
-                    if (customer) {
-                      dispatch(setSalesCustomer({ id: customer.id, name: customer.name }));
+                    const party = parties.find((p) => p.id === value);
+                    if (party) {
+                      dispatch(setSalesCustomer({ id: party.id, name: party.name, type: party.type }));
                     }
                   }}
-                  placeholder="Select customer"
-                  searchPlaceholder="Search customers..."
+                  placeholder="Select party"
+                  searchPlaceholder="Search parties..."
                 />
               </div>
 

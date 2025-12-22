@@ -14,7 +14,7 @@ import {
     IconAlertTriangle
 } from '@tabler/icons-react';
 import { Badge } from '@/components/ui/badge';
-// import { cn } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 
 interface VoucherPageHeaderProps {
     title: string;
@@ -22,7 +22,6 @@ interface VoucherPageHeaderProps {
     mode?: 'new' | 'viewing' | 'editing';
     voucherNo?: string;
     voucherDate?: string;
-    status?: string;
     isUnsaved?: boolean;
     hasPrevious?: boolean;
     hasNext?: boolean;
@@ -46,7 +45,6 @@ export function VoucherPageHeader({
     mode = 'new',
     voucherNo,
     voucherDate,
-    status,
     isUnsaved,
     hasPrevious,
     hasNext,
@@ -112,13 +110,8 @@ export function VoucherPageHeader({
                                 {mode === 'viewing' && voucherDate && (
                                     <>
                                         <span className="text-muted-foreground">•</span>
-                                        <span className="text-sm text-muted-foreground">{voucherDate}</span>
+                                        <span className="text-sm text-muted-foreground">{formatDate(voucherDate)}</span>
                                     </>
-                                )}
-                                {status && (
-                                    <Badge variant={status === 'posted' ? 'default' : 'secondary'} className="text-xs capitalize">
-                                        {status}
-                                    </Badge>
                                 )}
                                 {isUnsaved && (
                                     <Badge variant="destructive" className="text-xs gap-1">

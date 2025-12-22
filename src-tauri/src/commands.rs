@@ -789,6 +789,7 @@ pub struct PurchaseInvoice {
     pub voucher_date: String,
     pub supplier_id: i64,
     pub supplier_name: String,
+    pub party_type: String,
     pub reference: Option<String>,
     pub total_amount: f64,
     pub tax_amount: f64,
@@ -831,6 +832,7 @@ pub struct CreatePurchaseInvoiceItem {
 #[derive(Deserialize)]
 pub struct CreatePurchaseInvoice {
     pub supplier_id: i64,
+    pub party_type: String,
     pub voucher_date: String,
     pub reference: Option<String>,
     pub narration: Option<String>,
@@ -910,7 +912,8 @@ pub async fn get_purchase_invoice(
             v.voucher_no,
             v.voucher_date,
             v.party_id as supplier_id,
-            s.name as supplier_name,
+            COALESCE(s.name, c.name) as supplier_name,
+            v.party_type,
             v.reference,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
@@ -921,7 +924,8 @@ pub async fn get_purchase_invoice(
             v.status,
             v.created_at
         FROM vouchers v
-        LEFT JOIN suppliers s ON v.party_id = s.id
+        LEFT JOIN suppliers s ON v.party_id = s.id AND v.party_type = 'supplier'
+        LEFT JOIN customers c ON v.party_id = c.id AND v.party_type = 'customer'
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         WHERE v.id = ? AND v.voucher_type = 'purchase_invoice'
         GROUP BY v.id",
@@ -993,11 +997,12 @@ pub async fn create_purchase_invoice(
     // Create voucher
     let result = sqlx::query(
         "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, total_amount, narration, status)
-         VALUES (?, 'purchase_invoice', ?, ?, 'supplier', ?, ?, ?, ?, ?, ?, 'draft')"
+         VALUES (?, 'purchase_invoice', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted')"
     )
     .bind(&voucher_no)
     .bind(&invoice.voucher_date)
     .bind(invoice.supplier_id)
+    .bind(&invoice.party_type)
     .bind(&invoice.reference)
     .bind(subtotal)
     .bind(invoice.discount_rate.unwrap_or(0.0))
@@ -1038,7 +1043,8 @@ pub async fn create_purchase_invoice(
 
     // ============= CREATE JOURNAL ENTRIES =============
 
-    let supplier_id = invoice.supplier_id;
+    let party_id = invoice.supplier_id;
+    let party_type = invoice.party_type;
 
     // Calculate total tax
     let total_tax: f64 = sqlx::query_scalar(
@@ -1064,10 +1070,14 @@ pub async fn create_purchase_invoice(
             .await
             .map_err(|e| e.to_string())?;
 
-    let supplier_account_code = format!("2001-{}", supplier_id);
-    let supplier_account: i64 =
+    let party_account_code = if party_type == "supplier" {
+        format!("2001-{}", party_id)
+    } else {
+        format!("1003-{}", party_id)
+    };
+    let party_account: i64 =
         sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = ?")
-            .bind(&supplier_account_code)
+            .bind(&party_account_code)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| format!("Supplier account not found: {}", e))?;
@@ -1104,7 +1114,7 @@ pub async fn create_purchase_invoice(
          VALUES (?, ?, 0, ?, 'Amount payable to supplier')",
     )
     .bind(voucher_id)
-    .bind(supplier_account)
+    .bind(party_account)
     .bind(grand_total)
     .execute(&mut *tx)
     .await
@@ -1245,7 +1255,7 @@ pub async fn create_payment(
     // Create voucher
     let result = sqlx::query(
         "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status)
-         VALUES (?, 'payment', ?, ?, 'account', ?, ?, ?, ?, 'draft')"
+         VALUES (?, 'payment', ?, ?, 'account', ?, ?, ?, ?, 'posted')"
     )
     .bind(&voucher_no)
     .bind(&payment.voucher_date)
@@ -1490,7 +1500,7 @@ pub async fn create_receipt(
     // Create voucher
     let result = sqlx::query(
         "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status)
-         VALUES (?, 'receipt', ?, ?, 'account', ?, ?, ?, ?, 'draft')"
+         VALUES (?, 'receipt', ?, ?, 'account', ?, ?, ?, ?, 'posted')"
     )
     .bind(&voucher_no)
     .bind(&receipt.voucher_date)
@@ -1735,7 +1745,7 @@ pub async fn create_journal_entry(
     // Create voucher
     let result = sqlx::query(
         "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, reference, total_amount, narration, status)
-         VALUES (?, 'journal', ?, ?, ?, ?, 'draft')"
+         VALUES (?, 'journal', ?, ?, ?, ?, 'posted')"
     )
     .bind(&voucher_no)
     .bind(&entry.voucher_date)
@@ -1996,6 +2006,7 @@ pub struct SalesInvoice {
     pub voucher_date: String,
     pub customer_id: i64,
     pub customer_name: String,
+    pub party_type: String,
     pub reference: Option<String>,
     pub total_amount: f64,
     pub tax_amount: f64,
@@ -2038,6 +2049,7 @@ pub struct CreateSalesInvoiceItem {
 #[derive(Deserialize)]
 pub struct CreateSalesInvoice {
     pub customer_id: i64,
+    pub party_type: String,
     pub voucher_date: String,
     pub reference: Option<String>,
     pub narration: Option<String>,
@@ -2089,7 +2101,8 @@ pub async fn get_sales_invoice(
             v.voucher_no,
             v.voucher_date,
             v.party_id as customer_id,
-            c.name as customer_name,
+            COALESCE(c.name, s.name) as customer_name,
+            v.party_type,
             v.reference,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
@@ -2100,7 +2113,8 @@ pub async fn get_sales_invoice(
             v.status,
             v.created_at
         FROM vouchers v
-        LEFT JOIN customers c ON v.party_id = c.id
+        LEFT JOIN customers c ON v.party_id = c.id AND v.party_type = 'customer'
+        LEFT JOIN suppliers s ON v.party_id = s.id AND v.party_type = 'supplier'
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         WHERE v.id = ? AND v.voucher_type = 'sales_invoice'
         GROUP BY v.id",
@@ -2171,11 +2185,12 @@ pub async fn create_sales_invoice(
     // Create voucher
     let result = sqlx::query(
         "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, total_amount, narration, status)
-         VALUES (?, 'sales_invoice', ?, ?, 'customer', ?, ?, ?, ?, ?, ?, 'draft')"
+         VALUES (?, 'sales_invoice', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted')"
     )
     .bind(&voucher_no)
     .bind(&invoice.voucher_date)
     .bind(invoice.customer_id)
+    .bind(&invoice.party_type)
     .bind(&invoice.reference)
     .bind(subtotal)
     .bind(invoice.discount_rate.unwrap_or(0.0))
@@ -2216,7 +2231,8 @@ pub async fn create_sales_invoice(
 
     // ============= CREATE JOURNAL ENTRIES =============
 
-    let customer_id = invoice.customer_id;
+    let party_id = invoice.customer_id;
+    let party_type = invoice.party_type;
 
     // Calculate total tax
     let total_tax: f64 = sqlx::query_scalar(
@@ -2242,21 +2258,26 @@ pub async fn create_sales_invoice(
             .await
             .map_err(|e| e.to_string())?;
 
-    let customer_account_code = format!("1003-{}", customer_id);
-    let customer_account: i64 =
+    let party_account_code = if party_type == "customer" {
+        format!("1003-{}", party_id)
+    } else {
+        format!("2001-{}", party_id)
+    };
+
+    let party_account: i64 =
         sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = ?")
-            .bind(&customer_account_code)
+            .bind(&party_account_code)
             .fetch_one(&mut *tx)
             .await
-            .map_err(|e| format!("Customer account not found: {}", e))?;
+            .map_err(|e| format!("Party account not found: {}", e))?;
 
-    // Debit: Accounts Receivable (Customer)
+    // Debit: Accounts Receivable/Payable (Party)
     sqlx::query(
         "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, 0, 'Amount receivable from customer')",
+         VALUES (?, ?, ?, 0, 'Amount receivable from/payable to party')",
     )
     .bind(voucher_id)
-    .bind(customer_account)
+    .bind(party_account)
     .bind(grand_total)
     .execute(&mut *tx)
     .await
@@ -2665,7 +2686,7 @@ pub async fn update_purchase_invoice(
 
     // Check if voucher exists and is not posted (unless we allow editing posted)
     // For now assuming we can edit encoded ID
-    
+
     // Calculate totals
     let mut subtotal = 0.0;
 
@@ -2682,11 +2703,12 @@ pub async fn update_purchase_invoice(
     // Update voucher header
     sqlx::query(
         "UPDATE vouchers 
-         SET voucher_date = ?, party_id = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, total_amount = ?, narration = ?
+         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, total_amount = ?, narration = ?, status = 'posted'
          WHERE id = ? AND voucher_type = 'purchase_invoice'"
     )
     .bind(&invoice.voucher_date)
     .bind(invoice.supplier_id)
+    .bind(&invoice.party_type)
     .bind(&invoice.reference)
     .bind(subtotal)
     .bind(invoice.discount_rate.unwrap_or(0.0))
@@ -2769,10 +2791,18 @@ pub async fn update_purchase_invoice(
             .await
             .map_err(|e| e.to_string())?;
 
-    let supplier_account_code = format!("2001-{}", invoice.supplier_id);
-    let supplier_account: i64 =
+    let party_id = invoice.supplier_id;
+    let party_type = invoice.party_type;
+
+    let party_account_code = if party_type == "supplier" {
+        format!("2001-{}", party_id)
+    } else {
+        format!("1003-{}", party_id)
+    };
+
+    let party_account: i64 =
         sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = ?")
-            .bind(&supplier_account_code)
+            .bind(&party_account_code)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| format!("Supplier account not found: {}", e))?;
@@ -2803,13 +2833,13 @@ pub async fn update_purchase_invoice(
         .map_err(|e| e.to_string())?;
     }
 
-    // Credit: Accounts Payable (Supplier)
+    // Credit: Accounts Payable (Party)
     sqlx::query(
         "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, 0, ?, 'Amount payable to supplier')",
+         VALUES (?, ?, 0, ?, 'Amount payable to/receivable from party')",
     )
     .bind(id)
-    .bind(supplier_account)
+    .bind(party_account)
     .bind(grand_total)
     .execute(&mut *tx)
     .await
@@ -2835,31 +2865,25 @@ pub async fn update_purchase_invoice(
         .map_err(|e| e.to_string())?;
     }
 
-    // Re-create stock movements
-    let items_for_stock: Vec<(i64, f64, f64, f64)> = sqlx::query_as(
-        "SELECT product_id, final_quantity, rate, amount FROM voucher_items WHERE voucher_id = ?",
-    )
-    .bind(id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    // ============= RE-CREATE STOCK MOVEMENTS =============
+    for item in &invoice.items {
+        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
+        let amount = final_qty * item.rate;
 
-    for item in items_for_stock {
         sqlx::query(
             "INSERT INTO stock_movements (voucher_id, product_id, movement_type, quantity, rate, amount)
-             VALUES (?, ?, 'IN', ?, ?, ?)"
+             VALUES (?, ?, 'in', ?, ?, ?)"
         )
         .bind(id)
-        .bind(item.0)
-        .bind(item.1)
-        .bind(item.2)
-        .bind(item.3)
+        .bind(item.product_id)
+        .bind(final_qty)
+        .bind(item.rate)
+        .bind(amount)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
-
     Ok(())
 }

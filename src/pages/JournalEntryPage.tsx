@@ -151,8 +151,8 @@ export default function JournalEntryPage() {
             return;
         }
 
-        if (journalState.lines.some(line => line.debit === 0 && line.credit === 0)) {
-            toast.error('All lines must have either debit or credit amount');
+        if (journalState.lines.some(line => (line.debit || 0) <= 0 && (line.credit || 0) <= 0)) {
+            toast.error('All lines must have either debit or credit amount greater than zero');
             return;
         }
 

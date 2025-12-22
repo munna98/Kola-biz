@@ -129,7 +129,7 @@ pub async fn init_db(
             total_amount REAL DEFAULT 0,
             metadata TEXT,
             narration TEXT,
-            status TEXT DEFAULT 'draft',
+            status TEXT DEFAULT 'posted',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             deleted_at DATETIME

@@ -56,9 +56,10 @@ interface Unit {
   symbol: string;
 }
 
-interface Supplier {
+interface Party {
   id: number;
   name: string;
+  type: 'customer' | 'supplier';
 }
 
 export default function PurchaseInvoicePage() {
@@ -66,7 +67,7 @@ export default function PurchaseInvoicePage() {
   const purchaseState = useSelector((state: RootState) => state.purchaseInvoice);
   const [products, setProducts] = useState<Product[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [parties, setParties] = useState<Party[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showListView, setShowListView] = useState(false);
@@ -79,17 +80,27 @@ export default function PurchaseInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, suppliersData] = await Promise.all([
+        const [productsData, unitsData, customersData, suppliersData] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
-          invoke<Supplier[]>('get_suppliers'),
+          invoke<any[]>('get_customers'),
+          invoke<any[]>('get_suppliers'),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
-        setSuppliers(suppliersData);
 
-        if (suppliersData.length > 0 && purchaseState.form.supplier_id === 0 && purchaseState.mode === 'new') {
-          dispatch(setSupplier({ id: suppliersData[0].id, name: suppliersData[0].name }));
+        const combinedParties: Party[] = [
+          ...suppliersData.map(s => ({ id: s.id, name: s.name, type: 'supplier' as const })),
+          ...customersData.map(c => ({ id: c.id, name: c.name, type: 'customer' as const })),
+        ];
+        setParties(combinedParties);
+
+        if (combinedParties.length > 0 && purchaseState.form.supplier_id === 0 && purchaseState.mode === 'new') {
+          dispatch(setSupplier({
+            id: combinedParties[0].id,
+            name: combinedParties[0].name,
+            type: combinedParties[0].type
+          }));
         }
       } catch (error) {
         toast.error('Failed to load data');
@@ -126,7 +137,11 @@ export default function PurchaseInvoicePage() {
       const items = await invoke<any[]>('get_purchase_invoice_items', { voucherId: id });
 
       // Setup Form
-      dispatch(setSupplier({ id: voucher.supplier_id, name: voucher.supplier_name }));
+      dispatch(setSupplier({
+        id: voucher.supplier_id,
+        name: voucher.supplier_name,
+        type: voucher.party_type
+      }));
       dispatch(setVoucherDate(voucher.voucher_date));
       dispatch(setReference(voucher.reference || ''));
       dispatch(setNarration(voucher.narration || ''));
@@ -138,7 +153,11 @@ export default function PurchaseInvoicePage() {
       // Setup Items
       dispatch(resetForm()); // Clear items first
       // Re-dispatch form data because resetForm cleared it
-      dispatch(setSupplier({ id: voucher.supplier_id, name: voucher.supplier_name }));
+      dispatch(setSupplier({
+        id: voucher.supplier_id,
+        name: voucher.supplier_name,
+        type: voucher.party_type
+      }));
       dispatch(setVoucherDate(voucher.voucher_date));
       dispatch(setReference(voucher.reference || ''));
       dispatch(setNarration(voucher.narration || ''));
@@ -292,8 +311,19 @@ export default function PurchaseInvoicePage() {
       return;
     }
 
+    // Validate each item
+    const hasInvalidItems = purchaseState.items.some(item => {
+      const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
+      return !item.product_id || finalQty <= 0 || item.rate <= 0;
+    });
+
+    if (hasInvalidItems) {
+      toast.error('All items must have a product selected, a positive final quantity, and a non-zero rate');
+      return;
+    }
+
     if (!purchaseState.form.supplier_id) {
-      toast.error('Select a supplier');
+      toast.error('Select a party');
       return;
     }
 
@@ -304,6 +334,7 @@ export default function PurchaseInvoicePage() {
           id: purchaseState.currentVoucherId,
           invoice: {
             supplier_id: purchaseState.form.supplier_id,
+            party_type: purchaseState.form.party_type,
             voucher_date: purchaseState.form.voucher_date,
             reference: purchaseState.form.reference || null,
             narration: purchaseState.form.narration || null,
@@ -325,6 +356,7 @@ export default function PurchaseInvoicePage() {
         await invoke<number>('create_purchase_invoice', {
           invoice: {
             supplier_id: purchaseState.form.supplier_id,
+            party_type: purchaseState.form.party_type,
             voucher_date: purchaseState.form.voucher_date,
             reference: purchaseState.form.reference || null,
             narration: purchaseState.form.narration || null,
@@ -412,7 +444,6 @@ export default function PurchaseInvoicePage() {
         mode={purchaseState.mode}
         voucherNo={purchaseState.currentVoucherId ? `PI-${purchaseState.currentVoucherId}` : undefined} // Or fetch real Voucher No in load
         voucherDate={purchaseState.form.voucher_date}
-        status={'posted'} // Todo: fetch status
         isUnsaved={purchaseState.hasUnsavedChanges}
         hasPrevious={purchaseState.navigationData.hasPrevious}
         hasNext={purchaseState.navigationData.hasNext}
@@ -447,19 +478,22 @@ export default function PurchaseInvoicePage() {
             <div className="grid grid-cols-6 gap-3">
               {/* Supplier */}
               <div ref={supplierRef} className="col-span-2">
-                <Label className="text-xs font-medium mb-1 block">Supplier *</Label>
+                <Label className="text-xs font-medium mb-1 block">Party (Supplier/Customer) *</Label>
                 <Combobox
-                  options={suppliers.map(s => ({ value: s.id, label: s.name }))}
+                  options={parties.map(p => ({
+                    value: p.id,
+                    label: `${p.name} (${p.type === 'supplier' ? 'Supplier' : 'Customer'})`
+                  }))}
                   value={purchaseState.form.supplier_id}
                   onChange={(value) => {
-                    const supplier = suppliers.find((s) => s.id === value);
-                    if (supplier) {
-                      dispatch(setSupplier({ id: supplier.id, name: supplier.name }));
+                    const party = parties.find((p) => p.id === value);
+                    if (party) {
+                      dispatch(setSupplier({ id: party.id, name: party.name, type: party.type }));
                       markUnsaved();
                     }
                   }}
-                  placeholder="Select supplier"
-                  searchPlaceholder="Search suppliers..."
+                  placeholder="Select party"
+                  searchPlaceholder="Search parties..."
                   disabled={isReadOnly}
                 />
               </div>

@@ -66,6 +66,7 @@ export interface PurchaseInvoiceState extends VoucherNavigationState {
   form: {
     supplier_id: number;
     supplier_name: string;
+    party_type: string;
     voucher_date: string;
     reference: string;
     narration: string;
@@ -88,6 +89,7 @@ const purchaseInitialState: PurchaseInvoiceState = {
   form: {
     supplier_id: 0,
     supplier_name: '',
+    party_type: 'supplier',
     voucher_date: new Date().toISOString().split('T')[0],
     reference: '',
     narration: '',
@@ -121,9 +123,11 @@ const purchaseInvoiceSlice = createSlice({
     setPurchaseNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
       state.navigationData = action.payload;
     },
-    setSupplier: (state, action: PayloadAction<{ id: number; name: string }>) => {
+    setSupplier: (state, action: PayloadAction<{ id: number; name: string; type?: string }>) => {
       state.form.supplier_id = action.payload.id;
       state.form.supplier_name = action.payload.name;
+      state.form.party_type = action.payload.type || 'supplier';
+      state.hasUnsavedChanges = true;
     },
     setVoucherDate: (state, action: PayloadAction<string>) => {
       state.form.voucher_date = action.payload;
@@ -156,6 +160,7 @@ const purchaseInvoiceSlice = createSlice({
       state.form = {
         supplier_id: 0,
         supplier_name: '',
+        party_type: 'supplier',
         voucher_date: new Date().toISOString().split('T')[0],
         reference: '',
         narration: '',
@@ -706,6 +711,7 @@ export interface SalesInvoiceState extends VoucherNavigationState {
   form: {
     customer_id: number;
     customer_name: string;
+    party_type: string;
     voucher_date: string;
     reference: string;
     narration: string;
@@ -728,6 +734,7 @@ const salesInitialState: SalesInvoiceState = {
   form: {
     customer_id: 0,
     customer_name: '',
+    party_type: 'customer',
     voucher_date: new Date().toISOString().split('T')[0],
     reference: '',
     narration: '',
@@ -761,9 +768,11 @@ const salesInvoiceSlice = createSlice({
     setSalesNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
       state.navigationData = action.payload;
     },
-    setSalesCustomer: (state, action: PayloadAction<{ id: number; name: string }>) => {
+    setSalesCustomer: (state, action: PayloadAction<{ id: number; name: string; type?: string }>) => {
       state.form.customer_id = action.payload.id;
       state.form.customer_name = action.payload.name;
+      state.form.party_type = action.payload.type || 'customer';
+      state.hasUnsavedChanges = true;
     },
     setSalesVoucherDate: (state, action: PayloadAction<string>) => {
       state.form.voucher_date = action.payload;
@@ -796,6 +805,7 @@ const salesInvoiceSlice = createSlice({
       state.form = {
         customer_id: 0,
         customer_name: '',
+        party_type: 'customer',
         voucher_date: new Date().toISOString().split('T')[0],
         reference: '',
         narration: '',

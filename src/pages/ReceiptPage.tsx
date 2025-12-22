@@ -123,6 +123,13 @@ export default function ReceiptPage() {
             return;
         }
 
+        // Validate each item
+        const hasEmptyItems = receiptState.items.some(item => !item.description || item.amount <= 0);
+        if (hasEmptyItems) {
+            toast.error('All items must have a ledger selected and a non-zero amount');
+            return;
+        }
+
         try {
             dispatch(setReceiptLoading(true));
             await invoke('create_receipt', { receipt: { ...receiptState.form, items: receiptState.items } });
