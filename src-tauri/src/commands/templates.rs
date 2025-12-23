@@ -12,6 +12,7 @@ use tauri::State;
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct InvoiceTemplate {
     pub id: i64,
+    pub template_number: String,
     pub name: String,
     pub description: Option<String>,
     pub voucher_type: String,    // 'sales_invoice', 'purchase_invoice', etc.

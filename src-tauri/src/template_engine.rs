@@ -15,6 +15,7 @@ impl TemplateEngine {
         handlebars.register_helper("format_date", Box::new(format_date_helper));
         handlebars.register_helper("number_to_words", Box::new(number_to_words_helper));
         handlebars.register_helper("format_number", Box::new(format_number_helper));
+        handlebars.register_helper("increment", Box::new(increment_helper));
 
         // Disable strict mode to allow optional fields in templates
         handlebars.set_strict_mode(false);
@@ -300,5 +301,22 @@ fn format_number_helper(
     let value = h.param(0).and_then(|v| v.value().as_f64()).unwrap_or(0.0);
 
     out.write(&format!("{:.1$}", value, decimals))?;
+    Ok(())
+}
+
+// Increment index (for 1-based numbering in templates)
+fn increment_helper(
+    h: &Helper,
+    _: &HB,
+    _: &Context,
+    _: &mut RenderContext,
+    out: &mut dyn Output,
+) -> HelperResult {
+    let value = h
+        .param(0)
+        .and_then(|v| v.value().as_u64())
+        .unwrap_or(0);
+
+    out.write(&format!("{}", value + 1))?;
     Ok(())
 }

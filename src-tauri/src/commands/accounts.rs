@@ -68,6 +68,37 @@ pub async fn get_chart_of_accounts(
 }
 
 #[tauri::command]
+pub async fn get_accounts_by_groups(
+    pool: State<'_, SqlitePool>,
+    groups: Vec<String>,
+) -> Result<Vec<ChartOfAccount>, String> {
+    if groups.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let placeholders: Vec<String> = (1..=groups.len()).map(|i| format!("?{}", i)).collect();
+    let query_str = format!(
+        "SELECT id, account_code, account_name, account_type, account_group, description, 
+                CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, 
+                is_active, deleted_at, created_at, updated_at 
+         FROM chart_of_accounts 
+         WHERE deleted_at IS NULL AND account_group IN ({}) 
+         ORDER BY account_name ASC",
+        placeholders.join(", ")
+    );
+
+    let mut query = sqlx::query_as::<_, ChartOfAccount>(&query_str);
+    for group in groups {
+        query = query.bind(group);
+    }
+
+    query
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn create_chart_of_account(
     pool: State<'_, SqlitePool>,
     account: CreateChartOfAccount,
@@ -247,7 +278,7 @@ pub async fn update_chart_of_account(
             "SELECT v.id FROM vouchers v 
              INNER JOIN journal_entries je ON v.id = je.voucher_id 
              WHERE v.voucher_type = 'opening_balance' AND je.account_id = ? 
-             ORDER BY v.created_at DESC LIMIT 1"
+             ORDER BY v.created_at DESC LIMIT 1",
         )
         .bind(id)
         .fetch_optional(&mut *tx)
@@ -276,33 +307,28 @@ pub async fn update_chart_of_account(
         };
 
         // Delete existing opening balance journal entries for this account (if any)
-        sqlx::query(
-            "DELETE FROM journal_entries WHERE voucher_id = ? AND account_id = ?"
-        )
-        .bind(voucher_id)
-        .bind(id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        // Find Opening Balance Adjustment account
-        let ob_account: Option<(i64,)> = sqlx::query_as(
-            "SELECT id FROM chart_of_accounts WHERE account_code = '3004' LIMIT 1"
-        )
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        if let Some((ob_account_id,)) = ob_account {
-            // Delete existing balancing entry (if any)
-            sqlx::query(
-                "DELETE FROM journal_entries WHERE voucher_id = ? AND account_id = ?"
-            )
+        sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ? AND account_id = ?")
             .bind(voucher_id)
-            .bind(ob_account_id)
+            .bind(id)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
+
+        // Find Opening Balance Adjustment account
+        let ob_account: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM chart_of_accounts WHERE account_code = '3004' LIMIT 1")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+        if let Some((ob_account_id,)) = ob_account {
+            // Delete existing balancing entry (if any)
+            sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ? AND account_id = ?")
+                .bind(voucher_id)
+                .bind(ob_account_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
 
             // Create new journal entry for the account if balance > 0
             if new_opening_balance > 0.0 {

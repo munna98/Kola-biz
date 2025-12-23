@@ -101,8 +101,8 @@ pub async fn get_purchase_invoices(
             v.voucher_no,
             v.voucher_date,
             v.party_id as supplier_id,
-            s.name as supplier_name,
-            'supplier' as party_type,
+            coa.account_name as supplier_name,
+            v.party_type,
             v.reference,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
@@ -114,7 +114,7 @@ pub async fn get_purchase_invoices(
             v.created_at,
             v.deleted_at
         FROM vouchers v
-        LEFT JOIN suppliers s ON v.party_id = s.id
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         WHERE v.voucher_type = 'purchase_invoice' AND v.deleted_at IS NULL
         GROUP BY v.id
@@ -138,7 +138,8 @@ pub async fn get_purchase_invoice(
             v.voucher_no,
             v.voucher_date,
             v.party_id as supplier_id,
-            COALESCE(s.name, c.name) as supplier_name,
+            v.party_id as supplier_id,
+            coa.account_name as supplier_name,
             v.party_type,
             v.reference,
             v.total_amount,
@@ -151,8 +152,7 @@ pub async fn get_purchase_invoice(
             v.created_at,
             v.deleted_at
         FROM vouchers v
-        LEFT JOIN suppliers s ON v.party_id = s.id AND v.party_type = 'supplier'
-        LEFT JOIN customers c ON v.party_id = c.id AND v.party_type = 'customer'
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         WHERE v.id = ? AND v.voucher_type = 'purchase_invoice' AND v.deleted_at IS NULL
         GROUP BY v.id",
@@ -258,7 +258,6 @@ pub async fn create_purchase_invoice(
     // ============= CREATE JOURNAL ENTRIES =============
 
     let party_id = invoice.supplier_id;
-    let party_type = invoice.party_type;
 
     // Calculate total tax
     let total_tax: f64 = sqlx::query_scalar(
@@ -282,17 +281,11 @@ pub async fn create_purchase_invoice(
             .await
             .map_err(|e| e.to_string())?;
 
-    let party_account_code = if party_type == "supplier" {
-        format!("2001-{}", party_id)
-    } else {
-        format!("1003-{}", party_id)
-    };
-    let party_account: i64 =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = ?")
-            .bind(&party_account_code)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| format!("Supplier account not found: {}", e))?;
+    let party_account: i64 = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE id = ?")
+        .bind(party_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| format!("Party account not found: {}", e))?;
 
     // Debit: Purchases Account (with subtotal, before discount)
     sqlx::query(
@@ -503,20 +496,12 @@ pub async fn update_purchase_invoice(
             .map_err(|e| e.to_string())?;
 
     let party_id = invoice.supplier_id;
-    let party_type = invoice.party_type;
 
-    let party_account_code = if party_type == "supplier" {
-        format!("2001-{}", party_id)
-    } else {
-        format!("1003-{}", party_id)
-    };
-
-    let party_account: i64 =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = ?")
-            .bind(&party_account_code)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| format!("Supplier account not found: {}", e))?;
+    let party_account: i64 = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE id = ?")
+        .bind(party_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| format!("Party account not found: {}", e))?;
 
     // Debit: Purchases Account (with subtotal, before discount)
     sqlx::query(
@@ -672,10 +657,7 @@ pub async fn get_sales_invoices(pool: State<'_, SqlitePool>) -> Result<Vec<Sales
             v.voucher_no,
             v.voucher_date,
             v.party_id as customer_id,
-            CASE 
-                WHEN v.party_type = 'customer' THEN c.name 
-                ELSE s.name 
-            END as customer_name,
+            coa.account_name as customer_name,
             v.party_type,
             v.reference,
             v.total_amount,
@@ -688,8 +670,7 @@ pub async fn get_sales_invoices(pool: State<'_, SqlitePool>) -> Result<Vec<Sales
             v.created_at,
             v.deleted_at
          FROM vouchers v
-         LEFT JOIN customers c ON v.party_id = c.id AND v.party_type = 'customer'
-         LEFT JOIN suppliers s ON v.party_id = s.id AND v.party_type = 'supplier'
+         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
          WHERE v.voucher_type = 'sales_invoice' AND v.deleted_at IS NULL
          GROUP BY v.id
@@ -711,7 +692,7 @@ pub async fn get_sales_invoice(
             v.voucher_no,
             v.voucher_date,
             v.party_id as customer_id,
-            COALESCE(c.name, s.name) as customer_name,
+            coa.account_name as customer_name,
             v.party_type,
             v.reference,
             v.total_amount,
@@ -724,8 +705,7 @@ pub async fn get_sales_invoice(
             v.created_at,
             v.deleted_at
         FROM vouchers v
-        LEFT JOIN customers c ON v.party_id = c.id AND v.party_type = 'customer'
-        LEFT JOIN suppliers s ON v.party_id = s.id AND v.party_type = 'supplier'
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         WHERE v.id = ? AND v.voucher_type = 'sales_invoice' AND v.deleted_at IS NULL
         GROUP BY v.id",
@@ -830,7 +810,6 @@ pub async fn create_sales_invoice(
     // ============= CREATE JOURNAL ENTRIES =============
 
     let party_id = invoice.customer_id;
-    let party_type = invoice.party_type;
 
     // Calculate total tax
     let total_tax: f64 = sqlx::query_scalar(
@@ -854,18 +833,11 @@ pub async fn create_sales_invoice(
             .await
             .map_err(|e| e.to_string())?;
 
-    let party_account_code = if party_type == "customer" {
-        format!("1003-{}", party_id)
-    } else {
-        format!("2001-{}", party_id)
-    };
-
-    let party_account: i64 =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = ?")
-            .bind(&party_account_code)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| format!("Party account not found: {}", e))?;
+    let party_account: i64 = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE id = ?")
+        .bind(party_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| format!("Party account not found: {}", e))?;
 
     // Debit: Accounts Receivable/Payable (Party)
     // Amount due = subtotal - discount + tax
@@ -993,19 +965,12 @@ pub async fn list_vouchers(
             v.id,
             v.voucher_no,
             v.voucher_date,
-            CASE 
-                WHEN v.voucher_type = 'purchase_invoice' THEN s.name
-                WHEN v.voucher_type = 'sales_invoice' THEN c.name
-                WHEN v.voucher_type IN ('payment', 'receipt') THEN coa.account_name
-                ELSE NULL
-            END as party_name,
+            coa.account_name as party_name,
             v.total_amount,
             v.status,
             v.voucher_type
         FROM vouchers v
-        LEFT JOIN suppliers s ON v.party_id = s.id AND v.party_type = 'supplier'
-        LEFT JOIN customers c ON v.party_id = c.id AND v.party_type = 'customer'
-        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id AND v.party_type = 'account'
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         WHERE v.voucher_type = ? AND v.deleted_at IS NULL ",
     );
 

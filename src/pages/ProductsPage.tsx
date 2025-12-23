@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconPlus, IconEdit, IconTrash, IconRuler, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
 import { api, Product, CreateProduct, Unit } from '@/lib/tauri';
@@ -249,6 +249,9 @@ export default function ProductsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit' : 'Add'} Product</DialogTitle>
+            <DialogDescription>
+              {editing ? 'Update the details of the existing product.' : 'Fill in the details to add a new product to your inventory.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">

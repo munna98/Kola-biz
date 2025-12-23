@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import {
     Dialog,
     DialogContent,
+    DialogDescription,
     DialogHeader,
     DialogTitle,
     DialogFooter,
@@ -16,6 +17,7 @@ interface PrintPreviewModalProps {
     onClose: () => void;
     voucherId: number | null;
     voucherType: string;
+    templateId?: number | null;
 }
 
 export function PrintPreviewModal({
@@ -23,6 +25,7 @@ export function PrintPreviewModal({
     onClose,
     voucherId,
     voucherType,
+    templateId,
 }: PrintPreviewModalProps) {
     const [htmlContent, setHtmlContent] = useState<string>('');
     const [loading, setLoading] = useState(false);
@@ -34,7 +37,7 @@ export function PrintPreviewModal({
         } else {
             setHtmlContent('');
         }
-    }, [isOpen, voucherId, voucherType]);
+    }, [isOpen, voucherId, voucherType, templateId]);
 
     const loadPreview = async () => {
         if (!voucherId) return;
@@ -44,7 +47,7 @@ export function PrintPreviewModal({
             const content = await invoke<string>('render_invoice', {
                 voucherId,
                 voucherType,
-                templateId: null, // Use default template
+                templateId: templateId || null, // Use specific template or default
             });
             setHtmlContent(content);
         } catch (error) {
@@ -69,6 +72,9 @@ export function PrintPreviewModal({
             <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 gap-0">
                 <DialogHeader className="px-6 py-4 border-b shrink-0 flex flex-row items-center justify-between">
                     <DialogTitle>Print Preview</DialogTitle>
+                    <DialogDescription className="sr-only">
+                        Preview of the invoice/voucher before printing.
+                    </DialogDescription>
                     <div className="flex items-center gap-2">
                         <Button variant="outline" size="sm" onClick={handlePrint} disabled={loading || !htmlContent} className="gap-2">
                             <IconPrinter size={16} />

@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IconEdit, IconTrash } from '@tabler/icons-react';
 import { api, Unit, CreateUnit } from '@/lib/tauri';
 import { toast } from 'sonner';
@@ -87,6 +87,9 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>Manage Units of Measurement</DialogTitle>
+          <DialogDescription>
+            Add, update, or delete units used for your products (e.g., Kg, Pcs).
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

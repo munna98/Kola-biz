@@ -82,22 +82,22 @@ export default function SalesInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, customersData, suppliersData] = await Promise.all([
+        const [productsData, unitsData, accountsData] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
-          invoke<any[]>('get_customers'),
-          invoke<any[]>('get_suppliers'),
+          invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable'] }),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
 
-        const combinedParties: Party[] = [
-          ...customersData.map(c => ({ id: c.id, name: c.name, type: 'customer' as const })),
-          ...suppliersData.map(s => ({ id: s.id, name: s.name, type: 'supplier' as const })),
-        ];
+        const combinedParties = accountsData.map(acc => ({
+          id: acc.id,
+          name: acc.account_name,
+          type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const
+        }));
         setParties(combinedParties);
 
-        if (combinedParties.length > 0 && salesState.form.customer_id === 0) {
+        if (combinedParties.length > 0 && salesState.form.customer_id === 0 && salesState.mode === 'new') {
           dispatch(setSalesCustomer({
             id: combinedParties[0].id,
             name: combinedParties[0].name,

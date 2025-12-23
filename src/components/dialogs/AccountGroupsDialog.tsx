@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { api, AccountGroup, CreateAccountGroup } from '@/lib/tauri';
 import { toast } from 'sonner';
@@ -75,6 +75,9 @@ export default function AccountGroupsDialog({ open, onOpenChange }: AccountGroup
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>Manage Account Groups</DialogTitle>
+          <DialogDescription>
+            Create and manage groups to organize your chart of accounts.
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">

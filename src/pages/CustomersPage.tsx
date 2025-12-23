@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
 import { api, Customer, CreateCustomer } from '@/lib/tauri';
 import { toast } from 'sonner';
@@ -164,6 +164,9 @@ export default function CustomersPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit' : 'Add'} Customer</DialogTitle>
+            <DialogDescription>
+              {editing ? 'Update the details of the existing customer.' : 'Fill in the details to add a new customer to your database.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

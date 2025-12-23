@@ -59,6 +59,7 @@ export function InvoiceTemplatesPage() {
     const [loading, setLoading] = useState(false);
     const [previewId, setPreviewId] = useState<number | null>(null);
     const [previewType, setPreviewType] = useState<string>('');
+    const [previewTemplateId, setPreviewTemplateId] = useState<number | null>(null);
     const [showPreview, setShowPreview] = useState(false);
 
     useEffect(() => {
@@ -122,6 +123,7 @@ export function InvoiceTemplatesPage() {
         // For now, let's assume we have at least one voucher of that type or handle error in modal
         setPreviewId(1); // Assuming ID 1 exists for test, or user will see error/blank
         setPreviewType(template.voucher_type);
+        setPreviewTemplateId(template.id); // Pass the specific template ID
         setShowPreview(true);
     }
 
@@ -255,6 +257,7 @@ export function InvoiceTemplatesPage() {
                 onClose={() => setShowPreview(false)}
                 voucherId={previewId}
                 voucherType={previewType}
+                templateId={previewTemplateId}
             />
         </div>
     );

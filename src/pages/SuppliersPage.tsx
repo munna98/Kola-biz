@@ -3,8 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
 import { api, Supplier, CreateSupplier } from '@/lib/tauri';
 import { toast } from 'sonner';
@@ -90,37 +89,27 @@ export default function SuppliersPage() {
     }
   };
 
-
   return (
     <div className="p-6 space-y-4">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-2xl font-bold">{showDeleted ? 'Suppliers (Deleted)' : 'Suppliers'}</h2>
+          <h2 className="text-2xl font-bold">{showDeleted ? 'Recycle Bin - Suppliers' : 'Suppliers'}</h2>
           <p className="text-sm text-muted-foreground mt-1">
             {showDeleted ? 'View and restore deleted suppliers' : 'Manage your supplier database'}
           </p>
         </div>
         <div className="flex gap-2">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  onClick={() => setShowDeleted(!showDeleted)}
-                >
-                  {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {showDeleted ? 'View Active Suppliers' : 'View Recycle Bin'}
-              </TooltipContent>
-            </Tooltip>
-            {!showDeleted && (
-              <Button onClick={() => { setOpen(true); setEditing(null); setForm({ name: '', email: '', phone: '', address: '' }); }}>
-                <IconPlus size={16} /> Add Supplier
-              </Button>
-            )}
-          </TooltipProvider>
+          <Button
+            variant="outline"
+            onClick={() => setShowDeleted(!showDeleted)}
+          >
+            {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
+          </Button>
+          {!showDeleted && (
+            <Button onClick={() => { setOpen(true); setEditing(null); setForm({ name: '', email: '', phone: '', address: '' }); }}>
+              <IconPlus size={16} /> Add Supplier
+            </Button>
+          )}
         </div>
       </div>
 
@@ -175,6 +164,9 @@ export default function SuppliersPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit' : 'Add'} Supplier</DialogTitle>
+            <DialogDescription>
+              {editing ? 'Update the details of the existing supplier.' : 'Fill in the details to add a new supplier.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div>

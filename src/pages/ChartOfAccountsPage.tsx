@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { IconPlus, IconEdit, IconTrash, IconSettings, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
 import { api, ChartOfAccount, CreateChartOfAccount } from '@/lib/tauri';
@@ -253,6 +253,9 @@ export default function ChartOfAccountsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>{editing ? 'Edit' : 'Add'} Account</DialogTitle>
+            <DialogDescription>
+              {editing ? 'Update the details of the existing account in your chart of accounts.' : 'Fill in the details to create a new account in your chart of accounts.'}
+            </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">

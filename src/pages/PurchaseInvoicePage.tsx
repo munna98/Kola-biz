@@ -80,19 +80,19 @@ export default function PurchaseInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, customersData, suppliersData] = await Promise.all([
+        const [productsData, unitsData, accountsData] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
-          invoke<any[]>('get_customers'),
-          invoke<any[]>('get_suppliers'),
+          invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable'] }),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
 
-        const combinedParties: Party[] = [
-          ...suppliersData.map(s => ({ id: s.id, name: s.name, type: 'supplier' as const })),
-          ...customersData.map(c => ({ id: c.id, name: c.name, type: 'customer' as const })),
-        ];
+        const combinedParties = accountsData.map(acc => ({
+          id: acc.id,
+          name: acc.account_name,
+          type: acc.account_group === 'Accounts Payable' ? 'supplier' as const : 'customer' as const
+        }));
         setParties(combinedParties);
 
         if (combinedParties.length > 0 && purchaseState.form.supplier_id === 0 && purchaseState.mode === 'new') {

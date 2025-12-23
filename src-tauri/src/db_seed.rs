@@ -631,27 +631,457 @@ body {
 }
 "#;
 
+// ============= MINIMAL CLEAN INVOICE TEMPLATE =============
+
+const MINIMAL_HEADER: &str = r#"
+<div class="invoice-header">
+    <div class="invoice-title">
+        <h1>INVOICE</h1>
+    </div>
+    <div class="logo-placeholder">
+        {{#if company.has_logo}}
+        <img src="{{company.logo}}" alt="{{company.name}}" class="company-logo" />
+        {{else}}
+        <div class="logo-box">
+            <p>YOUR COMPANY'S<br/>LOGO GOES HERE</p>
+        </div>
+        {{/if}}
+    </div>
+</div>
+
+<div class="invoice-details">
+    <div class="detail-row">
+        <span class="label">INVOICE NR:</span>
+        <span class="value">{{voucher_no}}</span>
+    </div>
+    <div class="detail-row">
+        <span class="label">DATE:</span>
+        <span class="value">{{format_date voucher_date}}</span>
+    </div>
+    {{#if due_date}}
+    <div class="detail-row">
+        <span class="label">DUE DATE:</span>
+        <span class="value">{{format_date due_date}}</span>
+    </div>
+    {{/if}}
+</div>
+
+<div class="parties-section">
+    <div class="bill-to">
+        <h3>BILL TO:</h3>
+        <div class="party-details">
+            <p class="party-name">{{party.name}}</p>
+            {{#if party.business_title}}
+            <p>{{party.business_title}}</p>
+            {{/if}}
+            {{#if party.address}}
+            <p>{{party.address}}</p>
+            {{/if}}
+            {{#if party.email}}
+            <p>{{party.email}}</p>
+            {{/if}}
+        </div>
+    </div>
+    
+    <div class="payable-to">
+        <h3>PAYABLE TO:</h3>
+        <div class="party-details">
+            <p class="party-name">{{company.name}}</p>
+            <p>{{company.address}}</p>
+            {{#if company.phone}}
+            <p>+ {{company.phone}}</p>
+            {{/if}}
+            {{#if company.email}}
+            <p>{{company.email}}</p>
+            {{/if}}
+        </div>
+    </div>
+</div>
+"#;
+
+const MINIMAL_BODY: &str = r#"
+<table class="items-table">
+    <thead>
+        <tr>
+            <th class="col-no">NO.</th>
+            <th class="col-description">DESCRIPTION</th>
+            <th class="col-qty">QTY</th>
+            <th class="col-price">PRICE</th>
+            <th class="col-total">TOTAL</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{#each items}}
+        <tr>
+            <td class="col-no">{{increment @index}}.</td>
+            <td class="col-description">{{product_name}}</td>
+            <td class="col-qty">{{format_number final_quantity 0}}</td>
+            <td class="col-price">₹{{format_number rate 0}}</td>
+            <td class="col-total">₹{{format_number total 0}}</td>
+        </tr>
+        {{/each}}
+    </tbody>
+</table>
+
+<div class="totals-section">
+    <div class="totals-rows">
+        <div class="total-row">
+            <span class="total-label">subtotal:</span>
+            <span class="total-value">₹{{format_number subtotal 0}}</span>
+        </div>
+        
+        {{#if discount_amount}}
+        <div class="total-row">
+            <span class="total-label">discount:</span>
+            <span class="total-value">₹{{format_number discount_amount 0}}</span>
+        </div>
+        {{/if}}
+        
+        {{#if tax_total}}
+        <div class="total-row">
+            <span class="total-label">taxes:</span>
+            <span class="total-value">₹{{format_number tax_total 0}}</span>
+        </div>
+        {{/if}}
+        
+        <div class="total-row grand-total">
+            <span class="total-label">TOTAL AMOUNT:</span>
+            <span class="total-value">₹{{format_number grand_total 0}}</span>
+        </div>
+    </div>
+</div>
+"#;
+
+const MINIMAL_FOOTER: &str = r#"
+<div class="footer-section">
+    <div class="bank-details">
+        {{#if bank.has_details}}
+        <div class="bank-row">
+            <span class="bank-label">BANK NAME:</span>
+            <span class="bank-value">{{bank.name}}</span>
+        </div>
+        <div class="bank-row">
+            <span class="bank-label">ACCOUNT:</span>
+            <span class="bank-value">{{bank.account_no}}</span>
+        </div>
+        {{/if}}
+    </div>
+    
+    <div class="signature-area">
+        <div class="signature-line"></div>
+        <p class="thank-you">THANK YOU FOR YOUR PURCHASE</p>
+    </div>
+</div>
+"#;
+
+const MINIMAL_CSS: &str = r#"
+@page {
+    size: A4;
+    margin: 0;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica', 'Arial', sans-serif;
+    font-size: 10pt;
+    line-height: 1.4;
+    color: #000000;
+    background: #ffffff;
+    padding: 50px 60px;
+}
+
+/* Header Section */
+.invoice-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 40px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid #000000;
+}
+
+.invoice-title h1 {
+    font-size: 42pt;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    color: #000000;
+}
+
+.logo-placeholder {
+    width: 300px;
+    height: 90px;
+}
+
+.company-logo {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+}
+
+.logo-box {
+    width: 100%;
+    height: 100%;
+    border: 2px solid #d1d5db;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    background: #f9fafb;
+}
+
+.logo-box p {
+    font-size: 9pt;
+    color: #9ca3af;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    line-height: 1.6;
+}
+
+/* Invoice Details */
+.invoice-details {
+    margin-bottom: 40px;
+    max-width: 400px;
+}
+
+.detail-row {
+    display: flex;
+    padding: 8px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.detail-row .label {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 9pt;
+    letter-spacing: 0.05em;
+    width: 120px;
+}
+
+.detail-row .value {
+    font-size: 10pt;
+}
+
+/* Parties Section */
+.parties-section {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 50px;
+}
+
+.bill-to,
+.payable-to {
+    flex: 0 0 45%;
+}
+
+.parties-section h3 {
+    font-size: 9pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 15px;
+}
+
+.party-details p {
+    font-size: 10pt;
+    margin: 4px 0;
+    color: #000000;
+}
+
+.party-name {
+    font-weight: 600;
+    font-size: 11pt;
+}
+
+/* Items Table */
+.items-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 30px;
+}
+
+.items-table thead {
+    background: #ffffff;
+    border-top: 2px solid #000000;
+    border-bottom: 2px solid #000000;
+}
+
+.items-table th {
+    text-align: left;
+    padding: 12px 10px;
+    font-size: 9pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.items-table tbody tr {
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.items-table td {
+    padding: 12px 10px;
+    font-size: 10pt;
+}
+
+.col-no {
+    width: 8%;
+}
+
+.col-description {
+    width: 42%;
+}
+
+.col-qty {
+    width: 12%;
+    text-align: center;
+}
+
+.col-price {
+    width: 18%;
+    text-align: right;
+}
+
+.col-total {
+    width: 20%;
+    text-align: right;
+}
+
+/* Totals Section */
+.totals-section {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 60px;
+}
+
+.totals-rows {
+    min-width: 350px;
+}
+
+.total-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.total-label {
+    font-size: 10pt;
+    text-transform: lowercase;
+}
+
+.total-value {
+    font-size: 11pt;
+    font-weight: 500;
+    font-family: 'Courier New', monospace;
+}
+
+.total-row.grand-total {
+    border-top: 2px solid #000000;
+    border-bottom: 2px solid #000000;
+    margin-top: 8px;
+    padding: 15px 0;
+}
+
+.grand-total .total-label {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 11pt;
+    letter-spacing: 0.05em;
+}
+
+.grand-total .total-value {
+    font-weight: 700;
+    font-size: 14pt;
+}
+
+/* Footer Section */
+.footer-section {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-top: 2px solid #000000;
+    padding-top: 30px;
+}
+
+.bank-details {
+    flex: 0 0 45%;
+}
+
+.bank-row {
+    display: flex;
+    margin-bottom: 8px;
+}
+
+.bank-label {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 9pt;
+    letter-spacing: 0.05em;
+    width: 120px;
+}
+
+.bank-value {
+    font-size: 10pt;
+}
+
+.signature-area {
+    flex: 0 0 45%;
+    text-align: right;
+}
+
+.signature-line {
+    border-bottom: 1px solid #000000;
+    margin-bottom: 10px;
+    height: 40px;
+}
+
+.thank-you {
+    font-size: 9pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    margin-top: 5px;
+}
+
+/* Print Styles */
+@media print {
+    body {
+        padding: 40px 50px;
+    }
+    
+    .invoice-header {
+        page-break-after: avoid;
+    }
+    
+    .items-table {
+        page-break-inside: avoid;
+    }
+    
+    .totals-section {
+        page-break-before: avoid;
+    }
+}
+"#;
+
 // ============= SEED FUNCTION WITH HANDLEBARS TEMPLATES =============
 
 pub async fn seed_handlebars_templates(
     pool: &SqlitePool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    // Check if templates already exist
-    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM invoice_templates")
-        .fetch_one(pool)
-        .await?;
-
-    if count > 0 {
-        return Ok(());
-    }
-
     // A4 Professional Template
+    // Use INSERT OR IGNORE with template_number as unique identifier
     sqlx::query(
         "INSERT OR IGNORE INTO invoice_templates (
-            name, description, voucher_type, template_format, design_mode,
+            template_number, name, description, voucher_type, template_format, design_mode,
             header_html, body_html, footer_html, styles_css, is_default
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
+    .bind("TPL-SI-001") // Unique template number
     .bind("Professional A4 Invoice")
     .bind("Modern professional invoice with complete company branding and detailed line items")
     .bind("sales_invoice")
@@ -668,10 +1098,11 @@ pub async fn seed_handlebars_templates(
     // Thermal 80mm Template
     sqlx::query(
         "INSERT OR IGNORE INTO invoice_templates (
-            name, description, voucher_type, template_format, design_mode,
+            template_number, name, description, voucher_type, template_format, design_mode,
             header_html, body_html, footer_html, styles_css, is_default
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
+    .bind("TPL-SI-002") // Unique template number
     .bind("Thermal 80mm Receipt")
     .bind("Compact receipt for 80mm thermal printers (POS systems)")
     .bind("sales_invoice")
@@ -682,6 +1113,33 @@ pub async fn seed_handlebars_templates(
     .bind(THERMAL_80MM_FOOTER)
     .bind(THERMAL_80MM_CSS)
     .bind(0)
+    .execute(pool)
+    .await?;
+
+    // Minimal Clean Invoice Template
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css, 
+            show_logo, show_company_address, show_party_address, 
+            show_bank_details, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind("TPL-SI-003") // Unique template number
+    .bind("Minimal Clean Invoice")
+    .bind("Clean, minimalist invoice design with clear typography and professional spacing")
+    .bind("sales_invoice")
+    .bind("a4_portrait")
+    .bind("minimal")
+    .bind(MINIMAL_HEADER)
+    .bind(MINIMAL_BODY)
+    .bind(MINIMAL_FOOTER)
+    .bind(MINIMAL_CSS)
+    .bind(1) // show_logo
+    .bind(1) // show_company_address
+    .bind(1) // show_party_address
+    .bind(1) // show_bank_details
+    .bind(0) // not default
     .execute(pool)
     .await?;
 

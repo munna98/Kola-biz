@@ -340,14 +340,12 @@ pub async fn init_db(
         -- ASSETS
         ('1001', 'Cash', 'Asset', 'Cash', 'Cash and cash equivalents'),
         ('1002', 'Bank Account', 'Asset', 'Bank Account', 'Bank deposits and accounts'),
-        ('1003', 'Accounts Receivable', 'Asset', 'Accounts Receivable', 'Customer receivables'),
         ('1004', 'Inventory', 'Asset', 'Inventory', 'Stock of goods for sale'),
         ('1005', 'GST Input / Tax Receivable', 'Asset', 'Tax Receivable', 'Tax paid on purchases'),
         ('1006', 'Prepaid Expenses', 'Asset', 'Current Assets', 'Expenses paid in advance'),
         ('1007', 'Undeposited Funds', 'Asset', 'Current Assets', 'Cash receipts not yet deposited'),
         
         -- LIABILITIES
-        ('2001', 'Accounts Payable', 'Liability', 'Accounts Payable', 'Supplier payables'),
         ('2002', 'GST Output / Tax Payable', 'Liability', 'Tax Payable', 'Tax collected on sales'),
         ('2003', 'Accrued Expenses', 'Liability', 'Current Liabilities', 'Expenses incurred but not paid'),
         
@@ -427,6 +425,7 @@ pub async fn init_db(
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS invoice_templates (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_number TEXT UNIQUE NOT NULL DEFAULT '',
             name TEXT NOT NULL,
             description TEXT,
             voucher_type TEXT NOT NULL, -- 'sales_invoice', 'purchase_invoice', etc.
@@ -473,6 +472,20 @@ pub async fn init_db(
     )
     .execute(&pool)
     .await?;
+
+    // Migration: Add template_number column if it doesn't exist
+    let _ = sqlx::query(
+        "ALTER TABLE invoice_templates ADD COLUMN template_number TEXT UNIQUE NOT NULL DEFAULT ''",
+    )
+    .execute(&pool)
+    .await;
+
+    // Create a unique index on (name, voucher_type) combination for additional safety
+    let _ = sqlx::query(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_templates_name_type ON invoice_templates(name, voucher_type)"
+    )
+    .execute(&pool)
+    .await;
 
     // 3. Voucher Template Assignments
     sqlx::query(
