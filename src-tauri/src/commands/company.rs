@@ -58,10 +58,26 @@ pub struct UpdateCompanyProfile {
 
 #[tauri::command]
 pub async fn get_company_profile(pool: State<'_, SqlitePool>) -> Result<CompanyProfile, String> {
-    sqlx::query_as::<_, CompanyProfile>("SELECT * FROM company_profile WHERE id = 1")
-        .fetch_one(pool.inner())
+    let profile = sqlx::query_as::<_, CompanyProfile>("SELECT * FROM company_profile LIMIT 1")
+        .fetch_optional(pool.inner())
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    match profile {
+        Some(p) => Ok(p),
+        None => {
+            // Auto-create default profile if missing
+            sqlx::query("INSERT INTO company_profile (company_name) VALUES ('My Company')")
+                .execute(pool.inner())
+                .await
+                .map_err(|e| e.to_string())?;
+
+            sqlx::query_as::<_, CompanyProfile>("SELECT * FROM company_profile LIMIT 1")
+                .fetch_one(pool.inner())
+                .await
+                .map_err(|e| e.to_string())
+        }
+    }
 }
 
 #[tauri::command]

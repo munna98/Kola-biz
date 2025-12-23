@@ -34,6 +34,15 @@ pub async fn get_customers(pool: State<'_, SqlitePool>) -> Result<Vec<Customer>,
 }
 
 #[tauri::command]
+pub async fn get_customer(pool: State<'_, SqlitePool>, id: i64) -> Result<Customer, String> {
+    sqlx::query_as::<_, Customer>("SELECT * FROM customers WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool.inner())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub async fn create_customer(
     pool: State<'_, SqlitePool>,
     customer: CreateCustomer,
@@ -257,6 +266,15 @@ pub async fn get_suppliers(pool: State<'_, SqlitePool>) -> Result<Vec<Supplier>,
     .fetch_all(pool.inner())
     .await
     .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_supplier(pool: State<'_, SqlitePool>, id: i64) -> Result<Supplier, String> {
+    sqlx::query_as::<_, Supplier>("SELECT * FROM suppliers WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool.inner())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

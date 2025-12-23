@@ -209,7 +209,7 @@ export default function ProductsPage() {
             <tbody>
               {products.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-6 text-center text-muted-foreground">
+                  <td colSpan={8} className="p-4 text-center text-muted-foreground">
                     No products found. Add your first product to get started.
                   </td>
                 </tr>

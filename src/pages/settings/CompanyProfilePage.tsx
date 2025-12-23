@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
-import { RootState, setCompanyProfile, updateCompanyField, setCompanyLoading } from '../store';
+import { RootState, setCompanyProfile, updateCompanyField, setCompanyLoading } from '../../store';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { IconBuilding, IconFileText, IconCreditCard, IconPhoto } from '@tabler/icons-react';
 
-export default function SettingsPage() {
+
+export default function CompanyProfilePage() {
     const dispatch = useDispatch();
     const { profile, loading } = useSelector((state: RootState) => state.companyProfile);
     const [logoPreview, setLogoPreview] = useState<string>('');
@@ -413,6 +414,7 @@ export default function SettingsPage() {
                         </CardContent>
                     </Card>
                 </TabsContent>
+
             </Tabs>
 
             {/* Save Button */}

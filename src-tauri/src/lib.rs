@@ -1,5 +1,8 @@
 mod commands;
 mod db;
+mod db_seed;
+pub mod template_engine; // Public so commands can use it
+pub mod utils;
 
 use commands::*;
 use tauri::Manager;
@@ -101,6 +104,11 @@ pub fn run() {
             // Company Profile
             get_company_profile,
             update_company_profile,
+            // Invoice Templates
+            render_invoice,
+            get_invoice_templates,
+            set_default_template,
+            update_template_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

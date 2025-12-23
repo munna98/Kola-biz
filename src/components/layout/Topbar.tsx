@@ -79,8 +79,9 @@ export default function Topbar() {
                             Settings
                         </NavigationMenuTrigger>
                         <NavigationMenuContent>
-                            <ul className="flex flex-col w-44">
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('settings')}>Company Profile</NavigationMenuLink>
+                            <ul className="flex flex-col w-48">
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('company_profile')}>Company Profile</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('invoice_settings')}>Invoice Settings</NavigationMenuLink>
                             </ul>
                         </NavigationMenuContent>
                     </NavigationMenuItem>

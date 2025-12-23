@@ -421,5 +421,170 @@ pub async fn init_db(
     .execute(&pool)
     .await?;
 
+    // ==================== INVOICE TEMPLATES ====================
+
+    // Invoice Templates table
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS invoice_templates (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            description TEXT,
+            voucher_type TEXT NOT NULL, -- 'sales_invoice', 'purchase_invoice', etc.
+            template_format TEXT NOT NULL, -- 'a4_portrait', 'a4_landscape', 'thermal_58mm', 'thermal_80mm'
+            design_mode TEXT DEFAULT 'standard', -- 'standard', 'compact', 'modern', 'minimal'
+            
+            -- Layout Configuration (JSON)
+            layout_config TEXT DEFAULT '{}', -- header height, footer height, margins, etc.
+            
+            -- Template Content
+            header_html TEXT NOT NULL,
+            body_html TEXT NOT NULL,
+            footer_html TEXT NOT NULL,
+            styles_css TEXT NOT NULL,
+            
+            -- Features
+            show_logo INTEGER DEFAULT 1,
+            show_company_address INTEGER DEFAULT 1,
+            show_party_address INTEGER DEFAULT 1,
+            show_gstin INTEGER DEFAULT 1,
+            show_item_images INTEGER DEFAULT 0,
+            show_item_hsn INTEGER DEFAULT 0,
+            show_bank_details INTEGER DEFAULT 1,
+            show_qr_code INTEGER DEFAULT 0,
+            show_signature INTEGER DEFAULT 1,
+            show_terms INTEGER DEFAULT 1,
+            
+            -- Print Settings
+            auto_print INTEGER DEFAULT 0,
+            copies INTEGER DEFAULT 1,
+            
+            -- Status
+            is_default INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_templates_voucher_type ON invoice_templates(voucher_type)",
+    )
+    .execute(&pool)
+    .await?;
+
+    // 3. Voucher Template Assignments
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS voucher_template_assignments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            voucher_type TEXT UNIQUE NOT NULL,
+            template_id INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (template_id) REFERENCES invoice_templates(id) ON DELETE RESTRICT
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    // 4. Template Variables/Fields (for drag-drop builder)
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS template_fields (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            field_name TEXT UNIQUE NOT NULL,
+            field_label TEXT NOT NULL,
+            field_category TEXT NOT NULL, -- 'company', 'party', 'voucher', 'items', 'totals'
+            field_type TEXT NOT NULL, -- 'text', 'number', 'date', 'currency', 'image', 'table'
+            format_pattern TEXT, -- e.g., 'DD/MM/YYYY' for dates, '#,##0.00' for numbers
+            is_required INTEGER DEFAULT 0,
+            description TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Insert default template fields
+    sqlx::query(
+        "INSERT OR IGNORE INTO template_fields (field_name, field_label, field_category, field_type) VALUES
+        -- Company Fields
+        ('company_name', 'Company Name', 'company', 'text'),
+        ('company_address', 'Company Address', 'company', 'text'),
+        ('company_phone', 'Company Phone', 'company', 'text'),
+        ('company_email', 'Company Email', 'company', 'text'),
+        ('company_gstin', 'Company GSTIN', 'company', 'text'),
+        ('company_logo', 'Company Logo', 'company', 'image'),
+        
+        -- Party Fields
+        ('party_name', 'Customer/Supplier Name', 'party', 'text'),
+        ('party_address', 'Customer/Supplier Address', 'party', 'text'),
+        ('party_phone', 'Customer/Supplier Phone', 'party', 'text'),
+        ('party_gstin', 'Customer/Supplier GSTIN', 'party', 'text'),
+        
+        -- Voucher Fields
+        ('voucher_no', 'Invoice Number', 'voucher', 'text'),
+        ('voucher_date', 'Invoice Date', 'voucher', 'date'),
+        ('reference', 'Reference/PO Number', 'voucher', 'text'),
+        ('narration', 'Narration/Notes', 'voucher', 'text'),
+        
+        -- Items Table
+        ('items_table', 'Items Table', 'items', 'table'),
+        
+        -- Totals
+        ('subtotal', 'Subtotal', 'totals', 'currency'),
+        ('discount_rate', 'Discount %', 'totals', 'number'),
+        ('discount_amount', 'Discount Amount', 'totals', 'currency'),
+        ('tax_total', 'Total Tax', 'totals', 'currency'),
+        ('grand_total', 'Grand Total', 'totals', 'currency'),
+        ('grand_total_words', 'Amount in Words', 'totals', 'text')",
+    )
+    .execute(&pool)
+    .await?;
+
+    // 5. Printer Configuration
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS printer_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            profile_name TEXT NOT NULL,
+            printer_type TEXT NOT NULL, -- 'pdf', 'thermal', 'laser', 'inkjet'
+            printer_name TEXT, -- System printer name
+            paper_size TEXT DEFAULT 'A4', -- 'A4', 'A5', '58mm', '80mm', 'Letter'
+            orientation TEXT DEFAULT 'portrait', -- 'portrait', 'landscape'
+            margin_top REAL DEFAULT 10,
+            margin_bottom REAL DEFAULT 10,
+            margin_left REAL DEFAULT 10,
+            margin_right REAL DEFAULT 10,
+            dpi INTEGER DEFAULT 300,
+            color_mode TEXT DEFAULT 'color', -- 'color', 'grayscale', 'bw'
+            
+            -- Thermal Printer Specific
+            characters_per_line INTEGER, -- for thermal printers
+            line_spacing INTEGER DEFAULT 1,
+            cut_paper INTEGER DEFAULT 1,
+            open_drawer INTEGER DEFAULT 0,
+            
+            is_default INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Insert default printer profiles
+    sqlx::query(
+        "INSERT OR IGNORE INTO printer_profiles (profile_name, printer_type, paper_size) VALUES
+        ('Default PDF (A4)', 'pdf', 'A4'),
+        ('Thermal 58mm', 'thermal', '58mm'),
+        ('Thermal 80mm', 'thermal', '80mm')",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Seed default invoice templates
+    crate::db_seed::seed_handlebars_templates(&pool).await?;
+
     Ok(pool)
 }

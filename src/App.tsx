@@ -18,7 +18,10 @@ import OpeningBalancePage from './pages/OpeningBalancePage';
 import SalesInvoicePage from './pages/SalesInvoicePage';
 import TrialBalancePage from './pages/reports/TrialBalancePage';
 import LedgerReportPage from './pages/reports/LedgerReportPage';
-import SettingsPage from './pages/SettingsPage';
+
+import CompanyProfilePage from './pages/settings/CompanyProfilePage';
+import InvoiceSettingsPage from './pages/InvoiceSettingsPage';
+
 
 function AppContent() {
   const { activeSection } = useSelector((state: RootState) => state.app);
@@ -46,7 +49,9 @@ function AppContent() {
       case 'opening': return <OpeningBalancePage />;
       case 'trial': return <TrialBalancePage />;
       case 'ledger': return <LedgerReportPage />;
-      case 'settings': return <SettingsPage />;
+      case 'company_profile': return <CompanyProfilePage />;
+      case 'invoice_settings': return <InvoiceSettingsPage />;
+
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }
   };

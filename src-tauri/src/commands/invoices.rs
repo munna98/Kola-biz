@@ -158,9 +158,10 @@ pub async fn get_purchase_invoice(
         GROUP BY v.id",
     )
     .bind(id)
-    .fetch_one(pool.inner())
+    .fetch_optional(pool.inner())
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Purchase invoice not found".to_string())?;
 
     Ok(invoice)
 }
@@ -730,9 +731,10 @@ pub async fn get_sales_invoice(
         GROUP BY v.id",
     )
     .bind(id)
-    .fetch_one(pool.inner())
+    .fetch_optional(pool.inner())
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Sales invoice not found".to_string())?;
 
     Ok(invoice)
 }

@@ -15,6 +15,10 @@ import {
   setSalesTotals,
   resetSalesForm,
   setSalesLoading,
+  setSalesMode,
+  setSalesCurrentVoucherId,
+  setSalesHasUnsavedChanges,
+  setSalesNavigationData,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -29,11 +33,15 @@ import {
   IconX,
 } from '@tabler/icons-react';
 
+
 // Global Voucher Components & Hooks
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
+import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
+import { PrintPreviewModal } from '@/components/common/PrintPreviewModal';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
+import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 
 interface Product {
   id: number;
@@ -63,6 +71,8 @@ export default function SalesInvoicePage() {
   const [parties, setParties] = useState<Party[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showListView, setShowListView] = useState(false);
+  const [showPrintModal, setShowPrintModal] = useState(false);
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -109,7 +119,7 @@ export default function SalesInvoicePage() {
     if (products.length > 0 && salesState.items.length === 0) {
       handleAddItem();
     }
-  }, [products.length]);
+  }, [products.length, salesState.items.length]);
 
   const handleAddItem = () => {
     dispatch(
@@ -134,6 +144,7 @@ export default function SalesInvoicePage() {
     const updatedItems = salesState.items.filter((_, i) => i !== index);
     dispatch(removeSalesItem(index));
     updateTotalsWithItems(updatedItems);
+    dispatch(setSalesHasUnsavedChanges(true));
   };
 
   const handleUpdateItem = (index: number, field: string, value: any) => {
@@ -161,6 +172,7 @@ export default function SalesInvoicePage() {
           })
         );
         updateTotalsWithItems(updatedItems);
+        dispatch(setSalesHasUnsavedChanges(true));
         return;
       }
     }
@@ -169,6 +181,7 @@ export default function SalesInvoicePage() {
     updatedItems[index] = { ...updatedItems[index], [field]: finalValue };
     dispatch(updateSalesItem({ index, data: { [field]: finalValue } }));
     updateTotalsWithItems(updatedItems);
+    dispatch(setSalesHasUnsavedChanges(true));
   };
 
   const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number) => {
@@ -232,7 +245,7 @@ export default function SalesInvoicePage() {
 
     try {
       dispatch(setSalesLoading(true));
-      await invoke<number>('create_sales_invoice', {
+      const response = await invoke<number>('create_sales_invoice', {
         invoice: {
           customer_id: salesState.form.customer_id,
           party_type: salesState.form.party_type,
@@ -249,10 +262,7 @@ export default function SalesInvoicePage() {
       });
 
       toast.success('Sales invoice created successfully');
-      dispatch(resetSalesForm());
-      handleAddItem();
-
-      setTimeout(() => customerRef.current?.querySelector('button')?.focus(), 100);
+      handleSaveSuccess(response);
     } catch (error) {
       toast.error('Failed to create sales invoice');
       console.error(error);
@@ -261,19 +271,105 @@ export default function SalesInvoicePage() {
     }
   };
 
-  const handleClear = () => {
-    dispatch(resetSalesForm());
-    handleAddItem();
-    setTimeout(() => customerRef.current?.querySelector('button')?.focus(), 100);
+  const loadVoucher = async (id: number) => {
+    try {
+      dispatch(setSalesLoading(true));
+      dispatch(resetSalesForm()); // Clear first
+
+      // Fetch header and items using existing commands
+      const invoice = await invoke<any>('get_sales_invoice', { id });
+      const items = await invoke<any[]>('get_sales_invoice_items', { voucherId: id });
+
+      // Populate Form
+      dispatch(setSalesCustomer({ id: invoice.customer_id, name: invoice.customer_name, type: 'customer' })); // Assuming customer only for now
+      dispatch(setSalesVoucherDate(invoice.voucher_date));
+      dispatch(setSalesReference(invoice.reference || ''));
+      dispatch(setSalesNarration(invoice.narration || ''));
+      dispatch(setSalesDiscountRate(invoice.discount_rate || 0));
+      dispatch(setSalesDiscountAmount(invoice.discount_amount || 0));
+
+      // Populate Items
+      // Clear default empty item
+      // Note: resetSalesForm sets items to [], so we just add
+      items.forEach(item => {
+        dispatch(addSalesItem({
+          product_id: item.product_id || 0, // Using product_id from item if available, else need map
+          product_name: item.description, // Fallback
+          description: item.description,
+          initial_quantity: item.initial_quantity,
+          count: item.count,
+          deduction_per_unit: item.deduction_per_unit,
+          rate: item.rate,
+          tax_rate: item.tax_rate,
+        }));
+      });
+
+      // Calculate totals
+      // We need to pass the loaded items to updateTotals
+      // Construct items array locally for total calculation
+      const loadedItems = items.map(item => ({
+        id: `loaded-${item.id}`,
+        product_id: item.product_id || 0,
+        product_name: item.description,
+        description: item.description,
+        initial_quantity: item.initial_quantity,
+        count: item.count,
+        deduction_per_unit: item.deduction_per_unit,
+        rate: item.rate,
+        tax_rate: item.tax_rate,
+      }));
+
+      updateTotalsWithItems(loadedItems, invoice.discount_rate, invoice.discount_amount);
+
+      dispatch(setSalesMode('viewing'));
+
+    } catch (error) {
+      console.error("Failed to load invoice", error);
+      toast.error("Failed to load invoice");
+    } finally {
+      dispatch(setSalesLoading(false));
+    }
   };
+
+  const {
+    handleNavigatePrevious,
+    handleNavigateNext,
+    handleListSelect,
+    handleNew,
+    handleEdit,
+    handleCancel,
+    handleSaveSuccess,
+    handleDelete,
+  } = useVoucherNavigation({
+    voucherType: 'sales_invoice',
+    sliceState: salesState,
+    actions: {
+      setMode: setSalesMode,
+      setCurrentVoucherId: setSalesCurrentVoucherId,
+      setNavigationData: setSalesNavigationData,
+      setHasUnsavedChanges: setSalesHasUnsavedChanges,
+      resetForm: resetSalesForm
+    },
+    onLoadVoucher: loadVoucher
+  });
+
+  const handlePrint = () => {
+    if (salesState.mode === 'new' || !salesState.currentVoucherId) {
+      toast.error("Please save the invoice before printing");
+      return;
+    }
+    setShowPrintModal(true);
+  };
+
 
   // Global keyboard shortcuts hook
   useVoucherShortcuts({
     onSave: () => formRef.current?.requestSubmit(),
     onNewItem: handleAddItem,
-    onClear: handleClear,
+    onClear: handleNew,
     onToggleShortcuts: () => setShowShortcuts(prev => !prev),
     onCloseShortcuts: () => setShowShortcuts(false),
+
     showShortcuts
   });
 
@@ -303,15 +399,48 @@ export default function SalesInvoicePage() {
       <VoucherPageHeader
         title="Sales Invoice"
         description="Create and manage sales invoices"
+        mode={salesState.mode}
+        voucherNo={salesState.currentVoucherId ? `SI-${salesState.currentVoucherId}` : undefined} // TODO: Use actual number
+        voucherDate={salesState.form.voucher_date}
+        isUnsaved={salesState.hasUnsavedChanges}
+        hasPrevious={salesState.navigationData.hasPrevious}
+        hasNext={salesState.navigationData.hasNext}
         onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
+        onNavigatePrevious={handleNavigatePrevious}
+        onNavigateNext={handleNavigateNext}
+        onEdit={handleEdit}
+        onSave={() => formRef.current?.requestSubmit()}
+        onCancel={handleCancel}
+        onDelete={handleDelete}
+        onPrint={handlePrint}
+        onNew={() => handleNew()}
+        onListView={() => setShowListView(true)}
+        loading={salesState.loading}
       />
 
       <VoucherShortcutPanel
         show={showShortcuts}
       />
 
+      <VoucherListViewSheet
+        open={showListView}
+        onOpenChange={setShowListView}
+        voucherType="sales_invoice"
+        onSelectVoucher={handleListSelect}
+      />
+
+      <PrintPreviewModal
+        isOpen={showPrintModal}
+        onClose={() => setShowPrintModal(false)}
+        voucherId={salesState.currentVoucherId}
+        voucherType="sales_invoice"
+      />
+
       {/* Form Content */}
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden relative">
+        {salesState.mode === 'viewing' && (
+          <div className="absolute inset-0 z-10 bg-transparent" />
+        )}
         <form ref={formRef} onSubmit={handleSubmit} className="h-full p-5 max-w-7xl mx-auto flex flex-col gap-4">
           {/* Master Section */}
           <div className="bg-card border rounded-lg p-3 space-y-3 shrink-0">
@@ -342,7 +471,10 @@ export default function SalesInvoicePage() {
                 <Input
                   type="date"
                   value={salesState.form.voucher_date}
-                  onChange={(e) => dispatch(setSalesVoucherDate(e.target.value))}
+                  onChange={(e) => {
+                    dispatch(setSalesVoucherDate(e.target.value));
+                    dispatch(setSalesHasUnsavedChanges(true));
+                  }}
                   className="h-8 text-sm"
                 />
               </div>
@@ -352,7 +484,10 @@ export default function SalesInvoicePage() {
                 <Label className="text-xs font-medium mb-1 block">Reference No</Label>
                 <Input
                   value={salesState.form.reference}
-                  onChange={(e) => dispatch(setSalesReference(e.target.value))}
+                  onChange={(e) => {
+                    dispatch(setSalesReference(e.target.value));
+                    dispatch(setSalesHasUnsavedChanges(true));
+                  }}
                   placeholder="PO or reference no"
                   className="h-8 text-sm"
                 />
@@ -573,7 +708,7 @@ export default function SalesInvoicePage() {
             <Button
               type="button"
               variant="outline"
-              onClick={handleClear}
+              onClick={() => handleNew()}
               className="h-9"
               title="Clear (Ctrl+K)"
             >
