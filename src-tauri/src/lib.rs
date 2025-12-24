@@ -73,6 +73,7 @@ pub fn run() {
             get_sales_invoice,
             get_sales_invoice_items,
             create_sales_invoice,
+            update_sales_invoice,
             delete_sales_invoice,
             // Payments
             create_payment,
@@ -110,6 +111,13 @@ pub fn run() {
             get_invoice_templates,
             set_default_template,
             update_template_settings,
+            // Allocations
+            get_outstanding_invoices,
+            create_allocation,
+            get_payment_allocations,
+            get_invoice_allocations,
+            delete_allocation,
+            create_quick_payment,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

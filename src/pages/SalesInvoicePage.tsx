@@ -42,6 +42,7 @@ import { PrintPreviewModal } from '@/components/common/PrintPreviewModal';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
+import QuickPaymentDialog from '@/components/dialogs/QuickPaymentDialog';
 
 interface Product {
   id: number;
@@ -73,6 +74,8 @@ export default function SalesInvoicePage() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showListView, setShowListView] = useState(false);
   const [showPrintModal, setShowPrintModal] = useState(false);
+  const [showQuickPayment, setShowQuickPayment] = useState(false);
+  const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -97,12 +100,18 @@ export default function SalesInvoicePage() {
         }));
         setParties(combinedParties);
 
-        if (combinedParties.length > 0 && salesState.form.customer_id === 0 && salesState.mode === 'new') {
-          dispatch(setSalesCustomer({
-            id: combinedParties[0].id,
-            name: combinedParties[0].name,
-            type: combinedParties[0].type
-          }));
+        // Default to "Cash Sale" account if available, otherwise first party
+        if (salesState.form.customer_id === 0 && salesState.mode === 'new') {
+          const cashSaleAccount = combinedParties.find(p => p.name === 'Cash Sale');
+          const defaultParty = cashSaleAccount || combinedParties[0];
+
+          if (defaultParty) {
+            dispatch(setSalesCustomer({
+              id: defaultParty.id,
+              name: defaultParty.name,
+              type: defaultParty.type
+            }));
+          }
         }
       } catch (error) {
         toast.error('Failed to load data');
@@ -115,11 +124,12 @@ export default function SalesInvoicePage() {
     loadData();
   }, [dispatch]);
 
+  // Auto-add first line if empty and in new mode
   useEffect(() => {
-    if (products.length > 0 && salesState.items.length === 0) {
+    if (salesState.mode === 'new' && salesState.items.length === 0 && products.length > 0) {
       handleAddItem();
     }
-  }, [products.length, salesState.items.length]);
+  }, [salesState.mode, products.length]);
 
   const handleAddItem = () => {
     dispatch(
@@ -245,26 +255,64 @@ export default function SalesInvoicePage() {
 
     try {
       dispatch(setSalesLoading(true));
-      const response = await invoke<number>('create_sales_invoice', {
-        invoice: {
-          customer_id: salesState.form.customer_id,
-          party_type: salesState.form.party_type,
-          voucher_date: salesState.form.voucher_date,
-          reference: salesState.form.reference || null,
-          narration: salesState.form.narration || null,
-          discount_rate: salesState.form.discount_rate || null,
-          discount_amount: salesState.form.discount_amount || null,
-          items: salesState.items.map(item => ({
-            ...item,
-            id: undefined // Remove temp id before sending to rust
-          })),
-        },
-      });
+      if (salesState.mode === 'editing' && salesState.currentVoucherId) {
+        await invoke('update_sales_invoice', {
+          id: salesState.currentVoucherId,
+          invoice: {
+            customer_id: salesState.form.customer_id,
+            party_type: salesState.form.party_type,
+            voucher_date: salesState.form.voucher_date,
+            reference: salesState.form.reference || null,
+            narration: salesState.form.narration || null,
+            discount_rate: salesState.form.discount_rate || null,
+            discount_amount: salesState.form.discount_amount || null,
+            items: salesState.items.map(item => ({
+              product_id: item.product_id,
+              description: item.description,
+              initial_quantity: item.initial_quantity,
+              count: item.count,
+              deduction_per_unit: item.deduction_per_unit,
+              rate: item.rate,
+              tax_rate: item.tax_rate
+            })),
+          },
+        });
+        toast.success('Sales invoice updated successfully');
+      } else {
+        await invoke<number>('create_sales_invoice', {
+          invoice: {
+            customer_id: salesState.form.customer_id,
+            party_type: salesState.form.party_type,
+            voucher_date: salesState.form.voucher_date,
+            reference: salesState.form.reference || null,
+            narration: salesState.form.narration || null,
+            discount_rate: salesState.form.discount_rate || null,
+            discount_amount: salesState.form.discount_amount || null,
+            items: salesState.items.map(item => ({
+              product_id: item.product_id,
+              description: item.description,
+              initial_quantity: item.initial_quantity,
+              count: item.count,
+              deduction_per_unit: item.deduction_per_unit,
+              rate: item.rate,
+              tax_rate: item.tax_rate
+            })),
+          },
+        });
+        toast.success('Sales invoice created successfully');
 
-      toast.success('Sales invoice created successfully');
-      handleSaveSuccess(response);
+        // Auto-prompt for payment after creating invoice
+        const isCashSale = parties.find(p => p.id === salesState.form.customer_id)?.name === 'Cash Sale';
+        if (isCashSale) {
+          setSavedInvoiceAmount(salesState.totals.grandTotal);
+          setShowQuickPayment(true);
+        }
+      }
+
+      dispatch(setSalesHasUnsavedChanges(false));
+      handleNew(true);
     } catch (error) {
-      toast.error('Failed to create sales invoice');
+      toast.error('Failed to save sales invoice');
       console.error(error);
     } finally {
       dispatch(setSalesLoading(false));
@@ -322,6 +370,7 @@ export default function SalesInvoicePage() {
       updateTotalsWithItems(loadedItems, invoice.discount_rate, invoice.discount_amount);
 
       dispatch(setSalesMode('viewing'));
+      dispatch(setSalesHasUnsavedChanges(false));
 
     } catch (error) {
       console.error("Failed to load invoice", error);
@@ -338,7 +387,6 @@ export default function SalesInvoicePage() {
     handleNew,
     handleEdit,
     handleCancel,
-    handleSaveSuccess,
     handleDelete,
   } = useVoucherNavigation({
     voucherType: 'sales_invoice',
@@ -352,6 +400,23 @@ export default function SalesInvoicePage() {
     },
     onLoadVoucher: loadVoucher
   });
+
+  const handleDeleteVoucher = async () => {
+    const confirmed = await handleDelete();
+    if (confirmed && salesState.currentVoucherId) {
+      try {
+        dispatch(setSalesLoading(true));
+        await invoke('delete_sales_invoice', { id: salesState.currentVoucherId });
+        toast.success('Voucher deleted');
+        handleNew();
+      } catch (e) {
+        toast.error('Failed to delete voucher');
+        console.error(e);
+      } finally {
+        dispatch(setSalesLoading(false));
+      }
+    }
+  };
 
   const handlePrint = () => {
     if (salesState.mode === 'new' || !salesState.currentVoucherId) {
@@ -394,13 +459,16 @@ export default function SalesInvoicePage() {
     return { finalQty, amount, taxAmount, total: amount + taxAmount };
   };
 
+  // Determine if form should be disabled (viewing mode)
+  const isReadOnly = salesState.mode === 'viewing';
+
   return (
     <div className="h-full flex flex-col bg-background">
       <VoucherPageHeader
         title="Sales Invoice"
         description="Create and manage sales invoices"
         mode={salesState.mode}
-        voucherNo={salesState.currentVoucherId ? `SI-${salesState.currentVoucherId}` : undefined} // TODO: Use actual number
+        voucherNo={salesState.currentVoucherId ? `SI-${salesState.currentVoucherId}` : undefined}
         voucherDate={salesState.form.voucher_date}
         isUnsaved={salesState.hasUnsavedChanges}
         hasPrevious={salesState.navigationData.hasPrevious}
@@ -411,9 +479,9 @@ export default function SalesInvoicePage() {
         onEdit={handleEdit}
         onSave={() => formRef.current?.requestSubmit()}
         onCancel={handleCancel}
-        onDelete={handleDelete}
+        onDelete={handleDeleteVoucher}
         onPrint={handlePrint}
-        onNew={() => handleNew()}
+        onNew={handleNew}
         onListView={() => setShowListView(true)}
         loading={salesState.loading}
       />
@@ -429,6 +497,18 @@ export default function SalesInvoicePage() {
         onSelectVoucher={handleListSelect}
       />
 
+      <QuickPaymentDialog
+        mode="receipt"
+        open={showQuickPayment}
+        onOpenChange={setShowQuickPayment}
+        invoiceAmount={savedInvoiceAmount}
+        partyName={parties.find(p => p.id === salesState.form.customer_id)?.name || 'Cash Sale'}
+        partyId={salesState.form.customer_id}
+        onSuccess={() => {
+          toast.success('Payment recorded!');
+        }}
+      />
+
       <PrintPreviewModal
         isOpen={showPrintModal}
         onClose={() => setShowPrintModal(false)}
@@ -437,10 +517,7 @@ export default function SalesInvoicePage() {
       />
 
       {/* Form Content */}
-      <div className="flex-1 overflow-hidden relative">
-        {salesState.mode === 'viewing' && (
-          <div className="absolute inset-0 z-10 bg-transparent" />
-        )}
+      <div className="flex-1 overflow-hidden">
         <form ref={formRef} onSubmit={handleSubmit} className="h-full p-5 max-w-7xl mx-auto flex flex-col gap-4">
           {/* Master Section */}
           <div className="bg-card border rounded-lg p-3 space-y-3 shrink-0">
@@ -462,6 +539,7 @@ export default function SalesInvoicePage() {
                   }}
                   placeholder="Select party"
                   searchPlaceholder="Search parties..."
+                  disabled={isReadOnly}
                 />
               </div>
 
@@ -476,6 +554,7 @@ export default function SalesInvoicePage() {
                     dispatch(setSalesHasUnsavedChanges(true));
                   }}
                   className="h-8 text-sm"
+                  disabled={isReadOnly}
                 />
               </div>
 
@@ -490,6 +569,7 @@ export default function SalesInvoicePage() {
                   }}
                   placeholder="PO or reference no"
                   className="h-8 text-sm"
+                  disabled={isReadOnly}
                 />
               </div>
             </div>
@@ -533,6 +613,7 @@ export default function SalesInvoicePage() {
                         onChange={(value) => handleUpdateItem(idx, 'product_id', value)}
                         placeholder="Select product"
                         searchPlaceholder="Search products..."
+                        disabled={isReadOnly}
                       />
                     </div>
 
@@ -547,6 +628,7 @@ export default function SalesInvoicePage() {
                         className="h-7 text-xs text-right font-mono"
                         placeholder="0.00"
                         step="0.01"
+                        disabled={isReadOnly}
                       />
                     </div>
 
@@ -564,6 +646,7 @@ export default function SalesInvoicePage() {
                         className="h-7 text-xs text-right font-mono"
                         placeholder="0.00"
                         step="0.01"
+                        disabled={isReadOnly}
                       />
                     </div>
 
@@ -576,6 +659,7 @@ export default function SalesInvoicePage() {
                         className="h-7 text-xs text-right font-mono"
                         placeholder="1.00"
                         step="0.01"
+                        disabled={isReadOnly}
                       />
                     </div>
 
@@ -590,6 +674,7 @@ export default function SalesInvoicePage() {
                         className="h-7 text-xs text-right font-mono"
                         placeholder="0.00"
                         step="0.01"
+                        disabled={isReadOnly}
                       />
                     </div>
 
@@ -617,6 +702,7 @@ export default function SalesInvoicePage() {
                         onClick={() => handleRemoveItem(idx)}
                         className="h-6 w-6 p-0"
                         title="Delete (Ctrl+D)"
+                        disabled={isReadOnly}
                       >
                         <IconTrash size={14} />
                       </Button>
@@ -627,18 +713,20 @@ export default function SalesInvoicePage() {
             </div>
 
             {/* Add Item Button */}
-            <div className="bg-muted/30 border-t px-3 py-2 shrink-0">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={handleAddItem}
-                className="text-xs h-7"
-              >
-                <IconPlus size={14} />
-                Add Item (Ctrl+N)
-              </Button>
-            </div>
+            {!isReadOnly && (
+              <div className="bg-muted/30 border-t px-3 py-2 shrink-0">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={handleAddItem}
+                  className="text-xs h-7"
+                >
+                  <IconPlus size={14} />
+                  Add Item (Ctrl+N)
+                </Button>
+              </div>
+            )}
           </div>
 
           {/* Totals and Notes */}
@@ -648,9 +736,10 @@ export default function SalesInvoicePage() {
               <Label className="text-xs font-medium mb-1 block">Notes / Narration</Label>
               <Textarea
                 value={salesState.form.narration}
-                onChange={(e) => dispatch(setSalesNarration(e.target.value))}
+                onChange={(e) => { dispatch(setSalesNarration(e.target.value)); dispatch(setSalesHasUnsavedChanges(true)); }}
                 placeholder="Additional notes or remarks..."
                 className="min-h-14 text-xs"
+                disabled={isReadOnly}
               />
             </div>
 
@@ -672,11 +761,13 @@ export default function SalesInvoicePage() {
                         value={salesState.form.discount_rate || ''}
                         onChange={(e) => {
                           const rate = parseFloat(e.target.value) || 0;
+                          dispatch(setSalesHasUnsavedChanges(true));
                           updateTotalsWithItems(salesState.items, rate, undefined);
                         }}
                         placeholder="0.00"
                         className="h-6.5 font-mono text-xs"
                         step="0.01"
+                        disabled={isReadOnly}
                       />
                     </div>
                     <div className="flex-1">
@@ -686,11 +777,13 @@ export default function SalesInvoicePage() {
                         value={salesState.form.discount_amount || ''}
                         onChange={(e) => {
                           const amount = parseFloat(e.target.value) || 0;
+                          dispatch(setSalesHasUnsavedChanges(true));
                           updateTotalsWithItems(salesState.items, undefined, amount);
                         }}
                         placeholder="0.00"
                         className="h-6.5 font-mono text-xs"
                         step="0.01"
+                        disabled={isReadOnly}
                       />
                     </div>
                   </div>
@@ -703,23 +796,25 @@ export default function SalesInvoicePage() {
             </div>
           </div>
 
-          {/* Bottom Actions */}
-          <div className="flex justify-end gap-2 pt-4 border-t shrink-0">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => handleNew()}
-              className="h-9"
-              title="Clear (Ctrl+K)"
-            >
-              <IconX size={16} />
-              Clear Form
-            </Button>
-            <Button type="submit" disabled={salesState.loading} className="h-9" title="Save (Ctrl+S)">
-              <IconCheck size={16} />
-              {salesState.loading ? 'Saving...' : 'Save Invoice'}
-            </Button>
-          </div>
+          {/* Bottom Actions - Hidden in viewing mode as they are in header */}
+          {!isReadOnly && (
+            <div className="flex justify-end gap-2 pt-4 border-t shrink-0">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleCancel}
+                className="h-9"
+                title="Cancel"
+              >
+                <IconX size={16} />
+                Cancel
+              </Button>
+              <Button type="submit" disabled={salesState.loading} className="h-9" title="Save (Ctrl+S)">
+                <IconCheck size={16} />
+                {salesState.loading ? 'Saving...' : (salesState.mode === 'editing' ? 'Update Invoice' : 'Save Invoice')}
+              </Button>
+            </div>
+          )}
         </form>
       </div>
     </div>

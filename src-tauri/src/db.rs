@@ -156,6 +156,11 @@ pub async fn init_db(
         .execute(&pool)
         .await;
 
+    // Migration: Add payment_status column to vouchers for tracking invoice payment status
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN payment_status TEXT DEFAULT 'unpaid'")
+        .execute(&pool)
+        .await;
+
     // Migration: Add deleted_at to customers, suppliers, chart_of_accounts
     let _ = sqlx::query("ALTER TABLE customers ADD COLUMN deleted_at DATETIME")
         .execute(&pool)
@@ -307,6 +312,31 @@ pub async fn init_db(
     .execute(&pool)
     .await?;
 
+    // Payment/Receipt Allocations
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS payment_allocations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            payment_voucher_id INTEGER NOT NULL,
+            invoice_voucher_id INTEGER NOT NULL,
+            allocated_amount REAL NOT NULL,
+            allocation_date DATE NOT NULL,
+            remarks TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (payment_voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+            FOREIGN KEY (invoice_voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_payment ON payment_allocations(payment_voucher_id)")
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_invoice ON payment_allocations(invoice_voucher_id)")
+        .execute(&pool)
+        .await?;
+
     // ==================== SEED DATA ====================
 
     // Insert default account groups
@@ -340,12 +370,14 @@ pub async fn init_db(
         -- ASSETS
         ('1001', 'Cash', 'Asset', 'Cash', 'Cash and cash equivalents'),
         ('1002', 'Bank Account', 'Asset', 'Bank Account', 'Bank deposits and accounts'),
+        ('1003', 'Cash Sale', 'Asset', 'Accounts Receivable', 'Default account for cash sales without specific customer'),
         ('1004', 'Inventory', 'Asset', 'Inventory', 'Stock of goods for sale'),
         ('1005', 'GST Input / Tax Receivable', 'Asset', 'Tax Receivable', 'Tax paid on purchases'),
         ('1006', 'Prepaid Expenses', 'Asset', 'Current Assets', 'Expenses paid in advance'),
         ('1007', 'Undeposited Funds', 'Asset', 'Current Assets', 'Cash receipts not yet deposited'),
         
         -- LIABILITIES
+        ('2001', 'Cash Purchase', 'Liability', 'Accounts Payable', 'Default account for cash purchases without specific supplier'),
         ('2002', 'GST Output / Tax Payable', 'Liability', 'Tax Payable', 'Tax collected on sales'),
         ('2003', 'Accrued Expenses', 'Liability', 'Current Liabilities', 'Expenses incurred but not paid'),
         

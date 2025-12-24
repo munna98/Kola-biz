@@ -31,6 +31,7 @@ import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
+import QuickPaymentDialog from '@/components/dialogs/QuickPaymentDialog';
 
 interface AccountData {
     id: number;
@@ -50,6 +51,7 @@ export default function ReceiptPage() {
     const [receivedFromLedgers, setReceivedFromLedgers] = useState<LedgerAccount[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
+    const [showQuickDialog, setShowQuickDialog] = useState(false);
 
     const formRef = useRef<HTMLFormElement>(null);
     const depositToRef = useRef<HTMLDivElement>(null);
@@ -159,6 +161,7 @@ export default function ReceiptPage() {
         onClear: handleClear,
         onToggleShortcuts: () => setShowShortcuts(prev => !prev),
         onCloseShortcuts: () => setShowShortcuts(false),
+        onQuickEntry: () => setShowQuickDialog(true),
         showShortcuts
     });
 
@@ -186,6 +189,16 @@ export default function ReceiptPage() {
 
             <VoucherShortcutPanel
                 show={showShortcuts}
+            />
+
+            <QuickPaymentDialog
+                mode="receipt"
+                open={showQuickDialog}
+                onOpenChange={setShowQuickDialog}
+                onSuccess={() => {
+                    // Optionally reload or refresh data after quick receipt
+                    toast.success('Receipt recorded!');
+                }}
             />
 
             {/* Form Content */}

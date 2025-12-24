@@ -939,6 +939,205 @@ pub async fn delete_sales_invoice(pool: State<'_, SqlitePool>, id: i64) -> Resul
     Ok(())
 }
 
+#[tauri::command]
+pub async fn update_sales_invoice(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+    invoice: CreateSalesInvoice,
+) -> Result<(), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // Calculate totals
+    let mut subtotal = 0.0;
+
+    for item in &invoice.items {
+        let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
+        let amount = final_quantity * item.rate;
+        subtotal += amount;
+    }
+
+    // Apply discounts
+    let discount_amount = invoice.discount_amount.unwrap_or(0.0);
+    let total_amount = subtotal - discount_amount;
+
+    // Update voucher header
+    sqlx::query(
+        "UPDATE vouchers 
+         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, total_amount = ?, narration = ?, status = 'posted'
+         WHERE id = ? AND voucher_type = 'sales_invoice'"
+    )
+    .bind(&invoice.voucher_date)
+    .bind(invoice.customer_id)
+    .bind(&invoice.party_type)
+    .bind(&invoice.reference)
+    .bind(subtotal)
+    .bind(invoice.discount_rate.unwrap_or(0.0))
+    .bind(discount_amount)
+    .bind(total_amount)
+    .bind(&invoice.narration)
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Delete existing related data
+    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Re-insert items
+    for item in &invoice.items {
+        let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
+        let amount = final_quantity * item.rate;
+        let tax_amount = amount * (item.tax_rate / 100.0);
+
+        sqlx::query(
+            "INSERT INTO voucher_items (voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount, remarks)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(id)
+        .bind(item.product_id)
+        .bind(&item.description)
+        .bind(item.initial_quantity)
+        .bind(item.count)
+        .bind(item.deduction_per_unit)
+        .bind(final_quantity)
+        .bind(item.rate)
+        .bind(amount)
+        .bind(item.tax_rate)
+        .bind(tax_amount)
+        .bind(&item.remarks)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    // Calculate total tax from new items
+    let total_tax: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(tax_amount), 0) FROM voucher_items WHERE voucher_id = ?",
+    )
+    .bind(id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Get account IDs
+    let sales_account: i64 =
+        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4001'")
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    let tax_account: i64 =
+        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '2002'")
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    let party_id = invoice.customer_id;
+
+    let party_account: i64 = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE id = ?")
+        .bind(party_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| format!("Party account not found: {}", e))?;
+
+    // Debit: Accounts Receivable (Party)
+    let amount_receivable = subtotal - discount_amount + total_tax;
+    sqlx::query(
+        "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+         VALUES (?, ?, ?, 0, 'Amount receivable from/payable to party')",
+    )
+    .bind(id)
+    .bind(party_account)
+    .bind(amount_receivable)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Credit: Sales Account (with subtotal, before discount)
+    sqlx::query(
+        "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+         VALUES (?, ?, 0, ?, 'Sales of goods')",
+    )
+    .bind(id)
+    .bind(sales_account)
+    .bind(subtotal)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Credit: Tax Payable (GST Output)
+    if total_tax > 0.0 {
+        sqlx::query(
+            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, 0, ?, 'Output tax on sales')",
+        )
+        .bind(id)
+        .bind(tax_account)
+        .bind(total_tax)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    // Debit: Discount Allowed (if discount applied)
+    if discount_amount > 0.0 {
+        let discount_account: i64 =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+        sqlx::query(
+            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, 0, 'Discount allowed to customer')",
+        )
+        .bind(id)
+        .bind(discount_account)
+        .bind(discount_amount)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    // Re-create stock movements (OUT)
+    for item in &invoice.items {
+        let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
+        let amount = final_quantity * item.rate;
+
+        sqlx::query(
+            "INSERT INTO stock_movements (voucher_id, product_id, movement_type, quantity, rate, amount)
+             VALUES (?, ?, 'OUT', ?, ?, ?)"
+        )
+        .bind(id)
+        .bind(item.product_id)
+        .bind(final_quantity)
+        .bind(item.rate)
+        .bind(amount)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ============= VOUCHER NAVIGATION =============
 
 #[derive(Serialize, sqlx::FromRow)]

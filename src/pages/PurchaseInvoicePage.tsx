@@ -41,6 +41,7 @@ import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet'
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
+import QuickPaymentDialog from '@/components/dialogs/QuickPaymentDialog';
 
 interface Product {
   id: number;
@@ -71,6 +72,8 @@ export default function PurchaseInvoicePage() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showListView, setShowListView] = useState(false);
+  const [showQuickPayment, setShowQuickPayment] = useState(false);
+  const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -95,12 +98,18 @@ export default function PurchaseInvoicePage() {
         }));
         setParties(combinedParties);
 
-        if (combinedParties.length > 0 && purchaseState.form.supplier_id === 0 && purchaseState.mode === 'new') {
-          dispatch(setSupplier({
-            id: combinedParties[0].id,
-            name: combinedParties[0].name,
-            type: combinedParties[0].type
-          }));
+        // Default to "Cash Purchase" account if available, otherwise first party
+        if (purchaseState.form.supplier_id === 0 && purchaseState.mode === 'new') {
+          const cashPurchaseAccount = combinedParties.find(p => p.name === 'Cash Purchase');
+          const defaultParty = cashPurchaseAccount || combinedParties[0];
+
+          if (defaultParty) {
+            dispatch(setSupplier({
+              id: defaultParty.id,
+              name: defaultParty.name,
+              type: defaultParty.type
+            }));
+          }
         }
       } catch (error) {
         toast.error('Failed to load data');
@@ -118,7 +127,7 @@ export default function PurchaseInvoicePage() {
     if (purchaseState.mode === 'new' && purchaseState.items.length === 0 && products.length > 0) {
       handleAddItem();
     }
-  }, [products.length]);
+  }, [purchaseState.mode, products.length]);
 
   const markUnsaved = () => {
     if (!purchaseState.hasUnsavedChanges && purchaseState.mode !== 'viewing') {
@@ -373,6 +382,14 @@ export default function PurchaseInvoicePage() {
             })),
           },
         });
+        toast.success('Purchase invoice created successfully');
+
+        // Auto-prompt for payment after creating invoice
+        const isCashPurchase = parties.find(p => p.id === purchaseState.form.supplier_id)?.name === 'Cash Purchase';
+        if (isCashPurchase) {
+          setSavedInvoiceAmount(purchaseState.totals.grandTotal);
+          setShowQuickPayment(true);
+        }
       }
 
       dispatch(setPurchaseHasUnsavedChanges(false));
@@ -461,6 +478,18 @@ export default function PurchaseInvoicePage() {
 
       <VoucherShortcutPanel
         show={showShortcuts}
+      />
+
+      <QuickPaymentDialog
+        mode="payment"
+        open={showQuickPayment}
+        onOpenChange={setShowQuickPayment}
+        invoiceAmount={savedInvoiceAmount}
+        partyName={parties.find(p => p.id === purchaseState.form.supplier_id)?.name || 'Cash Purchase'}
+        partyId={purchaseState.form.supplier_id}
+        onSuccess={() => {
+          toast.success('Payment recorded!');
+        }}
       />
 
       <VoucherListViewSheet

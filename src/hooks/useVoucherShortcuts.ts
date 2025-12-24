@@ -7,6 +7,7 @@ interface UseVoucherShortcutsProps {
     onToggleShortcuts: () => void;
     onCloseShortcuts: () => void;
     showShortcuts: boolean;
+    onQuickEntry?: () => void; // Optional: Ctrl+Q for quick payment/receipt dialog
 }
 
 export function useVoucherShortcuts({
@@ -16,6 +17,7 @@ export function useVoucherShortcuts({
     onToggleShortcuts,
     onCloseShortcuts,
     showShortcuts,
+    onQuickEntry,
 }: UseVoucherShortcutsProps) {
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -37,6 +39,12 @@ export function useVoucherShortcuts({
                 onClear();
             }
 
+            // Ctrl/Cmd + Q: Quick Entry Dialog (Payment/Receipt)
+            if ((e.ctrlKey || e.metaKey) && e.key === 'q' && onQuickEntry) {
+                e.preventDefault();
+                onQuickEntry();
+            }
+
             // Ctrl/Cmd + /: Show shortcuts
             if ((e.ctrlKey || e.metaKey) && e.key === '/') {
                 e.preventDefault();
@@ -51,5 +59,5 @@ export function useVoucherShortcuts({
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [onSave, onNewItem, onClear, onToggleShortcuts, onCloseShortcuts, showShortcuts]);
+    }, [onSave, onNewItem, onClear, onToggleShortcuts, onCloseShortcuts, showShortcuts, onQuickEntry]);
 }
