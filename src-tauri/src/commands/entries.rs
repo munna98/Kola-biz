@@ -60,11 +60,30 @@ pub struct PaymentItem {
 }
 
 #[derive(Deserialize)]
+pub struct AllocationData {
+    pub invoice_id: i64,
+    pub amount: f64,
+}
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct PendingInvoice {
+    pub id: i64,
+    pub voucher_no: String,
+    pub voucher_date: String,
+    pub voucher_type: String,
+    pub total_amount: f64,
+    pub pending_amount: f64,
+    pub narration: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub struct CreatePaymentItem {
     pub description: String,
+    pub account_id: Option<i64>,
     pub amount: f64,
     pub tax_rate: f64,
     pub remarks: Option<String>,
+    pub allocations: Option<Vec<AllocationData>>,
 }
 
 #[derive(Deserialize)]
@@ -139,6 +158,59 @@ pub async fn create_payment(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+        // Insert Allocations
+        if let Some(allocations) = &item.allocations {
+            for alloc in allocations {
+                sqlx::query(
+                "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date)
+                 VALUES (?, ?, ?, ?)"
+            )
+            .bind(voucher_id)
+            .bind(alloc.invoice_id)
+            .bind(alloc.amount)
+            .bind(&payment.voucher_date)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+                // Update invoice status
+                let total_allocated: f64 = sqlx::query_scalar(
+                    "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+                )
+                .bind(alloc.invoice_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let invoice_total: f64 = sqlx::query_scalar(
+                    "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+                     FROM vouchers v
+                     LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+                     WHERE v.id = ?
+                     GROUP BY v.id",
+                )
+                .bind(alloc.invoice_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let status = if (total_allocated - invoice_total).abs() < 0.01 {
+                    "paid"
+                } else if total_allocated > 0.0 {
+                    "partially_paid"
+                } else {
+                    "unpaid"
+                };
+
+                sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
+                    .bind(status)
+                    .bind(alloc.invoice_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+        }
     }
 
     // Create journal entries
@@ -156,14 +228,18 @@ pub async fn create_payment(
 
     // Debit: Each Payee/Ledger Account from items
     for item in &payment.items {
-        // Look up the account by name
-        let payee_account: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
-        )
-        .bind(&item.description)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+        // Look up the account
+        let payee_account: Option<i64> = if let Some(acc_id) = item.account_id {
+            Some(acc_id)
+        } else {
+            sqlx::query_scalar(
+                "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
+            )
+            .bind(&item.description)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+        };
 
         if let Some(payee_acc) = payee_account {
             sqlx::query(
@@ -309,9 +385,11 @@ pub struct ReceiptItem {
 #[derive(Deserialize)]
 pub struct CreateReceiptItem {
     pub description: String,
+    pub account_id: Option<i64>,
     pub amount: f64,
     pub tax_rate: f64,
     pub remarks: Option<String>,
+    pub allocations: Option<Vec<AllocationData>>,
 }
 
 #[derive(Deserialize)]
@@ -386,6 +464,59 @@ pub async fn create_receipt(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+        // Insert Allocations
+        if let Some(allocations) = &item.allocations {
+            for alloc in allocations {
+                sqlx::query(
+                    "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date)
+                     VALUES (?, ?, ?, ?)"
+                )
+                .bind(voucher_id)
+                .bind(alloc.invoice_id)
+                .bind(alloc.amount)
+                .bind(&receipt.voucher_date)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // Update invoice status
+                let total_allocated: f64 = sqlx::query_scalar(
+                    "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+                )
+                .bind(alloc.invoice_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let invoice_total: f64 = sqlx::query_scalar(
+                    "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+                     FROM vouchers v
+                     LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+                     WHERE v.id = ?
+                     GROUP BY v.id",
+                )
+                .bind(alloc.invoice_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let status = if (total_allocated - invoice_total).abs() < 0.01 {
+                    "paid"
+                } else if total_allocated > 0.0 {
+                    "partially_paid"
+                } else {
+                    "unpaid"
+                };
+
+                sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
+                    .bind(status)
+                    .bind(alloc.invoice_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+        }
     }
 
     // Create journal entries
@@ -403,14 +534,18 @@ pub async fn create_receipt(
 
     // Credit: Each Payer/Ledger Account from items
     for item in &receipt.items {
-        // Look up the account by name
-        let payer_account: Option<i64> = sqlx::query_scalar(
-            "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
-        )
-        .bind(&item.description)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+        // Look up the account
+        let payer_account: Option<i64> = if let Some(acc_id) = item.account_id {
+            Some(acc_id)
+        } else {
+            sqlx::query_scalar(
+                "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
+            )
+            .bind(&item.description)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+        };
 
         if let Some(payer_acc) = payer_account {
             sqlx::query(
@@ -851,4 +986,64 @@ pub async fn delete_opening_balance(pool: State<'_, SqlitePool>, id: i64) -> Res
         .map_err(|e| e.to_string())?;
 
     Ok(())
+}
+
+#[tauri::command]
+pub async fn get_account_balance(
+    pool: State<'_, SqlitePool>,
+    account_id: i64,
+) -> Result<f64, String> {
+    let result = sqlx::query_as::<_, (f64, f64)>(
+        "SELECT 
+            COALESCE(SUM(debit), 0) as total_debit, 
+            COALESCE(SUM(credit), 0) as total_credit 
+         FROM journal_entries 
+         WHERE account_id = ?",
+    )
+    .bind(account_id)
+    .fetch_one(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Net balance: Dr - Cr.
+    // Assets/Expenses usually Dr > Cr (Positive).
+    // Liabilities/Income usually Cr > Dr (Negative).
+    // UI can display Dr/Cr based on sign.
+    let balance = result.0 - result.1;
+    Ok(balance)
+}
+
+#[tauri::command]
+pub async fn get_pending_invoices(
+    pool: State<'_, SqlitePool>,
+    account_id: i64,
+) -> Result<Vec<PendingInvoice>, String> {
+    // Fetch pending invoices for the party.
+    let invoices = sqlx::query_as::<_, PendingInvoice>(
+        "SELECT 
+            v.id,
+            v.voucher_no,
+            v.voucher_date,
+            v.voucher_type,
+            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as total_amount,
+            (v.total_amount + COALESCE(SUM(vi.tax_amount), 0) - COALESCE(
+                (SELECT SUM(allocated_amount) FROM payment_allocations WHERE invoice_voucher_id = v.id), 0
+            )) as pending_amount,
+            v.narration
+         FROM vouchers v
+         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+         WHERE v.party_id = ? 
+           AND v.voucher_type IN ('sales_invoice', 'purchase_invoice')
+           AND v.deleted_at IS NULL
+           AND v.status = 'posted'
+         GROUP BY v.id
+         HAVING pending_amount > 0.01
+         ORDER BY v.voucher_date ASC",
+    )
+    .bind(account_id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(invoices)
 }

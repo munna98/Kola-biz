@@ -655,6 +655,7 @@ pub async fn delete_account_group(pool: State<'_, SqlitePool>, id: i64) -> Resul
 pub struct CashBankAccount {
     pub id: i64,
     pub name: String,
+    pub account_group: String,
 }
 
 #[tauri::command]
@@ -662,7 +663,7 @@ pub async fn get_cash_bank_accounts(
     pool: State<'_, SqlitePool>,
 ) -> Result<Vec<CashBankAccount>, String> {
     sqlx::query_as::<_, CashBankAccount>(
-        "SELECT id, account_name as name FROM chart_of_accounts WHERE is_active = 1 AND (account_group = 'Cash' OR account_group = 'Bank Account') ORDER BY account_code ASC"
+        "SELECT id, account_name as name, account_group FROM chart_of_accounts WHERE is_active = 1 AND (account_group = 'Cash' OR account_group = 'Bank Account') ORDER BY account_code ASC"
     )
     .fetch_all(pool.inner())
     .await

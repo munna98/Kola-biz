@@ -199,12 +199,18 @@ export const {
   setLoading,
 } = purchaseInvoiceSlice.actions;
 
+export interface AllocationData {
+  invoice_id: number;
+  amount: number;
+}
+
 export interface PaymentItem {
   id?: string;
   description: string;
   amount: number;
   tax_rate: number;
   remarks?: string;
+  allocations?: AllocationData[];
 }
 
 export interface PaymentState extends VoucherNavigationState {
@@ -318,6 +324,7 @@ export interface ReceiptItem {
   amount: number;
   tax_rate: number;
   remarks?: string;
+  allocations?: AllocationData[];
 }
 
 export interface ReceiptState extends VoucherNavigationState {

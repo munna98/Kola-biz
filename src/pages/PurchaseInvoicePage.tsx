@@ -74,6 +74,9 @@ export default function PurchaseInvoicePage() {
   const [showListView, setShowListView] = useState(false);
   const [showQuickPayment, setShowQuickPayment] = useState(false);
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
+  const [savedInvoiceId, setSavedInvoiceId] = useState<number | undefined>(undefined);
+  const [savedPartyName, setSavedPartyName] = useState<string>('');
+  const [savedPartyId, setSavedPartyId] = useState<number | undefined>(undefined);
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -362,7 +365,7 @@ export default function PurchaseInvoicePage() {
         });
         toast.success('Purchase invoice updated successfully');
       } else {
-        await invoke<number>('create_purchase_invoice', {
+        const newInvoiceId = await invoke<number>('create_purchase_invoice', {
           invoice: {
             supplier_id: purchaseState.form.supplier_id,
             party_type: purchaseState.form.party_type,
@@ -385,11 +388,12 @@ export default function PurchaseInvoicePage() {
         toast.success('Purchase invoice created successfully');
 
         // Auto-prompt for payment after creating invoice
-        const isCashPurchase = parties.find(p => p.id === purchaseState.form.supplier_id)?.name === 'Cash Purchase';
-        if (isCashPurchase) {
-          setSavedInvoiceAmount(purchaseState.totals.grandTotal);
-          setShowQuickPayment(true);
-        }
+        setSavedInvoiceAmount(purchaseState.totals.grandTotal);
+        setSavedInvoiceId(newInvoiceId);
+        const supplier = parties.find(p => p.id === purchaseState.form.supplier_id);
+        setSavedPartyName(supplier?.name || 'Cash Purchase');
+        setSavedPartyId(supplier?.id);
+        setShowQuickPayment(true);
       }
 
       dispatch(setPurchaseHasUnsavedChanges(false));
@@ -485,8 +489,9 @@ export default function PurchaseInvoicePage() {
         open={showQuickPayment}
         onOpenChange={setShowQuickPayment}
         invoiceAmount={savedInvoiceAmount}
-        partyName={parties.find(p => p.id === purchaseState.form.supplier_id)?.name || 'Cash Purchase'}
-        partyId={purchaseState.form.supplier_id}
+        partyName={savedPartyName}
+        partyId={savedPartyId}
+        invoiceId={savedInvoiceId}
         onSuccess={() => {
           toast.success('Payment recorded!');
         }}

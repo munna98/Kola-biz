@@ -161,6 +161,18 @@ pub async fn init_db(
         .execute(&pool)
         .await;
 
+    // Migration: Update payment_allocations schema if needed
+    // In case the old table exists with column 'amount' instead of 'allocated_amount'
+    let _ = sqlx::query("ALTER TABLE payment_allocations RENAME COLUMN amount TO allocated_amount")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE payment_allocations ADD COLUMN allocation_date DATE NOT NULL DEFAULT CURRENT_DATE")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE payment_allocations ADD COLUMN remarks TEXT")
+        .execute(&pool)
+        .await;
+
     // Migration: Add deleted_at to customers, suppliers, chart_of_accounts
     let _ = sqlx::query("ALTER TABLE customers ADD COLUMN deleted_at DATETIME")
         .execute(&pool)

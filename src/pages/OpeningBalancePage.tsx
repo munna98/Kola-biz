@@ -159,7 +159,7 @@ export default function OpeningBalancePage() {
         }
 
         if (openingBalanceState.lines.some(line => (line.debit || 0) <= 0 && (line.credit || 0) <= 0)) {
-            toast.error('All lines must have either debit or credit amount greater than zero');
+            toast.error('All lines must have either a debit or credit amount');
             return;
         }
 

@@ -24,6 +24,7 @@ import {
     IconTrash,
     IconCheck,
     IconX,
+    IconReceipt2,
 } from '@tabler/icons-react';
 
 // Global Voucher Components & Hooks
@@ -32,6 +33,7 @@ import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel'
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import QuickPaymentDialog from '@/components/dialogs/QuickPaymentDialog';
+import BillAllocationDialog, { AllocationData } from '@/components/dialogs/BillAllocationDialog';
 
 interface AccountData {
     id: number;
@@ -52,6 +54,12 @@ export default function PaymentPage() {
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showQuickDialog, setShowQuickDialog] = useState(false);
+
+    // Allocation & Balance State
+    // Allocation & Balance State
+    const [allocatingRowIndex, setAllocatingRowIndex] = useState<number | null>(null);
+    const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
+    const [rowBalances, setRowBalances] = useState<Record<number, number>>({});
 
     const formRef = useRef<HTMLFormElement>(null);
     const payFromRef = useRef<HTMLDivElement>(null);
@@ -98,8 +106,25 @@ export default function PaymentPage() {
 
         dispatch(updatePaymentItem({ index, data: { [field]: value } }));
 
+        if (field === 'description') {
+            const ledger = payToLedgers.find(l => l.account_name === value);
+            if (ledger) {
+                // Fetch Balance
+                invoke<number>('get_account_balance', { accountId: ledger.id })
+                    .then(bal => setRowBalances(prev => ({ ...prev, [index]: bal })))
+                    .catch(console.error);
+            }
+        }
+
         const newTotals = calculateTotals(updatedItems);
         dispatch(setPaymentTotals(newTotals));
+    };
+
+    const handleAllocationConfirm = (allocations: AllocationData[]) => {
+        if (allocatingRowIndex !== null) {
+            handleUpdateItem(allocatingRowIndex, 'allocations', allocations);
+            setAllocatingRowIndex(null);
+        }
     };
 
     const handleAddItem = () => {
@@ -202,6 +227,17 @@ export default function PaymentPage() {
                 }}
             />
 
+            {allocatingRowIndex !== null && paymentState.items[allocatingRowIndex] && (
+                <BillAllocationDialog
+                    open={true}
+                    onOpenChange={(open) => !open && setAllocatingRowIndex(null)}
+                    partyId={payToLedgers.find(l => l.account_name === paymentState.items[allocatingRowIndex].description)?.id || 0}
+                    amountToAllocate={paymentState.items[allocatingRowIndex].amount || 0}
+                    allocations={paymentState.items[allocatingRowIndex].allocations || []}
+                    onConfirm={handleAllocationConfirm}
+                />
+            )}
+
             {/* Form Content */}
             <div className="flex-1 overflow-hidden">
                 <form ref={formRef} onSubmit={handleSubmit} className="h-full p-5 max-w-7xl mx-auto flex flex-col gap-4">
@@ -262,11 +298,14 @@ export default function PaymentPage() {
                     <div className="bg-card border rounded-lg overflow-hidden flex flex-col shrink-0" style={{ height: 'calc(5 * 3.25rem + 2.5rem + 2.5rem)' }}>
                         {/* Table Header */}
                         <div className="bg-muted/50 border-b shrink-0">
-                            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground">
-                                <div className="col-span-5">Pay To (Account/Ledger)</div>
+                            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground items-center">
+                                <div className="col-span-5 flex justify-between items-center">
+                                    <span>Pay To (Account/Ledger)</span>
+
+                                </div>
                                 <div className="col-span-2 text-right">Amount</div>
-                                <div className="col-span-4">Remarks (Line Info)</div>
-                                <div className="w-8"></div>
+                                <div className="col-span-4">Remarks</div>
+                                <div className="col-span-1"></div>
                             </div>
                         </div>
 
@@ -280,7 +319,7 @@ export default function PaymentPage() {
                                     onKeyDown={(e) => handleRowKeyDown(e, index)}
                                 >
                                     {/* Pay To Ledger */}
-                                    <div className="col-span-5">
+                                    <div className="col-span-5" onFocus={() => setFocusedRowIndex(index)}>
                                         <Combobox
                                             value={item.description}
                                             options={payToLedgers.map(l => ({ value: l.account_name, label: l.account_name }))}
@@ -291,15 +330,27 @@ export default function PaymentPage() {
                                     </div>
 
                                     {/* Amount */}
-                                    <div className="col-span-2">
+                                    <div className="col-span-2 flex items-start gap-1">
                                         <Input
                                             type="number"
                                             value={item.amount || ''}
                                             onChange={(e) => handleUpdateItem(index, 'amount', parseFloat(e.target.value) || 0)}
+                                            onFocus={() => setFocusedRowIndex(index)}
                                             className="h-7 text-xs text-right font-mono"
                                             placeholder="0.00"
                                             step="0.01"
                                         />
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className={`h-7 w-7 p-0 ${(item.allocations?.length || 0) > 0 ? 'text-blue-600 bg-blue-50' : 'text-muted-foreground'}`}
+                                            title="Billwise Allocation"
+                                            onClick={() => setAllocatingRowIndex(index)}
+                                            disabled={!item.description}
+                                        >
+                                            <IconReceipt2 size={14} />
+                                        </Button>
                                     </div>
 
                                     {/* Remarks */}
@@ -346,7 +397,14 @@ export default function PaymentPage() {
 
                     {/* Totals */}
                     <div className="bg-card border rounded-lg p-3 shrink-0">
-                        <div className="flex justify-end">
+                        <div className="flex justify-between items-end">
+                            <div>
+                                {focusedRowIndex !== null && rowBalances[focusedRowIndex] !== undefined && (
+                                    <div className={`text-sm font-bold ${rowBalances[focusedRowIndex] >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                        Cur Bal: ₹ {Math.abs(rowBalances[focusedRowIndex]).toLocaleString()} {rowBalances[focusedRowIndex] >= 0 ? 'Dr' : 'Cr'}
+                                    </div>
+                                )}
+                            </div>
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Payment</div>
                                 <div className="text-lg font-mono font-bold">

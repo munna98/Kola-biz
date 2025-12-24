@@ -7,7 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Combobox } from '@/components/ui/combobox';
-import { IconCheck, IconX, IconPlus, IconTrash } from '@tabler/icons-react';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { IconCheck, IconX } from '@tabler/icons-react';
 
 interface QuickPaymentDialogProps {
     mode: 'payment' | 'receipt';
@@ -18,17 +19,23 @@ interface QuickPaymentDialogProps {
     invoiceAmount?: number;
     partyName?: string;
     partyId?: number;
+    invoiceId?: number;
 }
 
 interface AccountData {
     id: number;
     name: string;
+    account_group: string;
 }
 
-interface PaymentLine {
-    id: string;
-    account_id: number;
+interface LedgerAccount {
+    id: number;
     account_name: string;
+}
+
+interface PaymentState {
+    accountId: number;
+    accountName: string;
     amount: number;
 }
 
@@ -39,15 +46,22 @@ export default function QuickPaymentDialog({
     onSuccess,
     invoiceAmount = 0,
     partyName = '',
-    partyId = 0,
+    partyId,
+    invoiceId,
 }: QuickPaymentDialogProps) {
     const [cashBankAccounts, setCashBankAccounts] = useState<AccountData[]>([]);
+    const [ledgerAccounts, setLedgerAccounts] = useState<LedgerAccount[]>([]);
     const [loading, setLoading] = useState(false);
 
-    // Multiple payment lines for split payments
-    const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([
-        { id: '1', account_id: 0, account_name: '', amount: 0 }
-    ]);
+    // Active Tab
+    const [activeTab, setActiveTab] = useState<'Cash' | 'Bank'>('Cash');
+
+    // Separate states for Cash and Bank
+    const [cashState, setCashState] = useState<PaymentState>({ accountId: 0, accountName: '', amount: 0 });
+    const [bankState, setBankState] = useState<PaymentState>({ accountId: 0, accountName: '', amount: 0 });
+
+    // For manual selection when partyName is not provided
+    const [manualLedgerName, setManualLedgerName] = useState('');
 
     // Form state
     const [formData, setFormData] = useState({
@@ -57,8 +71,12 @@ export default function QuickPaymentDialog({
 
     const isPayment = mode === 'payment';
     const title = isPayment ? 'Quick Payment' : 'Quick Receipt';
-    const accountLabel = isPayment ? 'Pay From (Bank/Cash)' : 'Deposit To (Bank/Cash)';
-    const partyLabel = isPayment ? 'Paid To' : 'Received From';
+    const accountLabel = isPayment ? 'Pay From' : 'Deposit To';
+    const ledgerLabel = isPayment ? 'Pay To (Account/Ledger)' : 'Received From (Account/Ledger)';
+
+    // Determine the effective party name to use
+    const effectivePartyName = partyName || manualLedgerName;
+    const isAutoMode = !!partyName;
 
     // Load accounts when dialog opens
     useEffect(() => {
@@ -69,31 +87,39 @@ export default function QuickPaymentDialog({
     }, [open, invoiceAmount, partyName]);
 
     const resetForm = () => {
-        // If invoice amount provided, split 100% to first account
         const initialAmount = invoiceAmount > 0 ? invoiceAmount : 0;
 
-        setPaymentLines([
-            { id: '1', account_id: 0, account_name: '', amount: initialAmount }
-        ]);
+        setActiveTab('Cash');
+        setCashState({ accountId: 0, accountName: '', amount: initialAmount });
+        setBankState({ accountId: 0, accountName: '', amount: 0 });
 
         setFormData({
             date: new Date().toISOString().split('T')[0],
             narration: partyName ? `Payment from ${partyName}` : '',
         });
+
+        setManualLedgerName('');
     };
 
     const loadAccounts = async () => {
         try {
-            const cashBankData = await invoke<AccountData[]>('get_cash_bank_accounts').catch(() => []);
-            setCashBankAccounts(cashBankData);
+            const [cashBankData, allLedgersData] = await Promise.all([
+                invoke<AccountData[]>('get_cash_bank_accounts').catch(() => []),
+                invoke<LedgerAccount[]>('get_chart_of_accounts').catch(() => []),
+            ]);
 
-            // Auto-select first account if only one line
-            if (cashBankData.length > 0 && paymentLines.length === 1 && paymentLines[0].account_id === 0) {
-                setPaymentLines([{
-                    ...paymentLines[0],
-                    account_id: cashBankData[0].id,
-                    account_name: cashBankData[0].name,
-                }]);
+            setCashBankAccounts(cashBankData);
+            setLedgerAccounts(allLedgersData);
+
+            // Auto-select first accounts
+            const firstCash = cashBankData.find(a => a.account_group === 'Cash');
+            const firstBank = cashBankData.find(a => a.account_group === 'Bank Account');
+
+            if (firstCash) {
+                setCashState(prev => ({ ...prev, accountId: firstCash.id, accountName: firstCash.name }));
+            }
+            if (firstBank) {
+                setBankState(prev => ({ ...prev, accountId: firstBank.id, accountName: firstBank.name }));
             }
         } catch (error) {
             toast.error('Failed to load accounts');
@@ -101,89 +127,129 @@ export default function QuickPaymentDialog({
         }
     };
 
-    const handleAddLine = () => {
-        setPaymentLines([...paymentLines, {
-            id: Date.now().toString(),
-            account_id: 0,
-            account_name: '',
-            amount: 0,
-        }]);
-    };
+    const handleAccountChange = (id: number) => {
+        const account = cashBankAccounts.find(a => a.id === id);
+        if (!account) return;
 
-    const handleRemoveLine = (id: string) => {
-        if (paymentLines.length === 1) {
-            toast.error('At least one payment line is required');
-            return;
-        }
-        setPaymentLines(paymentLines.filter(line => line.id !== id));
-    };
-
-    const handleUpdateLine = (id: string, field: keyof PaymentLine, value: any) => {
-        setPaymentLines(paymentLines.map(line =>
-            line.id === id ? { ...line, [field]: value } : line
-        ));
-    };
-
-    const handleAccountChange = (lineId: string, accountId: number) => {
-        const account = cashBankAccounts.find(a => a.id === accountId);
-        if (account) {
-            handleUpdateLine(lineId, 'account_id', account.id);
-            handleUpdateLine(lineId, 'account_name', account.name);
+        if (activeTab === 'Cash') {
+            setCashState(prev => ({ ...prev, accountId: account.id, accountName: account.name }));
+        } else {
+            setBankState(prev => ({ ...prev, accountId: account.id, accountName: account.name }));
         }
     };
 
-    const getTotalAmount = () => {
-        return paymentLines.reduce((sum, line) => sum + (line.amount || 0), 0);
+    const handleAmountChange = (val: number) => {
+        if (activeTab === 'Cash') {
+            setCashState(prev => ({ ...prev, amount: val }));
+        } else {
+            setBankState(prev => ({ ...prev, amount: val }));
+        }
     };
+
+    const filteredAccounts = cashBankAccounts.filter(a =>
+        activeTab === 'Cash' ? a.account_group === 'Cash' : a.account_group === 'Bank Account'
+    );
+
+    const activeState = activeTab === 'Cash' ? cashState : bankState;
+    const totalAmount = (cashState.amount || 0) + (bankState.amount || 0);
 
     const getRemainingAmount = () => {
         if (invoiceAmount <= 0) return 0;
-        return invoiceAmount - getTotalAmount();
+        return invoiceAmount - totalAmount;
     };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
 
-        // Validation
-        const invalidLines = paymentLines.filter(line => !line.account_id || line.amount <= 0);
-        if (invalidLines.length > 0) {
-            toast.error('All payment lines must have an account selected and amount > 0');
+        // Validate
+        if (totalAmount <= 0) {
+            toast.error('Total payment amount must be greater than 0');
             return;
         }
 
-        // Check if party is provided
-        if (!partyId || !partyName) {
-            toast.error('Party information is missing');
+        if (cashState.amount > 0 && !cashState.accountId) {
+            toast.error('Please select a Cash account');
+            return;
+        }
+        if (bankState.amount > 0 && !bankState.accountId) {
+            toast.error('Please select a Bank account');
+            return;
+        }
+
+        // Check if party/ledger is provided
+        if (!effectivePartyName) {
+            toast.error(`Please select "${ledgerLabel}"`);
             return;
         }
 
         try {
             setLoading(true);
 
-            // Create a receipt/payment for each payment line
-            for (const line of paymentLines) {
-                const commandName = isPayment ? 'create_payment' : 'create_receipt';
-                const payload = {
+            const commandName = isPayment ? 'create_payment' : 'create_receipt';
+
+            // Prepare payloads
+            const payloads = [];
+
+            if (cashState.amount > 0) {
+                const allocations = invoiceId ? [{
+                    invoice_id: invoiceId,
+                    amount: cashState.amount
+                }] : undefined;
+
+                payloads.push({
                     [isPayment ? 'payment' : 'receipt']: {
-                        account_id: line.account_id,
+                        account_id: cashState.accountId,
                         voucher_date: formData.date,
+                        [isPayment ? 'payment_method' : 'receipt_method']: 'Cash',
                         reference_number: null,
-                        narration: formData.narration || `${isPayment ? 'Payment to' : 'Receipt from'} ${partyName}`,
+                        narration: formData.narration || `${isPayment ? 'Payment to' : 'Receipt from'} ${effectivePartyName}`,
                         items: [
                             {
-                                description: partyName, // Party name as the ledger
-                                amount: line.amount,
+                                description: effectivePartyName,
+                                account_id: isAutoMode ? partyId : undefined,
+                                amount: cashState.amount,
                                 tax_rate: 0,
-                                remarks: `${line.account_name} - ${invoiceAmount > 0 ? 'Invoice payment' : ''}`,
+                                remarks: `${cashState.accountName} - ${invoiceAmount > 0 ? 'Invoice payment' : ''}`,
+                                allocations,
                             },
                         ],
                     },
-                };
+                });
+            }
 
+            if (bankState.amount > 0) {
+                const allocations = invoiceId ? [{
+                    invoice_id: invoiceId,
+                    amount: bankState.amount
+                }] : undefined;
+
+                payloads.push({
+                    [isPayment ? 'payment' : 'receipt']: {
+                        account_id: bankState.accountId,
+                        voucher_date: formData.date,
+                        [isPayment ? 'payment_method' : 'receipt_method']: 'Bank Transfer',
+                        reference_number: null,
+                        narration: formData.narration || `${isPayment ? 'Payment to' : 'Receipt from'} ${effectivePartyName}`,
+                        items: [
+                            {
+                                description: effectivePartyName,
+                                account_id: isAutoMode ? partyId : undefined,
+                                amount: bankState.amount,
+                                tax_rate: 0,
+                                remarks: `${bankState.accountName} - ${invoiceAmount > 0 ? 'Invoice payment' : ''}`,
+                                allocations,
+                            },
+                        ],
+                    },
+                });
+            }
+
+            // Execute commands
+            for (const payload of payloads) {
                 await invoke(commandName, payload);
             }
 
-            toast.success(`${isPayment ? 'Payment' : 'Receipt'} saved successfully (${paymentLines.length} ${paymentLines.length > 1 ? 'entries' : 'entry'})`);
+            toast.success(`${isPayment ? 'Payment' : 'Receipt'} saved successfully`);
             onOpenChange(false);
             onSuccess?.();
         } catch (error) {
@@ -194,9 +260,9 @@ export default function QuickPaymentDialog({
         }
     };
 
-    const totalAmount = getTotalAmount();
     const remainingAmount = getRemainingAmount();
     const hasInvoiceAmount = invoiceAmount > 0;
+
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -209,121 +275,104 @@ export default function QuickPaymentDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    {/* Party Information (Read-only) */}
-                    {partyName && (
-                        <div className="bg-muted/50 p-3 rounded-lg">
-                            <Label className="text-sm font-medium mb-1 block">{partyLabel}</Label>
-                            <div className="text-base font-semibold">{partyName}</div>
+                <form onSubmit={handleSubmit} className="space-y-6">
+                    {/* Manual Ledger Selection (Only show if NOT in auto mode) */}
+                    {!isAutoMode && (
+                        <div>
+                            <Label className="text-sm font-medium mb-1.5 block">{ledgerLabel} *</Label>
+                            <Combobox
+                                value={manualLedgerName}
+                                options={ledgerAccounts.map(l => ({ value: l.account_name, label: l.account_name }))}
+                                onChange={(val) => setManualLedgerName(val as string)}
+                                placeholder="Select ledger"
+                                searchPlaceholder="Search ledgers..."
+                            />
                         </div>
                     )}
 
-                    {/* Payment Lines */}
-                    <div className="space-y-3">
-                        <div className="flex justify-between items-center">
-                            <Label className="text-sm font-semibold">Payment Details</Label>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                size="sm"
-                                onClick={handleAddLine}
-                                className="h-7 text-xs"
-                            >
-                                <IconPlus size={14} />
-                                Add Line (Split Payment)
-                            </Button>
-                        </div>
+                    <div className="space-y-4 border rounded-md p-4 bg-muted/20">
+                        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'Cash' | 'Bank')} className="w-full">
+                            <TabsList className="grid w-full grid-cols-2 mb-4">
+                                <TabsTrigger value="Cash">
+                                    Cash {cashState.amount > 0 && `(₹${cashState.amount})`}
+                                </TabsTrigger>
+                                <TabsTrigger value="Bank">
+                                    Bank {bankState.amount > 0 && `(₹${bankState.amount})`}
+                                </TabsTrigger>
+                            </TabsList>
 
-                        {paymentLines.map((line, index) => (
-                            <div key={line.id} className="grid grid-cols-12 gap-2 items-end p-3 bg-card border rounded-lg">
+                            <div className="space-y-4">
                                 {/* Account Selection */}
-                                <div className="col-span-6">
-                                    <Label className="text-xs font-medium mb-1 block">
-                                        {accountLabel} {index + 1} *
+                                <div>
+                                    <Label className="text-sm font-medium mb-1.5 block">
+                                        {accountLabel} ({activeTab}) *
                                     </Label>
                                     <Combobox
-                                        value={line.account_id}
-                                        options={cashBankAccounts.map(a => ({ value: a.id, label: a.name }))}
-                                        onChange={(val) => handleAccountChange(line.id, val as number)}
-                                        placeholder="Select account"
+                                        value={activeState.accountId}
+                                        options={filteredAccounts.map(a => ({ value: a.id, label: a.name }))}
+                                        onChange={(val) => handleAccountChange(val as number)}
+                                        placeholder={`Select ${activeTab} Account`}
                                         searchPlaceholder="Search accounts..."
                                     />
+                                    {filteredAccounts.length === 0 && (
+                                        <p className="text-xs text-red-500 mt-1">No {activeTab} accounts found.</p>
+                                    )}
                                 </div>
 
                                 {/* Amount */}
-                                <div className="col-span-5">
-                                    <Label className="text-xs font-medium mb-1 block">Amount *</Label>
+                                <div>
+                                    <Label className="text-sm font-medium mb-1.5 block">Amount *</Label>
                                     <Input
                                         type="number"
-                                        value={line.amount || ''}
-                                        onChange={(e) => handleUpdateLine(line.id, 'amount', parseFloat(e.target.value) || 0)}
+                                        value={activeState.amount || ''}
+                                        onChange={(e) => handleAmountChange(parseFloat(e.target.value) || 0)}
                                         placeholder="0.00"
                                         step="0.01"
-                                        className="font-mono"
+                                        className="font-mono text-lg"
+                                        autoFocus
                                     />
                                 </div>
-
-                                {/* Delete Button */}
-                                <div className="col-span-1 flex items-end">
-                                    {paymentLines.length > 1 && (
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleRemoveLine(line.id)}
-                                            className="h-9 w-9 p-0"
-                                        >
-                                            <IconTrash size={16} />
-                                        </Button>
-                                    )}
-                                </div>
                             </div>
-                        ))}
-                    </div>
+                        </Tabs>
 
-                    {/* Total and Remaining Display */}
-                    <div className="bg-muted/30 p-3 rounded-lg space-y-1.5">
-                        <div className="flex justify-between text-sm">
-                            <span className="font-medium">Total Amount:</span>
-                            <span className="font-mono font-bold">₹{totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                        </div>
+                        {/* Total and Remaining Display */}
                         {hasInvoiceAmount && (
-                            <>
-                                <div className="flex justify-between text-sm">
-                                    <span className="font-medium">Invoice Amount:</span>
+                            <div className="bg-background border rounded p-3 text-sm space-y-1">
+                                <div className="flex justify-between">
+                                    <span className="text-muted-foreground">Invoice Amount:</span>
                                     <span className="font-mono">₹{invoiceAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                 </div>
-                                <div className={`flex justify-between text-sm ${remainingAmount > 0 ? 'text-orange-600 dark:text-orange-400' : remainingAmount < 0 ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}`}>
-                                    <span className="font-medium">
-                                        {remainingAmount > 0 ? 'Remaining:' : remainingAmount < 0 ? 'Excess:' : 'Balanced ✓'}
-                                    </span>
-                                    <span className="font-mono font-bold">
-                                        {remainingAmount !== 0 && `₹${Math.abs(remainingAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
+                                <div className={`flex justify-between font-medium ${remainingAmount > 0 ? 'text-orange-600' : remainingAmount < 0 ? 'text-red-600' : 'text-green-600'}`}>
+                                    <span>{remainingAmount > 0 ? 'Remaining:' : remainingAmount < 0 ? 'Excess:' : 'Balanced'}</span>
+                                    <span className="font-mono">
+                                        {remainingAmount === 0 ? '✓' : `₹${Math.abs(remainingAmount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`}
                                     </span>
                                 </div>
-                            </>
+                            </div>
                         )}
                     </div>
 
-                    {/* Date */}
-                    <div>
-                        <Label className="text-sm font-medium mb-1.5 block">Date *</Label>
-                        <Input
-                            type="date"
-                            value={formData.date}
-                            onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
-                        />
-                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Date */}
+                        <div>
+                            <Label className="text-sm font-medium mb-1.5 block">Date *</Label>
+                            <Input
+                                type="date"
+                                value={formData.date}
+                                onChange={(e) => setFormData(prev => ({ ...prev, date: e.target.value }))}
+                            />
+                        </div>
 
-                    {/* Narration */}
-                    <div>
-                        <Label className="text-sm font-medium mb-1.5 block">Narration / Remarks</Label>
-                        <Textarea
-                            value={formData.narration}
-                            onChange={(e) => setFormData(prev => ({ ...prev, narration: e.target.value }))}
-                            placeholder="Optional notes..."
-                            className="min-h-[60px] text-sm"
-                        />
+                        {/* Narration */}
+                        <div>
+                            <Label className="text-sm font-medium mb-1.5 block">Narration / Remarks</Label>
+                            <Textarea
+                                value={formData.narration}
+                                onChange={(e) => setFormData(prev => ({ ...prev, narration: e.target.value }))}
+                                placeholder="Optional notes..."
+                                className="min-h-[38px] h-10 py-2 resize-none text-sm"
+                            />
+                        </div>
                     </div>
 
                     {/* Actions */}
@@ -343,10 +392,6 @@ export default function QuickPaymentDialog({
                         </Button>
                     </div>
                 </form>
-
-                <div className="text-xs text-muted-foreground border-t pt-2">
-                    <strong>Tips:</strong> Click "Add Line" to split payment across multiple accounts (e.g., ₹500 Cash + ₹500 Bank)
-                </div>
             </DialogContent>
         </Dialog>
     );

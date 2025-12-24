@@ -76,6 +76,9 @@ export default function SalesInvoicePage() {
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showQuickPayment, setShowQuickPayment] = useState(false);
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
+  const [savedInvoiceId, setSavedInvoiceId] = useState<number | undefined>(undefined);
+  const [savedPartyName, setSavedPartyName] = useState<string>('');
+  const [savedPartyId, setSavedPartyId] = useState<number | undefined>(undefined);
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -279,7 +282,7 @@ export default function SalesInvoicePage() {
         });
         toast.success('Sales invoice updated successfully');
       } else {
-        await invoke<number>('create_sales_invoice', {
+        const newInvoiceId = await invoke<number>('create_sales_invoice', {
           invoice: {
             customer_id: salesState.form.customer_id,
             party_type: salesState.form.party_type,
@@ -302,11 +305,12 @@ export default function SalesInvoicePage() {
         toast.success('Sales invoice created successfully');
 
         // Auto-prompt for payment after creating invoice
-        const isCashSale = parties.find(p => p.id === salesState.form.customer_id)?.name === 'Cash Sale';
-        if (isCashSale) {
-          setSavedInvoiceAmount(salesState.totals.grandTotal);
-          setShowQuickPayment(true);
-        }
+        setSavedInvoiceAmount(salesState.totals.grandTotal);
+        setSavedInvoiceId(newInvoiceId);
+        const customer = parties.find(p => p.id === salesState.form.customer_id);
+        setSavedPartyName(customer?.name || 'Cash Sale');
+        setSavedPartyId(customer?.id);
+        setShowQuickPayment(true);
       }
 
       dispatch(setSalesHasUnsavedChanges(false));
@@ -502,8 +506,9 @@ export default function SalesInvoicePage() {
         open={showQuickPayment}
         onOpenChange={setShowQuickPayment}
         invoiceAmount={savedInvoiceAmount}
-        partyName={parties.find(p => p.id === salesState.form.customer_id)?.name || 'Cash Sale'}
-        partyId={salesState.form.customer_id}
+        partyName={savedPartyName}
+        partyId={savedPartyId}
+        invoiceId={savedInvoiceId}
         onSuccess={() => {
           toast.success('Payment recorded!');
         }}
