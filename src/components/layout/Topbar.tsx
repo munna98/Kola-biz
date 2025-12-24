@@ -32,7 +32,7 @@ export default function Topbar() {
     const itemStyle = "block select-none rounded-md px-3 py-2 text-sm font-medium no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground cursor-pointer";
 
     return (
-        <header className="bg-card border-b h-14 flex items-center px-6 gap-4">
+        <header className="bg-card border-b h-14 flex items-center px-6 gap-4 relative z-50">
             {/* FIX: Add viewport={false} here */}
             <NavigationMenu viewport={false}>
                 <NavigationMenuList>

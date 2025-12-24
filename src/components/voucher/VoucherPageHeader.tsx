@@ -62,7 +62,7 @@ export function VoucherPageHeader({
     loading
 }: VoucherPageHeaderProps) {
     return (
-        <div className="border-b bg-card/50 px-5 py-3 backdrop-blur-sm shrink-0 h-[65px] flex items-center">
+        <div className="border-b bg-card/50 px-5 py-3 backdrop-blur-sm shrink-0 h-[65px] flex items-center z-0">
             <div className="flex items-center justify-between w-full">
                 {/* Left Section */}
                 <div className="flex items-center gap-3">
