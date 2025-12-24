@@ -18,6 +18,11 @@ import OpeningBalancePage from './pages/OpeningBalancePage';
 import SalesInvoicePage from './pages/SalesInvoicePage';
 import TrialBalancePage from './pages/reports/TrialBalancePage';
 import LedgerReportPage from './pages/reports/LedgerReportPage';
+import BalanceSheetPage from './pages/reports/BalanceSheetPage';
+import ProfitLossPage from './pages/reports/ProfitLossPage';
+import CashFlowPage from './pages/reports/CashFlowPage';
+import DayBookPage from './pages/reports/DayBookPage';
+import PartyOutstandingPage from './pages/reports/PartyOutstandingPage';
 
 import CompanyProfilePage from './pages/settings/CompanyProfilePage';
 import InvoiceSettingsPage from './pages/InvoiceSettingsPage';
@@ -49,6 +54,11 @@ function AppContent() {
       case 'opening': return <OpeningBalancePage />;
       case 'trial': return <TrialBalancePage />;
       case 'ledger': return <LedgerReportPage />;
+      case 'balance_sheet': return <BalanceSheetPage />;
+      case 'profit_loss': return <ProfitLossPage />;
+      case 'cash_flow': return <CashFlowPage />;
+      case 'day_book': return <DayBookPage />;
+      case 'outstanding': return <PartyOutstandingPage />;
       case 'company_profile': return <CompanyProfilePage />;
       case 'invoice_settings': return <InvoiceSettingsPage />;
 

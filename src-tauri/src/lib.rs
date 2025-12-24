@@ -98,6 +98,12 @@ pub fn run() {
             // Reports
             get_trial_balance,
             get_ledger_report,
+            get_balance_sheet,
+            get_profit_loss,
+            get_cash_flow,
+            get_day_book,
+            get_party_outstanding,
+            get_party_invoice_details,
             // Voucher Navigation
             list_vouchers,
             get_previous_voucher_id,

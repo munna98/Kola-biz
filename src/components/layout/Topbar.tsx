@@ -65,9 +65,14 @@ export default function Topbar() {
                     <NavigationMenuItem>
                         <NavigationMenuTrigger className="h-9">Reports</NavigationMenuTrigger>
                         <NavigationMenuContent>
-                            <ul className="flex flex-col w-40">
+                            <ul className="flex flex-col w-48">
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('trial')}>Trial Balance</NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('ledger')}>Ledger Report</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('balance_sheet')}>Balance Sheet</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('profit_loss')}>Profit & Loss</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('cash_flow')}>Cash Flow</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('day_book')}>Day Book</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('outstanding')}>Party Outstanding</NavigationMenuLink>
                             </ul>
                         </NavigationMenuContent>
                     </NavigationMenuItem>

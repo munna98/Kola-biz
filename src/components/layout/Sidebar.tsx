@@ -13,7 +13,13 @@ import {
     IconBook
 } from '@tabler/icons-react';
 
-const menuItems = [
+interface MenuItem {
+    id: string;
+    label: string;
+    icon: React.ElementType;
+}
+
+const menuItems: MenuItem[] = [
     { id: 'products', label: 'Products', icon: IconPackage },
     { id: 'customers', label: 'Customers', icon: IconUserDown },
     { id: 'suppliers', label: 'Suppliers', icon: IconUserUp },
@@ -24,8 +30,8 @@ const menuItems = [
     { id: 'receipts', label: 'Receipts', icon: IconCashBanknoteMoveBack },
     { id: 'journal', label: 'Journal Entries', icon: IconBook },
     { id: 'opening', label: 'Opening Balance', icon: IconBook },
-    { id: 'trial', label: 'Trial Balance', icon: IconBook },
-    { id: 'ledger', label: 'Ledger Report', icon: IconBook },
+    { id: 'day_book', label: 'Day Book', icon: IconBook },
+    { id: 'outstanding', label: 'Party Outstanding', icon: IconBook },
 ];
 
 export default function Sidebar() {
