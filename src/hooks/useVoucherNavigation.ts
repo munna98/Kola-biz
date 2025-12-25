@@ -6,6 +6,7 @@ import { ActionCreatorWithPayload, ActionCreatorWithoutPayload } from '@reduxjs/
 interface VoucherNavigationActions {
     setMode: ActionCreatorWithPayload<'new' | 'viewing' | 'editing'>;
     setCurrentVoucherId: ActionCreatorWithPayload<number | null>;
+    setCurrentVoucherNo?: ActionCreatorWithPayload<string | undefined>;
     setNavigationData: ActionCreatorWithPayload<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>;
     setHasUnsavedChanges: ActionCreatorWithPayload<boolean>;
     resetForm: ActionCreatorWithoutPayload;
@@ -100,6 +101,9 @@ export function useVoucherNavigation({
         dispatch(actions.resetForm());
         dispatch(actions.setMode('new'));
         dispatch(actions.setCurrentVoucherId(null));
+        if (actions.setCurrentVoucherNo) {
+            dispatch(actions.setCurrentVoucherNo(undefined));
+        }
         dispatch(actions.setNavigationData({
             hasPrevious: false,
             hasNext: false,

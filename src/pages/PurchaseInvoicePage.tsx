@@ -149,10 +149,13 @@ export default function PurchaseInvoicePage() {
       // Fetch items
       const items = await invoke<any[]>('get_purchase_invoice_items', { voucherId: id });
 
-      // Set the actual voucher number
+      // Setup Items
+      dispatch(resetForm()); // Clear items first
+
+      // Set the actual voucher number (after resetForm to prevent it from being cleared)
       dispatch(setPurchaseCurrentVoucherNo(voucher.voucher_no));
 
-      // Setup Form
+      // Re-dispatch form data because resetForm cleared it
       dispatch(setSupplier({
         id: voucher.supplier_id,
         name: voucher.supplier_name,
@@ -165,18 +168,6 @@ export default function PurchaseInvoicePage() {
       // Load discount fields from backend
       dispatch(setDiscountRate(voucher.discount_rate || 0));
       dispatch(setDiscountAmount(voucher.discount_amount || 0));
-
-      // Setup Items
-      dispatch(resetForm()); // Clear items first
-      // Re-dispatch form data because resetForm cleared it
-      dispatch(setSupplier({
-        id: voucher.supplier_id,
-        name: voucher.supplier_name,
-        type: voucher.party_type
-      }));
-      dispatch(setVoucherDate(voucher.voucher_date));
-      dispatch(setReference(voucher.reference || ''));
-      dispatch(setNarration(voucher.narration || ''));
 
       // Add items
       const mappedItems = items.map(item => ({
@@ -213,6 +204,7 @@ export default function PurchaseInvoicePage() {
     actions: {
       setMode: setPurchaseMode,
       setCurrentVoucherId: setPurchaseCurrentVoucherId,
+      setCurrentVoucherNo: setPurchaseCurrentVoucherNo,
       setNavigationData: setPurchaseNavigationData,
       setHasUnsavedChanges: setPurchaseHasUnsavedChanges,
       resetForm: resetForm

@@ -162,7 +162,6 @@ const purchaseInvoiceSlice = createSlice({
       state.totals = action.payload;
     },
     resetForm: (state) => {
-      state.currentVoucherNo = undefined;
       state.form = {
         supplier_id: 0,
         supplier_name: '',
@@ -821,7 +820,6 @@ const salesInvoiceSlice = createSlice({
       state.totals = action.payload;
     },
     resetSalesForm: (state) => {
-      state.currentVoucherNo = undefined;
       state.form = {
         customer_id: 0,
         customer_name: '',

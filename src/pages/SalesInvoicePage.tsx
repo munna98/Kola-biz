@@ -402,6 +402,7 @@ export default function SalesInvoicePage() {
     actions: {
       setMode: setSalesMode,
       setCurrentVoucherId: setSalesCurrentVoucherId,
+      setCurrentVoucherNo: setSalesCurrentVoucherNo,
       setNavigationData: setSalesNavigationData,
       setHasUnsavedChanges: setSalesHasUnsavedChanges,
       resetForm: resetSalesForm
