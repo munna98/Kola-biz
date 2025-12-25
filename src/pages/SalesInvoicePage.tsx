@@ -17,6 +17,7 @@ import {
   setSalesLoading,
   setSalesMode,
   setSalesCurrentVoucherId,
+  setSalesCurrentVoucherNo,
   setSalesHasUnsavedChanges,
   setSalesNavigationData,
 } from '@/store';
@@ -332,6 +333,9 @@ export default function SalesInvoicePage() {
       const invoice = await invoke<any>('get_sales_invoice', { id });
       const items = await invoke<any[]>('get_sales_invoice_items', { voucherId: id });
 
+      // Set the actual voucher number
+      dispatch(setSalesCurrentVoucherNo(invoice.voucher_no));
+
       // Populate Form
       dispatch(setSalesCustomer({ id: invoice.customer_id, name: invoice.customer_name, type: 'customer' })); // Assuming customer only for now
       dispatch(setSalesVoucherDate(invoice.voucher_date));
@@ -472,7 +476,7 @@ export default function SalesInvoicePage() {
         title="Sales Invoice"
         description="Create and manage sales invoices"
         mode={salesState.mode}
-        voucherNo={salesState.currentVoucherId ? `SI-${salesState.currentVoucherId}` : undefined}
+        voucherNo={salesState.currentVoucherNo}
         voucherDate={salesState.form.voucher_date}
         isUnsaved={salesState.hasUnsavedChanges}
         hasPrevious={salesState.navigationData.hasPrevious}

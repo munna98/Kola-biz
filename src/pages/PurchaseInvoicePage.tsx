@@ -18,6 +18,7 @@ import {
   // Navigation Actions
   setPurchaseMode,
   setPurchaseCurrentVoucherId,
+  setPurchaseCurrentVoucherNo,
   setPurchaseHasUnsavedChanges,
   setPurchaseNavigationData,
 } from '@/store';
@@ -147,6 +148,9 @@ export default function PurchaseInvoicePage() {
 
       // Fetch items
       const items = await invoke<any[]>('get_purchase_invoice_items', { voucherId: id });
+
+      // Set the actual voucher number
+      dispatch(setPurchaseCurrentVoucherNo(voucher.voucher_no));
 
       // Setup Form
       dispatch(setSupplier({
@@ -463,7 +467,7 @@ export default function PurchaseInvoicePage() {
         title="Purchase Invoice"
         description="Create and manage purchase invoices"
         mode={purchaseState.mode}
-        voucherNo={purchaseState.currentVoucherId ? `PI-${purchaseState.currentVoucherId}` : undefined} // Or fetch real Voucher No in load
+        voucherNo={purchaseState.currentVoucherNo}
         voucherDate={purchaseState.form.voucher_date}
         isUnsaved={purchaseState.hasUnsavedChanges}
         hasPrevious={purchaseState.navigationData.hasPrevious}

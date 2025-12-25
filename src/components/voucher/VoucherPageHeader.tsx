@@ -104,20 +104,24 @@ export function VoucherPageHeader({
                                 {mode === 'editing' && (
                                     <span className="text-sm font-medium text-muted-foreground">Editing:</span>
                                 )}
-                                <h1 className="text-lg font-bold font-mono text-primary">
-                                    {voucherNo || '---'}
-                                </h1>
-                                {mode === 'viewing' && voucherDate && (
+                                {voucherNo && (
                                     <>
-                                        <span className="text-muted-foreground">•</span>
-                                        <span className="text-sm text-muted-foreground">{formatDate(voucherDate)}</span>
+                                        <h1 className="text-lg font-bold font-mono text-primary">
+                                            {voucherNo}
+                                        </h1>
+                                        {mode === 'viewing' && voucherDate && (
+                                            <>
+                                                <span className="text-muted-foreground">•</span>
+                                                <span className="text-sm text-muted-foreground">{formatDate(voucherDate)}</span>
+                                            </>
+                                        )}
+                                        {isUnsaved && (
+                                            <Badge variant="destructive" className="text-xs gap-1">
+                                                <IconAlertTriangle size={12} />
+                                                Unsaved
+                                            </Badge>
+                                        )}
                                     </>
-                                )}
-                                {isUnsaved && (
-                                    <Badge variant="destructive" className="text-xs gap-1">
-                                        <IconAlertTriangle size={12} />
-                                        Unsaved
-                                    </Badge>
                                 )}
                             </div>
                         )}

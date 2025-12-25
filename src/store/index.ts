@@ -63,6 +63,7 @@ export interface PurchaseInvoiceItem {
 }
 
 export interface PurchaseInvoiceState extends VoucherNavigationState {
+  currentVoucherNo?: string;
   form: {
     supplier_id: number;
     supplier_name: string;
@@ -86,6 +87,7 @@ export interface PurchaseInvoiceState extends VoucherNavigationState {
 
 const purchaseInitialState: PurchaseInvoiceState = {
   ...initialNavigationState,
+  currentVoucherNo: undefined,
   form: {
     supplier_id: 0,
     supplier_name: '',
@@ -116,6 +118,9 @@ const purchaseInvoiceSlice = createSlice({
     },
     setPurchaseCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
       state.currentVoucherId = action.payload;
+    },
+    setPurchaseCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
+      state.currentVoucherNo = action.payload;
     },
     setPurchaseHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
@@ -157,6 +162,7 @@ const purchaseInvoiceSlice = createSlice({
       state.totals = action.payload;
     },
     resetForm: (state) => {
+      state.currentVoucherNo = undefined;
       state.form = {
         supplier_id: 0,
         supplier_name: '',
@@ -182,6 +188,7 @@ const purchaseInvoiceSlice = createSlice({
 export const {
   setPurchaseMode,
   setPurchaseCurrentVoucherId,
+  setPurchaseCurrentVoucherNo,
   setPurchaseHasUnsavedChanges,
   setPurchaseNavigationData,
   setSupplier,
@@ -715,6 +722,7 @@ export interface SalesInvoiceItem {
 }
 
 export interface SalesInvoiceState extends VoucherNavigationState {
+  currentVoucherNo?: string;
   form: {
     customer_id: number;
     customer_name: string;
@@ -738,6 +746,7 @@ export interface SalesInvoiceState extends VoucherNavigationState {
 
 const salesInitialState: SalesInvoiceState = {
   ...initialNavigationState,
+  currentVoucherNo: undefined,
   form: {
     customer_id: 0,
     customer_name: '',
@@ -768,6 +777,9 @@ const salesInvoiceSlice = createSlice({
     },
     setSalesCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
       state.currentVoucherId = action.payload;
+    },
+    setSalesCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
+      state.currentVoucherNo = action.payload;
     },
     setSalesHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
@@ -809,6 +821,7 @@ const salesInvoiceSlice = createSlice({
       state.totals = action.payload;
     },
     resetSalesForm: (state) => {
+      state.currentVoucherNo = undefined;
       state.form = {
         customer_id: 0,
         customer_name: '',
@@ -834,6 +847,7 @@ const salesInvoiceSlice = createSlice({
 export const {
   setSalesMode,
   setSalesCurrentVoucherId,
+  setSalesCurrentVoucherNo,
   setSalesHasUnsavedChanges,
   setSalesNavigationData,
   setSalesCustomer,
