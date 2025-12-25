@@ -6,19 +6,22 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRuler, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
-import { api, Product, CreateProduct, Unit } from '@/lib/tauri';
+import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
+import { api, Product, CreateProduct, Unit, ProductGroup } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { toast } from 'sonner';
 import UnitsDialog from '@/components/dialogs/UnitsDialog';
+import ProductGroupsDialog from '@/components/dialogs/ProductGroupsDialog';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
+  const [groups, setGroups] = useState<ProductGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [unitsOpen, setUnitsOpen] = useState(false);
+  const [groupsOpen, setGroupsOpen] = useState(false);
   const [form, setForm] = useState<CreateProduct>({ code: '', name: '', unit_id: 1, purchase_rate: 0, sales_rate: 0, mrp: 0 });
   const [editing, setEditing] = useState<number | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -27,12 +30,14 @@ export default function ProductsPage() {
   const load = async () => {
     try {
       setLoading(true);
-      const [p, u] = await Promise.all([
+      const [p, u, g] = await Promise.all([
         showDeleted ? api.products.listDeleted() : api.products.list(),
-        api.units.list()
+        api.units.list(),
+        api.productGroups.list()
       ]);
       setProducts(p);
       setUnits(u);
+      setGroups(g);
     } catch (error) {
       toast.error('Failed to load data');
       console.error('Load error:', error);
@@ -70,6 +75,7 @@ export default function ProductsPage() {
     setForm({
       code: '',
       name: '',
+      group_id: undefined,
       unit_id: units.length > 0 ? units[0].id : 1,
       purchase_rate: 0,
       sales_rate: 0,
@@ -81,6 +87,7 @@ export default function ProductsPage() {
     setForm({
       code: p.code,
       name: p.name,
+      group_id: p.group_id,
       unit_id: p.unit_id,
       purchase_rate: p.purchase_rate,
       sales_rate: p.sales_rate,
@@ -138,6 +145,11 @@ export default function ProductsPage() {
     load();
   };
 
+  const handleGroupsChange = () => {
+    // Reload groups when they change in the dialog
+    load();
+  };
+
   if (loading) {
     return (
       <div className="p-6">
@@ -176,8 +188,16 @@ export default function ProductsPage() {
               <>
                 <Tooltip>
                   <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => setGroupsOpen(true)}>
+                      <IconCategory size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Manage  Groups</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
                     <Button variant="outline" onClick={() => setUnitsOpen(true)}>
-                      <IconRuler size={16} /> Manage Units
+                      <IconRuler size={16} />
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Manage Units</TooltipContent>
@@ -198,6 +218,7 @@ export default function ProductsPage() {
               <tr className="text-left text-sm">
                 <th className="p-3">Code</th>
                 <th className="p-3">Name</th>
+                <th className="p-3">Group</th>
                 <th className="p-3">Unit</th>
                 <th className="p-3">Purchase</th>
                 <th className="p-3">Sales</th>
@@ -209,7 +230,7 @@ export default function ProductsPage() {
             <tbody>
               {products.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-4 text-center text-muted-foreground">
+                  <td colSpan={9} className="p-4 text-center text-muted-foreground">
                     No products found. Add your first product to get started.
                   </td>
                 </tr>
@@ -218,6 +239,7 @@ export default function ProductsPage() {
                   <tr key={p.id} className="border-b hover:bg-muted/30">
                     <td className="p-3 font-mono text-sm">{p.code}</td>
                     <td className="p-3">{p.name}</td>
+                    <td className="p-3 text-sm">{groups.find(g => g.id === p.group_id)?.name || '-'}</td>
                     <td className="p-3">{units.find(u => u.id === p.unit_id)?.symbol || '-'}</td>
                     <td className="p-3">₹{p.purchase_rate.toFixed(2)}</td>
                     <td className="p-3">₹{p.sales_rate.toFixed(2)}</td>
@@ -265,6 +287,25 @@ export default function ProductsPage() {
               </div>
             </div>
             <div>
+              <Label>Product Group (Optional)</Label>
+              <Select
+                value={form.group_id?.toString() || 'none'}
+                onValueChange={v => setForm({ ...form, group_id: v === 'none' ? undefined : +v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select a group" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Group</SelectItem>
+                  {groups.map(g => (
+                    <SelectItem key={g.id} value={g.id.toString()}>
+                      {g.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
               <Label>Unit</Label>
               <Select
                 value={form.unit_id.toString()}
@@ -306,6 +347,13 @@ export default function ProductsPage() {
         open={unitsOpen}
         onOpenChange={setUnitsOpen}
         onUnitsChange={handleUnitsChange}
+      />
+
+      {/* Product Groups Management Dialog Component */}
+      <ProductGroupsDialog
+        open={groupsOpen}
+        onOpenChange={setGroupsOpen}
+        onGroupsChange={handleGroupsChange}
       />
     </div>
   );

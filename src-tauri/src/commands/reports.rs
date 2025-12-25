@@ -491,7 +491,7 @@ pub async fn get_party_outstanding(
     party_type: String,
     as_on_date: String,
 ) -> Result<Vec<PartyOutstanding>, String> {
-    let (account_group, voucher_type, code_prefix) = if party_type == "customer" {
+    let (account_group, voucher_type, _code_prefix) = if party_type == "customer" {
         ("Accounts Receivable", "sales_invoice", "1003-")
     } else {
         ("Accounts Payable", "purchase_invoice", "2001-")
@@ -682,4 +682,247 @@ pub async fn get_party_invoice_details(
             }
         })
         .collect())
+}
+
+// ============= STOCK REPORT =============
+#[derive(Serialize, Deserialize)]
+pub struct StockSummary {
+    pub product_id: i64,
+    pub product_code: String,
+    pub product_name: String,
+    pub group_name: Option<String>,
+    pub unit_symbol: String,
+    pub current_stock: f64,
+    pub average_rate: f64,
+    pub stock_value: f64,
+    pub last_purchase_date: Option<String>,
+    pub last_sale_date: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_stock_report(
+    pool: State<'_, SqlitePool>,
+    group_id: Option<i64>,
+    as_on_date: String,
+) -> Result<Vec<StockSummary>, String> {
+    let group_filter = if let Some(gid) = group_id {
+        format!("AND p.group_id = {}", gid)
+    } else {
+        String::new()
+    };
+
+    let query = format!(
+        "
+        SELECT 
+            p.id as product_id,
+            p.code as product_code,
+            p.name as product_name,
+            pg.name as group_name,
+            u.symbol as unit_symbol,
+            CAST(COALESCE(SUM(
+                CASE 
+                    WHEN sm.movement_type = 'IN' THEN sm.quantity
+                    WHEN sm.movement_type = 'OUT' THEN -sm.quantity
+                    ELSE 0
+                END
+            ), 0) AS REAL) as current_stock,
+            CAST(COALESCE(
+                (SELECT SUM(rate * quantity) / NULLIF(SUM(quantity), 0)
+                 FROM stock_movements sm2
+                 JOIN vouchers v2 ON sm2.voucher_id = v2.id
+                 WHERE sm2.product_id = p.id 
+                 AND sm2.movement_type = 'IN'
+                 AND v2.voucher_date <= ?
+                 AND v2.deleted_at IS NULL),
+                0
+            ) AS REAL) as average_rate,
+            (
+                SELECT MAX(v.voucher_date)
+                FROM stock_movements sm3
+                JOIN vouchers v ON sm3.voucher_id = v.id
+                WHERE sm3.product_id = p.id
+                AND sm3.movement_type = 'IN'
+                AND v.voucher_date <= ?
+                AND v.deleted_at IS NULL
+            ) as last_purchase_date,
+            (
+                SELECT MAX(v.voucher_date)
+                FROM stock_movements sm4
+                JOIN vouchers v ON sm4.voucher_id = v.id
+                WHERE sm4.product_id = p.id
+                AND sm4.movement_type = 'OUT'
+                AND v.voucher_date <= ?
+                AND v.deleted_at IS NULL
+            ) as last_sale_date
+        FROM products p
+        LEFT JOIN product_groups pg ON p.group_id = pg.id
+        JOIN units u ON p.unit_id = u.id
+        LEFT JOIN stock_movements sm ON p.id = sm.product_id
+        LEFT JOIN vouchers v ON sm.voucher_id = v.id AND v.voucher_date <= ? AND v.deleted_at IS NULL
+        WHERE p.deleted_at IS NULL {}
+        GROUP BY p.id
+        ORDER BY p.name ASC
+        ",
+        group_filter
+    );
+
+    let rows = sqlx::query_as::<
+        _,
+        (
+            i64,
+            String,
+            String,
+            Option<String>,
+            String,
+            f64,
+            f64,
+            Option<String>,
+            Option<String>,
+        ),
+    >(query.as_str())
+    .bind(&as_on_date)
+    .bind(&as_on_date)
+    .bind(&as_on_date)
+    .bind(&as_on_date)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, code, name, group, unit, stock, avg_rate, last_purchase, last_sale)| {
+                StockSummary {
+                    product_id: id,
+                    product_code: code,
+                    product_name: name,
+                    group_name: group,
+                    unit_symbol: unit,
+                    current_stock: stock,
+                    average_rate: avg_rate,
+                    stock_value: stock * avg_rate,
+                    last_purchase_date: last_purchase,
+                    last_sale_date: last_sale,
+                }
+            },
+        )
+        .collect())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct StockMovement {
+    pub date: String,
+    pub voucher_no: String,
+    pub voucher_type: String,
+    pub movement_type: String,
+    pub quantity: f64,
+    pub rate: f64,
+    pub amount: f64,
+    pub balance: f64,
+    pub party_name: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_stock_movements(
+    pool: State<'_, SqlitePool>,
+    product_id: i64,
+    from_date: Option<String>,
+    to_date: String,
+) -> Result<Vec<StockMovement>, String> {
+    let date_filter = if let Some(ref from) = from_date {
+        format!(
+            "AND v.voucher_date >= '{}' AND v.voucher_date <= '{}'",
+            from, to_date
+        )
+    } else {
+        format!("AND v.voucher_date <= '{}'", to_date)
+    };
+
+    // Get opening balance if from_date is specified
+    let mut opening_balance = 0.0;
+    if let Some(ref from) = from_date {
+        let balance: Option<f64> = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(
+                CASE 
+                    WHEN sm.movement_type = 'IN' THEN sm.quantity
+                    WHEN sm.movement_type = 'OUT' THEN -sm.quantity
+                    ELSE 0
+                END
+            ), 0) AS REAL)
+             FROM stock_movements sm
+             JOIN vouchers v ON sm.voucher_id = v.id
+             WHERE sm.product_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL",
+        )
+        .bind(product_id)
+        .bind(from)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+        opening_balance = balance.unwrap_or(0.0);
+    }
+
+    let query = format!(
+        "SELECT 
+            v.voucher_date as date,
+            v.voucher_no,
+            v.voucher_type,
+            sm.movement_type,
+            CAST(sm.quantity AS REAL) as quantity,
+            CAST(sm.rate AS REAL) as rate,
+            CAST(sm.amount AS REAL) as amount,
+            CASE 
+                WHEN v.party_type = 'customer' THEN (SELECT name FROM customers WHERE id = v.party_id)
+                WHEN v.party_type = 'supplier' THEN (SELECT name FROM suppliers WHERE id = v.party_id)
+                ELSE NULL
+            END as party_name
+        FROM stock_movements sm
+        JOIN vouchers v ON sm.voucher_id = v.id
+        WHERE sm.product_id = ? AND v.deleted_at IS NULL {}
+        ORDER BY v.voucher_date ASC, v.id ASC",
+        date_filter
+    );
+
+    let mut movements: Vec<(
+        String,
+        String,
+        String,
+        String,
+        f64,
+        f64,
+        f64,
+        Option<String>,
+    )> = sqlx::query_as(query.as_str())
+        .bind(product_id)
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut running_balance = opening_balance;
+    let result = movements
+        .into_iter()
+        .map(
+            |(date, voucher_no, voucher_type, movement_type, qty, rate, amt, party)| {
+                if movement_type == "IN" {
+                    running_balance += qty;
+                } else {
+                    running_balance -= qty;
+                }
+
+                StockMovement {
+                    date,
+                    voucher_no,
+                    voucher_type,
+                    movement_type,
+                    quantity: qty,
+                    rate,
+                    amount: amt,
+                    balance: running_balance,
+                    party_name: party,
+                }
+            },
+        )
+        .collect();
+
+    Ok(result)
 }

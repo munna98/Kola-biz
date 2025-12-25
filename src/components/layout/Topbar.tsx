@@ -41,9 +41,16 @@ export default function Topbar() {
                     <NavigationMenuItem>
                         <NavigationMenuTrigger className="h-9">Inventory</NavigationMenuTrigger>
                         <NavigationMenuContent>
-                            <ul className="flex flex-col w-40">
+                            <ul className="flex flex-col w-48">
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('products')}>
                                     Products
+                                </NavigationMenuLink>
+                                <div className="border-t my-1"></div>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('purchase')}>
+                                    Purchase Invoice
+                                </NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('sales')}>
+                                    Sales Invoice
                                 </NavigationMenuLink>
                             </ul>
                         </NavigationMenuContent>
@@ -57,6 +64,11 @@ export default function Topbar() {
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('coa')}>Chart of Accounts</NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('customers')}>Customers</NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('suppliers')}>Suppliers</NavigationMenuLink>
+                                <div className="border-t my-1"></div>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('payments')}>Payment</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('receipts')}>Receipt</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('journal')}>Journal Entry</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('opening')}>Opening Balance</NavigationMenuLink>
                             </ul>
                         </NavigationMenuContent>
                     </NavigationMenuItem>
@@ -66,13 +78,15 @@ export default function Topbar() {
                         <NavigationMenuTrigger className="h-9">Reports</NavigationMenuTrigger>
                         <NavigationMenuContent>
                             <ul className="flex flex-col w-48">
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('trial')}>Trial Balance</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('stock_report')}>Stock Report</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('day_book')}>Day Book</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('outstanding')}>Party Outstanding</NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('ledger')}>Ledger Report</NavigationMenuLink>
+                                <div className="border-t my-1"></div>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('trial')}>Trial Balance</NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('balance_sheet')}>Balance Sheet</NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('profit_loss')}>Profit & Loss</NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('cash_flow')}>Cash Flow</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('day_book')}>Day Book</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('outstanding')}>Party Outstanding</NavigationMenuLink>
                             </ul>
                         </NavigationMenuContent>
                     </NavigationMenuItem>

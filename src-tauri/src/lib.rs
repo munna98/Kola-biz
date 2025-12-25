@@ -21,6 +21,11 @@ pub fn run() {
             create_unit,
             update_unit,
             delete_unit,
+            // Product Groups
+            get_product_groups,
+            create_product_group,
+            update_product_group,
+            delete_product_group,
             // Products
             get_products,
             create_product,
@@ -104,6 +109,8 @@ pub fn run() {
             get_day_book,
             get_party_outstanding,
             get_party_invoice_details,
+            get_stock_report,
+            get_stock_movements,
             // Voucher Navigation
             list_vouchers,
             get_previous_voucher_id,

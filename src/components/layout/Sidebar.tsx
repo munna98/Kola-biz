@@ -8,9 +8,12 @@ import {
     IconShoppingBag,
     IconCashBanknoteMoveBack,
     IconCashBanknoteMove,
-    IconMenu2,
-    IconChevronLeft,
-    IconBook
+    IconLayoutSidebar,
+    IconLayoutSidebarLeftCollapse,
+    IconNotebook,
+    IconReportAnalytics,
+    IconCalendarStats,
+    IconReceiptRefund
 } from '@tabler/icons-react';
 
 interface MenuItem {
@@ -23,15 +26,14 @@ const menuItems: MenuItem[] = [
     { id: 'products', label: 'Products', icon: IconPackage },
     { id: 'customers', label: 'Customers', icon: IconUserDown },
     { id: 'suppliers', label: 'Suppliers', icon: IconUserUp },
-    { id: 'coa', label: 'Chart of Accounts', icon: IconBook },
     { id: 'purchase', label: 'Purchase', icon: IconTruck },
     { id: 'sales', label: 'Sales', icon: IconShoppingBag },
     { id: 'payments', label: 'Payments', icon: IconCashBanknoteMove },
     { id: 'receipts', label: 'Receipts', icon: IconCashBanknoteMoveBack },
-    { id: 'journal', label: 'Journal Entries', icon: IconBook },
-    { id: 'opening', label: 'Opening Balance', icon: IconBook },
-    { id: 'day_book', label: 'Day Book', icon: IconBook },
-    { id: 'outstanding', label: 'Party Outstanding', icon: IconBook },
+    { id: 'journal', label: 'Journal Entry', icon: IconNotebook },
+    { id: 'stock_report', label: 'Stock Report', icon: IconReportAnalytics },
+    { id: 'day_book', label: 'Day Book', icon: IconCalendarStats },
+    { id: 'outstanding', label: 'Party Outstanding', icon: IconReceiptRefund },
 ];
 
 export default function Sidebar() {
@@ -52,7 +54,7 @@ export default function Sidebar() {
                     onClick={() => dispatch(toggleSidebar())}
                     className="p-1 hover:bg-accent rounded"
                 >
-                    {sidebarCollapsed ? <IconMenu2 size={20} /> : <IconChevronLeft size={20} />}
+                    {sidebarCollapsed ? <IconLayoutSidebar size={20} /> : <IconLayoutSidebarLeftCollapse size={20} />}
                 </button>
             </div>
             <nav className="p-2">

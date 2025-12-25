@@ -12,10 +12,24 @@ export interface CreateUnit {
   symbol: string;
 }
 
+export interface ProductGroup {
+  id: number;
+  name: string;
+  description?: string;
+  is_active: number;
+  created_at: string;
+}
+
+export interface CreateProductGroup {
+  name: string;
+  description?: string;
+}
+
 export interface Product {
   id: number;
   code: string;
   name: string;
+  group_id?: number;
   unit_id: number;
   purchase_rate: number;
   sales_rate: number;
@@ -27,6 +41,7 @@ export interface Product {
 export interface CreateProduct {
   code: string;
   name: string;
+  group_id?: number;
   unit_id: number;
   purchase_rate: number;
   sales_rate: number;
@@ -155,6 +170,12 @@ export const api = {
     delete: (id: number, deletedBy: string) => invoke<void>('delete_product', { id, deletedBy }),
     restore: (id: number) => invoke<void>('restore_product', { id }),
     hardDelete: (id: number) => invoke<void>('hard_delete_product', { id }),
+  },
+  productGroups: {
+    list: () => invoke<ProductGroup[]>('get_product_groups'),
+    create: (data: CreateProductGroup) => invoke<ProductGroup>('create_product_group', { group: data }),
+    update: (id: number, data: CreateProductGroup) => invoke<void>('update_product_group', { id, group: data }),
+    delete: (id: number) => invoke<void>('delete_product_group', { id }),
   },
   customers: {
     list: () => invoke<Customer[]>('get_customers'),

@@ -23,6 +23,7 @@ import ProfitLossPage from './pages/reports/ProfitLossPage';
 import CashFlowPage from './pages/reports/CashFlowPage';
 import DayBookPage from './pages/reports/DayBookPage';
 import PartyOutstandingPage from './pages/reports/PartyOutstandingPage';
+import StockReportPage from './pages/reports/StockReportPage';
 
 import CompanyProfilePage from './pages/settings/CompanyProfilePage';
 import InvoiceSettingsPage from './pages/InvoiceSettingsPage';
@@ -59,6 +60,7 @@ function AppContent() {
       case 'cash_flow': return <CashFlowPage />;
       case 'day_book': return <DayBookPage />;
       case 'outstanding': return <PartyOutstandingPage />;
+      case 'stock_report': return <StockReportPage />;
       case 'company_profile': return <CompanyProfilePage />;
       case 'invoice_settings': return <InvoiceSettingsPage />;
 

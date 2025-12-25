@@ -28,12 +28,27 @@ pub async fn init_db(
     .execute(&pool)
     .await?;
 
+    // Product Groups table
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS product_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
     // Products table
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             code TEXT UNIQUE NOT NULL,
             name TEXT NOT NULL,
+            group_id INTEGER,
             unit_id INTEGER NOT NULL,
             purchase_rate REAL NOT NULL,
             sales_rate REAL NOT NULL,
@@ -42,6 +57,7 @@ pub async fn init_db(
             deleted_at DATETIME,
             deleted_by TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (group_id) REFERENCES product_groups(id),
             FOREIGN KEY (unit_id) REFERENCES units(id)
         )",
     )
