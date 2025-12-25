@@ -558,23 +558,23 @@ pub async fn get_party_outstanding(
                 SUM(v.total_amount) as total_amount,
                 MIN(v.voucher_date) as oldest_invoice_date
             FROM vouchers v
-            WHERE v.voucher_type = ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+            WHERE v.voucher_type = ? AND v.party_type = ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
             GROUP BY v.party_id, v.party_type
         ) v_stats ON (
-            coa.account_code = '{}' || v_stats.party_id AND v_stats.party_type = ?
+            coa.id = v_stats.party_id AND v_stats.party_type = ?
         )
         WHERE coa.account_group = ? AND coa.deleted_at IS NULL
         GROUP BY coa.id
         HAVING ABS(outstanding_amount) > 0.01
         ORDER BY party_name ASC
-    ",
-        code_prefix
+    "
     );
 
     let rows =
         sqlx::query_as::<_, (i64, String, i64, f64, f64, f64, Option<String>)>(query.as_str())
             .bind(&as_on_date)
             .bind(voucher_type)
+            .bind(&party_type)
             .bind(&as_on_date)
             .bind(&party_type)
             .bind(account_group)

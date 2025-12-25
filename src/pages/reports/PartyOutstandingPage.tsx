@@ -160,7 +160,7 @@ export default function PartyOutstandingPage() {
       </tbody>
       <tfoot className="bg-muted/30 border-t-2 border-foreground/20">
         <tr>
-          <td colSpan={4} className="p-3 font-bold text-sm">TOTAL</td>
+          <td colSpan={3} className="p-3 font-bold text-sm">TOTAL</td>
           <td className="p-3 text-right font-mono font-bold text-sm">
             ₹{data.reduce((sum, p) => sum + p.outstanding_amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
           </td>
