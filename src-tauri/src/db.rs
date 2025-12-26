@@ -349,6 +349,8 @@ pub async fn init_db(
             allocated_amount REAL NOT NULL,
             allocation_date DATE NOT NULL,
             remarks TEXT,
+            party_id INTEGER,
+            party_type TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (payment_voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
             FOREIGN KEY (invoice_voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE
@@ -364,6 +366,19 @@ pub async fn init_db(
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_invoice ON payment_allocations(invoice_voucher_id)")
         .execute(&pool)
         .await?;
+
+    // Migration: Add party_id and party_type to payment_allocations for linking allocations to parties
+    let _ = sqlx::query("ALTER TABLE payment_allocations ADD COLUMN party_id INTEGER")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE payment_allocations ADD COLUMN party_type TEXT")
+        .execute(&pool)
+        .await;
+
+    // Create index on party to quickly find allocations by party
+    let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_party ON payment_allocations(party_id, party_type)")
+        .execute(&pool)
+        .await;
 
     // ==================== SEED DATA ====================
 

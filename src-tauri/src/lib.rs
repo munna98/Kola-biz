@@ -82,12 +82,16 @@ pub fn run() {
             delete_sales_invoice,
             // Payments
             create_payment,
+            update_payment,
             get_payments,
+            get_payment,
             get_payment_items,
             delete_payment,
             // Receipts
             create_receipt,
+            update_receipt,
             get_receipts,
+            get_receipt,
             get_receipt_items,
             delete_receipt,
             // Journal Entries
@@ -95,10 +99,14 @@ pub fn run() {
             get_journal_entries,
             get_journal_entry,
             get_journal_entry_lines,
+            update_journal_entry,
             delete_journal_entry,
             // Opening Balance
             create_opening_balance,
             get_opening_balances,
+            get_opening_balance,
+            get_opening_balance_lines,
+            update_opening_balance,
             delete_opening_balance,
             // Reports
             get_trial_balance,

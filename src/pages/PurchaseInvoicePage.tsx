@@ -359,6 +359,7 @@ export default function PurchaseInvoicePage() {
             })),
           },
         });
+
         toast.success('Purchase invoice updated successfully');
       } else {
         const newInvoiceId = await invoke<number>('create_purchase_invoice', {

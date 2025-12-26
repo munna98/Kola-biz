@@ -395,6 +395,17 @@ pub async fn update_purchase_invoice(
 ) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
+    // Get old party info before update
+    let old_party: (i64, String) =
+        sqlx::query_as("SELECT party_id, party_type FROM vouchers WHERE id = ?")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    // Check if party is changing
+    let party_changed = old_party.0 != invoice.supplier_id || old_party.1 != invoice.party_type;
+
     // Calculate totals
     let mut subtotal = 0.0;
 
@@ -427,6 +438,54 @@ pub async fn update_purchase_invoice(
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
+
+    // Update payment allocations if party changed
+    if party_changed {
+        sqlx::query(
+            "UPDATE payment_allocations 
+             SET party_id = ?, party_type = ? 
+             WHERE invoice_voucher_id = ?",
+        )
+        .bind(invoice.supplier_id)
+        .bind(&invoice.party_type)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Also update the payment/receipt vouchers that are allocated to this invoice
+        sqlx::query(
+            "UPDATE vouchers 
+             SET party_id = ?, party_type = ? 
+             WHERE id IN (
+                 SELECT payment_voucher_id FROM payment_allocations 
+                 WHERE invoice_voucher_id = ?
+             )",
+        )
+        .bind(invoice.supplier_id)
+        .bind(&invoice.party_type)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Update journal entries for payment vouchers to use new party account
+        sqlx::query(
+            "UPDATE journal_entries 
+             SET account_id = ? 
+             WHERE voucher_id IN (
+                 SELECT payment_voucher_id FROM payment_allocations 
+                 WHERE invoice_voucher_id = ?
+             )
+             AND account_id = ?",
+        )
+        .bind(invoice.supplier_id)
+        .bind(id)
+        .bind(old_party.0)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
 
     // Delete existing related data
     sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
@@ -947,6 +1006,17 @@ pub async fn update_sales_invoice(
 ) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
+    // Get old party info before update
+    let old_party: (i64, String) =
+        sqlx::query_as("SELECT party_id, party_type FROM vouchers WHERE id = ?")
+            .bind(id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    // Check if party is changing
+    let party_changed = old_party.0 != invoice.customer_id || old_party.1 != invoice.party_type;
+
     // Calculate totals
     let mut subtotal = 0.0;
 
@@ -979,6 +1049,21 @@ pub async fn update_sales_invoice(
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
+
+    // Update payment allocations if party changed
+    if party_changed {
+        sqlx::query(
+            "UPDATE payment_allocations 
+             SET party_id = ?, party_type = ? 
+             WHERE invoice_voucher_id = ?",
+        )
+        .bind(invoice.customer_id)
+        .bind(&invoice.party_type)
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
 
     // Delete existing related data
     sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
@@ -1164,8 +1249,8 @@ pub async fn list_vouchers(
             v.id,
             v.voucher_no,
             v.voucher_date,
-            coa.account_name as party_name,
-            v.total_amount,
+            COALESCE(coa.account_name, CASE WHEN v.voucher_type = 'journal' THEN 'Journal Entry' WHEN v.voucher_type = 'opening_balance' THEN 'Opening Balance' ELSE 'N/A' END) as party_name,
+            COALESCE(v.total_amount, 0.0) as total_amount,
             v.status,
             v.voucher_type
         FROM vouchers v

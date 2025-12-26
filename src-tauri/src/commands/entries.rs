@@ -316,6 +316,38 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
 }
 
 #[tauri::command]
+pub async fn get_payment(pool: State<'_, SqlitePool>, id: i64) -> Result<PaymentVoucher, String> {
+    let payment = sqlx::query_as::<_, PaymentVoucher>(
+        "SELECT 
+            v.id,
+            v.voucher_no,
+            v.voucher_date,
+            v.party_id as account_id,
+            coa.account_name,
+            COALESCE(json_extract(v.metadata, '$.method'), '') as payment_method,
+            v.reference as reference_number,
+            v.total_amount,
+            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
+            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.narration,
+            v.status,
+            v.created_at,
+            v.deleted_at
+        FROM vouchers v
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        WHERE v.id = ? AND v.voucher_type = 'payment' AND v.deleted_at IS NULL
+        GROUP BY v.id",
+    )
+    .bind(id)
+    .fetch_one(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(payment)
+}
+
+#[tauri::command]
 pub async fn get_payment_items(
     pool: State<'_, SqlitePool>,
     voucher_id: i64,
@@ -347,6 +379,258 @@ pub async fn delete_payment(pool: State<'_, SqlitePool>, id: i64) -> Result<(), 
         .execute(pool.inner())
         .await
         .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_payment(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+    payment: CreatePayment,
+) -> Result<(), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // 1. Calculate totals
+    let mut total_amount = 0.0;
+    let mut total_tax = 0.0;
+
+    for item in &payment.items {
+        total_amount += item.amount;
+        total_tax += item.amount * (item.tax_rate / 100.0);
+    }
+    let grand_total = total_amount + total_tax;
+    let metadata = serde_json::json!({ "method": payment.payment_method }).to_string();
+
+    // 2. Update Voucher Master
+    sqlx::query(
+        "UPDATE vouchers SET 
+            voucher_date = ?, 
+            party_id = ?, 
+            reference = ?, 
+            total_amount = ?, 
+            metadata = ?, 
+            narration = ?
+         WHERE id = ? AND voucher_type = 'payment'",
+    )
+    .bind(&payment.voucher_date)
+    .bind(payment.account_id)
+    .bind(&payment.reference_number)
+    .bind(total_amount)
+    .bind(metadata)
+    .bind(&payment.narration)
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // 3. Clear existing Allocations (Reverse effect on invoices)
+    // We need to re-calculate status for invoices that were allocated
+    let allocated_invoices: Vec<i64> = sqlx::query_scalar(
+        "SELECT invoice_voucher_id FROM payment_allocations WHERE payment_voucher_id = ?",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM payment_allocations WHERE payment_voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Recalculate status for affected invoices (from old allocations)
+    for inv_id in allocated_invoices {
+        let total_allocated: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+        )
+        .bind(inv_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let invoice_total: f64 = sqlx::query_scalar(
+            "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+             FROM vouchers v
+             LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+             WHERE v.id = ?
+             GROUP BY v.id",
+        )
+        .bind(inv_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let status = if (total_allocated - invoice_total).abs() < 0.01 {
+            "paid"
+        } else if total_allocated > 0.0 {
+            "partially_paid"
+        } else {
+            "unpaid"
+        };
+
+        sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
+            .bind(status)
+            .bind(inv_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    // 4. Delete existing Items and Journal Entries
+    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 5. Insert New Items & Allocations
+    for item in &payment.items {
+        let tax_amount = item.amount * (item.tax_rate / 100.0);
+
+        sqlx::query(
+            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(id)
+        .bind(&item.description)
+        .bind(item.amount)
+        .bind(item.tax_rate)
+        .bind(tax_amount)
+        .bind(&item.remarks)
+        .bind(1.0)
+        .bind(1.0)
+        .bind(item.amount)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Insert Allocations
+        if let Some(allocations) = &item.allocations {
+            for alloc in allocations {
+                sqlx::query(
+                "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date)
+                 VALUES (?, ?, ?, ?)"
+            )
+            .bind(id)
+            .bind(alloc.invoice_id)
+            .bind(alloc.amount)
+            .bind(&payment.voucher_date)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+                // Update invoice status
+                let total_allocated: f64 = sqlx::query_scalar(
+                    "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+                )
+                .bind(alloc.invoice_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let invoice_total: f64 = sqlx::query_scalar(
+                    "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+                     FROM vouchers v
+                     LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+                     WHERE v.id = ?
+                     GROUP BY v.id",
+                )
+                .bind(alloc.invoice_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let status = if (total_allocated - invoice_total).abs() < 0.01 {
+                    "paid"
+                } else if total_allocated > 0.0 {
+                    "partially_paid"
+                } else {
+                    "unpaid"
+                };
+
+                sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
+                    .bind(status)
+                    .bind(alloc.invoice_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    // 6. Create New Journal Entries
+    // Credit: Cash/Bank Account
+    sqlx::query(
+        "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+         VALUES (?, ?, 0, ?, 'Payment updated')",
+    )
+    .bind(id)
+    .bind(payment.account_id)
+    .bind(grand_total)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Debit: Each Payee/Ledger Account from items
+    for item in &payment.items {
+        let payee_account: Option<i64> = if let Some(acc_id) = item.account_id {
+            Some(acc_id)
+        } else {
+            sqlx::query_scalar(
+                "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
+            )
+            .bind(&item.description)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+        };
+
+        if let Some(payee_acc) = payee_account {
+            sqlx::query(
+                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0, ?)",
+            )
+            .bind(id)
+            .bind(payee_acc)
+            .bind(item.amount)
+            .bind(format!("Payment to {}", item.description))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
+    // Debit: Tax Account if applicable
+    if total_tax > 0.0 {
+        let tax_account: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1005'")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+        if let Some(tax_acc) = tax_account {
+            sqlx::query(
+                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0, 'Tax on payment')",
+            )
+            .bind(id)
+            .bind(tax_acc)
+            .bind(total_tax)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -622,6 +906,38 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
 }
 
 #[tauri::command]
+pub async fn get_receipt(pool: State<'_, SqlitePool>, id: i64) -> Result<ReceiptVoucher, String> {
+    let receipt = sqlx::query_as::<_, ReceiptVoucher>(
+        "SELECT 
+            v.id,
+            v.voucher_no,
+            v.voucher_date,
+            v.party_id as account_id,
+            coa.account_name,
+            COALESCE(json_extract(v.metadata, '$.method'), '') as receipt_method,
+            v.reference as reference_number,
+            v.total_amount,
+            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
+            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.narration,
+            v.status,
+            v.created_at,
+            v.deleted_at
+        FROM vouchers v
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        WHERE v.id = ? AND v.voucher_type = 'receipt' AND v.deleted_at IS NULL
+        GROUP BY v.id",
+    )
+    .bind(id)
+    .fetch_one(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(receipt)
+}
+
+#[tauri::command]
 pub async fn get_receipt_items(
     pool: State<'_, SqlitePool>,
     voucher_id: i64,
@@ -653,6 +969,257 @@ pub async fn delete_receipt(pool: State<'_, SqlitePool>, id: i64) -> Result<(), 
         .execute(pool.inner())
         .await
         .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn update_receipt(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+    receipt: CreateReceipt,
+) -> Result<(), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // 1. Calculate totals
+    let mut total_amount = 0.0;
+    let mut total_tax = 0.0;
+
+    for item in &receipt.items {
+        total_amount += item.amount;
+        total_tax += item.amount * (item.tax_rate / 100.0);
+    }
+    let grand_total = total_amount + total_tax;
+    let metadata = serde_json::json!({ "method": receipt.receipt_method }).to_string();
+
+    // 2. Update Voucher Master
+    sqlx::query(
+        "UPDATE vouchers SET 
+            voucher_date = ?, 
+            party_id = ?, 
+            reference = ?, 
+            total_amount = ?, 
+            metadata = ?, 
+            narration = ?
+         WHERE id = ? AND voucher_type = 'receipt'",
+    )
+    .bind(&receipt.voucher_date)
+    .bind(receipt.account_id)
+    .bind(&receipt.reference_number)
+    .bind(total_amount)
+    .bind(metadata)
+    .bind(&receipt.narration)
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // 3. Clear existing Allocations (Reverse effect on invoices)
+    let allocated_invoices: Vec<i64> = sqlx::query_scalar(
+        "SELECT invoice_voucher_id FROM payment_allocations WHERE payment_voucher_id = ?",
+    )
+    .bind(id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM payment_allocations WHERE payment_voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Recalculate status for effected invoices
+    for inv_id in allocated_invoices {
+        let total_allocated: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+        )
+        .bind(inv_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let invoice_total: f64 = sqlx::query_scalar(
+            "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+             FROM vouchers v
+             LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+             WHERE v.id = ?
+             GROUP BY v.id",
+        )
+        .bind(inv_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let status = if (total_allocated - invoice_total).abs() < 0.01 {
+            "paid"
+        } else if total_allocated > 0.0 {
+            "partially_paid"
+        } else {
+            "unpaid"
+        };
+
+        sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
+            .bind(status)
+            .bind(inv_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    // 4. Delete existing Items and Journal Entries
+    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 5. Insert New Items & Allocations
+    for item in &receipt.items {
+        let tax_amount = item.amount * (item.tax_rate / 100.0);
+
+        sqlx::query(
+            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(id)
+        .bind(&item.description)
+        .bind(item.amount)
+        .bind(item.tax_rate)
+        .bind(tax_amount)
+        .bind(&item.remarks)
+        .bind(1.0)
+        .bind(1.0)
+        .bind(item.amount)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Insert Allocations
+        if let Some(allocations) = &item.allocations {
+            for alloc in allocations {
+                sqlx::query(
+                "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date)
+                 VALUES (?, ?, ?, ?)"
+            )
+            .bind(id)
+            .bind(alloc.invoice_id)
+            .bind(alloc.amount)
+            .bind(&receipt.voucher_date)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+                // Update invoice status
+                let total_allocated: f64 = sqlx::query_scalar(
+                    "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+                )
+                .bind(alloc.invoice_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let invoice_total: f64 = sqlx::query_scalar(
+                    "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+                     FROM vouchers v
+                     LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+                     WHERE v.id = ?
+                     GROUP BY v.id",
+                )
+                .bind(alloc.invoice_id)
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let status = if (total_allocated - invoice_total).abs() < 0.01 {
+                    "paid"
+                } else if total_allocated > 0.0 {
+                    "partially_paid"
+                } else {
+                    "unpaid"
+                };
+
+                sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
+                    .bind(status)
+                    .bind(alloc.invoice_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    // 6. Create New Journal Entries
+    // Debit: Cash/Bank Account
+    sqlx::query(
+        "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+         VALUES (?, ?, ?, 0, 'Receipt updated')",
+    )
+    .bind(id)
+    .bind(receipt.account_id)
+    .bind(grand_total)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Credit: Each Payer/Ledger Account from items
+    for item in &receipt.items {
+        let payer_account: Option<i64> = if let Some(acc_id) = item.account_id {
+            Some(acc_id)
+        } else {
+            sqlx::query_scalar(
+                "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
+            )
+            .bind(&item.description)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+        };
+
+        if let Some(payer_acc) = payer_account {
+            sqlx::query(
+                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, 0, ?, ?)",
+            )
+            .bind(id)
+            .bind(payer_acc)
+            .bind(item.amount)
+            .bind(format!("Receipt from {}", item.description))
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
+    // Credit: Tax Account if applicable
+    if total_tax > 0.0 {
+        let tax_account: Option<i64> =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1005'")
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+        if let Some(tax_acc) = tax_account {
+            sqlx::query(
+                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, 0, ?, 'Tax on receipt')",
+            )
+            .bind(id)
+            .bind(tax_acc)
+            .bind(total_tax)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -1046,4 +1613,267 @@ pub async fn get_pending_invoices(
     .map_err(|e| e.to_string())?;
 
     Ok(invoices)
+}
+
+#[tauri::command]
+pub async fn update_journal_entry(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+    entry: CreateJournalEntry,
+) -> Result<(), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // Check if this is a manual journal entry
+    let voucher_type: String = sqlx::query_scalar("SELECT voucher_type FROM vouchers WHERE id = ?")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if voucher_type != "journal" {
+        return Err("Can only update manual journal entries".to_string());
+    }
+
+    // Calculate totals
+    let total_debit: f64 = entry.lines.iter().map(|l| l.debit).sum();
+    let total_credit: f64 = entry.lines.iter().map(|l| l.credit).sum();
+
+    // Validate balanced entry
+    let difference = (total_debit - total_credit).abs();
+    if difference > 0.01 {
+        return Err("Journal entry must be balanced (debits must equal credits)".to_string());
+    }
+
+    // Validate all lines
+    for line in &entry.lines {
+        if line.debit == 0.0 && line.credit == 0.0 {
+            return Err("Each line must have either debit or credit amount".to_string());
+        }
+        if line.debit > 0.0 && line.credit > 0.0 {
+            return Err("Each line cannot have both debit and credit amounts".to_string());
+        }
+    }
+
+    // Update voucher master
+    sqlx::query(
+        "UPDATE vouchers SET 
+            voucher_date = ?, 
+            reference = ?, 
+            total_amount = ?, 
+            narration = ?
+         WHERE id = ?",
+    )
+    .bind(&entry.voucher_date)
+    .bind(&entry.reference)
+    .bind(total_debit)
+    .bind(&entry.narration)
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Delete existing journal lines
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Insert new journal lines
+    for line in &entry.lines {
+        sqlx::query(
+            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, is_manual, narration)
+             VALUES (?, ?, ?, ?, 1, ?)"
+        )
+        .bind(id)
+        .bind(line.account_id)
+        .bind(line.debit)
+        .bind(line.credit)
+        .bind(&line.narration)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_opening_balance(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+) -> Result<serde_json::Value, String> {
+    let voucher = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>)>(
+        "SELECT id, voucher_no, voucher_date, reference, narration 
+         FROM vouchers 
+         WHERE id = ? AND voucher_type = 'opening_balance' AND deleted_at IS NULL",
+    )
+    .bind(id)
+    .fetch_one(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(serde_json::json!({
+        "id": voucher.0,
+        "voucher_no": voucher.1,
+        "voucher_date": voucher.2,
+        "reference": voucher.3,
+        "narration": voucher.4
+    }))
+}
+
+#[tauri::command]
+pub async fn get_opening_balance_lines(
+    pool: State<'_, SqlitePool>,
+    voucher_id: i64,
+) -> Result<Vec<OpeningBalanceLine>, String> {
+    // Only fetch the user-facing entries (not the auto-balancing ones)
+    // The auto-balancing entry has account_id 3004.
+
+    // Find Opening Balance Adjustment account id
+    let ob_account_id: i64 =
+        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '3004' LIMIT 1")
+            .fetch_one(pool.inner())
+            .await
+            .unwrap_or(0); // If not found, 0 won't match anything valid usually
+
+    let lines = sqlx::query_as::<_, (i64, String, f64, f64, String)>(
+        "SELECT 
+            je.account_id,
+            coa.account_name,
+            je.debit,
+            je.credit,
+            je.narration
+         FROM journal_entries je
+         LEFT JOIN chart_of_accounts coa ON je.account_id = coa.id
+         WHERE je.voucher_id = ? AND je.account_id != ?
+         ORDER BY je.id ASC",
+    )
+    .bind(voucher_id)
+    .bind(ob_account_id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let result = lines
+        .into_iter()
+        .map(|row| OpeningBalanceLine {
+            account_id: row.0,
+            account_name: row.1,
+            debit: row.2,
+            credit: row.3,
+            narration: row.4,
+        })
+        .collect();
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn update_opening_balance(
+    pool: State<'_, SqlitePool>,
+    id: i64,
+    entry: CreateOpeningBalance,
+) -> Result<(), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // Check voucher type
+    let voucher_type: String = sqlx::query_scalar("SELECT voucher_type FROM vouchers WHERE id = ?")
+        .bind(id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if voucher_type != "opening_balance" {
+        return Err("Can only update opening balance vouchers".to_string());
+    }
+
+    // Update voucher master
+    sqlx::query(
+        "UPDATE vouchers SET 
+            voucher_date = ?, 
+            reference = ?, 
+            narration = ?
+         WHERE id = ?",
+    )
+    .bind(
+        entry
+            .form
+            .get("voucher_date")
+            .and_then(|v| v.as_str())
+            .unwrap_or(""),
+    )
+    .bind(
+        entry
+            .form
+            .get("reference")
+            .and_then(|v| v.as_str())
+            .unwrap_or(""),
+    )
+    .bind(
+        entry
+            .form
+            .get("narration")
+            .and_then(|v| v.as_str())
+            .unwrap_or(""),
+    )
+    .bind(id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Find OB Adjustment account
+    let ob_account = sqlx::query_as::<_, (i64,)>(
+        "SELECT id FROM chart_of_accounts WHERE account_code = '3004' LIMIT 1",
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Opening Balance Adjustment account not found".to_string())?;
+
+    let ob_account_id = ob_account.0;
+
+    // Delete existing journal entries
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Insert new journal entries (dual entry logic)
+    for line in entry.lines {
+        // User entry
+        sqlx::query(
+            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
+             VALUES (?, ?, ?, ?, ?, 0)"
+        )
+        .bind(id)
+        .bind(line.account_id)
+        .bind(line.debit)
+        .bind(line.credit)
+        .bind(&line.narration)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Balancing entry
+        sqlx::query(
+            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
+             VALUES (?, ?, ?, ?, ?, 0)"
+        )
+        .bind(id)
+        .bind(ob_account_id)
+        .bind(line.credit)
+        .bind(line.debit)
+        .bind("Auto-generated balancing entry")
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    Ok(())
 }

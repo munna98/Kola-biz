@@ -220,6 +220,7 @@ export interface PaymentItem {
 }
 
 export interface PaymentState extends VoucherNavigationState {
+  currentVoucherNo?: string;
   form: {
     account_id: number;
     account_name: string;
@@ -240,6 +241,7 @@ export interface PaymentState extends VoucherNavigationState {
 
 const paymentInitialState: PaymentState = {
   ...initialNavigationState,
+  currentVoucherNo: undefined,
   form: {
     account_id: 0,
     account_name: '',
@@ -267,6 +269,9 @@ const paymentSlice = createSlice({
     },
     setPaymentCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
       state.currentVoucherId = action.payload;
+    },
+    setPaymentCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
+      state.currentVoucherNo = action.payload;
     },
     setPaymentHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
@@ -334,6 +339,7 @@ export interface ReceiptItem {
 }
 
 export interface ReceiptState extends VoucherNavigationState {
+  currentVoucherNo?: string;
   form: {
     account_id: number;
     account_name: string;
@@ -354,6 +360,7 @@ export interface ReceiptState extends VoucherNavigationState {
 
 const receiptInitialState: ReceiptState = {
   ...initialNavigationState,
+  currentVoucherNo: undefined,
   form: {
     account_id: 0,
     account_name: '',
@@ -381,6 +388,9 @@ const receiptSlice = createSlice({
     },
     setReceiptCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
       state.currentVoucherId = action.payload;
+    },
+    setReceiptCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
+      state.currentVoucherNo = action.payload;
     },
     setReceiptHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
@@ -440,6 +450,7 @@ const receiptSlice = createSlice({
 export const {
   setPaymentMode,
   setPaymentCurrentVoucherId,
+  setPaymentCurrentVoucherNo,
   setPaymentHasUnsavedChanges,
   setPaymentNavigationData,
   setPaymentAccount,
@@ -459,6 +470,7 @@ export const {
 export const {
   setReceiptMode,
   setReceiptCurrentVoucherId,
+  setReceiptCurrentVoucherNo,
   setReceiptHasUnsavedChanges,
   setReceiptNavigationData,
   setReceiptAccount,
@@ -488,6 +500,7 @@ export interface JournalEntryLine {
 }
 
 export interface JournalEntryState extends VoucherNavigationState {
+  currentVoucherNo?: string;
   form: {
     voucher_date: string;
     reference: string;
@@ -505,6 +518,7 @@ export interface JournalEntryState extends VoucherNavigationState {
 
 const journalInitialState: JournalEntryState = {
   ...initialNavigationState,
+  currentVoucherNo: undefined,
   form: {
     voucher_date: new Date().toISOString().split('T')[0],
     reference: '',
@@ -529,6 +543,9 @@ const journalEntrySlice = createSlice({
     },
     setJournalCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
       state.currentVoucherId = action.payload;
+    },
+    setJournalCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
+      state.currentVoucherNo = action.payload;
     },
     setJournalHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
@@ -578,6 +595,7 @@ const journalEntrySlice = createSlice({
 export const {
   setJournalMode,
   setJournalCurrentVoucherId,
+  setJournalCurrentVoucherNo,
   setJournalHasUnsavedChanges,
   setJournalNavigationData,
   setJournalDate,
@@ -603,6 +621,7 @@ export interface OpeningBalanceLine {
 }
 
 export interface OpeningBalanceState extends VoucherNavigationState {
+  currentVoucherNo?: string;
   form: {
     voucher_date: string;
     reference: string;
@@ -620,6 +639,7 @@ export interface OpeningBalanceState extends VoucherNavigationState {
 
 const openingBalanceInitialState: OpeningBalanceState = {
   ...initialNavigationState,
+  currentVoucherNo: undefined,
   form: {
     voucher_date: new Date().toISOString().split('T')[0],
     reference: '',
@@ -644,6 +664,9 @@ const openingBalanceSlice = createSlice({
     },
     setOpeningBalanceCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
       state.currentVoucherId = action.payload;
+    },
+    setOpeningBalanceCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
+      state.currentVoucherNo = action.payload;
     },
     setOpeningBalanceHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
@@ -693,6 +716,7 @@ const openingBalanceSlice = createSlice({
 export const {
   setOpeningBalanceMode,
   setOpeningBalanceCurrentVoucherId,
+  setOpeningBalanceCurrentVoucherNo,
   setOpeningBalanceHasUnsavedChanges,
   setOpeningBalanceNavigationData,
   setOpeningBalanceDate,

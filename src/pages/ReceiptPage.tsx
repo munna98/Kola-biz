@@ -13,6 +13,12 @@ import {
     setReceiptTotals,
     resetReceiptForm,
     setReceiptLoading,
+    setReceiptMode,
+    setReceiptCurrentVoucherId,
+    setReceiptCurrentVoucherNo,
+    setReceiptHasUnsavedChanges,
+    setReceiptNavigationData,
+    setReceiptMethod
 } from '@/store';
 import type { RootState, AppDispatch, ReceiptItem } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -33,6 +39,8 @@ import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
+import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
+import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import QuickPaymentDialog from '@/components/dialogs/QuickPaymentDialog';
 
 interface AccountData {
@@ -54,6 +62,7 @@ export default function ReceiptPage() {
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showQuickDialog, setShowQuickDialog] = useState(false);
+    const [showListView, setShowListView] = useState(false);
 
     // Allocation & Balance State
     const [allocatingRowIndex, setAllocatingRowIndex] = useState<number | null>(null);
@@ -158,6 +167,22 @@ export default function ReceiptPage() {
 
         try {
             dispatch(setReceiptLoading(true));
+
+            if (receiptState.mode === 'editing' && receiptState.currentVoucherId) {
+                await invoke('update_receipt', {
+                    id: receiptState.currentVoucherId,
+                    receipt: { ...receiptState.form, items: receiptState.items }
+                });
+                toast.success('Receipt updated successfully');
+                dispatch(setReceiptLoading(false));
+
+                dispatch(resetReceiptForm());
+                handleAddItem();
+                dispatch(setReceiptHasUnsavedChanges(false));
+                dispatch(setReceiptMode('new'));
+                return;
+            }
+
             await invoke('create_receipt', { receipt: { ...receiptState.form, items: receiptState.items } });
             toast.success('Receipt saved successfully');
             dispatch(resetReceiptForm());
@@ -178,11 +203,86 @@ export default function ReceiptPage() {
         setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
     };
 
+    const loadVoucher = async (id: number) => {
+        try {
+            dispatch(setReceiptLoading(true));
+            dispatch(resetReceiptForm());
+
+            const receipt = await invoke<any>('get_receipt', { id });
+            const items = await invoke<any[]>('get_receipt_items', { voucherId: id });
+
+            // Populate Form
+            dispatch(setReceiptCurrentVoucherNo(receipt.voucher_no));
+            dispatch(setReceiptAccount({ id: receipt.account_id, name: receipt.account_name }));
+            dispatch(setReceiptDate(receipt.voucher_date));
+            dispatch(setReceiptReference(receipt.reference_number || ''));
+            dispatch(setReceiptNarration(receipt.narration || ''));
+            dispatch(setReceiptMethod(receipt.receipt_method || 'bank'));
+
+            // Populate Items
+            items.forEach(item => {
+                dispatch(addReceiptItem({
+                    description: item.description,
+                    amount: item.amount,
+                    tax_rate: item.tax_rate,
+                    remarks: item.remarks
+                }));
+            });
+
+            dispatch(setReceiptMode('viewing'));
+            dispatch(setReceiptHasUnsavedChanges(false));
+
+        } catch (error) {
+            console.error("Failed to load receipt", error);
+            toast.error("Failed to load receipt");
+        } finally {
+            dispatch(setReceiptLoading(false));
+        }
+    };
+
+    const {
+        handleNavigatePrevious,
+        handleNavigateNext,
+        handleListSelect,
+        handleNew,
+        handleEdit,
+        handleCancel,
+        handleDelete,
+    } = useVoucherNavigation({
+        voucherType: 'receipt',
+        sliceState: receiptState,
+        actions: {
+            setMode: setReceiptMode,
+            setCurrentVoucherId: setReceiptCurrentVoucherId,
+            setNavigationData: setReceiptNavigationData,
+            setHasUnsavedChanges: setReceiptHasUnsavedChanges,
+            resetForm: resetReceiptForm
+        },
+        onLoadVoucher: loadVoucher
+    });
+
+    const handleDeleteVoucher = async () => {
+        const confirmed = await handleDelete();
+        if (confirmed && receiptState.currentVoucherId) {
+            try {
+                dispatch(setReceiptLoading(true));
+                await invoke('delete_receipt', { id: receiptState.currentVoucherId });
+                toast.success('Receipt deleted');
+                handleNew();
+            } catch (e) {
+                toast.error('Failed to delete receipt');
+                console.error(e);
+            } finally {
+                dispatch(setReceiptLoading(false));
+            }
+        }
+    };
+
     // Global keyboard shortcuts hook
     useVoucherShortcuts({
         onSave: () => formRef.current?.requestSubmit(),
         onNewItem: handleAddItem,
-        onClear: handleClear,
+        onClear: handleNew,
         onToggleShortcuts: () => setShowShortcuts(prev => !prev),
         onCloseShortcuts: () => setShowShortcuts(false),
         onQuickEntry: () => setShowQuickDialog(true),
@@ -208,11 +308,32 @@ export default function ReceiptPage() {
             <VoucherPageHeader
                 title="Receipt Voucher"
                 description="Record money received into bank or cash"
+                mode={receiptState.mode}
+                voucherNo={receiptState.currentVoucherNo}
+                isUnsaved={receiptState.hasUnsavedChanges}
+                hasPrevious={receiptState.navigationData.hasPrevious}
+                hasNext={receiptState.navigationData.hasNext}
                 onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
+                onNavigatePrevious={handleNavigatePrevious}
+                onNavigateNext={handleNavigateNext}
+                onEdit={handleEdit}
+                onSave={() => formRef.current?.requestSubmit()}
+                onCancel={handleCancel}
+                onDelete={handleDeleteVoucher}
+                onNew={handleNew}
+                onListView={() => setShowListView(true)}
             />
 
             <VoucherShortcutPanel
                 show={showShortcuts}
+            />
+
+            <VoucherListViewSheet
+                open={showListView}
+                onOpenChange={setShowListView}
+                voucherType="receipt"
+                onSelectVoucher={handleListSelect}
+                title="Receipt Vouchers"
             />
 
             <QuickPaymentDialog
@@ -431,7 +552,7 @@ export default function ReceiptPage() {
                             title="Save (Ctrl+S)"
                         >
                             <IconCheck size={16} />
-                            {receiptState.loading ? 'Saving...' : 'Save Receipt'}
+                            {receiptState.loading ? 'Saving...' : (receiptState.mode === 'editing' ? 'Update Receipt' : 'Save Receipt')}
                         </Button>
                     </div>
                 </form>

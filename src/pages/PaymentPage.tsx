@@ -13,6 +13,12 @@ import {
     setPaymentTotals,
     resetPaymentForm,
     setPaymentLoading,
+    setPaymentMode,
+    setPaymentCurrentVoucherId,
+    setPaymentCurrentVoucherNo,
+    setPaymentHasUnsavedChanges,
+    setPaymentNavigationData,
+    setPaymentMethod
 } from '@/store';
 import type { RootState, AppDispatch, PaymentItem } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -32,6 +38,8 @@ import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
+import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
+import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import QuickPaymentDialog from '@/components/dialogs/QuickPaymentDialog';
 import BillAllocationDialog, { AllocationData } from '@/components/dialogs/BillAllocationDialog';
 
@@ -54,6 +62,7 @@ export default function PaymentPage() {
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showQuickDialog, setShowQuickDialog] = useState(false);
+    const [showListView, setShowListView] = useState(false);
 
     // Allocation & Balance State
     // Allocation & Balance State
@@ -159,6 +168,27 @@ export default function PaymentPage() {
 
         try {
             dispatch(setPaymentLoading(true));
+
+            if (paymentState.mode === 'editing' && paymentState.currentVoucherId) {
+                await invoke('update_payment', {
+                    id: paymentState.currentVoucherId,
+                    payment: { ...paymentState.form, items: paymentState.items }
+                });
+                toast.success('Payment updated successfully');
+                dispatch(setPaymentLoading(false));
+
+                // Return to list view or just clear? Usually editing returns to view or stays. 
+                // Let's reset for now to be consistent with creating new.
+                // Ideally we might want to stay in view mode of the updated voucher.
+                // But for now, let's reset to allow next entry.
+                dispatch(resetPaymentForm());
+                handleAddItem();
+                dispatch(setPaymentHasUnsavedChanges(false));
+                dispatch(setPaymentMode('new'));
+                // Refresh list if needed (handled by sheet verify)
+                return;
+            }
+
             await invoke('create_payment', { payment: { ...paymentState.form, items: paymentState.items } });
             toast.success('Payment saved successfully');
             dispatch(resetPaymentForm());
@@ -180,11 +210,86 @@ export default function PaymentPage() {
         setTimeout(() => payFromRef.current?.querySelector('button')?.focus(), 100);
     };
 
+    const loadVoucher = async (id: number) => {
+        try {
+            dispatch(setPaymentLoading(true));
+            dispatch(resetPaymentForm());
+
+            const payment = await invoke<any>('get_payment', { id });
+            const items = await invoke<any[]>('get_payment_items', { voucherId: id });
+
+            // Populate Form
+            dispatch(setPaymentCurrentVoucherNo(payment.voucher_no));
+            dispatch(setPaymentAccount({ id: payment.account_id, name: payment.account_name }));
+            dispatch(setPaymentDate(payment.voucher_date));
+            dispatch(setPaymentReference(payment.reference_number || ''));
+            dispatch(setPaymentNarration(payment.narration || ''));
+            dispatch(setPaymentMethod(payment.payment_method || 'bank'));
+
+            // Populate Items
+            items.forEach(item => {
+                dispatch(addPaymentItem({
+                    description: item.description,
+                    amount: item.amount,
+                    tax_rate: item.tax_rate,
+                    remarks: item.remarks
+                }));
+            });
+
+            dispatch(setPaymentMode('viewing'));
+            dispatch(setPaymentHasUnsavedChanges(false));
+
+        } catch (error) {
+            console.error("Failed to load payment", error);
+            toast.error("Failed to load payment");
+        } finally {
+            dispatch(setPaymentLoading(false));
+        }
+    };
+
+    const {
+        handleNavigatePrevious,
+        handleNavigateNext,
+        handleListSelect,
+        handleNew,
+        handleEdit,
+        handleCancel,
+        handleDelete,
+    } = useVoucherNavigation({
+        voucherType: 'payment',
+        sliceState: paymentState,
+        actions: {
+            setMode: setPaymentMode,
+            setCurrentVoucherId: setPaymentCurrentVoucherId,
+            setNavigationData: setPaymentNavigationData,
+            setHasUnsavedChanges: setPaymentHasUnsavedChanges,
+            resetForm: resetPaymentForm
+        },
+        onLoadVoucher: loadVoucher
+    });
+
+    const handleDeleteVoucher = async () => {
+        const confirmed = await handleDelete();
+        if (confirmed && paymentState.currentVoucherId) {
+            try {
+                dispatch(setPaymentLoading(true));
+                await invoke('delete_payment', { id: paymentState.currentVoucherId });
+                toast.success('Payment deleted');
+                handleNew();
+            } catch (e) {
+                toast.error('Failed to delete payment');
+                console.error(e);
+            } finally {
+                dispatch(setPaymentLoading(false));
+            }
+        }
+    };
+
     // Global keyboard shortcuts hook
     useVoucherShortcuts({
         onSave: () => formRef.current?.requestSubmit(),
         onNewItem: handleAddItem,
-        onClear: handleClear,
+        onClear: handleNew,
         onToggleShortcuts: () => setShowShortcuts(prev => !prev),
         onCloseShortcuts: () => setShowShortcuts(false),
         onQuickEntry: () => setShowQuickDialog(true),
@@ -210,11 +315,32 @@ export default function PaymentPage() {
             <VoucherPageHeader
                 title="Payment Voucher"
                 description="Record money paid out from bank or cash"
+                mode={paymentState.mode}
+                voucherNo={paymentState.currentVoucherNo}
+                isUnsaved={paymentState.hasUnsavedChanges}
+                hasPrevious={paymentState.navigationData.hasPrevious}
+                hasNext={paymentState.navigationData.hasNext}
                 onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
+                onNavigatePrevious={handleNavigatePrevious}
+                onNavigateNext={handleNavigateNext}
+                onEdit={handleEdit}
+                onSave={() => formRef.current?.requestSubmit()}
+                onCancel={handleCancel}
+                onDelete={handleDeleteVoucher}
+                onNew={handleNew}
+                onListView={() => setShowListView(true)}
             />
 
             <VoucherShortcutPanel
                 show={showShortcuts}
+            />
+
+            <VoucherListViewSheet
+                open={showListView}
+                onOpenChange={setShowListView}
+                voucherType="payment"
+                onSelectVoucher={handleListSelect}
+                title="Payment Vouchers"
             />
 
             <QuickPaymentDialog
@@ -433,7 +559,7 @@ export default function PaymentPage() {
                             title="Save (Ctrl+S)"
                         >
                             <IconCheck size={16} />
-                            {paymentState.loading ? 'Saving...' : 'Save Payment'}
+                            {paymentState.loading ? 'Saving...' : (paymentState.mode === 'editing' ? 'Update Payment' : 'Save Payment')}
                         </Button>
                     </div>
                 </form>

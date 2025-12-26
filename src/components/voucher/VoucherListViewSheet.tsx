@@ -27,6 +27,7 @@ interface VoucherListViewSheetProps {
     voucherType: string;
     onSelectVoucher: (id: number) => void;
     trigger?: React.ReactNode;
+    title?: string;
 }
 
 export function VoucherListViewSheet({
@@ -34,7 +35,8 @@ export function VoucherListViewSheet({
     onOpenChange,
     voucherType,
     onSelectVoucher,
-    trigger
+    trigger,
+    title
 }: VoucherListViewSheetProps) {
     const [vouchers, setVouchers] = useState<VoucherSummary[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
@@ -71,7 +73,7 @@ export function VoucherListViewSheet({
                 <SheetHeader className="px-6 py-4 border-b">
                     <SheetTitle className="flex items-center gap-2">
                         <IconList size={20} />
-                        Voucher List
+                        {title || 'Voucher List'}
                     </SheetTitle>
                     <div className="relative mt-2">
                         <IconSearch className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

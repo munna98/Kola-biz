@@ -10,6 +10,8 @@ pub struct PaymentAllocation {
     pub allocated_amount: f64,
     pub allocation_date: String,
     pub remarks: Option<String>,
+    pub party_id: Option<i64>,
+    pub party_type: Option<String>,
     pub created_at: String,
 }
 
@@ -88,16 +90,27 @@ pub async fn create_allocation(
 ) -> Result<i64, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    // Insert allocation
+    // Get party info from invoice
+    let (party_id, party_type): (i64, String) = sqlx::query_as(
+        "SELECT party_id, party_type FROM vouchers WHERE id = ?"
+    )
+    .bind(allocation.invoice_voucher_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Insert allocation with party info
     let result = sqlx::query(
-        "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks)
-         VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks, party_id, party_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(allocation.payment_voucher_id)
     .bind(allocation.invoice_voucher_id)
     .bind(allocation.allocated_amount)
     .bind(&allocation.allocation_date)
     .bind(&allocation.remarks)
+    .bind(party_id)
+    .bind(&party_type)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -360,16 +373,18 @@ pub async fn create_quick_payment(
         .map_err(|e| e.to_string())?;
     }
 
-    // Create allocation
+    // Create allocation with party info from invoice
     sqlx::query(
-        "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks)
-         VALUES (?, ?, ?, ?, ?)"
+        "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks, party_id, party_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(payment_id)
     .bind(payment.invoice_id)
     .bind(payment.amount)
     .bind(&payment.payment_date)
     .bind(&payment.remarks)
+    .bind(invoice.0)
+    .bind(&invoice.1)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;

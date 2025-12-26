@@ -13,6 +13,11 @@ import {
     setJournalTotals,
     resetJournalForm,
     setJournalLoading,
+    setJournalMode,
+    setJournalCurrentVoucherId,
+    setJournalCurrentVoucherNo,
+    setJournalHasUnsavedChanges,
+    setJournalNavigationData
 } from '@/store';
 import type { RootState, AppDispatch, JournalEntryLine } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -32,6 +37,10 @@ import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
+import { useVoucherNavigation } from '@/hooks/useVoucherNavigation'; // Borrowing specific hook usage logic inline or modifying hook if needed? 
+// Actually, I should check if useVoucherNavigation is a hook I can use or if I should implement the logic manually like in PaymentPage.
+// Checking PaymentPage again... it uses `useVoucherNavigation` hook.
+import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 
 interface LedgerAccount {
     id: number;
@@ -47,6 +56,7 @@ export default function JournalEntryPage() {
     const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
+    const [isListViewOpen, setIsListViewOpen] = useState(false);
 
     const formRef = useRef<HTMLFormElement>(null);
     const dateRef = useRef<HTMLInputElement>(null);
@@ -66,12 +76,91 @@ export default function JournalEntryPage() {
         loadData();
     }, [dispatch]);
 
-    // Auto-add first line when data is loaded
+    // Load Voucher Effect
+    const loadVoucher = useCallback(async (id: number) => {
+        try {
+            dispatch(setJournalLoading(true));
+            const entry = await invoke<any>('get_journal_entry', { id });
+            const lines = await invoke<any[]>('get_journal_entry_lines', { voucherId: id });
+
+            // Populate Form
+            dispatch(setJournalCurrentVoucherNo(entry.voucher_no));
+            dispatch(setJournalDate(entry.voucher_date));
+            dispatch(setJournalReference(entry.reference || ''));
+            dispatch(setJournalNarration(entry.narration || ''));
+
+            // Clear existing lines and add fetched lines
+            // We need to reset lines first, but we don't have a direct 'setLines' action exposed in the import list above.
+            // Let's use resetJournalForm which clears lines, then add them.
+            // Wait, resetJournalForm clears everything including form.
+            // Better to dispatch resetJournalForm then re-set everything? Or add a setLines action?
+            // Existing `addJournalLine` pushes. `removeJournalLine` removes by index.
+            // `resetJournalForm` clears lines.
+
+            // Strategy: Clear form first, then repopulate.
+            // Actually, let's look at `store/index.ts`. `lines` can be set? No direct setter exported.
+            // I should have added `setJournalLines` or I have to rely on `reset` then `add`.
+
+            // Let's check `PaymentPage` reference. It uses `addPaymentItem`.
+            // But doing `reset` clears the `form` part too.
+            // So:
+            dispatch(resetJournalForm()); // Clears form and lines
+
+            // Re-set form data
+            dispatch(setJournalDate(entry.voucher_date));
+            dispatch(setJournalReference(entry.reference || ''));
+            dispatch(setJournalNarration(entry.narration || ''));
+
+            // Add lines
+            for (const line of lines) {
+                dispatch(addJournalLine(line)); // Assuming line structure matches
+            }
+
+            // Recalculate totals
+            const totalDebit = lines.reduce((sum, line) => sum + (line.debit || 0), 0);
+            const totalCredit = lines.reduce((sum, line) => sum + (line.credit || 0), 0);
+            const difference = Math.abs(totalDebit - totalCredit);
+            dispatch(setJournalTotals({ totalDebit, totalCredit, difference }));
+
+            dispatch(setJournalMode('viewing'));
+            dispatch(setJournalCurrentVoucherId(id));
+            dispatch(setJournalHasUnsavedChanges(false));
+        } catch (error) {
+            console.error('Failed to load journal entry:', error);
+            toast.error('Failed to load journal entry');
+            dispatch(setJournalMode('new'));
+        } finally {
+            dispatch(setJournalLoading(false));
+            setIsListViewOpen(false);
+        }
+    }, [dispatch]);
+
+    // Hook for navigation
+    const {
+        handleNavigatePrevious,
+        handleNavigateNext,
+        handleNew,
+        handleCancel
+    } = useVoucherNavigation({
+        voucherType: 'journal',
+        sliceState: journalState,
+        actions: {
+            setMode: setJournalMode,
+            setCurrentVoucherId: setJournalCurrentVoucherId,
+            setCurrentVoucherNo: setJournalCurrentVoucherNo,
+            setNavigationData: setJournalNavigationData,
+            setHasUnsavedChanges: setJournalHasUnsavedChanges,
+            resetForm: resetJournalForm,
+        },
+        onLoadVoucher: loadVoucher,
+    });
+
+    // Auto-add first line when data is loaded (ONLY for new mode)
     useEffect(() => {
-        if (accounts.length > 0 && journalState.lines.length === 0) {
+        if (journalState.mode === 'new' && accounts.length > 0 && journalState.lines.length === 0) {
             handleAddLine();
         }
-    }, [accounts.length]);
+    }, [accounts.length, journalState.mode]);
 
     // Calculate totals
     const calculateTotals = useCallback((lines: JournalEntryLine[]) => {
@@ -82,6 +171,9 @@ export default function JournalEntryPage() {
     }, []);
 
     const handleUpdateLine = (index: number, field: string, value: any) => {
+
+        dispatch(setJournalHasUnsavedChanges(true));
+
         const updatedLines = [...journalState.lines];
 
         if (field === 'account_id') {
@@ -114,6 +206,7 @@ export default function JournalEntryPage() {
     };
 
     const handleAddLine = () => {
+
         dispatch(addJournalLine({
             account_id: 0,
             account_name: '',
@@ -124,6 +217,7 @@ export default function JournalEntryPage() {
     };
 
     const handleRemoveLine = (index: number) => {
+
         if (journalState.lines.length === 1) {
             toast.error('At least one line is required');
             return;
@@ -131,6 +225,7 @@ export default function JournalEntryPage() {
         const updatedLines = journalState.lines.filter((_, i) => i !== index);
         dispatch(removeJournalLine(index));
         dispatch(setJournalTotals(calculateTotals(updatedLines)));
+        dispatch(setJournalHasUnsavedChanges(true));
     };
 
     const handleSubmit = async (e?: React.FormEvent) => {
@@ -158,17 +253,34 @@ export default function JournalEntryPage() {
 
         try {
             dispatch(setJournalLoading(true));
-            await invoke('create_journal_entry', {
-                entry: {
-                    ...journalState.form,
-                    lines: journalState.lines
-                }
-            });
-            toast.success('Journal entry saved successfully');
-            dispatch(resetJournalForm());
-            handleAddLine();
 
-            setTimeout(() => dateRef.current?.focus(), 100);
+            if (journalState.mode === 'editing' && journalState.currentVoucherId) {
+                await invoke('update_journal_entry', {
+                    id: journalState.currentVoucherId,
+                    entry: {
+                        ...journalState.form,
+                        lines: journalState.lines
+                    }
+                });
+                toast.success('Journal entry updated successfully');
+                dispatch(setJournalMode('viewing'));
+                dispatch(setJournalHasUnsavedChanges(false));
+                // Optional: reload to ensure consistency? or just update state manually (already done)
+            } else {
+                await invoke('create_journal_entry', {
+                    entry: {
+                        ...journalState.form,
+                        lines: journalState.lines
+                    }
+                });
+                toast.success('Journal entry saved successfully');
+                dispatch(resetJournalForm());
+                handleAddLine();
+                dispatch(setJournalMode('new'));
+                dispatch(setJournalHasUnsavedChanges(false));
+                setTimeout(() => dateRef.current?.focus(), 100);
+            }
+
         } catch (error) {
             console.error('Journal entry save error:', error);
             toast.error(error instanceof Error ? error.message : 'Failed to save');
@@ -180,6 +292,10 @@ export default function JournalEntryPage() {
     const handleClear = () => {
         dispatch(resetJournalForm());
         handleAddLine();
+        dispatch(setJournalMode('new'));
+        dispatch(setJournalCurrentVoucherId(null));
+        dispatch(setJournalCurrentVoucherNo(undefined));
+        dispatch(setJournalHasUnsavedChanges(false));
         setTimeout(() => dateRef.current?.focus(), 100);
     };
 
@@ -214,7 +330,29 @@ export default function JournalEntryPage() {
             <VoucherPageHeader
                 title="Journal Entry"
                 description="Create manual journal entries for adjustments and corrections"
+                mode={journalState.mode}
+                voucherNo={journalState.currentVoucherNo}
+                isUnsaved={journalState.hasUnsavedChanges}
+                hasPrevious={journalState.navigationData.hasPrevious}
+                hasNext={journalState.navigationData.hasNext}
+                onNavigatePrevious={handleNavigatePrevious}
+                onNavigateNext={handleNavigateNext}
+                onNew={handleNew}
+                onEdit={() => dispatch(setJournalMode('editing'))}
+                onCancel={handleCancel}
+                onSave={() => formRef.current?.requestSubmit()}
                 onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
+                onListView={() => setIsListViewOpen(true)}
+            />
+
+            {/* ... wait, I need navigateToVoucher ... */}
+
+            <VoucherListViewSheet
+                open={isListViewOpen}
+                onOpenChange={setIsListViewOpen}
+                title="Journal Vouchers"
+                voucherType="journal"
+                onSelectVoucher={(id) => loadVoucher(id)}
             />
 
             <VoucherShortcutPanel
@@ -234,8 +372,12 @@ export default function JournalEntryPage() {
                                     ref={dateRef}
                                     type="date"
                                     value={journalState.form.voucher_date}
-                                    onChange={(e) => dispatch(setJournalDate(e.target.value))}
+                                    onChange={(e) => {
+                                        dispatch(setJournalDate(e.target.value));
+                                        dispatch(setJournalHasUnsavedChanges(true));
+                                    }}
                                     className="h-8 text-sm"
+                                    disabled={journalState.mode === 'viewing'}
                                 />
                             </div>
 
@@ -244,9 +386,13 @@ export default function JournalEntryPage() {
                                 <Label className="text-xs font-medium mb-1 block">Reference Number</Label>
                                 <Input
                                     value={journalState.form.reference}
-                                    onChange={(e) => dispatch(setJournalReference(e.target.value))}
+                                    onChange={(e) => {
+                                        dispatch(setJournalReference(e.target.value));
+                                        dispatch(setJournalHasUnsavedChanges(true));
+                                    }}
                                     placeholder="Reference/Doc No"
                                     className="h-8 text-sm"
+                                    disabled={journalState.mode === 'viewing'}
                                 />
                             </div>
 
@@ -255,9 +401,13 @@ export default function JournalEntryPage() {
                                 <Label className="text-xs font-medium mb-1 block">Narration</Label>
                                 <Input
                                     value={journalState.form.narration}
-                                    onChange={(e) => dispatch(setJournalNarration(e.target.value))}
+                                    onChange={(e) => {
+                                        dispatch(setJournalNarration(e.target.value));
+                                        dispatch(setJournalHasUnsavedChanges(true));
+                                    }}
                                     placeholder="Description"
                                     className="h-8 text-sm"
+                                    disabled={journalState.mode === 'viewing'}
                                 />
                             </div>
 
@@ -266,7 +416,7 @@ export default function JournalEntryPage() {
                                 {!isBalanced && journalState.lines.length > 0 && (
                                     <div className="flex items-center gap-2 text-xs text-destructive">
                                         <IconAlertTriangle size={16} />
-                                        <span>Unbalanced: Difference of ₹{journalState.totals.difference.toFixed(2)}</span>
+                                        <span>Unbalanced: ₹{journalState.totals.difference.toFixed(2)}</span>
                                     </div>
                                 )}
                                 {isBalanced && journalState.lines.length > 0 && (
@@ -313,6 +463,7 @@ export default function JournalEntryPage() {
                                             onChange={(val) => handleUpdateLine(index, 'account_id', val)}
                                             placeholder="Select Account"
                                             searchPlaceholder="Search accounts..."
+                                            disabled={journalState.mode === 'viewing'}
                                         />
                                     </div>
 
@@ -325,6 +476,8 @@ export default function JournalEntryPage() {
                                             className="h-7 text-xs text-right font-mono"
                                             placeholder="0.00"
                                             step="0.01"
+                                            onFocus={(e) => e.target.select()}
+                                            disabled={journalState.mode === 'viewing'}
                                         />
                                     </div>
 
@@ -337,6 +490,8 @@ export default function JournalEntryPage() {
                                             className="h-7 text-xs text-right font-mono"
                                             placeholder="0.00"
                                             step="0.01"
+                                            onFocus={(e) => e.target.select()}
+                                            disabled={journalState.mode === 'viewing'}
                                         />
                                     </div>
 
@@ -347,6 +502,7 @@ export default function JournalEntryPage() {
                                             onChange={(e) => handleUpdateLine(index, 'narration', e.target.value)}
                                             className="h-7 text-xs"
                                             placeholder="Line description"
+                                            disabled={journalState.mode === 'viewing'}
                                         />
                                     </div>
 
@@ -359,6 +515,7 @@ export default function JournalEntryPage() {
                                             onClick={() => handleRemoveLine(index)}
                                             className="h-6 w-6 p-0"
                                             title="Delete (Ctrl+D)"
+                                            disabled={journalState.mode === 'viewing'}
                                         >
                                             <IconTrash size={14} />
                                         </Button>
@@ -375,6 +532,7 @@ export default function JournalEntryPage() {
                                 size="sm"
                                 onClick={handleAddLine}
                                 className="text-xs h-7"
+                                disabled={journalState.mode === 'viewing'}
                             >
                                 <IconPlus size={14} />
                                 Add Line (Ctrl+N)
@@ -420,12 +578,12 @@ export default function JournalEntryPage() {
                         </Button>
                         <Button
                             type="submit"
-                            disabled={journalState.loading || !isBalanced}
+                            disabled={journalState.loading}
                             className="h-9"
                             title="Save (Ctrl+S)"
                         >
                             <IconCheck size={16} />
-                            {journalState.loading ? 'Saving...' : 'Save Journal Entry'}
+                            {journalState.loading ? 'Saving...' : (journalState.mode === 'editing' ? 'Update Journal Entry' : 'Save Journal Entry')}
                         </Button>
                     </div>
                 </form>
