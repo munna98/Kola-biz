@@ -883,7 +883,7 @@ pub async fn get_stock_movements(
         date_filter
     );
 
-    let mut movements: Vec<(
+    let movements: Vec<(
         String,
         String,
         String,

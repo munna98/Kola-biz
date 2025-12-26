@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IconEdit, IconTrash } from '@tabler/icons-react';
 import { api, ProductGroup, CreateProductGroup } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useDialog } from '@/hooks/use-dialog';
 
 interface ProductGroupsDialogProps {
   open: boolean;
@@ -18,6 +20,9 @@ export default function ProductGroupsDialog({ open, onOpenChange, onGroupsChange
   const [groupForm, setGroupForm] = useState<CreateProductGroup>({ name: '', description: '' });
   const [editingGroup, setEditingGroup] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const orderedFields = ['name', 'description'];
+  const { register, handleKeyDown, refs } = useDialog(open, onOpenChange, orderedFields);
 
   const loadGroups = async () => {
     try {
@@ -40,6 +45,8 @@ export default function ProductGroupsDialog({ open, onOpenChange, onGroupsChange
 
   const handleGroupSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!groupForm.name.trim()) return;
+
     try {
       if (editingGroup) {
         await api.productGroups.update(editingGroup, groupForm);
@@ -52,6 +59,10 @@ export default function ProductGroupsDialog({ open, onOpenChange, onGroupsChange
       setEditingGroup(null);
       loadGroups();
       onGroupsChange?.();
+      // Keep focus for rapid entry if adding
+      if (!editingGroup) {
+        setTimeout(() => refs.current['name']?.focus(), 100);
+      }
     } catch (error) {
       toast.error(editingGroup ? 'Failed to update group' : 'Failed to create group');
       console.error(error);
@@ -61,6 +72,7 @@ export default function ProductGroupsDialog({ open, onOpenChange, onGroupsChange
   const handleEditGroup = (g: ProductGroup) => {
     setGroupForm({ name: g.name, description: g.description });
     setEditingGroup(g.id);
+    setTimeout(() => refs.current['name']?.focus(), 100);
   };
 
   const handleDeleteGroup = async (id: number) => {
@@ -80,6 +92,7 @@ export default function ProductGroupsDialog({ open, onOpenChange, onGroupsChange
   const handleCancelEdit = () => {
     setGroupForm({ name: '', description: '' });
     setEditingGroup(null);
+    setTimeout(() => refs.current['name']?.focus(), 100);
   };
 
   return (
@@ -94,23 +107,31 @@ export default function ProductGroupsDialog({ open, onOpenChange, onGroupsChange
 
         <div className="space-y-4">
           {/* Group Form */}
-          <form onSubmit={handleGroupSubmit} className="space-y-3 pb-4 border-b">
-            <div>
+          <form onSubmit={handleGroupSubmit} className="grid grid-cols-12 gap-4 pb-4 border-b items-end">
+            <div className="col-span-12 md:col-span-5">
+              <Label className="text-xs font-medium mb-1 block">Name *</Label>
               <Input
-                placeholder="Group name"
+                ref={register('name') as any}
+                placeholder="e.g., Electronics"
                 value={groupForm.name}
                 onChange={e => setGroupForm({ ...groupForm, name: e.target.value })}
+                onKeyDown={(e) => handleKeyDown(e, 'name')}
+                className="h-8 text-sm"
                 required
               />
             </div>
-            <div>
+            <div className="col-span-12 md:col-span-5">
+              <Label className="text-xs font-medium mb-1 block">Description</Label>
               <Input
-                placeholder="Description"
+                ref={register('description') as any}
+                placeholder="Optional description"
                 value={groupForm.description || ''}
                 onChange={e => setGroupForm({ ...groupForm, description: e.target.value })}
+                onKeyDown={(e) => handleKeyDown(e, 'description')}
+                className="h-8 text-sm"
               />
             </div>
-            <div className="flex gap-2">
+            <div className="col-span-12 md:col-span-2 flex gap-2">
               <Button type="submit" size="sm">
                 {editingGroup ? 'Update' : 'Add'}
               </Button>

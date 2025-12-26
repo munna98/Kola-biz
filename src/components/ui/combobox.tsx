@@ -28,9 +28,11 @@ interface ComboboxProps {
   placeholder?: string
   searchPlaceholder?: string
   className?: string
+  onKeyDown?: (e: React.KeyboardEvent) => void
+  openOnFocus?: boolean
 }
 
-export function Combobox({
+export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { disabled?: boolean }>(({
   options,
   value,
   onChange,
@@ -38,8 +40,25 @@ export function Combobox({
   searchPlaceholder = "Search...",
   className,
   disabled = false,
-}: ComboboxProps & { disabled?: boolean }) {
+  onKeyDown,
+  openOnFocus = true,
+}, ref) => {
   const [open, setOpen] = React.useState(false)
+  const [hasOpenedOnFocus, setHasOpenedOnFocus] = React.useState(false)
+
+  const handleFocus = React.useCallback(() => {
+    if (openOnFocus && !open && !hasOpenedOnFocus) {
+      setOpen(true);
+      setHasOpenedOnFocus(true);
+    }
+  }, [openOnFocus, open, hasOpenedOnFocus]);
+
+  // Reset flag when closed so it can open again on next focus cycle
+  React.useEffect(() => {
+    if (!open) {
+      setHasOpenedOnFocus(false);
+    }
+  }, [open]);
 
   const selectedOption = options.find((opt) => opt.value === value)
 
@@ -47,11 +66,14 @@ export function Combobox({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          ref={ref}
           variant="outline"
           role="combobox"
           aria-expanded={open}
           className={cn("justify-between h-8 text-sm w-full font-normal", className)}
           disabled={disabled}
+          onKeyDown={onKeyDown}
+          onFocus={handleFocus}
         >
           <span className="truncate text-left">
             {selectedOption?.label || placeholder}
@@ -62,9 +84,12 @@ export function Combobox({
       <PopoverContent
         className="p-0 w-[var(--radix-popover-trigger-width)]"
         align="start"
+        onOpenAutoFocus={() => {
+          // Allow auto-focusing the input
+        }}
       >
         <Command>
-          <CommandInput placeholder={searchPlaceholder} />
+          <CommandInput placeholder={searchPlaceholder} autoFocus />
           <CommandList>
             <CommandEmpty>No results found.</CommandEmpty>
             <CommandGroup>
@@ -94,4 +119,5 @@ export function Combobox({
       </PopoverContent>
     </Popover>
   )
-}
+})
+Combobox.displayName = "Combobox"

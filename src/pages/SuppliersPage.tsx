@@ -1,18 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
-import { api, Supplier, CreateSupplier } from '@/lib/tauri';
+import { api, Supplier } from '@/lib/tauri';
 import { toast } from 'sonner';
+import SupplierDialog from '@/components/dialogs/SupplierDialog';
 
 export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<CreateSupplier>({ name: '', email: '', phone: '', address: '' });
-  const [editing, setEditing] = useState<number | null>(null);
+  const [supplierToEdit, setSupplierToEdit] = useState<Supplier | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
 
   const load = async () => {
@@ -26,29 +23,8 @@ export default function SuppliersPage() {
 
   useEffect(() => { load(); }, [showDeleted]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (editing) {
-        await api.suppliers.update(editing, form);
-        toast.success('Supplier updated successfully');
-      } else {
-        await api.suppliers.create(form);
-        toast.success('Supplier created successfully');
-      }
-      setOpen(false);
-      setForm({ name: '', email: '', phone: '', address: '' });
-      setEditing(null);
-      load();
-    } catch (error) {
-      toast.error(editing ? 'Failed to update supplier' : 'Failed to create supplier');
-      console.error(error);
-    }
-  };
-
   const handleEdit = (s: Supplier) => {
-    setForm({ name: s.name, email: s.email || '', phone: s.phone || '', address: s.address || '' });
-    setEditing(s.id);
+    setSupplierToEdit(s);
     setOpen(true);
   };
 
@@ -106,7 +82,7 @@ export default function SuppliersPage() {
             {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
           </Button>
           {!showDeleted && (
-            <Button onClick={() => { setOpen(true); setEditing(null); setForm({ name: '', email: '', phone: '', address: '' }); }}>
+            <Button onClick={() => { setOpen(true); setSupplierToEdit(null); }}>
               <IconPlus size={16} /> Add Supplier
             </Button>
           )}
@@ -160,35 +136,12 @@ export default function SuppliersPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editing ? 'Edit' : 'Add'} Supplier</DialogTitle>
-            <DialogDescription>
-              {editing ? 'Update the details of the existing supplier.' : 'Fill in the details to add a new supplier.'}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label>Name *</Label>
-              <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
-            </div>
-            <div>
-              <Label>Email</Label>
-              <Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-            </div>
-            <div>
-              <Label>Phone</Label>
-              <Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-            </div>
-            <div>
-              <Label>Address</Label>
-              <Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
-            </div>
-            <Button type="submit" className="w-full">{editing ? 'Update' : 'Create'}</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <SupplierDialog
+        open={open}
+        onOpenChange={setOpen}
+        supplierToEdit={supplierToEdit}
+        onSave={load}
+      />
     </div>
   );
 }

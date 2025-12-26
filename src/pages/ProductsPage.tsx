@@ -1,16 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
-import { api, Product, CreateProduct, Unit, ProductGroup } from '@/lib/tauri';
+import { api, Product, Unit, ProductGroup } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { toast } from 'sonner';
+import ProductDialog from '@/components/dialogs/ProductDialog';
 import UnitsDialog from '@/components/dialogs/UnitsDialog';
 import ProductGroupsDialog from '@/components/dialogs/ProductGroupsDialog';
 
@@ -22,8 +19,7 @@ export default function ProductsPage() {
   const [open, setOpen] = useState(false);
   const [unitsOpen, setUnitsOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
-  const [form, setForm] = useState<CreateProduct>({ code: '', name: '', unit_id: 1, purchase_rate: 0, sales_rate: 0, mrp: 0 });
-  const [editing, setEditing] = useState<number | null>(null);
+  const [editingProduct, setEditingProduct] = useState<Product | undefined>(undefined);
   const [showDeleted, setShowDeleted] = useState(false);
   const currentUser = useSelector((state: RootState) => state.app.currentUser);
 
@@ -50,50 +46,8 @@ export default function ProductsPage() {
     load();
   }, [showDeleted]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    try {
-      if (editing) {
-        await api.products.update(editing, form);
-        toast.success('Product updated successfully');
-      } else {
-        await api.products.create(form);
-        toast.success('Product created successfully');
-      }
-      setOpen(false);
-      resetForm();
-      setEditing(null);
-      load();
-    } catch (error) {
-      toast.error(editing ? 'Failed to update product' : 'Failed to create product');
-      console.error(error);
-    }
-  };
-
-  const resetForm = () => {
-    setForm({
-      code: '',
-      name: '',
-      group_id: undefined,
-      unit_id: units.length > 0 ? units[0].id : 1,
-      purchase_rate: 0,
-      sales_rate: 0,
-      mrp: 0
-    });
-  };
-
   const handleEdit = (p: Product) => {
-    setForm({
-      code: p.code,
-      name: p.name,
-      group_id: p.group_id,
-      unit_id: p.unit_id,
-      purchase_rate: p.purchase_rate,
-      sales_rate: p.sales_rate,
-      mrp: p.mrp
-    });
-    setEditing(p.id);
+    setEditingProduct(p);
     setOpen(true);
   };
 
@@ -136,8 +90,7 @@ export default function ProductsPage() {
 
   const handleOpenDialog = () => {
     setOpen(true);
-    setEditing(null);
-    resetForm();
+    setEditingProduct(undefined);
   };
 
   const handleUnitsChange = () => {
@@ -267,80 +220,14 @@ export default function ProductsPage() {
       </Card>
 
       {/* Product Dialog */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editing ? 'Edit' : 'Add'} Product</DialogTitle>
-            <DialogDescription>
-              {editing ? 'Update the details of the existing product.' : 'Fill in the details to add a new product to your inventory.'}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Code</Label>
-                <Input value={form.code} onChange={e => setForm({ ...form, code: e.target.value })} required />
-              </div>
-              <div>
-                <Label>Name</Label>
-                <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
-              </div>
-            </div>
-            <div>
-              <Label>Product Group (Optional)</Label>
-              <Select
-                value={form.group_id?.toString() || 'none'}
-                onValueChange={v => setForm({ ...form, group_id: v === 'none' ? undefined : +v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select a group" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No Group</SelectItem>
-                  {groups.map(g => (
-                    <SelectItem key={g.id} value={g.id.toString()}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Unit</Label>
-              <Select
-                value={form.unit_id.toString()}
-                onValueChange={v => setForm({ ...form, unit_id: +v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {units.map(u => (
-                    <SelectItem key={u.id} value={u.id.toString()}>
-                      {u.name} ({u.symbol})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <Label>Purchase Rate</Label>
-                <Input type="number" step="0.01" value={form.purchase_rate} onChange={e => setForm({ ...form, purchase_rate: +e.target.value })} required />
-              </div>
-              <div>
-                <Label>Sales Rate</Label>
-                <Input type="number" step="0.01" value={form.sales_rate} onChange={e => setForm({ ...form, sales_rate: +e.target.value })} required />
-              </div>
-              <div>
-                <Label>MRP</Label>
-                <Input type="number" step="0.01" value={form.mrp} onChange={e => setForm({ ...form, mrp: +e.target.value })} required />
-              </div>
-            </div>
-            <Button type="submit" className="w-full">{editing ? 'Update' : 'Create'}</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <ProductDialog
+        open={open}
+        onOpenChange={setOpen}
+        units={units}
+        groups={groups}
+        product={editingProduct}
+        onSuccess={load}
+      />
 
       {/* Units Management Dialog Component */}
       <UnitsDialog

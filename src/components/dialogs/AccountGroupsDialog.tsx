@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { api, AccountGroup, CreateAccountGroup } from '@/lib/tauri';
 import { toast } from 'sonner';
+import { useDialog } from '@/hooks/use-dialog';
 
 interface AccountGroupsDialogProps {
   open: boolean;
@@ -20,6 +21,11 @@ export default function AccountGroupsDialog({ open, onOpenChange }: AccountGroup
     name: '',
     account_type: 'Asset',
   });
+
+  // Since this dialog has a form within it but also keeps the dialog open and allows multiple adds,
+  // we will still use useDialog for the form implementation but might need slight adjustments.
+  const orderedFields = ['name', 'type'];
+  const { register, handleKeyDown, handleSelectKeyDown, refs } = useDialog(open, onOpenChange, orderedFields);
 
   const accountTypes = ['Asset', 'Liability', 'Equity', 'Income', 'Expense'];
 
@@ -44,12 +50,17 @@ export default function AccountGroupsDialog({ open, onOpenChange }: AccountGroup
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.name.trim()) return;
 
     try {
       await api.accountGroups.create(form);
       toast.success('Account group created successfully');
       setForm({ name: '', account_type: 'Asset' });
       load();
+      // Refocus name input for rapid entry
+      setTimeout(() => {
+        refs.current['name']?.focus();
+      }, 100);
     } catch (error) {
       toast.error('Failed to create account group');
       console.error(error);
@@ -85,21 +96,28 @@ export default function AccountGroupsDialog({ open, onOpenChange }: AccountGroup
           <form onSubmit={handleSubmit} className="space-y-4 p-4 bg-muted/30 rounded-lg">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <Label>Group Name</Label>
+                <Label className="text-xs font-medium mb-1 block">Group Name *</Label>
                 <Input
+                  ref={register('name') as any}
                   value={form.name}
                   onChange={e => setForm({ ...form, name: e.target.value })}
-                  placeholder="e.g., Fixed Assets, Intangible Assets"
+                  onKeyDown={(e) => handleKeyDown(e, 'name')}
+                  placeholder="e.g., Fixed Assets"
+                  className="h-8 text-sm"
                   required
                 />
               </div>
               <div>
-                <Label>Account Type</Label>
+                <Label className="text-xs font-medium mb-1 block">Account Type</Label>
                 <Select
                   value={form.account_type}
                   onValueChange={v => setForm({ ...form, account_type: v })}
                 >
-                  <SelectTrigger>
+                  <SelectTrigger
+                    ref={register('type') as any}
+                    className="h-8 text-sm"
+                    onKeyDown={(e) => handleSelectKeyDown(e, 'type')}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -112,7 +130,7 @@ export default function AccountGroupsDialog({ open, onOpenChange }: AccountGroup
                 </Select>
               </div>
             </div>
-            <Button type="submit" className="w-full">
+            <Button type="submit" className="w-full h-8">
               <IconPlus size={16} /> Add New Group
             </Button>
           </form>

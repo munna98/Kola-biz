@@ -1,45 +1,30 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { IconPlus, IconEdit, IconTrash, IconSettings, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
-import { api, ChartOfAccount, CreateChartOfAccount } from '@/lib/tauri';
+import { api, ChartOfAccount, AccountGroup } from '@/lib/tauri';
 import { toast } from 'sonner';
 import AccountGroupsDialog from '@/components/dialogs/AccountGroupsDialog';
+import ChartOfAccountDialog from '@/components/dialogs/ChartOfAccountDialog';
 
 export default function ChartOfAccountsPage() {
   const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
-  const [accountTypes, setAccountTypes] = useState<string[]>([]);
-  const [accountGroups, setAccountGroups] = useState<string[]>([]);
+
+  const [accountGroups, setAccountGroups] = useState<AccountGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [groupsDialogOpen, setGroupsDialogOpen] = useState(false);
-  const [form, setForm] = useState<CreateChartOfAccount>({
-    account_code: '',
-    account_name: '',
-    account_type: 'Asset',
-    account_group: 'Current Assets',
-    description: '',
-    opening_balance: 0,
-    opening_balance_type: 'Dr',
-  });
-  const [editing, setEditing] = useState<number | null>(null);
+  const [accountToEdit, setAccountToEdit] = useState<ChartOfAccount | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
 
   const load = async () => {
     try {
       setLoading(true);
-      const [accountsData, types, groups] = await Promise.all([
+      const [accountsData, groups] = await Promise.all([
         showDeleted ? api.chartOfAccounts.listDeleted() : api.chartOfAccounts.list(),
-        api.chartOfAccounts.getTypes(),
-        api.chartOfAccounts.getGroups(),
+        api.accountGroups.list(),
       ]);
       setAccounts(accountsData);
-      setAccountTypes(types);
       setAccountGroups(groups);
     } catch (error) {
       toast.error('Failed to load chart of accounts');
@@ -53,50 +38,8 @@ export default function ChartOfAccountsPage() {
     load();
   }, [showDeleted]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    try {
-      if (editing) {
-        await api.chartOfAccounts.update(editing, form);
-        toast.success('Account updated successfully');
-      } else {
-        await api.chartOfAccounts.create(form);
-        toast.success('Account created successfully');
-      }
-      setOpen(false);
-      resetForm();
-      setEditing(null);
-      load();
-    } catch (error) {
-      toast.error(editing ? 'Failed to update account' : 'Failed to create account');
-      console.error(error);
-    }
-  };
-
-  const resetForm = () => {
-    setForm({
-      account_code: '',
-      account_name: '',
-      account_type: 'Asset',
-      account_group: 'Current Assets',
-      description: '',
-      opening_balance: 0,
-      opening_balance_type: 'Dr',
-    });
-  };
-
   const handleEdit = (account: ChartOfAccount) => {
-    setForm({
-      account_code: account.account_code,
-      account_name: account.account_name,
-      account_type: account.account_type,
-      account_group: account.account_group,
-      description: account.description,
-      opening_balance: account.opening_balance,
-      opening_balance_type: account.opening_balance_type || 'Dr',
-    });
-    setEditing(account.id);
+    setAccountToEdit(account);
     setOpen(true);
   };
 
@@ -139,9 +82,8 @@ export default function ChartOfAccountsPage() {
   };
 
   const handleOpenDialog = () => {
+    setAccountToEdit(null);
     setOpen(true);
-    setEditing(null);
-    resetForm();
   };
 
   if (loading) {
@@ -249,117 +191,14 @@ export default function ChartOfAccountsPage() {
       </Card>
 
       {/* Account Dialog */}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editing ? 'Edit' : 'Add'} Account</DialogTitle>
-            <DialogDescription>
-              {editing ? 'Update the details of the existing account in your chart of accounts.' : 'Fill in the details to create a new account in your chart of accounts.'}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Account Code</Label>
-                <Input
-                  value={form.account_code}
-                  onChange={e => setForm({ ...form, account_code: e.target.value })}
-                  required
-                />
-              </div>
-              <div>
-                <Label>Account Type</Label>
-                <Select
-                  value={form.account_type}
-                  onValueChange={v => setForm({ ...form, account_type: v })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {accountTypes.map(type => (
-                      <SelectItem key={type} value={type}>
-                        {type}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
+      <ChartOfAccountDialog
+        open={open}
+        onOpenChange={setOpen}
+        accountToEdit={accountToEdit}
+        onSave={load}
 
-            <div>
-              <Label>Account Name</Label>
-              <Input
-                value={form.account_name}
-                onChange={e => setForm({ ...form, account_name: e.target.value })}
-                required
-              />
-            </div>
-
-            <div>
-              <Label>Account Group</Label>
-              <Select
-                value={form.account_group}
-                onValueChange={v => setForm({ ...form, account_group: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {accountGroups.map(group => (
-                    <SelectItem key={group} value={group}>
-                      {group}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div>
-              <Label>Description</Label>
-              <Input
-                value={form.description || ''}
-                onChange={e => setForm({ ...form, description: e.target.value })}
-                placeholder="Optional description"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <Label>Opening Balance</Label>
-                <Input
-                  type="number"
-                  step="0.01"
-                  value={form.opening_balance || 0}
-                  onChange={e => setForm({ ...form, opening_balance: parseFloat(e.target.value) })}
-                />
-              </div>
-
-              <div>
-                <Label>Balance Type</Label>
-                <RadioGroup
-                  value={form.opening_balance_type || 'Dr'}
-                  onValueChange={(value) => setForm({ ...form, opening_balance_type: value as 'Dr' | 'Cr' })}
-                  className="flex gap-4 mt-2"
-                >
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="Dr" id="debit" />
-                    <Label htmlFor="debit" className="font-normal cursor-pointer">Dr</Label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <RadioGroupItem value="Cr" id="credit" />
-                    <Label htmlFor="credit" className="font-normal cursor-pointer">Cr</Label>
-                  </div>
-                </RadioGroup>
-              </div>
-            </div>
-
-            <Button type="submit" className="w-full">
-              {editing ? 'Update' : 'Create'} Account
-            </Button>
-          </form>
-        </DialogContent>
-      </Dialog>
+        accountGroups={accountGroups}
+      />
 
       {/* Account Groups Management Dialog */}
       <AccountGroupsDialog open={groupsDialogOpen} onOpenChange={setGroupsDialogOpen} />

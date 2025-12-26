@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IconEdit, IconTrash } from '@tabler/icons-react';
 import { api, Unit, CreateUnit } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useDialog } from '@/hooks/use-dialog';
 
 interface UnitsDialogProps {
   open: boolean;
@@ -18,6 +20,9 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
   const [unitForm, setUnitForm] = useState<CreateUnit>({ name: '', symbol: '' });
   const [editingUnit, setEditingUnit] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const orderedFields = ['name', 'symbol'];
+  const { register, handleKeyDown, refs } = useDialog(open, onOpenChange, orderedFields);
 
   const loadUnits = async () => {
     try {
@@ -40,6 +45,8 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
 
   const handleUnitSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!unitForm.name.trim() || !unitForm.symbol.trim()) return;
+
     try {
       if (editingUnit) {
         await api.units.update(editingUnit, unitForm);
@@ -52,6 +59,10 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
       setEditingUnit(null);
       loadUnits();
       onUnitsChange?.();
+
+      if (!editingUnit) {
+        setTimeout(() => refs.current['name']?.focus(), 100);
+      }
     } catch (error) {
       toast.error(editingUnit ? 'Failed to update unit' : 'Failed to create unit');
       console.error(error);
@@ -61,6 +72,7 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
   const handleEditUnit = (u: Unit) => {
     setUnitForm({ name: u.name, symbol: u.symbol });
     setEditingUnit(u.id);
+    setTimeout(() => refs.current['name']?.focus(), 100);
   };
 
   const handleDeleteUnit = async (id: number) => {
@@ -80,6 +92,7 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
   const handleCancelEdit = () => {
     setUnitForm({ name: '', symbol: '' });
     setEditingUnit(null);
+    setTimeout(() => refs.current['name']?.focus(), 100);
   };
 
   return (
@@ -94,24 +107,32 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
 
         <div className="space-y-4">
           {/* Unit Form */}
-          <form onSubmit={handleUnitSubmit} className="grid grid-cols-[1fr_1fr_auto] gap-3 pb-4 border-b">
-            <div>
+          <form onSubmit={handleUnitSubmit} className="grid grid-cols-12 gap-4 pb-4 border-b items-end">
+            <div className="col-span-12 md:col-span-5">
+              <Label className="text-xs font-medium mb-1 block">Name *</Label>
               <Input
+                ref={register('name') as any}
                 placeholder="Unit name (e.g., Kilogram)"
                 value={unitForm.name}
                 onChange={e => setUnitForm({ ...unitForm, name: e.target.value })}
+                onKeyDown={(e) => handleKeyDown(e, 'name')}
+                className="h-8 text-sm"
                 required
               />
             </div>
-            <div>
+            <div className="col-span-12 md:col-span-5">
+              <Label className="text-xs font-medium mb-1 block">Symbol *</Label>
               <Input
+                ref={register('symbol') as any}
                 placeholder="Symbol (e.g., kg)"
                 value={unitForm.symbol}
                 onChange={e => setUnitForm({ ...unitForm, symbol: e.target.value })}
+                onKeyDown={(e) => handleKeyDown(e, 'symbol')}
+                className="h-8 text-sm"
                 required
               />
             </div>
-            <div className="flex gap-2">
+            <div className="col-span-12 md:col-span-2 flex gap-2">
               <Button type="submit" size="sm">
                 {editingUnit ? 'Update' : 'Add'}
               </Button>

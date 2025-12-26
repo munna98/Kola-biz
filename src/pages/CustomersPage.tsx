@@ -1,18 +1,15 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
-import { api, Customer, CreateCustomer } from '@/lib/tauri';
+import { api, Customer } from '@/lib/tauri';
 import { toast } from 'sonner';
+import CustomerDialog from '@/components/dialogs/CustomerDialog';
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState<CreateCustomer>({ name: '', email: '', phone: '', address: '' });
-  const [editing, setEditing] = useState<number | null>(null);
+  const [customerToEdit, setCustomerToEdit] = useState<Customer | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
 
   const load = async () => {
@@ -26,29 +23,8 @@ export default function CustomersPage() {
 
   useEffect(() => { load(); }, [showDeleted]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      if (editing) {
-        await api.customers.update(editing, form);
-        toast.success('Customer updated successfully');
-      } else {
-        await api.customers.create(form);
-        toast.success('Customer created successfully');
-      }
-      setOpen(false);
-      setForm({ name: '', email: '', phone: '', address: '' });
-      setEditing(null);
-      load();
-    } catch (error) {
-      toast.error(editing ? 'Failed to update customer' : 'Failed to create customer');
-      console.error(error);
-    }
-  };
-
   const handleEdit = (c: Customer) => {
-    setForm({ name: c.name, email: c.email || '', phone: c.phone || '', address: c.address || '' });
-    setEditing(c.id);
+    setCustomerToEdit(c);
     setOpen(true);
   };
 
@@ -106,7 +82,7 @@ export default function CustomersPage() {
             {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
           </Button>
           {!showDeleted && (
-            <Button onClick={() => { setOpen(true); setEditing(null); setForm({ name: '', email: '', phone: '', address: '' }); }}>
+            <Button onClick={() => { setOpen(true); setCustomerToEdit(null); }}>
               <IconPlus size={16} /> Add Customer
             </Button>
           )}
@@ -160,35 +136,12 @@ export default function CustomersPage() {
         </CardContent>
       </Card>
 
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{editing ? 'Edit' : 'Add'} Customer</DialogTitle>
-            <DialogDescription>
-              {editing ? 'Update the details of the existing customer.' : 'Fill in the details to add a new customer to your database.'}
-            </DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <Label>Name *</Label>
-              <Input value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required />
-            </div>
-            <div>
-              <Label>Email</Label>
-              <Input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />
-            </div>
-            <div>
-              <Label>Phone</Label>
-              <Input value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
-            </div>
-            <div>
-              <Label>Address</Label>
-              <Input value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
-            </div>
-            <Button type="submit" className="w-full">{editing ? 'Update' : 'Create'}</Button>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <CustomerDialog
+        open={open}
+        onOpenChange={setOpen}
+        customerToEdit={customerToEdit}
+        onSave={load}
+      />
     </div>
   );
 }
