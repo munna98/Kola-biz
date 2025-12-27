@@ -176,7 +176,7 @@ pub async fn create_payment(
 
                 // Update invoice status
                 let total_allocated: f64 = sqlx::query_scalar(
-                    "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+                    "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
                 )
                 .bind(alloc.invoice_id)
                 .fetch_one(&mut *tx)
@@ -184,7 +184,7 @@ pub async fn create_payment(
                 .map_err(|e| e.to_string())?;
 
                 let invoice_total: f64 = sqlx::query_scalar(
-                    "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+                    "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
                      FROM vouchers v
                      LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
                      WHERE v.id = ?
@@ -295,8 +295,8 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
             COALESCE(json_extract(v.metadata, '$.method'), '') as payment_method,
             v.reference,
             v.total_amount,
-            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            COALESCE(SUM(vi.tax_amount), 0.0) as tax_amount,
+            v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0) as grand_total,
             v.narration,
             v.status,
             v.created_at,
@@ -327,8 +327,8 @@ pub async fn get_payment(pool: State<'_, SqlitePool>, id: i64) -> Result<Payment
             COALESCE(json_extract(v.metadata, '$.method'), '') as payment_method,
             v.reference as reference_number,
             v.total_amount,
-            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            COALESCE(SUM(vi.tax_amount), 0.0) as tax_amount,
+            v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0) as grand_total,
             v.narration,
             v.status,
             v.created_at,
@@ -443,7 +443,7 @@ pub async fn update_payment(
     // Recalculate status for affected invoices (from old allocations)
     for inv_id in allocated_invoices {
         let total_allocated: f64 = sqlx::query_scalar(
-            "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+            "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
         )
         .bind(inv_id)
         .fetch_one(&mut *tx)
@@ -451,7 +451,7 @@ pub async fn update_payment(
         .map_err(|e| e.to_string())?;
 
         let invoice_total: f64 = sqlx::query_scalar(
-            "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+            "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
              FROM vouchers v
              LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
              WHERE v.id = ?
@@ -529,7 +529,7 @@ pub async fn update_payment(
 
                 // Update invoice status
                 let total_allocated: f64 = sqlx::query_scalar(
-                    "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+                    "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
                 )
                 .bind(alloc.invoice_id)
                 .fetch_one(&mut *tx)
@@ -537,7 +537,7 @@ pub async fn update_payment(
                 .map_err(|e| e.to_string())?;
 
                 let invoice_total: f64 = sqlx::query_scalar(
-                    "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+                    "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
                      FROM vouchers v
                      LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
                      WHERE v.id = ?
@@ -766,7 +766,7 @@ pub async fn create_receipt(
 
                 // Update invoice status
                 let total_allocated: f64 = sqlx::query_scalar(
-                    "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+                    "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
                 )
                 .bind(alloc.invoice_id)
                 .fetch_one(&mut *tx)
@@ -774,7 +774,7 @@ pub async fn create_receipt(
                 .map_err(|e| e.to_string())?;
 
                 let invoice_total: f64 = sqlx::query_scalar(
-                    "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+                    "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
                      FROM vouchers v
                      LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
                      WHERE v.id = ?
@@ -885,8 +885,8 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
             COALESCE(json_extract(v.metadata, '$.method'), '') as receipt_method,
             v.reference,
             v.total_amount,
-            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            COALESCE(SUM(vi.tax_amount), 0.0) as tax_amount,
+            v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0) as grand_total,
             v.narration,
             v.status,
             v.created_at,
@@ -917,8 +917,8 @@ pub async fn get_receipt(pool: State<'_, SqlitePool>, id: i64) -> Result<Receipt
             COALESCE(json_extract(v.metadata, '$.method'), '') as receipt_method,
             v.reference as reference_number,
             v.total_amount,
-            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            COALESCE(SUM(vi.tax_amount), 0.0) as tax_amount,
+            v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0) as grand_total,
             v.narration,
             v.status,
             v.created_at,
@@ -1032,7 +1032,7 @@ pub async fn update_receipt(
     // Recalculate status for effected invoices
     for inv_id in allocated_invoices {
         let total_allocated: f64 = sqlx::query_scalar(
-            "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+            "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
         )
         .bind(inv_id)
         .fetch_one(&mut *tx)
@@ -1040,7 +1040,7 @@ pub async fn update_receipt(
         .map_err(|e| e.to_string())?;
 
         let invoice_total: f64 = sqlx::query_scalar(
-            "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+            "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
              FROM vouchers v
              LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
              WHERE v.id = ?
@@ -1118,7 +1118,7 @@ pub async fn update_receipt(
 
                 // Update invoice status
                 let total_allocated: f64 = sqlx::query_scalar(
-                    "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+                    "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
                 )
                 .bind(alloc.invoice_id)
                 .fetch_one(&mut *tx)
@@ -1126,7 +1126,7 @@ pub async fn update_receipt(
                 .map_err(|e| e.to_string())?;
 
                 let invoice_total: f64 = sqlx::query_scalar(
-                    "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+                    "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
                      FROM vouchers v
                      LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
                      WHERE v.id = ?
@@ -1343,8 +1343,8 @@ pub async fn get_journal_entries(pool: State<'_, SqlitePool>) -> Result<Vec<Jour
             v.voucher_date,
             v.reference,
             v.narration,
-            COALESCE(SUM(je.debit), 0) as total_debit,
-            COALESCE(SUM(je.credit), 0) as total_credit,
+            COALESCE(SUM(je.debit), 0.0) as total_debit,
+            COALESCE(SUM(je.credit), 0.0) as total_credit,
             v.status,
             v.created_at,
             v.deleted_at
@@ -1373,8 +1373,8 @@ pub async fn get_journal_entry(
             v.voucher_date,
             v.reference,
             v.narration,
-            COALESCE(SUM(je.debit), 0) as total_debit,
-            COALESCE(SUM(je.credit), 0) as total_credit,
+            COALESCE(SUM(je.debit), 0.0) as total_debit,
+            COALESCE(SUM(je.credit), 0.0) as total_credit,
             v.status,
             v.created_at,
             v.deleted_at
@@ -1562,8 +1562,8 @@ pub async fn get_account_balance(
 ) -> Result<f64, String> {
     let result = sqlx::query_as::<_, (f64, f64)>(
         "SELECT 
-            COALESCE(SUM(debit), 0) as total_debit, 
-            COALESCE(SUM(credit), 0) as total_credit 
+            COALESCE(SUM(debit), 0.0) as total_debit, 
+            COALESCE(SUM(credit), 0.0) as total_credit 
          FROM journal_entries 
          WHERE account_id = ?",
     )
@@ -1592,9 +1592,9 @@ pub async fn get_pending_invoices(
             v.voucher_no,
             v.voucher_date,
             v.voucher_type,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as total_amount,
-            (v.total_amount + COALESCE(SUM(vi.tax_amount), 0) - COALESCE(
-                (SELECT SUM(allocated_amount) FROM payment_allocations WHERE invoice_voucher_id = v.id), 0
+            v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0) as total_amount,
+            (v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0) - COALESCE(
+                (SELECT SUM(allocated_amount) FROM payment_allocations WHERE invoice_voucher_id = v.id), 0.0
             )) as pending_amount,
             v.narration
          FROM vouchers v

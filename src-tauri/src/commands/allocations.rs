@@ -48,18 +48,18 @@ pub async fn get_outstanding_invoices(
             v.voucher_no,
             v.voucher_date,
             coa.account_name as party_name,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as total_amount,
+            v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0) as total_amount,
             COALESCE(
                 (SELECT SUM(pa.allocated_amount) 
                  FROM payment_allocations pa 
                  WHERE pa.invoice_voucher_id = v.id), 
-                0
+                0.0
             ) as allocated_amount,
-            (v.total_amount + COALESCE(SUM(vi.tax_amount), 0)) - COALESCE(
+            (v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)) - COALESCE(
                 (SELECT SUM(pa.allocated_amount) 
                  FROM payment_allocations pa 
                  WHERE pa.invoice_voucher_id = v.id), 
-                0
+                0.0
             ) as outstanding_amount
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
@@ -91,13 +91,12 @@ pub async fn create_allocation(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get party info from invoice
-    let (party_id, party_type): (i64, String) = sqlx::query_as(
-        "SELECT party_id, party_type FROM vouchers WHERE id = ?"
-    )
-    .bind(allocation.invoice_voucher_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    let (party_id, party_type): (i64, String) =
+        sqlx::query_as("SELECT party_id, party_type FROM vouchers WHERE id = ?")
+            .bind(allocation.invoice_voucher_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
 
     // Insert allocation with party info
     let result = sqlx::query(
@@ -119,7 +118,7 @@ pub async fn create_allocation(
 
     // Update invoice status
     let total_allocated: f64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+        "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
     .bind(allocation.invoice_voucher_id)
     .fetch_one(&mut *tx)
@@ -127,7 +126,7 @@ pub async fn create_allocation(
     .map_err(|e| e.to_string())?;
 
     let invoice_total: f64 = sqlx::query_scalar(
-        "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+        "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
          FROM vouchers v
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
          WHERE v.id = ?
@@ -210,7 +209,7 @@ pub async fn delete_allocation(pool: State<'_, SqlitePool>, id: i64) -> Result<(
 
     // Recalculate invoice status
     let total_allocated: f64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+        "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
     .bind(invoice_id)
     .fetch_one(&mut *tx)
@@ -218,7 +217,7 @@ pub async fn delete_allocation(pool: State<'_, SqlitePool>, id: i64) -> Result<(
     .map_err(|e| e.to_string())?;
 
     let invoice_total: f64 = sqlx::query_scalar(
-        "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+        "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
          FROM vouchers v
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
          WHERE v.id = ?
@@ -304,8 +303,8 @@ pub async fn create_quick_payment(
     let metadata = serde_json::json!({ "method": payment.payment_method }).to_string();
 
     let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted')"
+        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, created_from_invoice_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?)"
     )
     .bind(&voucher_no)
     .bind(voucher_type)
@@ -316,6 +315,7 @@ pub async fn create_quick_payment(
     .bind(payment.amount)
     .bind(metadata)
     .bind(&payment.remarks)
+    .bind(payment.invoice_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -391,7 +391,7 @@ pub async fn create_quick_payment(
 
     // Update invoice status
     let total_allocated: f64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(allocated_amount), 0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+        "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
     .bind(payment.invoice_id)
     .fetch_one(&mut *tx)
@@ -399,7 +399,7 @@ pub async fn create_quick_payment(
     .map_err(|e| e.to_string())?;
 
     let invoice_total: f64 = sqlx::query_scalar(
-        "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0)
+        "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
          FROM vouchers v
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
          WHERE v.id = ?

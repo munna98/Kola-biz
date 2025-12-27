@@ -193,7 +193,7 @@ export default function QuickPaymentDialog({
             if (cashState.amount > 0) {
                 const allocations = invoiceId ? [{
                     invoice_id: invoiceId,
-                    amount: cashState.amount
+                    amount: parseFloat(cashState.amount.toFixed(2))
                 }] : undefined;
 
                 payloads.push({
@@ -207,8 +207,8 @@ export default function QuickPaymentDialog({
                             {
                                 description: effectivePartyName,
                                 account_id: isAutoMode ? partyId : undefined,
-                                amount: cashState.amount,
-                                tax_rate: 0,
+                                amount: parseFloat(cashState.amount.toFixed(2)),
+                                tax_rate: 0.0,
                                 remarks: `${cashState.accountName} - ${invoiceAmount > 0 ? 'Invoice payment' : ''}`,
                                 allocations,
                             },
@@ -220,7 +220,7 @@ export default function QuickPaymentDialog({
             if (bankState.amount > 0) {
                 const allocations = invoiceId ? [{
                     invoice_id: invoiceId,
-                    amount: bankState.amount
+                    amount: parseFloat(bankState.amount.toFixed(2))
                 }] : undefined;
 
                 payloads.push({
@@ -234,8 +234,8 @@ export default function QuickPaymentDialog({
                             {
                                 description: effectivePartyName,
                                 account_id: isAutoMode ? partyId : undefined,
-                                amount: bankState.amount,
-                                tax_rate: 0,
+                                amount: parseFloat(bankState.amount.toFixed(2)),
+                                tax_rate: 0.0,
                                 remarks: `${bankState.accountName} - ${invoiceAmount > 0 ? 'Invoice payment' : ''}`,
                                 allocations,
                             },

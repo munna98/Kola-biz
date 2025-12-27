@@ -5,6 +5,7 @@ import {
     SheetContent,
     SheetHeader,
     SheetTitle,
+    SheetDescription,
     SheetTrigger
 } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
@@ -75,6 +76,9 @@ export function VoucherListViewSheet({
                         <IconList size={20} />
                         {title || 'Voucher List'}
                     </SheetTitle>
+                    <SheetDescription>
+                        Search.
+                    </SheetDescription>
                     <div className="relative mt-2">
                         <IconSearch className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                         <Input

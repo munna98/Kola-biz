@@ -177,6 +177,11 @@ pub async fn init_db(
         .execute(&pool)
         .await;
 
+    // Migration: Add created_from_invoice_id to track quick payments created from invoice page
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN created_from_invoice_id INTEGER")
+        .execute(&pool)
+        .await;
+
     // Migration: Update payment_allocations schema if needed
     // In case the old table exists with column 'amount' instead of 'allocated_amount'
     let _ = sqlx::query("ALTER TABLE payment_allocations RENAME COLUMN amount TO allocated_amount")
