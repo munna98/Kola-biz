@@ -1,0 +1,57 @@
+import { ReactNode } from 'react';
+import { Button } from '@/components/ui/button';
+import { IconPlus } from '@tabler/icons-react';
+import { cn } from '@/lib/utils';
+
+interface VoucherItemsTableProps {
+    header: ReactNode;
+    children: ReactNode;
+    onAddItem: () => void;
+    addItemLabel?: string;
+    disableAdd?: boolean;
+    className?: string;
+    height?: string | number;
+}
+
+export function VoucherItemsTable({
+    header,
+    children,
+    onAddItem,
+    addItemLabel = 'Add Item (Ctrl+N)',
+    disableAdd = false,
+    className,
+    height = 'calc(5 * 3.25rem + 2.5rem + 2.5rem)'
+}: VoucherItemsTableProps) {
+    return (
+        <div
+            className={cn("bg-card border rounded-lg overflow-hidden flex flex-col shrink-0", className)}
+            style={{ height }}
+        >
+            {/* Table Header */}
+            <div className="bg-muted/50 border-b shrink-0">
+                {header}
+            </div>
+
+            {/* Items - Scrollable */}
+            <div className="divide-y overflow-y-auto flex-1">
+                {children}
+            </div>
+
+            {/* Add Item Button */}
+            {!disableAdd && (
+                <div className="bg-muted/30 border-t px-3 py-2 shrink-0">
+                    <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={onAddItem}
+                        className="text-xs h-7"
+                    >
+                        <IconPlus size={14} />
+                        {addItemLabel}
+                    </Button>
+                </div>
+            )}
+        </div>
+    );
+}

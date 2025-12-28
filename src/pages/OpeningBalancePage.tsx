@@ -22,10 +22,8 @@ import type { RootState, AppDispatch, OpeningBalanceLine } from '@/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Combobox } from '@/components/ui/combobox';
+
 import {
-    IconPlus,
-    IconTrash,
     IconCheck,
     IconX,
 } from '@tabler/icons-react';
@@ -34,9 +32,11 @@ import {
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
-import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
+
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
+
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
+import { VoucherJournalSection } from '@/components/voucher/VoucherJournalSection';
 
 interface LedgerAccount {
     id: number;
@@ -292,11 +292,7 @@ export default function OpeningBalancePage() {
         showShortcuts
     });
 
-    // Row navigation hook
-    const { handleRowKeyDown } = useVoucherRowNavigation({
-        onRemoveItem: handleRemoveLine,
-        onAddItem: handleAddLine
-    });
+
 
     if (isInitializing) {
         return (
@@ -391,112 +387,15 @@ export default function OpeningBalancePage() {
                     </div>
 
                     {/* Lines Section */}
-                    <div className="bg-card border rounded-lg overflow-hidden flex flex-col shrink-0" style={{ height: 'calc(5 * 3.25rem + 2.5rem + 2.5rem)' }}>
-                        {/* Table Header */}
-                        <div className="bg-muted/50 border-b shrink-0">
-                            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground">
-                                <div className="col-span-4">Account</div>
-                                <div className="col-span-2 text-right">Debit (Dr)</div>
-                                <div className="col-span-2 text-right">Credit (Cr)</div>
-                                <div className="col-span-3">Line Narration</div>
-                                <div className="w-8"></div>
-                            </div>
-                        </div>
-
-                        {/* Lines - Scrollable */}
-                        <div className="divide-y overflow-y-auto flex-1">
-                            {openingBalanceState.lines.map((line, index) => (
-                                <div
-                                    key={line.id || index}
-                                    data-row-index={index}
-                                    className={`grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50`}
-                                    onKeyDown={(e) => handleRowKeyDown(e, index)}
-                                >
-                                    {/* Account */}
-                                    <div className="col-span-4">
-                                        <Combobox
-                                            value={line.account_id}
-                                            options={accounts.map(a => ({
-                                                value: a.id,
-                                                label: `${a.account_code} - ${a.account_name}`
-                                            }))}
-                                            onChange={(val) => handleUpdateLine(index, 'account_id', val)}
-                                            placeholder="Select Account"
-                                            searchPlaceholder="Search accounts..."
-                                            disabled={openingBalanceState.mode === 'viewing'}
-                                        />
-                                    </div>
-
-                                    {/* Debit */}
-                                    <div className="col-span-2">
-                                        <Input
-                                            type="number"
-                                            value={line.debit || ''}
-                                            onChange={(e) => handleUpdateLine(index, 'debit', e.target.value)}
-                                            className="h-7 text-xs text-right font-mono"
-                                            placeholder="0.00"
-                                            step="0.01"
-                                            onFocus={(e) => e.target.select()}
-                                        />
-                                    </div>
-
-                                    {/* Credit */}
-                                    <div className="col-span-2">
-                                        <Input
-                                            type="number"
-                                            value={line.credit || ''}
-                                            onChange={(e) => handleUpdateLine(index, 'credit', e.target.value)}
-                                            className="h-7 text-xs text-right font-mono"
-                                            placeholder="0.00"
-                                            step="0.01"
-                                            onFocus={(e) => e.target.select()}
-                                        />
-                                    </div>
-
-                                    {/* Narration */}
-                                    <div className="col-span-3">
-                                        <Input
-                                            value={line.narration || ''}
-                                            onChange={(e) => handleUpdateLine(index, 'narration', e.target.value)}
-                                            className="h-7 text-xs"
-                                            placeholder="Line description"
-                                            disabled={openingBalanceState.mode === 'viewing'}
-                                        />
-                                    </div>
-
-                                    {/* Delete */}
-                                    <div className="flex justify-end">
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleRemoveLine(index)}
-                                            className="h-6 w-6 p-0"
-                                            title="Delete (Ctrl+D)"
-                                            disabled={openingBalanceState.mode === 'viewing'}
-                                        >
-                                            <IconTrash size={14} />
-                                        </Button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Add Line Button */}
-                        <div className="bg-muted/30 border-t px-3 py-2 shrink-0">
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={handleAddLine}
-                                className="text-xs h-7"
-                                disabled={openingBalanceState.mode === 'viewing'}
-                            >
-                                <IconPlus size={14} />
-                                Add Line (Ctrl+N)
-                            </Button>
-                        </div>
-                    </div>
+                    <VoucherJournalSection
+                        lines={openingBalanceState.lines}
+                        accounts={accounts}
+                        isReadOnly={openingBalanceState.mode === 'viewing'}
+                        onAddLine={handleAddLine}
+                        onRemoveLine={handleRemoveLine}
+                        onUpdateLine={handleUpdateLine}
+                        addItemLabel="Add Line (Ctrl+N)"
+                    />
 
                     {/* Totals */}
                     <div className="bg-card border rounded-lg p-3 shrink-0">

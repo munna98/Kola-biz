@@ -26,20 +26,17 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Combobox } from '@/components/ui/combobox';
 import {
-    IconPlus,
-    IconTrash,
     IconCheck,
     IconX,
-    IconReceipt2,
 } from '@tabler/icons-react';
 
 // Global Voucher Components & Hooks
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
-import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
+import { VoucherLedgerSection } from '@/components/voucher/VoucherLedgerSection';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import BillAllocationDialog, { AllocationData } from '@/components/dialogs/BillAllocationDialog';
 
@@ -120,7 +117,7 @@ export default function PaymentPage() {
             if (ledger) {
                 // Update account_id alongside description
                 dispatch(updatePaymentItem({ index, data: { account_id: ledger.id } }));
-                
+
                 // Fetch Balance
                 invoke<number>('get_account_balance', { accountId: ledger.id })
                     .then(bal => setRowBalances(prev => ({ ...prev, [index]: bal })))
@@ -307,11 +304,7 @@ export default function PaymentPage() {
         showShortcuts
     });
 
-    // Row navigation hook
-    const { handleRowKeyDown } = useVoucherRowNavigation({
-        onRemoveItem: handleRemoveItem,
-        onAddItem: handleAddItem
-    });
+
 
     if (isInitializing) {
         return (
@@ -436,110 +429,19 @@ export default function PaymentPage() {
                     </div>
 
                     {/* Items Section */}
-                    <div className="bg-card border rounded-lg overflow-hidden flex flex-col shrink-0" style={{ height: 'calc(5 * 3.25rem + 2.5rem + 2.5rem)' }}>
-                        {/* Table Header */}
-                        <div className="bg-muted/50 border-b shrink-0">
-                            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground items-center">
-                                <div className="col-span-5 flex justify-between items-center">
-                                    <span>Pay To (Account/Ledger)</span>
-
-                                </div>
-                                <div className="col-span-2 text-right">Amount</div>
-                                <div className="col-span-4">Remarks</div>
-                                <div className="col-span-1"></div>
-                            </div>
-                        </div>
-
-                        {/* Items - Scrollable */}
-                        <div className="divide-y overflow-y-auto flex-1">
-                            {paymentState.items.map((item, index) => (
-                                <div
-                                    key={item.id || index}
-                                    data-row-index={index}
-                                    className="grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50"
-                                    onKeyDown={(e) => handleRowKeyDown(e, index)}
-                                >
-                                    {/* Pay To Ledger */}
-                                    <div className="col-span-5" onFocus={() => setFocusedRowIndex(index)}>
-                                        <Combobox
-                                            value={item.description}
-                                            options={payToLedgers.map(l => ({ value: l.account_name, label: l.account_name }))}
-                                            onChange={(val) => handleUpdateItem(index, 'description', val)}
-                                            placeholder="Select Ledger"
-                                            searchPlaceholder="Search ledgers..."
-                                            disabled={paymentState.mode === 'viewing'}
-                                        />
-                                    </div>
-
-                                    {/* Amount */}
-                                    <div className="col-span-2 flex items-start gap-1">
-                                        <Input
-                                            type="number"
-                                            value={item.amount || ''}
-                                            onChange={(e) => handleUpdateItem(index, 'amount', parseFloat(e.target.value) || 0)}
-                                            onFocus={() => setFocusedRowIndex(index)}
-                                            className="h-7 text-xs text-right font-mono"
-                                            placeholder="0.00"
-                                            step="0.01"
-                                            disabled={paymentState.mode === 'viewing'}
-                                        />
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            className={`h-7 w-7 p-0 ${(item.allocations?.length || 0) > 0 ? 'text-blue-600 bg-blue-50' : 'text-muted-foreground'}`}
-                                            title="Billwise Allocation"
-                                            onClick={() => setAllocatingRowIndex(index)}
-                                            disabled={!item.description || paymentState.mode === 'viewing'}
-                                        >
-                                            <IconReceipt2 size={14} />
-                                        </Button>
-                                    </div>
-
-                                    {/* Remarks */}
-                                    <div className="col-span-4">
-                                        <Input
-                                            value={(item as any).remarks || ''}
-                                            onChange={(e) => handleUpdateItem(index, 'remarks', e.target.value)}
-                                            className="h-7 text-xs"
-                                            placeholder="e.g. Bill #123"
-                                            disabled={paymentState.mode === 'viewing'}
-                                        />
-                                    </div>
-
-                                    {/* Delete */}
-                                    <div className="flex justify-end">
-                                        <Button
-                                            type="button"
-                                            variant="ghost"
-                                            size="sm"
-                                            onClick={() => handleRemoveItem(index)}
-                                            className="h-6 w-6 p-0"
-                                            title="Delete (Ctrl+D)"
-                                            disabled={paymentState.mode === 'viewing'}
-                                        >
-                                            <IconTrash size={14} />
-                                        </Button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-
-                        {/* Add Item Button */}
-                        <div className="bg-muted/30 border-t px-3 py-2 shrink-0">
-                            <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                onClick={handleAddItem}
-                                className="text-xs h-7"
-                                disabled={paymentState.mode === 'viewing'}
-                            >
-                                <IconPlus size={14} />
-                                Add Item (Ctrl+N)
-                            </Button>
-                        </div>
-                    </div>
+                    <VoucherLedgerSection
+                        items={paymentState.items}
+                        ledgers={payToLedgers}
+                        isReadOnly={paymentState.mode === 'viewing'}
+                        onAddItem={handleAddItem}
+                        onRemoveItem={handleRemoveItem}
+                        onUpdateItem={handleUpdateItem}
+                        onAllocations={setAllocatingRowIndex}
+                        addItemLabel="Add Item (Ctrl+N)"
+                        disableAdd={paymentState.mode === 'viewing'}
+                        rowBalances={rowBalances}
+                        onFocusRow={setFocusedRowIndex}
+                    />
 
                     {/* Totals */}
                     <div className="bg-card border rounded-lg p-3 shrink-0">

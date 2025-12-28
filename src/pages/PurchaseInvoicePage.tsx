@@ -29,8 +29,6 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Combobox } from '@/components/ui/combobox';
 import {
-  IconPlus,
-  IconTrash,
   IconCheck,
   IconX,
 } from '@tabler/icons-react';
@@ -40,8 +38,9 @@ import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
-import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
+
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
+import { VoucherItemsSection } from '@/components/voucher/VoucherItemsSection';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 
 interface Product {
@@ -430,11 +429,7 @@ export default function PurchaseInvoicePage() {
     showShortcuts
   });
 
-  // Row navigation hook
-  const { handleRowKeyDown } = useVoucherRowNavigation({
-    onRemoveItem: handleRemoveItem,
-    onAddItem: handleAddItem
-  });
+
 
   if (isInitializing) {
     return (
@@ -559,158 +554,18 @@ export default function PurchaseInvoicePage() {
           </div>
 
           {/* Items Section */}
-          <div className="bg-card border rounded-lg overflow-hidden flex flex-col shrink-0" style={{ height: 'calc(5 * 3.25rem + 2.5rem + 2.5rem)' }}>
-            {/* Table Header */}
-            <div className="bg-muted/50 border-b shrink-0">
-              <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground">
-                <div className="col-span-3">Product</div>
-                <div>Qty</div>
-                <div>Unit</div>
-                <div>Rate</div>
-                <div>Count</div>
-                <div>Deduction</div>
-                <div>Final Qty</div>
-                <div className="text-right">Amount</div>
-                <div className="text-right">Total</div>
-                <div className="w-8"></div>
-              </div>
-            </div>
-
-            {/* Items - Scrollable */}
-            <div className="divide-y overflow-y-auto flex-1">
-              {purchaseState.items.map((item, idx) => {
-                const calc = getItemAmount(item);
-                const product = products.find(p => p.id === item.product_id);
-                return (
-                  <div
-                    key={item.id}
-                    data-row-index={idx}
-                    className="grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50"
-                    onKeyDown={(e) => handleRowKeyDown(e, idx)}
-                  >
-                    {/* Product */}
-                    <div className="col-span-3">
-                      <Combobox
-                        options={products.map(p => ({ value: p.id, label: `${p.code} - ${p.name}` }))}
-                        value={item.product_id}
-                        onChange={(value) => handleUpdateItem(idx, 'product_id', value)}
-                        placeholder="Select product"
-                        searchPlaceholder="Search products..."
-                        disabled={isReadOnly}
-                      />
-                    </div>
-
-                    {/* Initial Quantity */}
-                    <div>
-                      <Input
-                        type="number"
-                        value={item.initial_quantity || ''}
-                        onChange={(e) =>
-                          handleUpdateItem(idx, 'initial_quantity', parseFloat(e.target.value) || 0)
-                        }
-                        className="h-7 text-xs text-right font-mono"
-                        placeholder="0.00"
-                        step="0.01"
-                        disabled={isReadOnly}
-                      />
-                    </div>
-
-                    {/* Unit */}
-                    <div className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-medium text-muted-foreground">
-                      {units.find(u => u.id === product?.unit_id)?.symbol || '-'}
-                    </div>
-
-                    {/* Rate */}
-                    <div>
-                      <Input
-                        type="number"
-                        value={item.rate || ''}
-                        onChange={(e) => handleUpdateItem(idx, 'rate', parseFloat(e.target.value) || 0)}
-                        className="h-7 text-xs text-right font-mono"
-                        placeholder="0.00"
-                        step="0.01"
-                        disabled={isReadOnly}
-                      />
-                    </div>
-
-                    {/* Count */}
-                    <div>
-                      <Input
-                        type="number"
-                        value={item.count || ''}
-                        onChange={(e) => handleUpdateItem(idx, 'count', parseFloat(e.target.value) || 0)}
-                        className="h-7 text-xs text-right font-mono"
-                        placeholder="1.00"
-                        step="0.01"
-                        disabled={isReadOnly}
-                      />
-                    </div>
-
-                    {/* Deduction */}
-                    <div>
-                      <Input
-                        type="number"
-                        value={item.deduction_per_unit || ''}
-                        onChange={(e) =>
-                          handleUpdateItem(idx, 'deduction_per_unit', parseFloat(e.target.value) || 0)
-                        }
-                        className="h-7 text-xs text-right font-mono"
-                        placeholder="0.00"
-                        step="0.01"
-                        disabled={isReadOnly}
-                      />
-                    </div>
-
-                    {/* Final Qty */}
-                    <div className="h-7 text-xs flex items-center justify-center bg-muted/50 border border-input rounded-md font-medium font-mono">
-                      {calc.finalQty.toFixed(2)}
-                    </div>
-
-                    {/* Amount */}
-                    <div className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-medium font-mono">
-                      ₹{calc.amount.toFixed(2)}
-                    </div>
-
-                    {/* Total */}
-                    <div className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-bold font-mono">
-                      ₹{calc.total.toFixed(2)}
-                    </div>
-
-                    {/* Delete */}
-                    <div className="flex justify-end">
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleRemoveItem(idx)}
-                        className="h-6 w-6 p-0"
-                        title="Delete (Ctrl+D)"
-                        disabled={isReadOnly}
-                      >
-                        <IconTrash size={14} />
-                      </Button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Add Item Button */}
-            {!isReadOnly && (
-              <div className="bg-muted/30 border-t px-3 py-2 shrink-0">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleAddItem}
-                  className="text-xs h-7"
-                >
-                  <IconPlus size={14} />
-                  Add Item (Ctrl+N)
-                </Button>
-              </div>
-            )}
-          </div>
+          <VoucherItemsSection
+            items={purchaseState.items}
+            products={products}
+            units={units}
+            isReadOnly={isReadOnly}
+            onAddItem={handleAddItem}
+            onRemoveItem={handleRemoveItem}
+            onUpdateItem={handleUpdateItem}
+            getItemAmount={getItemAmount}
+            addItemLabel="Add Item (Ctrl+N)"
+            disableAdd={isReadOnly}
+          />
 
           {/* Totals and Notes */}
           <div className="grid grid-cols-3 gap-4 shrink-0">
