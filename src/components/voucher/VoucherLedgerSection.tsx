@@ -1,11 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
 import { IconTrash, IconReceipt2 } from '@tabler/icons-react';
 import { VoucherItemsTable } from '@/components/voucher/VoucherItemsTable';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
-import { AllocationData } from '@/components/dialogs/BillAllocationDialog';
 
 interface LedgerAccount {
     id: number;
@@ -38,7 +37,6 @@ export function VoucherLedgerSection({
     header,
     addItemLabel,
     disableAdd,
-    rowBalances = {},
     onFocusRow
 }: VoucherLedgerSectionProps) {
 

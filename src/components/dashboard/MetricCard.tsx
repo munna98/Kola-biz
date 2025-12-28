@@ -9,7 +9,7 @@ interface MetricCardProps {
     subtitle?: string;
 }
 
-export default function MetricCard({ title, value, change, icon: Icon, subtitle }: MetricCardProps) {
+export default function MetricCard({ title, value, change, subtitle }: MetricCardProps) {
     return (
         <Card className="border-t-4 border-t-muted">
             <CardContent className="p-4">

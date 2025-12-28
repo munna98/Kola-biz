@@ -5,6 +5,7 @@ interface ProductGroupData {
     group_name: string;
     product_count: number;
     total_stock_value: number;
+    [key: string]: any; // Index signature for Recharts compatibility
 }
 
 interface ProductGroupsChartProps {

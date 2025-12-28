@@ -126,7 +126,6 @@ export default function OpeningBalancePage() {
 
     // Hook for navigation
     const {
-        handleNavigatePrevious,
         handleNavigateNext,
         handleNew,
         handleCancel
