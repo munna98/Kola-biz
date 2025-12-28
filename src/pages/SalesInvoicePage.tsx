@@ -78,7 +78,7 @@ export default function SalesInvoicePage() {
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
   const [savedInvoiceId, setSavedInvoiceId] = useState<number | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
-  const [savedPartyId, setSavedPartyId] = useState<number | undefined>(undefined);
+  const [, setSavedPartyId] = useState<number | undefined>(undefined);
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -142,7 +142,7 @@ export default function SalesInvoicePage() {
         description: '',
         initial_quantity: 0,
         count: 1,
-        deduction_per_unit: 0,
+        deduction_per_unit: 1,
         rate: 0,
         tax_rate: 0,
       })

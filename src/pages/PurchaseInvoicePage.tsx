@@ -218,7 +218,7 @@ export default function PurchaseInvoicePage() {
         description: '',
         initial_quantity: 0,
         count: 1,
-        deduction_per_unit: 0,
+        deduction_per_unit: 1.5,
         rate: 0,
         tax_rate: 0,
       })

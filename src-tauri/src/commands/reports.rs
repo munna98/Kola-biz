@@ -540,7 +540,7 @@ pub async fn get_party_outstanding(
         FROM chart_of_accounts coa
         LEFT JOIN (
             SELECT 
-                account_id,
+                je.account_id,
                 SUM(debit) as total_debit,
                 SUM(credit) as total_credit,
                 SUM(debit - credit) as net_dr_cr,
@@ -548,7 +548,7 @@ pub async fn get_party_outstanding(
             FROM journal_entries je
             JOIN vouchers v ON je.voucher_id = v.id
             WHERE v.voucher_date <= ? AND v.deleted_at IS NULL
-            GROUP BY account_id
+            GROUP BY je.account_id
         ) je_stats ON coa.id = je_stats.account_id
         LEFT JOIN (
             SELECT 
@@ -871,13 +871,10 @@ pub async fn get_stock_movements(
             CAST(sm.quantity AS REAL) as quantity,
             CAST(sm.rate AS REAL) as rate,
             CAST(sm.amount AS REAL) as amount,
-            CASE 
-                WHEN v.party_type = 'customer' THEN (SELECT name FROM customers WHERE id = v.party_id)
-                WHEN v.party_type = 'supplier' THEN (SELECT name FROM suppliers WHERE id = v.party_id)
-                ELSE NULL
-            END as party_name
+            coa.account_name as party_name
         FROM stock_movements sm
         JOIN vouchers v ON sm.voucher_id = v.id
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         WHERE sm.product_id = ? AND v.deleted_at IS NULL {}
         ORDER BY v.voucher_date ASC, v.id ASC",
         date_filter
