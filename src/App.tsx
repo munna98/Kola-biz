@@ -27,6 +27,8 @@ import StockReportPage from './pages/reports/StockReportPage';
 
 import CompanyProfilePage from './pages/settings/CompanyProfilePage';
 import InvoiceSettingsPage from './pages/InvoiceSettingsPage';
+import DashboardPage from './pages/DashboardPage';
+
 
 
 function AppContent() {
@@ -43,6 +45,7 @@ function AppContent() {
 
   const renderContent = () => {
     switch (activeSection) {
+      case 'dashboard': return <DashboardPage />;
       case 'products': return <ProductsPage key={productPageKey} />;
       case 'customers': return <CustomersPage />;
       case 'suppliers': return <SuppliersPage />;

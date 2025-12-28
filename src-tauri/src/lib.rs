@@ -119,6 +119,14 @@ pub fn run() {
             get_party_invoice_details,
             get_stock_report,
             get_stock_movements,
+            // Dashboard
+            get_dashboard_metrics,
+            get_revenue_trend,
+            get_top_products,
+            get_cash_flow_summary,
+            get_stock_alerts,
+            get_recent_activity,
+            get_product_groups_distribution,
             // Voucher Navigation
             list_vouchers,
             get_previous_voucher_id,

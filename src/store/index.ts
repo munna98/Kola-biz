@@ -32,7 +32,7 @@ const initialNavigationState: VoucherNavigationState = {
 
 const initialState: AppState = {
   sidebarCollapsed: false,
-  activeSection: 'products',
+  activeSection: 'dashboard',
   currentUser: 'Admin',
 };
 

@@ -923,3 +923,463 @@ pub async fn get_stock_movements(
 
     Ok(result)
 }
+
+// ============= DASHBOARD =============
+#[derive(Serialize, Deserialize)]
+pub struct DashboardMetrics {
+    pub total_revenue: f64,
+    pub total_expenses: f64,
+    pub net_profit: f64,
+    pub order_count: i64,
+    pub stock_value: f64,
+    pub cash_balance: f64,
+    pub receivables: f64,
+    pub payables: f64,
+    pub revenue_growth: f64,
+    pub profit_growth: f64,
+}
+
+#[tauri::command]
+pub async fn get_dashboard_metrics(
+    pool: State<'_, SqlitePool>,
+    from_date: String,
+    to_date: String,
+) -> Result<DashboardMetrics, String> {
+    // Get revenue (sales)
+    let revenue: Option<f64> = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
+         FROM vouchers
+         WHERE voucher_type = 'sales_invoice'
+         AND voucher_date >= ? AND voucher_date <= ?
+         AND deleted_at IS NULL",
+    )
+    .bind(&from_date)
+    .bind(&to_date)
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Get expenses (purchases)
+    let expenses: Option<f64> = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
+         FROM vouchers
+         WHERE voucher_type = 'purchase_invoice'
+         AND voucher_date >= ? AND voucher_date <= ?
+         AND deleted_at IS NULL",
+    )
+    .bind(&from_date)
+    .bind(&to_date)
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let total_revenue = revenue.unwrap_or(0.0);
+    let total_expenses = expenses.unwrap_or(0.0);
+
+    // Get order count
+    let order_count: Option<i64> = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM vouchers
+         WHERE voucher_type IN ('sales_invoice', 'purchase_invoice')
+         AND voucher_date >= ? AND voucher_date <= ?
+         AND deleted_at IS NULL",
+    )
+    .bind(&from_date)
+    .bind(&to_date)
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Get stock value
+    let stock_value: Option<f64> = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(
+            (SELECT COALESCE(SUM(quantity), 0) FROM stock_movements sm
+             JOIN vouchers v ON sm.voucher_id = v.id
+             WHERE sm.product_id = p.id AND sm.movement_type = 'IN'
+             AND v.deleted_at IS NULL) -
+            (SELECT COALESCE(SUM(quantity), 0) FROM stock_movements sm
+             JOIN vouchers v ON sm.voucher_id = v.id
+             WHERE sm.product_id = p.id AND sm.movement_type = 'OUT'
+             AND v.deleted_at IS NULL)
+        ) * p.sales_rate, 0) AS REAL)
+         FROM products p WHERE p.deleted_at IS NULL",
+    )
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Get cash balance (sum of cash/bank accounts)
+    let cash_balance: Option<f64> = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(
+            CASE
+                WHEN coa.opening_balance_type = 'Dr' THEN coa.opening_balance ELSE -coa.opening_balance
+            END +
+            COALESCE((SELECT SUM(je.debit - je.credit)
+                      FROM journal_entries je
+                      JOIN vouchers v ON je.voucher_id = v.id
+                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL), 0)
+        ), 0) AS REAL)
+         FROM chart_of_accounts coa
+         WHERE coa.account_group IN ('Cash', 'Bank Accounts')
+         AND coa.deleted_at IS NULL",
+    )
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Get receivables
+    let receivables: Option<f64> = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(
+            CASE
+                WHEN coa.opening_balance_type = 'Dr' THEN coa.opening_balance ELSE -coa.opening_balance
+            END +
+            COALESCE((SELECT SUM(je.debit - je.credit)
+                      FROM journal_entries je
+                      JOIN vouchers v ON je.voucher_id = v.id
+                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL), 0)
+        ), 0) AS REAL)
+         FROM chart_of_accounts coa
+         WHERE coa.account_group = 'Accounts Receivable'
+         AND coa.deleted_at IS NULL",
+    )
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Get payables
+    let payables: Option<f64> = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(
+            CASE
+                WHEN coa.opening_balance_type = 'Cr' THEN coa.opening_balance ELSE -coa.opening_balance
+            END +
+            COALESCE((SELECT SUM(je.credit - je.debit)
+                      FROM journal_entries je
+                      JOIN vouchers v ON je.voucher_id = v.id
+                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL), 0)
+        ), 0) AS REAL)
+         FROM chart_of_accounts coa
+         WHERE coa.account_group = 'Accounts Payable'
+         AND coa.deleted_at IS NULL",
+    )
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Calculate previous period for growth
+    let prev_from =
+        chrono::NaiveDate::parse_from_str(&from_date, "%Y-%m-%d").map_err(|e| e.to_string())?;
+    let prev_to =
+        chrono::NaiveDate::parse_from_str(&to_date, "%Y-%m-%d").map_err(|e| e.to_string())?;
+    let period_days = (prev_to - prev_from).num_days();
+    let prev_period_from = prev_from - chrono::Duration::days(period_days);
+    let prev_period_to = prev_to - chrono::Duration::days(period_days);
+
+    let prev_revenue: Option<f64> = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
+         FROM vouchers
+         WHERE voucher_type = 'sales_invoice'
+         AND voucher_date >= ? AND voucher_date <= ?
+         AND deleted_at IS NULL",
+    )
+    .bind(prev_period_from.to_string())
+    .bind(prev_period_to.to_string())
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let revenue_growth = if let Some(prev_rev) = prev_revenue {
+        if prev_rev > 0.0 {
+            ((total_revenue - prev_rev) / prev_rev) * 100.0
+        } else {
+            0.0
+        }
+    } else {
+        0.0
+    };
+
+    let net_profit = total_revenue - total_expenses;
+    let profit_growth = revenue_growth; // Simplified for now
+
+    Ok(DashboardMetrics {
+        total_revenue,
+        total_expenses,
+        net_profit,
+        order_count: order_count.unwrap_or(0),
+        stock_value: stock_value.unwrap_or(0.0),
+        cash_balance: cash_balance.unwrap_or(0.0),
+        receivables: receivables.unwrap_or(0.0),
+        payables: payables.unwrap_or(0.0),
+        revenue_growth,
+        profit_growth,
+    })
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RevenueTrend {
+    pub date: String,
+    pub revenue: f64,
+    pub expenses: f64,
+}
+
+#[tauri::command]
+pub async fn get_revenue_trend(
+    pool: State<'_, SqlitePool>,
+    days: i32,
+) -> Result<Vec<RevenueTrend>, String> {
+    let end_date = chrono::Local::now().naive_local().date();
+    let start_date = end_date - chrono::Duration::days(days as i64);
+
+    let mut trends = Vec::new();
+    let mut current_date = start_date;
+
+    while current_date <= end_date {
+        let date_str = current_date.to_string();
+
+        let revenue: Option<f64> = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
+             FROM vouchers
+             WHERE voucher_type = 'sales_invoice'
+             AND voucher_date = ?
+             AND deleted_at IS NULL",
+        )
+        .bind(&date_str)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let expenses: Option<f64> = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
+             FROM vouchers
+             WHERE voucher_type = 'purchase_invoice'
+             AND voucher_date = ?
+             AND deleted_at IS NULL",
+        )
+        .bind(&date_str)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+        trends.push(RevenueTrend {
+            date: date_str,
+            revenue: revenue.unwrap_or(0.0),
+            expenses: expenses.unwrap_or(0.0),
+        });
+
+        current_date += chrono::Duration::days(1);
+    }
+
+    Ok(trends)
+}
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct TopProduct {
+    pub product_name: String,
+    pub total_quantity: f64,
+    pub total_revenue: f64,
+}
+
+#[tauri::command]
+pub async fn get_top_products(
+    pool: State<'_, SqlitePool>,
+    limit: i32,
+    from_date: String,
+    to_date: String,
+) -> Result<Vec<TopProduct>, String> {
+    let query = "
+        SELECT
+            p.name as product_name,
+            CAST(SUM(sm.quantity) AS REAL) as total_quantity,
+            CAST(SUM(sm.amount) AS REAL) as total_revenue
+        FROM stock_movements sm
+        JOIN products p ON sm.product_id = p.id
+        JOIN vouchers v ON sm.voucher_id = v.id
+        WHERE sm.movement_type = 'OUT'
+        AND v.voucher_date >= ? AND v.voucher_date <= ?
+        AND v.deleted_at IS NULL
+        GROUP BY p.id, p.name
+        ORDER BY total_revenue DESC
+        LIMIT ?
+    ";
+
+    sqlx::query_as::<_, TopProduct>(query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .bind(limit)
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CashFlowSummary {
+    pub date: String,
+    pub inflows: f64,
+    pub outflows: f64,
+}
+
+#[tauri::command]
+pub async fn get_cash_flow_summary(
+    pool: State<'_, SqlitePool>,
+    days: i32,
+) -> Result<Vec<CashFlowSummary>, String> {
+    let end_date = chrono::Local::now().naive_local().date();
+    let start_date = end_date - chrono::Duration::days(days as i64);
+
+    let mut summary = Vec::new();
+    let mut current_date = start_date;
+
+    while current_date <= end_date {
+        let date_str = current_date.to_string();
+
+        let inflows: Option<f64> = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
+             FROM vouchers
+             WHERE voucher_type IN ('sales_invoice', 'receipt')
+             AND voucher_date = ?
+             AND deleted_at IS NULL",
+        )
+        .bind(&date_str)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let outflows: Option<f64> = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
+             FROM vouchers
+             WHERE voucher_type IN ('purchase_invoice', 'payment')
+             AND voucher_date = ?
+             AND deleted_at IS NULL",
+        )
+        .bind(&date_str)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+        summary.push(CashFlowSummary {
+            date: date_str,
+            inflows: inflows.unwrap_or(0.0),
+            outflows: outflows.unwrap_or(0.0),
+        });
+
+        current_date += chrono::Duration::days(1);
+    }
+
+    Ok(summary)
+}
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct StockAlert {
+    pub product_id: i64,
+    pub product_name: String,
+    pub current_stock: f64,
+    pub unit_symbol: String,
+}
+
+#[tauri::command]
+pub async fn get_stock_alerts(
+    pool: State<'_, SqlitePool>,
+    threshold: f64,
+) -> Result<Vec<StockAlert>, String> {
+    let query = "
+        SELECT
+            p.id as product_id,
+            p.name as product_name,
+            CAST(COALESCE(SUM(
+                CASE
+                    WHEN sm.movement_type = 'IN' THEN sm.quantity
+                    WHEN sm.movement_type = 'OUT' THEN -sm.quantity
+                    ELSE 0
+                END
+            ), 0) AS REAL) as current_stock,
+            u.symbol as unit_symbol
+        FROM products p
+        JOIN units u ON p.unit_id = u.id
+        LEFT JOIN stock_movements sm ON p.id = sm.product_id
+        LEFT JOIN vouchers v ON sm.voucher_id = v.id AND v.deleted_at IS NULL
+        WHERE p.deleted_at IS NULL
+        GROUP BY p.id
+        HAVING current_stock < ? AND current_stock >= 0
+        ORDER BY current_stock ASC
+        LIMIT 10
+    ";
+
+    sqlx::query_as::<_, StockAlert>(query)
+        .bind(threshold)
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct RecentActivity {
+    pub voucher_id: i64,
+    pub voucher_no: String,
+    pub voucher_type: String,
+    pub voucher_date: String,
+    pub party_name: Option<String>,
+    pub amount: f64,
+}
+
+#[tauri::command]
+pub async fn get_recent_activity(
+    pool: State<'_, SqlitePool>,
+    limit: i32,
+) -> Result<Vec<RecentActivity>, String> {
+    let query = "
+        SELECT
+            v.id as voucher_id,
+            v.voucher_no,
+            v.voucher_type,
+            v.voucher_date,
+            coa.account_name as party_name,
+            CAST(v.total_amount AS REAL) as amount
+        FROM vouchers v
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        WHERE v.deleted_at IS NULL
+        ORDER BY v.voucher_date DESC, v.id DESC
+        LIMIT ?
+    ";
+
+    sqlx::query_as::<_, RecentActivity>(query)
+        .bind(limit)
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct ProductGroupData {
+    pub group_name: String,
+    pub product_count: i64,
+    pub total_stock_value: f64,
+}
+
+#[tauri::command]
+pub async fn get_product_groups_distribution(
+    pool: State<'_, SqlitePool>,
+) -> Result<Vec<ProductGroupData>, String> {
+    let query = "
+        SELECT 
+            COALESCE(pg.name, 'Ungrouped') as group_name,
+            COUNT(DISTINCT p.id) as product_count,
+            CAST(COALESCE(SUM(
+                (SELECT COALESCE(SUM(quantity), 0) FROM stock_movements sm
+                 JOIN vouchers v ON sm.voucher_id = v.id
+                 WHERE sm.product_id = p.id AND sm.movement_type = 'IN'
+                 AND v.deleted_at IS NULL) -
+                (SELECT COALESCE(SUM(quantity), 0) FROM stock_movements sm
+                 JOIN vouchers v ON sm.voucher_id = v.id
+                 WHERE sm.product_id = p.id AND sm.movement_type = 'OUT'
+                 AND v.deleted_at IS NULL)
+            ) * p.sales_rate, 0) AS REAL) as total_stock_value
+        FROM products p
+        LEFT JOIN product_groups pg ON p.group_id = pg.id
+        WHERE p.deleted_at IS NULL
+        GROUP BY pg.id, pg.name
+        ORDER BY total_stock_value DESC
+    ";
+
+    sqlx::query_as::<_, ProductGroupData>(query)
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| e.to_string())
+}

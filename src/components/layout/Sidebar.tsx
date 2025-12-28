@@ -13,7 +13,8 @@ import {
     IconNotebook,
     IconReportAnalytics,
     IconCalendarStats,
-    IconReceiptRefund
+    IconReceiptRefund,
+    IconLayoutDashboard
 } from '@tabler/icons-react';
 
 interface MenuItem {
@@ -23,6 +24,7 @@ interface MenuItem {
 }
 
 const menuItems: MenuItem[] = [
+    { id: 'dashboard', label: 'Dashboard', icon: IconLayoutDashboard },
     { id: 'products', label: 'Products', icon: IconPackage },
     { id: 'customers', label: 'Customers', icon: IconUserDown },
     { id: 'suppliers', label: 'Suppliers', icon: IconUserUp },
