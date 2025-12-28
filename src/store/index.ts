@@ -564,6 +564,9 @@ const journalEntrySlice = createSlice({
     setJournalNarration: (state, action: PayloadAction<string>) => {
       state.form.narration = action.payload;
     },
+    setJournalLines: (state, action: PayloadAction<JournalEntryLine[]>) => {
+      state.lines = action.payload.map(line => ({ ...line, id: line.id || `temp-${Date.now()}-${Math.random()}` }));
+    },
     addJournalLine: (state, action: PayloadAction<JournalEntryLine>) => {
       state.lines.push({ ...action.payload, id: `temp-${Date.now()}` });
     },
@@ -603,6 +606,7 @@ export const {
   setJournalDate,
   setJournalReference,
   setJournalNarration,
+  setJournalLines,
   addJournalLine,
   updateJournalLine,
   removeJournalLine,

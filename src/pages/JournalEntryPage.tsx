@@ -17,7 +17,8 @@ import {
     setJournalCurrentVoucherId,
     setJournalCurrentVoucherNo,
     setJournalHasUnsavedChanges,
-    setJournalNavigationData
+    setJournalNavigationData,
+    setJournalLines
 } from '@/store';
 import type { RootState, AppDispatch, JournalEntryLine } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -112,9 +113,7 @@ export default function JournalEntryPage() {
             dispatch(setJournalNarration(entry.narration || ''));
 
             // Add lines
-            for (const line of lines) {
-                dispatch(addJournalLine(line)); // Assuming line structure matches
-            }
+            dispatch(setJournalLines(lines));
 
             // Recalculate totals
             const totalDebit = lines.reduce((sum, line) => sum + (line.debit || 0), 0);
