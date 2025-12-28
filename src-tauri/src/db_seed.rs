@@ -72,13 +72,14 @@ pub const A4_BODY: &str = r#"
     <thead>
         <tr>
             <th style="width: 5%;">S.No</th>
-            <th style="width: 35%;">Description</th>
-            <th style="width: 10%;">HSN/SAC</th>
-            <th style="width: 10%;">Qty</th>
-            <th style="width: 10%;">Rate</th>
-            <th style="width: 12%;">Amount</th>
-            <th style="width: 8%;">Tax %</th>
-            <th style="width: 10%;">Total</th>
+            <th style="width: 30%;">Description</th>
+            <th style="width: 8%;">HSN/SAC</th>
+            <th style="width: 8%;">Qty</th>
+            <th style="width: 8%;">Less</th>
+            <th style="width: 8%;">Rate</th>
+            <th style="width: 10%;">Amount</th>
+            <th style="width: 7%;">Tax %</th>
+            <th style="width: 8%;">Total</th>
         </tr>
     </thead>
     <tbody>
@@ -92,7 +93,8 @@ pub const A4_BODY: &str = r#"
                 {{/if}}
             </td>
             <td class="center">{{hsn_code}}</td>
-            <td class="right">{{format_number final_quantity 2}}</td>
+            <td class="right">{{format_number initial_quantity 2}}</td>
+            <td class="right">{{format_number less_quantity 2}}</td>
             <td class="right">{{format_currency rate}}</td>
             <td class="right">{{format_currency amount}}</td>
             <td class="center">{{tax_rate}}%</td>
@@ -479,6 +481,7 @@ pub const THERMAL_80MM_BODY: &str = r#"
         <tr>
             <th>Item</th>
             <th>Qty</th>
+            <th>Less</th>
             <th>Rate</th>
             <th>Amt</th>
         </tr>
@@ -487,7 +490,8 @@ pub const THERMAL_80MM_BODY: &str = r#"
         {{#each items}}
         <tr>
             <td>{{product_name}}</td>
-            <td>{{format_number final_quantity 0}}</td>
+            <td>{{format_number initial_quantity 0}}</td>
+            <td>{{format_number less_quantity 0}}</td>
             <td>{{format_number rate 2}}</td>
             <td>{{format_number total 2}}</td>
         </tr>

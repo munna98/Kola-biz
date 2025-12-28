@@ -309,6 +309,11 @@ pub async fn init_db(
     .execute(&pool)
     .await?;
 
+    // Migration: Add count column to stock_movements
+    let _ = sqlx::query("ALTER TABLE stock_movements ADD COLUMN count INTEGER DEFAULT 0")
+        .execute(&pool)
+        .await;
+
     // Opening Balances
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS opening_balances (

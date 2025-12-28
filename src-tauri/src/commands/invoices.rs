@@ -348,8 +348,8 @@ pub async fn create_purchase_invoice(
     }
 
     // Create stock movements
-    let items_for_stock: Vec<(i64, f64, f64, f64)> = sqlx::query_as(
-        "SELECT product_id, final_quantity, rate, amount FROM voucher_items WHERE voucher_id = ?",
+    let items_for_stock: Vec<(i64, f64, i64, f64, f64)> = sqlx::query_as(
+        "SELECT product_id, initial_quantity, count, rate, amount FROM voucher_items WHERE voucher_id = ?",
     )
     .bind(voucher_id)
     .fetch_all(&mut *tx)
@@ -358,14 +358,15 @@ pub async fn create_purchase_invoice(
 
     for item in items_for_stock {
         sqlx::query(
-            "INSERT INTO stock_movements (voucher_id, product_id, movement_type, quantity, rate, amount)
-             VALUES (?, ?, 'IN', ?, ?, ?)"
+            "INSERT INTO stock_movements (voucher_id, product_id, movement_type, quantity, count, rate, amount)
+             VALUES (?, ?, 'IN', ?, ?, ?, ?)"
         )
         .bind(voucher_id)
         .bind(item.0)
         .bind(item.1)
         .bind(item.2)
         .bind(item.3)
+        .bind(item.4)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -628,12 +629,13 @@ pub async fn update_purchase_invoice(
         let amount = final_qty * item.rate;
 
         sqlx::query(
-            "INSERT INTO stock_movements (voucher_id, product_id, movement_type, quantity, rate, amount)
-             VALUES (?, ?, 'IN', ?, ?, ?)"
+            "INSERT INTO stock_movements (voucher_id, product_id, movement_type, quantity, count, rate, amount)
+             VALUES (?, ?, 'IN', ?, ?, ?, ?)"
         )
         .bind(id)
         .bind(item.product_id)
-        .bind(final_qty)
+        .bind(item.initial_quantity)
+        .bind(item.count)
         .bind(item.rate)
         .bind(amount)
         .execute(&mut *tx)
@@ -959,8 +961,8 @@ pub async fn create_sales_invoice(
     }
 
     // Create stock movements (OUT)
-    let items_for_stock: Vec<(i64, f64, f64, f64)> = sqlx::query_as(
-        "SELECT product_id, final_quantity, rate, amount FROM voucher_items WHERE voucher_id = ?",
+    let items_for_stock: Vec<(i64, f64, i64, f64, f64)> = sqlx::query_as(
+        "SELECT product_id, initial_quantity, count, rate, amount FROM voucher_items WHERE voucher_id = ?",
     )
     .bind(voucher_id)
     .fetch_all(&mut *tx)
@@ -969,14 +971,15 @@ pub async fn create_sales_invoice(
 
     for item in items_for_stock {
         sqlx::query(
-            "INSERT INTO stock_movements (voucher_id, product_id, movement_type, quantity, rate, amount)
-             VALUES (?, ?, 'OUT', ?, ?, ?)"
+            "INSERT INTO stock_movements (voucher_id, product_id, movement_type, quantity, count, rate, amount)
+             VALUES (?, ?, 'OUT', ?, ?, ?, ?)"
         )
         .bind(voucher_id)
         .bind(item.0)
         .bind(item.1)
         .bind(item.2)
         .bind(item.3)
+        .bind(item.4)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -1206,12 +1209,13 @@ pub async fn update_sales_invoice(
         let amount = final_quantity * item.rate;
 
         sqlx::query(
-            "INSERT INTO stock_movements (voucher_id, product_id, movement_type, quantity, rate, amount)
-             VALUES (?, ?, 'OUT', ?, ?, ?)"
+            "INSERT INTO stock_movements (voucher_id, product_id, movement_type, quantity, count, rate, amount)
+             VALUES (?, ?, 'OUT', ?, ?, ?, ?)"
         )
         .bind(id)
         .bind(item.product_id)
-        .bind(final_quantity)
+        .bind(item.initial_quantity)
+        .bind(item.count)
         .bind(item.rate)
         .bind(amount)
         .execute(&mut *tx)

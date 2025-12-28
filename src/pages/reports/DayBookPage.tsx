@@ -47,7 +47,7 @@ export default function DayBookPage() {
 
   useEffect(() => {
     loadDayBook();
-  }, []);
+  }, [fromDate, toDate]);
 
   const totalDebit = entries.reduce((sum, row) => sum + row.debit, 0);
   const totalCredit = entries.reduce((sum, row) => sum + row.credit, 0);

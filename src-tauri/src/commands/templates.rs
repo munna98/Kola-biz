@@ -252,6 +252,10 @@ async fn get_purchase_invoice_data(
                 let tax = item.tax_amount;
                 obj.insert("total".to_string(), json!(amount + tax));
 
+                // Add less_quantity field (count * deduction_per_unit)
+                let less_quantity = (item.count as f64) * item.deduction_per_unit;
+                obj.insert("less_quantity".to_string(), json!(less_quantity));
+
                 // Ensure hsn_code exists (even if null/empty)
                 if !obj.contains_key("hsn_code") {
                     obj.insert("hsn_code".to_string(), json!(""));
@@ -377,6 +381,10 @@ async fn get_sales_invoice_data(
                 let amount = item.amount;
                 let tax = item.tax_amount;
                 obj.insert("total".to_string(), json!(amount + tax));
+
+                // Add less_quantity field (count * deduction_per_unit)
+                let less_quantity = (item.count as f64) * item.deduction_per_unit;
+                obj.insert("less_quantity".to_string(), json!(less_quantity));
 
                 // Ensure hsn_code exists (even if null/empty)
                 if !obj.contains_key("hsn_code") {

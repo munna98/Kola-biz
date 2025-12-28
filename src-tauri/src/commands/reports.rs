@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::State;
+use chrono;
 
 // ============= TRIAL BALANCE =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -407,20 +408,251 @@ pub struct CashFlowData {
 
 #[tauri::command]
 pub async fn get_cash_flow(
-    _pool: State<'_, SqlitePool>,
-    _from_date: String,
-    _to_date: String,
+    pool: State<'_, SqlitePool>,
+    from_date: String,
+    to_date: String,
 ) -> Result<CashFlowData, String> {
+    // Get opening date (day before from_date)
+    let opening_date_obj = chrono::NaiveDate::parse_from_str(&from_date, "%Y-%m-%d")
+        .map_err(|e| e.to_string())?;
+    let opening_date = (opening_date_obj - chrono::Duration::days(1)).to_string();
+
+    // 1. Calculate Opening Cash
+    let opening_cash_query = "
+        SELECT CAST(COALESCE(SUM(je.debit - je.credit), 0) AS REAL)
+        FROM journal_entries je
+        JOIN vouchers v ON je.voucher_id = v.id
+        JOIN chart_of_accounts coa ON je.account_id = coa.id
+        WHERE coa.account_name = 'Cash' 
+        AND v.voucher_date <= ? AND v.deleted_at IS NULL
+    ";
+    
+    let opening_cash: f64 = sqlx::query_scalar(opening_cash_query)
+        .bind(&opening_date)
+        .fetch_one(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 2. Calculate Closing Cash
+    let closing_cash_query = "
+        SELECT CAST(COALESCE(SUM(je.debit - je.credit), 0) AS REAL)
+        FROM journal_entries je
+        JOIN vouchers v ON je.voucher_id = v.id
+        JOIN chart_of_accounts coa ON je.account_id = coa.id
+        WHERE coa.account_name = 'Cash' 
+        AND v.voucher_date <= ? AND v.deleted_at IS NULL
+    ";
+    
+    let closing_cash: f64 = sqlx::query_scalar(closing_cash_query)
+        .bind(&to_date)
+        .fetch_one(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let net_change = closing_cash - opening_cash;
+
+    // 3. Operating Activities - Only track actual cash transactions and working capital changes
+    
+    // Cash received from customers (Cash sales)
+    let cash_sales_query = "
+        SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL)
+        FROM journal_entries je
+        JOIN vouchers v ON je.voucher_id = v.id
+        JOIN chart_of_accounts coa ON je.account_id = coa.id
+        WHERE coa.account_name = 'Cash' 
+        AND v.voucher_type = 'sales_invoice'
+        AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+    ";
+    
+    let cash_sales: f64 = sqlx::query_scalar(cash_sales_query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0.0);
+
+    // Cash paid for purchases (Cash purchases only)
+    let cash_purchases_query = "
+        SELECT CAST(COALESCE(SUM(je.credit), 0) AS REAL)
+        FROM journal_entries je
+        JOIN vouchers v ON je.voucher_id = v.id
+        JOIN chart_of_accounts coa ON je.account_id = coa.id
+        WHERE coa.account_name = 'Cash' 
+        AND v.voucher_type = 'purchase_invoice'
+        AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+    ";
+    
+    let cash_purchases: f64 = sqlx::query_scalar(cash_purchases_query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0.0);
+
+    // Cash received from debtors (Payments against credit sales)
+    // Note: Changes in Accounts Receivable can be added if needed for detailed working capital analysis
+    let debtor_payment_query = "
+        SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL)
+        FROM journal_entries je
+        JOIN vouchers v ON je.voucher_id = v.id
+        JOIN chart_of_accounts coa ON je.account_id = coa.id
+        WHERE coa.account_name = 'Cash' 
+        AND v.voucher_type = 'receipt'
+        AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+    ";
+    
+    let debtor_payment: f64 = sqlx::query_scalar(debtor_payment_query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0.0);
+
+    // Cash paid to creditors (Payments against credit purchases)
+    // Note: Changes in Accounts Payable can be added if needed for detailed working capital analysis
+    let creditor_payment_query = "
+        SELECT CAST(COALESCE(SUM(je.credit), 0) AS REAL)
+        FROM journal_entries je
+        JOIN vouchers v ON je.voucher_id = v.id
+        JOIN chart_of_accounts coa ON je.account_id = coa.id
+        WHERE coa.account_name = 'Cash' 
+        AND v.voucher_type = 'payment'
+        AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+    ";
+    
+    let creditor_payment: f64 = sqlx::query_scalar(creditor_payment_query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0.0);
+
+    // Other operating expenses paid in cash
+    let other_expenses_query = "
+        SELECT CAST(COALESCE(SUM(je.credit), 0) AS REAL)
+        FROM journal_entries je
+        JOIN vouchers v ON je.voucher_id = v.id
+        JOIN chart_of_accounts coa ON je.account_id = coa.id
+        WHERE coa.account_name = 'Cash' 
+        AND v.voucher_type = 'journal'
+        AND coa.account_type = 'Expense'
+        AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+    ";
+    
+    let other_expenses: f64 = sqlx::query_scalar(other_expenses_query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0.0);
+
+    let mut operating_activities = vec![];
+    let mut net_operating = 0.0;
+
+    if cash_sales.abs() >= 0.01 {
+        operating_activities.push(CashFlowItem {
+            description: "Cash from Sales".to_string(),
+            amount: cash_sales,
+        });
+        net_operating += cash_sales;
+    }
+
+    if debtor_payment.abs() >= 0.01 {
+        operating_activities.push(CashFlowItem {
+            description: "Cash received from Debtors".to_string(),
+            amount: debtor_payment,
+        });
+        net_operating += debtor_payment;
+    }
+
+    if cash_purchases.abs() >= 0.01 {
+        operating_activities.push(CashFlowItem {
+            description: "Cash paid for Purchases".to_string(),
+            amount: -cash_purchases,
+        });
+        net_operating -= cash_purchases;
+    }
+
+    if creditor_payment.abs() >= 0.01 {
+        operating_activities.push(CashFlowItem {
+            description: "Cash paid to Creditors".to_string(),
+            amount: -creditor_payment,
+        });
+        net_operating -= creditor_payment;
+    }
+
+    if other_expenses.abs() >= 0.01 {
+        operating_activities.push(CashFlowItem {
+            description: "Other Operating Expenses".to_string(),
+            amount: -other_expenses,
+        });
+        net_operating -= other_expenses;
+    }
+
+    // 4. Investing Activities (Asset accounts excluding Cash and Receivables)
+    let investing_query = "
+        SELECT CAST(COALESCE(SUM(je.credit - je.debit), 0) AS REAL)
+        FROM journal_entries je
+        JOIN vouchers v ON je.voucher_id = v.id
+        JOIN chart_of_accounts coa ON je.account_id = coa.id
+        WHERE coa.account_type = 'Asset' 
+        AND coa.account_name NOT IN ('Cash', 'Accounts Receivable', 'Cash Sale', 'Bank Account')
+        AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+    ";
+    
+    let net_investing: f64 = sqlx::query_scalar(investing_query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0.0);
+
+    let mut investing_activities = vec![];
+    if net_investing.abs() >= 0.01 {
+        investing_activities.push(CashFlowItem {
+            description: "Capital Expenditure / Asset Sales".to_string(),
+            amount: net_investing,
+        });
+    }
+
+    // 5. Financing Activities (Only actual financing transactions like loans, capital, dividends)
+    // Exclude operating liabilities (Accounts Payable, Accounts Receivable)
+    let financing_query = "
+        SELECT CAST(COALESCE(SUM(je.debit - je.credit), 0) AS REAL)
+        FROM journal_entries je
+        JOIN vouchers v ON je.voucher_id = v.id
+        JOIN chart_of_accounts coa ON je.account_id = coa.id
+        WHERE coa.account_type IN ('Liability', 'Equity')
+        AND coa.account_name NOT IN ('Accounts Payable', 'Accounts Receivable', 'Cash Sale', 'Cash Purchase')
+        AND v.voucher_type NOT IN ('sales_invoice', 'purchase_invoice', 'receipt', 'payment')
+        AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+    ";
+    
+    let net_financing: f64 = sqlx::query_scalar(financing_query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or(0.0);
+
+    let mut financing_activities = vec![];
+    if net_financing.abs() >= 0.01 {
+        financing_activities.push(CashFlowItem {
+            description: "Financing Activities".to_string(),
+            amount: net_financing,
+        });
+    }
+
     Ok(CashFlowData {
-        operating_activities: vec![],
-        investing_activities: vec![],
-        financing_activities: vec![],
-        net_operating: 0.0,
-        net_investing: 0.0,
-        net_financing: 0.0,
-        net_change: 0.0,
-        opening_cash: 0.0,
-        closing_cash: 0.0,
+        operating_activities,
+        investing_activities,
+        financing_activities,
+        net_operating,
+        net_investing,
+        net_financing,
+        net_change,
+        opening_cash,
+        closing_cash,
     })
 }
 
@@ -930,7 +1162,7 @@ pub struct DashboardMetrics {
     pub total_revenue: f64,
     pub total_expenses: f64,
     pub net_profit: f64,
-    pub order_count: i64,
+    pub profit_margin: f64,
     pub stock_value: f64,
     pub cash_balance: f64,
     pub receivables: f64,
@@ -975,19 +1207,6 @@ pub async fn get_dashboard_metrics(
 
     let total_revenue = revenue.unwrap_or(0.0);
     let total_expenses = expenses.unwrap_or(0.0);
-
-    // Get order count
-    let order_count: Option<i64> = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM vouchers
-         WHERE voucher_type IN ('sales_invoice', 'purchase_invoice')
-         AND voucher_date >= ? AND voucher_date <= ?
-         AND deleted_at IS NULL",
-    )
-    .bind(&from_date)
-    .bind(&to_date)
-    .fetch_optional(pool.inner())
-    .await
-    .map_err(|e| e.to_string())?;
 
     // Get stock value
     let stock_value: Option<f64> = sqlx::query_scalar(
@@ -1097,13 +1316,18 @@ pub async fn get_dashboard_metrics(
     };
 
     let net_profit = total_revenue - total_expenses;
+    let profit_margin = if total_revenue > 0.0 {
+        (net_profit / total_revenue) * 100.0
+    } else {
+        0.0
+    };
     let profit_growth = revenue_growth; // Simplified for now
 
     Ok(DashboardMetrics {
         total_revenue,
         total_expenses,
         net_profit,
-        order_count: order_count.unwrap_or(0),
+        profit_margin,
         stock_value: stock_value.unwrap_or(0.0),
         cash_balance: cash_balance.unwrap_or(0.0),
         receivables: receivables.unwrap_or(0.0),
@@ -1230,34 +1454,52 @@ pub async fn get_cash_flow_summary(
     while current_date <= end_date {
         let date_str = current_date.to_string();
 
-        let inflows: Option<f64> = sqlx::query_scalar(
-            "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
-             FROM vouchers
-             WHERE voucher_type IN ('sales_invoice', 'receipt')
-             AND voucher_date = ?
-             AND deleted_at IS NULL",
+        // Inflows: Cash received from customers (Cash sales) + Payments from debtors + Other inflows
+        let cash_inflows: f64 = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL)
+             FROM journal_entries je
+             JOIN vouchers v ON je.voucher_id = v.id
+             JOIN chart_of_accounts coa ON je.account_id = coa.id
+             WHERE coa.account_name = 'Cash'
+             AND (
+                (v.voucher_type = 'sales_invoice')
+                OR (v.voucher_type = 'receipt')
+                OR (v.voucher_type = 'journal' AND je.debit > 0)
+             )
+             AND v.voucher_date = ?
+             AND v.deleted_at IS NULL",
         )
         .bind(&date_str)
         .fetch_optional(pool.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?
+        .unwrap_or(0.0);
 
-        let outflows: Option<f64> = sqlx::query_scalar(
-            "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
-             FROM vouchers
-             WHERE voucher_type IN ('purchase_invoice', 'payment')
-             AND voucher_date = ?
-             AND deleted_at IS NULL",
+        // Outflows: Cash paid for purchases + Payments to creditors + Other cash expenses
+        let cash_outflows: f64 = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(je.credit), 0) AS REAL)
+             FROM journal_entries je
+             JOIN vouchers v ON je.voucher_id = v.id
+             JOIN chart_of_accounts coa ON je.account_id = coa.id
+             WHERE coa.account_name = 'Cash'
+             AND (
+                (v.voucher_type = 'purchase_invoice')
+                OR (v.voucher_type = 'payment')
+                OR (v.voucher_type = 'journal' AND je.credit > 0)
+             )
+             AND v.voucher_date = ?
+             AND v.deleted_at IS NULL",
         )
         .bind(&date_str)
         .fetch_optional(pool.inner())
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?
+        .unwrap_or(0.0);
 
         summary.push(CashFlowSummary {
             date: date_str,
-            inflows: inflows.unwrap_or(0.0),
-            outflows: outflows.unwrap_or(0.0),
+            inflows: cash_inflows,
+            outflows: cash_outflows,
         });
 
         current_date += chrono::Duration::days(1);

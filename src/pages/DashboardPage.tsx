@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { TrendingUp, TrendingDown, DollarSign, ShoppingCart, Package, Wallet, Users, AlertCircle } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Percent, Package, Wallet, Users, AlertCircle } from 'lucide-react';
 import MetricCard from '@/components/dashboard/MetricCard';
 import RevenueChart from '@/components/dashboard/RevenueChart';
 import CashFlowChart from '@/components/dashboard/CashFlowChart';
@@ -15,7 +15,7 @@ interface DashboardMetrics {
     total_revenue: number;
     total_expenses: number;
     net_profit: number;
-    order_count: number;
+    profit_margin: number;
     stock_value: number;
     cash_balance: number;
     receivables: number;
@@ -75,7 +75,7 @@ const periodDays: Record<Period, number> = {
 };
 
 export default function DashboardPage() {
-    const [period, setPeriod] = useState<Period>('month');
+    const [period, setPeriod] = useState<Period>('today');
     const [loading, setLoading] = useState(true);
 
     const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
@@ -177,9 +177,9 @@ export default function DashboardPage() {
                     icon={DollarSign}
                 />
                 <MetricCard
-                    title="Total Orders"
-                    value={`${metrics?.order_count || 0}`}
-                    icon={ShoppingCart}
+                    title="Profit Margin"
+                    value={`${(metrics?.profit_margin || 0).toFixed(1)}%`}
+                    icon={Percent}
                 />
                 <MetricCard
                     title="Stock Value"
