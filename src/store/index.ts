@@ -229,6 +229,7 @@ export interface PaymentState extends VoucherNavigationState {
     payment_method: 'cash' | 'bank'; // Cash or Bank
     reference_number: string;
     narration: string;
+    created_from_invoice_id: number | null;
   };
   items: PaymentItem[];
   loading: boolean;
@@ -250,6 +251,7 @@ const paymentInitialState: PaymentState = {
     payment_method: 'bank',
     reference_number: '',
     narration: '',
+    created_from_invoice_id: null,
   },
   items: [],
   loading: false,
@@ -296,6 +298,9 @@ const paymentSlice = createSlice({
     setPaymentNarration: (state, action: PayloadAction<string>) => {
       state.form.narration = action.payload;
     },
+    setPaymentCreatedFromInvoiceId: (state, action: PayloadAction<number | null>) => {
+      state.form.created_from_invoice_id = action.payload;
+    },
     addPaymentItem: (state, action: PayloadAction<PaymentItem>) => {
       state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
     },
@@ -316,6 +321,7 @@ const paymentSlice = createSlice({
         payment_method: 'bank',
         reference_number: '',
         narration: '',
+        created_from_invoice_id: null,
       };
       state.items = [];
       state.totals = { subtotal: 0, tax: 0, grandTotal: 0 };
@@ -349,6 +355,7 @@ export interface ReceiptState extends VoucherNavigationState {
     receipt_method: 'cash' | 'bank'; // Cash or Bank
     reference_number: string;
     narration: string;
+    created_from_invoice_id: number | null;
   };
   items: ReceiptItem[];
   loading: boolean;
@@ -370,6 +377,7 @@ const receiptInitialState: ReceiptState = {
     receipt_method: 'bank',
     reference_number: '',
     narration: '',
+    created_from_invoice_id: null,
   },
   items: [],
   loading: false,
@@ -416,6 +424,9 @@ const receiptSlice = createSlice({
     setReceiptNarration: (state, action: PayloadAction<string>) => {
       state.form.narration = action.payload;
     },
+    setReceiptCreatedFromInvoiceId: (state, action: PayloadAction<number | null>) => {
+      state.form.created_from_invoice_id = action.payload;
+    },
     addReceiptItem: (state, action: PayloadAction<ReceiptItem>) => {
       state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
     },
@@ -436,6 +447,7 @@ const receiptSlice = createSlice({
         receipt_method: 'bank',
         reference_number: '',
         narration: '',
+        created_from_invoice_id: null,
       };
       state.items = [];
       state.totals = { subtotal: 0, tax: 0, grandTotal: 0 };
@@ -460,6 +472,7 @@ export const {
   setPaymentMethod,
   setPaymentReference,
   setPaymentNarration,
+  setPaymentCreatedFromInvoiceId,
   addPaymentItem,
   updatePaymentItem,
   removePaymentItem,
@@ -480,6 +493,7 @@ export const {
   setReceiptMethod,
   setReceiptReference,
   setReceiptNarration,
+  setReceiptCreatedFromInvoiceId,
   addReceiptItem,
   updateReceiptItem,
   removeReceiptItem,

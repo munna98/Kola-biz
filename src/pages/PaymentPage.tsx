@@ -18,7 +18,8 @@ import {
     setPaymentCurrentVoucherNo,
     setPaymentHasUnsavedChanges,
     setPaymentNavigationData,
-    setPaymentMethod
+    setPaymentMethod,
+    setPaymentCreatedFromInvoiceId
 } from '@/store';
 import type { RootState, AppDispatch, PaymentItem } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -225,6 +226,7 @@ export default function PaymentPage() {
             dispatch(setPaymentReference(payment.reference_number || ''));
             dispatch(setPaymentNarration(payment.narration || ''));
             dispatch(setPaymentMethod(payment.payment_method || 'bank'));
+            dispatch(setPaymentCreatedFromInvoiceId(payment.created_from_invoice_id || null));
 
             // Populate Items
             items.forEach(item => {
@@ -333,6 +335,8 @@ export default function PaymentPage() {
                 onDelete={handleDeleteVoucher}
                 onNew={handleNew}
                 onListView={() => setShowListView(true)}
+                editDisabled={!!paymentState.form.created_from_invoice_id}
+                deleteDisabled={!!paymentState.form.created_from_invoice_id}
             />
 
             <VoucherShortcutPanel

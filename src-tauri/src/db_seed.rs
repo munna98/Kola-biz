@@ -67,7 +67,7 @@ const A4_HEADER: &str = r#"
 </div>
 "#;
 
-const A4_BODY: &str = r#"
+pub const A4_BODY: &str = r#"
 <table class="items-table">
     <thead>
         <tr>
@@ -111,7 +111,7 @@ const A4_BODY: &str = r#"
         {{#if discount_amount}}
         <div class="totals-row">
             <span>Discount {{#if discount_rate}}({{discount_rate}}%){{/if}}:</span>
-            <span class="discount">- {{format_currency discount_amount}}</span>
+            <span class="discount">{{format_currency discount_amount}}</span>
         </div>
         {{/if}}
         {{#if tax_total}}
@@ -473,7 +473,7 @@ const THERMAL_80MM_HEADER: &str = r#"
 <div class="separator"></div>
 "#;
 
-const THERMAL_80MM_BODY: &str = r#"
+pub const THERMAL_80MM_BODY: &str = r#"
 <table class="items">
     <thead>
         <tr>
@@ -503,7 +503,7 @@ const THERMAL_80MM_BODY: &str = r#"
     {{#if discount_amount}}
     <div class="row">
         <span>Discount:</span>
-        <span>-₹{{format_number discount_amount 2}}</span>
+        <span>₹{{format_number discount_amount 2}}</span>
     </div>
     {{/if}}
     {{#if tax_total}}
@@ -515,6 +515,26 @@ const THERMAL_80MM_BODY: &str = r#"
     <div class="row total">
         <span>TOTAL:</span>
         <span>₹{{format_number grand_total 2}}</span>
+    </div>
+</div>
+
+<!-- Account Summary -->
+<div style="border-top: 1px dashed #000; margin: 10px 0; padding: 5px 0; font-size: 11px;">
+    <div style="display: flex; justify-content: space-between;">
+        <span>Old Bal:</span>
+        <span>{{format_number old_balance 2}}</span>
+    </div>
+    <div style="display: flex; justify-content: space-between;">
+        <span>Bill Amt:</span>
+        <span>{{format_number grand_total 2}}</span>
+    </div>
+    <div style="display: flex; justify-content: space-between;">
+        <span>Paid Amt:</span>
+        <span>{{format_number paid_amount 2}}</span>
+    </div>
+    <div style="display: flex; justify-content: space-between; font-weight: bold; border-top: 1px dotted #000; padding-top: 2px; margin-top: 2px;">
+        <span>Bal Due:</span>
+        <span>{{format_number balance_due 2}}</span>
     </div>
 </div>
 "#;
@@ -745,8 +765,31 @@ const MINIMAL_BODY: &str = r#"
         {{/if}}
         
         <div class="total-row grand-total">
-            <span class="total-label">TOTAL AMOUNT:</span>
-            <span class="total-value">₹{{format_number grand_total 0}}</span>
+            <span class="total-label">Grand Total</span>
+            <span class="total-value">₹{{format_number grand_total 2}}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Account Summary -->
+<div class="account-summary" style="margin-top: 20px; border-top: 1px dashed #ccc; padding-top: 10px;">
+    <h4 style="margin: 0 0 10px 0; font-size: 10pt; text-transform: uppercase;">Account Summary</h4>
+    <div style="display: flex; justify-content: space-between; font-size: 9pt;">
+        <div>
+            <span style="display: block; color: #666; font-size: 8pt;">Old Balance</span>
+            <span style="font-weight: bold;">₹{{format_number old_balance 2}}</span>
+        </div>
+        <div>
+            <span style="display: block; color: #666; font-size: 8pt;">Bill Amount</span>
+            <span style="font-weight: bold;">₹{{format_number grand_total 2}}</span>
+        </div>
+        <div>
+            <span style="display: block; color: #666; font-size: 8pt;">Paid Amount</span>
+            <span style="font-weight: bold;">₹{{format_number paid_amount 2}}</span>
+        </div>
+        <div>
+            <span style="display: block; color: #666; font-size: 8pt;">Balance Due</span>
+            <span style="font-weight: bold;">₹{{format_number balance_due 2}}</span>
         </div>
     </div>
 </div>

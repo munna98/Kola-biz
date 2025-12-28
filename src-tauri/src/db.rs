@@ -689,5 +689,17 @@ pub async fn init_db(
     // Seed default invoice templates
     crate::db_seed::seed_handlebars_templates(&pool).await?;
 
+    // Update default templates with latest content (Fix discount display, Add Account Summary)
+    // This ensures existing databases get the fix to remove negative sign and add balance details
+    sqlx::query("UPDATE invoice_templates SET body_html = ? WHERE template_number = 'TPL-SI-001' AND design_mode = 'standard'")
+        .bind(crate::db_seed::A4_BODY)
+        .execute(&pool)
+        .await?;
+
+    sqlx::query("UPDATE invoice_templates SET body_html = ? WHERE template_number = 'TPL-SI-002'")
+        .bind(crate::db_seed::THERMAL_80MM_BODY)
+        .execute(&pool)
+        .await?;
+
     Ok(pool)
 }

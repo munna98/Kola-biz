@@ -316,8 +316,8 @@ pub async fn create_quick_payment(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details
-    let invoice: (i64, String) =
-        sqlx::query_as("SELECT party_id, party_type FROM vouchers WHERE id = ?")
+    let invoice: (i64, String, String) =
+        sqlx::query_as("SELECT party_id, party_type, voucher_no FROM vouchers WHERE id = ?")
             .bind(payment.invoice_id)
             .fetch_one(&mut *tx)
             .await
@@ -379,7 +379,7 @@ pub async fn create_quick_payment(
     .bind(payment.amount)
     .bind(0.0)
     .bind(0.0)
-    .bind(format!("Payment for Invoice ID {}", payment.invoice_id))
+    .bind(format!("Payment for Invoice {}", invoice.2))
     .bind(1.0)
     .bind(1.0)
     .bind(payment.amount)
@@ -516,8 +516,8 @@ pub async fn update_quick_payment(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details for party info
-    let invoice: (i64, String) =
-        sqlx::query_as("SELECT party_id, party_type FROM vouchers WHERE id = ?")
+    let invoice: (i64, String, String) =
+        sqlx::query_as("SELECT party_id, party_type, voucher_no FROM vouchers WHERE id = ?")
             .bind(payment.invoice_id)
             .fetch_one(&mut *tx)
             .await
@@ -559,7 +559,7 @@ pub async fn update_quick_payment(
          WHERE voucher_id = ? AND remarks LIKE ?",
     )
     .bind(payment.amount)
-    .bind(format!("Payment for Invoice ID {}", payment.invoice_id))
+    .bind(format!("Payment for Invoice {}", invoice.2))
     .bind(payment.amount)
     .bind(payment.payment_account_id)
     .bind(payment.payment_voucher_id)
@@ -567,7 +567,6 @@ pub async fn update_quick_payment(
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
-
 
     // Re-create journal entries
     if voucher_type == "payment" {

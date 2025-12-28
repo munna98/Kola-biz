@@ -39,6 +39,8 @@ interface VoucherPageHeaderProps {
     onListView?: () => void;
     onManagePayments?: () => void;
     loading?: boolean;
+    editDisabled?: boolean; // New prop
+    deleteDisabled?: boolean; // New prop
 }
 
 export function VoucherPageHeader({
@@ -62,7 +64,9 @@ export function VoucherPageHeader({
     onNew,
     onListView,
     onManagePayments,
-    loading
+    loading,
+    editDisabled,
+    deleteDisabled
 }: VoucherPageHeaderProps) {
     return (
         <div className="border-b bg-card/50 px-5 py-3 backdrop-blur-sm shrink-0 h-[65px] flex items-center z-0">
@@ -157,7 +161,8 @@ export function VoucherPageHeader({
                                     size="icon"
                                     className="h-8 w-8"
                                     onClick={onEdit}
-                                    title="Edit (Ctrl+E)"
+                                    disabled={editDisabled}
+                                    title={editDisabled ? "Cannot edit system generated voucher" : "Edit (Ctrl+E)"}
                                 >
                                     <IconEdit size={16} />
                                 </Button>
@@ -184,7 +189,8 @@ export function VoucherPageHeader({
                                     size="icon"
                                     className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10"
                                     onClick={onDelete}
-                                    title="Delete (Ctrl+Delete)"
+                                    disabled={deleteDisabled}
+                                    title={deleteDisabled ? "Cannot delete system generated voucher" : "Delete (Ctrl+Delete)"}
                                 >
                                     <IconTrash size={16} />
                                 </Button>

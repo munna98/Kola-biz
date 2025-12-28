@@ -18,7 +18,8 @@ import {
     setReceiptCurrentVoucherNo,
     setReceiptHasUnsavedChanges,
     setReceiptNavigationData,
-    setReceiptMethod
+    setReceiptMethod,
+    setReceiptCreatedFromInvoiceId
 } from '@/store';
 import type { RootState, AppDispatch, ReceiptItem } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -219,6 +220,7 @@ export default function ReceiptPage() {
             dispatch(setReceiptReference(receipt.reference_number || ''));
             dispatch(setReceiptNarration(receipt.narration || ''));
             dispatch(setReceiptMethod(receipt.receipt_method || 'bank'));
+            dispatch(setReceiptCreatedFromInvoiceId(receipt.created_from_invoice_id || null));
 
             // Populate Items
             items.forEach(item => {
@@ -327,6 +329,8 @@ export default function ReceiptPage() {
                 onDelete={handleDeleteVoucher}
                 onNew={handleNew}
                 onListView={() => setShowListView(true)}
+                editDisabled={!!receiptState.form.created_from_invoice_id}
+                deleteDisabled={!!receiptState.form.created_from_invoice_id}
             />
 
             <VoucherShortcutPanel

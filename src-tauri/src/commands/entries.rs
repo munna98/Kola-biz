@@ -46,6 +46,7 @@ pub struct PaymentVoucher {
     pub status: String,
     pub created_at: String,
     pub deleted_at: Option<String>,
+    pub created_from_invoice_id: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -306,7 +307,8 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
             v.narration,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            v.created_from_invoice_id
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
@@ -353,7 +355,8 @@ pub async fn get_payment(pool: State<'_, SqlitePool>, id: i64) -> Result<Payment
             v.narration,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            v.created_from_invoice_id
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
@@ -687,6 +690,7 @@ pub struct ReceiptVoucher {
     pub status: String,
     pub created_at: String,
     pub deleted_at: Option<String>,
+    pub created_from_invoice_id: Option<i64>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -930,7 +934,8 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
             v.narration,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            v.created_from_invoice_id
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
@@ -977,7 +982,8 @@ pub async fn get_receipt(pool: State<'_, SqlitePool>, id: i64) -> Result<Receipt
             v.narration,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            v.created_from_invoice_id
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (

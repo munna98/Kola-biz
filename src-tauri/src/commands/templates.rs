@@ -318,6 +318,55 @@ async fn get_sales_invoice_data(
         .await
         .ok();
 
+    // Calculate Old Balance (Ledger balance BEFORE this invoice)
+    // We need the account ID for the customer.
+    // If we have customer object, we can get it or infer it.
+    // Usually customer ID in 'customers' table maps to party_id in vouchers.
+    // And chart_of_accounts entry exists for this customer.
+    // Let's get the account_id from chart_of_accounts for this customer.
+    let account_id: Option<i64> = sqlx::query_scalar(
+        "SELECT id FROM chart_of_accounts WHERE account_code = '1003-' || ? AND is_active = 1",
+    )
+    .bind(invoice.customer_id)
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut old_balance = 0.0;
+    if let Some(acc_id) = account_id {
+        // Sum of all debit - credit for this account for vouchers BEFORE this one
+        // We use voucher_date and id to strictly order "before"
+        let balance_res: (f64, f64) = sqlx::query_as(
+            "SELECT 
+                COALESCE(SUM(je.debit), 0.0) as total_debit, 
+                COALESCE(SUM(je.credit), 0.0) as total_credit
+             FROM journal_entries je
+             JOIN vouchers v ON je.voucher_id = v.id
+             WHERE je.account_id = ? 
+             AND (v.voucher_date < ? OR (v.voucher_date = ? AND v.id < ?))
+             AND v.deleted_at IS NULL",
+        )
+        .bind(acc_id)
+        .bind(&invoice.voucher_date)
+        .bind(&invoice.voucher_date)
+        .bind(id)
+        .fetch_one(pool.inner())
+        .await
+        .unwrap_or((0.0, 0.0));
+
+        // For Assets (debtors), Balance is Dr - Cr
+        old_balance = balance_res.0 - balance_res.1;
+    }
+
+    // Calculate Paid Amount for this specific invoice
+    let paid_amount: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+    )
+    .bind(id)
+    .fetch_one(pool.inner())
+    .await
+    .unwrap_or(0.0);
+
     // Format items with calculated fields for template
     let formatted_items: Vec<serde_json::Value> = items
         .into_iter()
@@ -376,6 +425,17 @@ async fn get_sales_invoice_data(
                 invoice.grand_total - invoice.tax_amount + invoice.discount_amount.unwrap_or(0.0);
             obj.insert("subtotal".to_string(), json!(subtotal));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
+
+            // Add Balance Details
+            obj.insert("old_balance".to_string(), json!(old_balance));
+            obj.insert("paid_amount".to_string(), json!(paid_amount));
+            // Balance Due = Old Balance + Current Bill - Paid Amount
+            // Note: Ideally, invoice.grand_total IS the bill amount.
+            // The old_balance represents previous dues.
+            // So Total Receivable = Old + Current.
+            // Balance Due = Total Receivable - Paid.
+            let balance_due = old_balance + invoice.grand_total - paid_amount;
+            obj.insert("balance_due".to_string(), json!(balance_due));
         }
         Ok(invoice_val)
     } else {

@@ -76,7 +76,6 @@ export default function PurchaseInvoicePage() {
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
   const [savedInvoiceId, setSavedInvoiceId] = useState<number | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
-  const [savedPartyId, setSavedPartyId] = useState<number | undefined>(undefined);
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -388,7 +387,6 @@ export default function PurchaseInvoicePage() {
         setSavedInvoiceId(newInvoiceId);
         const supplier = parties.find(p => p.id === purchaseState.form.supplier_id);
         setSavedPartyName(supplier?.name || 'Cash Purchase');
-        setSavedPartyId(supplier?.id);
         setShowQuickPayment(true);
       }
 
