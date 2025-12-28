@@ -45,8 +45,13 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
 }, ref) => {
   const [open, setOpen] = React.useState(false)
   const [hasOpenedOnFocus, setHasOpenedOnFocus] = React.useState(false)
+  const skipOpen = React.useRef(false)
+  const isPointerDown = React.useRef(false)
 
   const handleFocus = React.useCallback(() => {
+    if (skipOpen.current || isPointerDown.current) {
+      return
+    }
     if (openOnFocus && !open && !hasOpenedOnFocus) {
       setOpen(true);
       setHasOpenedOnFocus(true);
@@ -74,6 +79,8 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
           disabled={disabled}
           onKeyDown={onKeyDown}
           onFocus={handleFocus}
+          onPointerDown={() => { isPointerDown.current = true }}
+          onPointerUp={() => { setTimeout(() => { isPointerDown.current = false }, 300) }}
         >
           <span className="truncate text-left">
             {selectedOption?.label || placeholder}
@@ -102,6 +109,10 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
                   onSelect={() => {
                     onChange(option.value)
                     setOpen(false)
+                    skipOpen.current = true
+                    setTimeout(() => {
+                      skipOpen.current = false
+                    }, 300)
                   }}
                 >
                   <Check

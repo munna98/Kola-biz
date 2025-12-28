@@ -213,6 +213,7 @@ export interface AllocationData {
 export interface PaymentItem {
   id?: string;
   description: string;
+  account_id?: number;
   amount: number;
   tax_rate: number;
   remarks?: string;
@@ -332,6 +333,7 @@ const paymentSlice = createSlice({
 export interface ReceiptItem {
   id?: string;
   description: string;
+  account_id?: number;
   amount: number;
   tax_rate: number;
   remarks?: string;

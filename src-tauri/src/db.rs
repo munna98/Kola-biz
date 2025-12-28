@@ -182,6 +182,11 @@ pub async fn init_db(
         .execute(&pool)
         .await;
 
+    // Migration: Add account_id to vouchers
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN account_id INTEGER")
+        .execute(&pool)
+        .await;
+
     // Migration: Update payment_allocations schema if needed
     // In case the old table exists with column 'amount' instead of 'allocated_amount'
     let _ = sqlx::query("ALTER TABLE payment_allocations RENAME COLUMN amount TO allocated_amount")
@@ -245,7 +250,12 @@ pub async fn init_db(
         .execute(&pool)
         .await;
 
-    // Journal Entries (Double Entry Records)
+    // Migration: Add ledger_id to voucher_items for linking to chart of accounts
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN ledger_id INTEGER")
+        .execute(&pool)
+        .await;
+
+    // Create index on ledger_id for quick lookups
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS journal_entries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

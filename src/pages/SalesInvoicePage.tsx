@@ -43,7 +43,7 @@ import { PrintPreviewModal } from '@/components/common/PrintPreviewModal';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
-import QuickPaymentDialog from '@/components/dialogs/QuickPaymentDialog';
+import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 
 interface Product {
   id: number;
@@ -492,6 +492,7 @@ export default function SalesInvoicePage() {
         onPrint={handlePrint}
         onNew={handleNew}
         onListView={() => setShowListView(true)}
+        onManagePayments={salesState.mode !== 'new' ? () => setShowQuickPayment(true) : undefined}
         loading={salesState.loading}
       />
 
@@ -506,16 +507,18 @@ export default function SalesInvoicePage() {
         onSelectVoucher={handleListSelect}
       />
 
-      <QuickPaymentDialog
+      <PaymentManagementDialog
         mode="receipt"
         open={showQuickPayment}
         onOpenChange={setShowQuickPayment}
-        invoiceAmount={savedInvoiceAmount}
+        invoiceId={savedInvoiceId || salesState.currentVoucherId || undefined}
+        invoiceNo={salesState.currentVoucherNo}
+        invoiceAmount={savedInvoiceAmount || salesState.totals.grandTotal}
+        invoiceDate={salesState.form.voucher_date}
         partyName={savedPartyName}
-        partyId={savedPartyId}
-        invoiceId={savedInvoiceId}
+        readOnly={salesState.mode === 'viewing'}
         onSuccess={() => {
-          toast.success('Payment recorded!');
+          toast.success('Payment saved!');
         }}
       />
 

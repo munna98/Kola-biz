@@ -393,9 +393,15 @@ async fn get_payment_data(
             v.id,
             v.voucher_no,
             v.voucher_date,
-            v.party_id as account_id,
-            coa.account_name,
-            COALESCE(json_extract(v.metadata, '$.method'), '') as payment_method,
+            CASE 
+                WHEN v.created_from_invoice_id IS NOT NULL THEN je.account_id
+                ELSE v.party_id
+            END as account_id,
+            CASE 
+                WHEN v.created_from_invoice_id IS NOT NULL THEN coa_payment.account_name
+                ELSE coa.account_name
+            END as account_name,
+            COALESCE(v.metadata, '') as payment_method,
             v.reference as reference_number,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
@@ -406,6 +412,15 @@ async fn get_payment_data(
             v.deleted_at
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
+            SELECT account_id FROM journal_entries 
+            WHERE voucher_id = v.id AND credit > 0 LIMIT 1
+        )
+        LEFT JOIN (
+            SELECT voucher_id, account_id 
+            FROM journal_entries 
+            WHERE credit > 0
+        ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         WHERE v.id = ? AND v.voucher_type = 'payment' AND v.deleted_at IS NULL
         GROUP BY v.id",
@@ -437,9 +452,15 @@ async fn get_receipt_data(
             v.id,
             v.voucher_no,
             v.voucher_date,
-            v.party_id as account_id,
-            coa.account_name,
-            COALESCE(json_extract(v.metadata, '$.method'), '') as receipt_method,
+            CASE 
+                WHEN v.created_from_invoice_id IS NOT NULL THEN je.account_id
+                ELSE v.party_id
+            END as account_id,
+            CASE 
+                WHEN v.created_from_invoice_id IS NOT NULL THEN coa_payment.account_name
+                ELSE coa.account_name
+            END as account_name,
+            COALESCE(v.metadata, '') as receipt_method,
             v.reference as reference_number,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
@@ -450,6 +471,15 @@ async fn get_receipt_data(
             v.deleted_at
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
+            SELECT account_id FROM journal_entries 
+            WHERE voucher_id = v.id AND debit > 0 LIMIT 1
+        )
+        LEFT JOIN (
+            SELECT voucher_id, account_id 
+            FROM journal_entries 
+            WHERE debit > 0
+        ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         WHERE v.id = ? AND v.voucher_type = 'receipt' AND v.deleted_at IS NULL
         GROUP BY v.id",

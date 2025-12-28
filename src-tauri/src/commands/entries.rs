@@ -57,6 +57,7 @@ pub struct PaymentItem {
     pub tax_rate: f64,
     pub tax_amount: f64,
     pub remarks: Option<String>,
+    pub ledger_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -117,21 +118,19 @@ pub async fn create_payment(
 
     let grand_total = total_amount + total_tax;
 
-    // Create voucher metadata
-    let metadata = serde_json::json!({ "method": payment.payment_method }).to_string();
-
     // Create voucher
     let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status)
-         VALUES (?, 'payment', ?, ?, 'account', ?, ?, ?, ?, 'posted')"
+        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, account_id)
+         VALUES (?, 'payment', ?, ?, 'account', ?, ?, ?, ?, 'posted', ?)"
     )
     .bind(&voucher_no)
     .bind(&payment.voucher_date)
     .bind(payment.account_id)
     .bind(&payment.reference_number)
     .bind(total_amount)
-    .bind(metadata)
+    .bind(&payment.payment_method)
     .bind(&payment.narration)
+    .bind(payment.account_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -143,8 +142,8 @@ pub async fn create_payment(
         let tax_amount = item.amount * (item.tax_rate / 100.0);
 
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(voucher_id)
         .bind(&item.description)
@@ -155,6 +154,7 @@ pub async fn create_payment(
         .bind(1.0)
         .bind(1.0)
         .bind(item.amount)
+        .bind(item.account_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -290,9 +290,15 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
             v.id,
             v.voucher_no,
             v.voucher_date,
-            v.party_id as account_id,
-            coa.account_name,
-            COALESCE(json_extract(v.metadata, '$.method'), '') as payment_method,
+            CASE 
+                WHEN v.created_from_invoice_id IS NOT NULL THEN je.account_id
+                ELSE v.party_id
+            END as account_id,
+            CASE 
+                WHEN v.created_from_invoice_id IS NOT NULL THEN coa_payment.account_name
+                ELSE coa.account_name
+            END as account_name,
+            COALESCE(v.metadata, '') as payment_method,
             v.reference,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0.0) as tax_amount,
@@ -303,6 +309,15 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
             v.deleted_at
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
+            SELECT account_id FROM journal_entries 
+            WHERE voucher_id = v.id AND credit > 0 LIMIT 1
+        )
+        LEFT JOIN (
+            SELECT voucher_id, account_id 
+            FROM journal_entries 
+            WHERE credit > 0
+        ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         WHERE v.voucher_type = 'payment' AND v.deleted_at IS NULL
         GROUP BY v.id
@@ -322,9 +337,15 @@ pub async fn get_payment(pool: State<'_, SqlitePool>, id: i64) -> Result<Payment
             v.id,
             v.voucher_no,
             v.voucher_date,
-            v.party_id as account_id,
-            coa.account_name,
-            COALESCE(json_extract(v.metadata, '$.method'), '') as payment_method,
+            CASE 
+                WHEN v.created_from_invoice_id IS NOT NULL THEN je.account_id
+                ELSE v.party_id
+            END as account_id,
+            CASE 
+                WHEN v.created_from_invoice_id IS NOT NULL THEN coa_payment.account_name
+                ELSE coa.account_name
+            END as account_name,
+            COALESCE(v.metadata, '') as payment_method,
             v.reference as reference_number,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0.0) as tax_amount,
@@ -335,6 +356,15 @@ pub async fn get_payment(pool: State<'_, SqlitePool>, id: i64) -> Result<Payment
             v.deleted_at
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
+            SELECT account_id FROM journal_entries 
+            WHERE voucher_id = v.id AND credit > 0 LIMIT 1
+        )
+        LEFT JOIN (
+            SELECT voucher_id, account_id 
+            FROM journal_entries 
+            WHERE credit > 0
+        ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         WHERE v.id = ? AND v.voucher_type = 'payment' AND v.deleted_at IS NULL
         GROUP BY v.id",
@@ -354,15 +384,17 @@ pub async fn get_payment_items(
 ) -> Result<Vec<PaymentItem>, String> {
     let items = sqlx::query_as::<_, PaymentItem>(
         "SELECT 
-            id,
-            voucher_id,
-            description,
-            amount,
-            tax_rate,
-            tax_amount,
-            remarks
-        FROM voucher_items
-        WHERE voucher_id = ?",
+            vi.id,
+            vi.voucher_id,
+            COALESCE(coa.account_name, vi.description) as description,
+            vi.amount,
+            vi.tax_rate,
+            vi.tax_amount,
+            vi.remarks,
+            vi.ledger_id
+        FROM voucher_items vi
+        LEFT JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
+        WHERE vi.voucher_id = ?",
     )
     .bind(voucher_id)
     .fetch_all(pool.inner())
@@ -400,7 +432,6 @@ pub async fn update_payment(
         total_tax += item.amount * (item.tax_rate / 100.0);
     }
     let grand_total = total_amount + total_tax;
-    let metadata = serde_json::json!({ "method": payment.payment_method }).to_string();
 
     // 2. Update Voucher Master
     sqlx::query(
@@ -410,15 +441,17 @@ pub async fn update_payment(
             reference = ?, 
             total_amount = ?, 
             metadata = ?, 
-            narration = ?
+            narration = ?,
+            account_id = ?
          WHERE id = ? AND voucher_type = 'payment'",
     )
     .bind(&payment.voucher_date)
     .bind(payment.account_id)
     .bind(&payment.reference_number)
     .bind(total_amount)
-    .bind(metadata)
+    .bind(&payment.payment_method)
     .bind(&payment.narration)
+    .bind(payment.account_id)
     .bind(id)
     .execute(&mut *tx)
     .await
@@ -496,8 +529,8 @@ pub async fn update_payment(
         let tax_amount = item.amount * (item.tax_rate / 100.0);
 
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(id)
         .bind(&item.description)
@@ -508,6 +541,7 @@ pub async fn update_payment(
         .bind(1.0)
         .bind(1.0)
         .bind(item.amount)
+        .bind(item.account_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -664,6 +698,7 @@ pub struct ReceiptItem {
     pub tax_rate: f64,
     pub tax_amount: f64,
     pub remarks: Option<String>,
+    pub ledger_id: Option<i64>,
 }
 
 #[derive(Deserialize)]
@@ -707,21 +742,19 @@ pub async fn create_receipt(
 
     let grand_total = total_amount + total_tax;
 
-    // Create voucher metadata
-    let metadata = serde_json::json!({ "method": receipt.receipt_method }).to_string();
-
     // Create voucher
     let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status)
-         VALUES (?, 'receipt', ?, ?, 'account', ?, ?, ?, ?, 'posted')"
+        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, account_id)
+         VALUES (?, 'receipt', ?, ?, 'account', ?, ?, ?, ?, 'posted', ?)"
     )
     .bind(&voucher_no)
     .bind(&receipt.voucher_date)
     .bind(receipt.account_id)
     .bind(&receipt.reference_number)
     .bind(total_amount)
-    .bind(metadata)
+    .bind(&receipt.receipt_method)
     .bind(&receipt.narration)
+    .bind(receipt.account_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -733,8 +766,8 @@ pub async fn create_receipt(
         let tax_amount = item.amount * (item.tax_rate / 100.0);
 
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(voucher_id)
         .bind(&item.description)
@@ -745,6 +778,7 @@ pub async fn create_receipt(
         .bind(1.0)
         .bind(1.0)
         .bind(item.amount)
+        .bind(item.account_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -880,9 +914,15 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
             v.id,
             v.voucher_no,
             v.voucher_date,
-            v.party_id as account_id,
-            coa.account_name,
-            COALESCE(json_extract(v.metadata, '$.method'), '') as receipt_method,
+            CASE 
+                WHEN v.created_from_invoice_id IS NOT NULL THEN je.account_id
+                ELSE v.party_id
+            END as account_id,
+            CASE 
+                WHEN v.created_from_invoice_id IS NOT NULL THEN coa_payment.account_name
+                ELSE coa.account_name
+            END as account_name,
+            COALESCE(v.metadata, '') as receipt_method,
             v.reference,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0.0) as tax_amount,
@@ -893,6 +933,15 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
             v.deleted_at
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
+            SELECT account_id FROM journal_entries 
+            WHERE voucher_id = v.id AND debit > 0 LIMIT 1
+        )
+        LEFT JOIN (
+            SELECT voucher_id, account_id 
+            FROM journal_entries 
+            WHERE debit > 0
+        ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         WHERE v.voucher_type = 'receipt' AND v.deleted_at IS NULL
         GROUP BY v.id
@@ -912,9 +961,15 @@ pub async fn get_receipt(pool: State<'_, SqlitePool>, id: i64) -> Result<Receipt
             v.id,
             v.voucher_no,
             v.voucher_date,
-            v.party_id as account_id,
-            coa.account_name,
-            COALESCE(json_extract(v.metadata, '$.method'), '') as receipt_method,
+            CASE 
+                WHEN v.created_from_invoice_id IS NOT NULL THEN je.account_id
+                ELSE v.party_id
+            END as account_id,
+            CASE 
+                WHEN v.created_from_invoice_id IS NOT NULL THEN coa_payment.account_name
+                ELSE coa.account_name
+            END as account_name,
+            COALESCE(v.metadata, '') as receipt_method,
             v.reference as reference_number,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0.0) as tax_amount,
@@ -925,6 +980,15 @@ pub async fn get_receipt(pool: State<'_, SqlitePool>, id: i64) -> Result<Receipt
             v.deleted_at
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
+            SELECT account_id FROM journal_entries 
+            WHERE voucher_id = v.id AND debit > 0 LIMIT 1
+        )
+        LEFT JOIN (
+            SELECT voucher_id, account_id 
+            FROM journal_entries 
+            WHERE debit > 0
+        ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         WHERE v.id = ? AND v.voucher_type = 'receipt' AND v.deleted_at IS NULL
         GROUP BY v.id",
@@ -950,7 +1014,8 @@ pub async fn get_receipt_items(
             amount,
             tax_rate,
             tax_amount,
-            remarks
+            remarks,
+            ledger_id
         FROM voucher_items
         WHERE voucher_id = ?",
     )
@@ -990,7 +1055,6 @@ pub async fn update_receipt(
         total_tax += item.amount * (item.tax_rate / 100.0);
     }
     let grand_total = total_amount + total_tax;
-    let metadata = serde_json::json!({ "method": receipt.receipt_method }).to_string();
 
     // 2. Update Voucher Master
     sqlx::query(
@@ -1000,15 +1064,17 @@ pub async fn update_receipt(
             reference = ?, 
             total_amount = ?, 
             metadata = ?, 
-            narration = ?
+            narration = ?,
+            account_id = ?
          WHERE id = ? AND voucher_type = 'receipt'",
     )
     .bind(&receipt.voucher_date)
     .bind(receipt.account_id)
     .bind(&receipt.reference_number)
     .bind(total_amount)
-    .bind(metadata)
+    .bind(&receipt.receipt_method)
     .bind(&receipt.narration)
+    .bind(receipt.account_id)
     .bind(id)
     .execute(&mut *tx)
     .await
@@ -1085,8 +1151,8 @@ pub async fn update_receipt(
         let tax_amount = item.amount * (item.tax_rate / 100.0);
 
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(id)
         .bind(&item.description)
@@ -1097,6 +1163,7 @@ pub async fn update_receipt(
         .bind(1.0)
         .bind(1.0)
         .bind(item.amount)
+        .bind(item.account_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;

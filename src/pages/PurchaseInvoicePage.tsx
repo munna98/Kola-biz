@@ -42,7 +42,7 @@ import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet'
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
-import QuickPaymentDialog from '@/components/dialogs/QuickPaymentDialog';
+import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 
 interface Product {
   id: number;
@@ -474,6 +474,7 @@ export default function PurchaseInvoicePage() {
         onSave={() => formRef.current?.requestSubmit()}
         onDelete={handleDelete}
         onListView={() => setShowListView(true)}
+        onManagePayments={purchaseState.mode !== 'new' ? () => setShowQuickPayment(true) : undefined}
         loading={purchaseState.loading}
       />
 
@@ -481,16 +482,18 @@ export default function PurchaseInvoicePage() {
         show={showShortcuts}
       />
 
-      <QuickPaymentDialog
+      <PaymentManagementDialog
         mode="payment"
         open={showQuickPayment}
         onOpenChange={setShowQuickPayment}
-        invoiceAmount={savedInvoiceAmount}
+        invoiceId={savedInvoiceId || purchaseState.currentVoucherId || undefined}
+        invoiceNo={purchaseState.currentVoucherNo}
+        invoiceAmount={savedInvoiceAmount || purchaseState.totals.grandTotal}
+        invoiceDate={purchaseState.form.voucher_date}
         partyName={savedPartyName}
-        partyId={savedPartyId}
-        invoiceId={savedInvoiceId}
+        readOnly={purchaseState.mode === 'viewing'}
         onSuccess={() => {
-          toast.success('Payment recorded!');
+          toast.success('Payment saved!');
         }}
       />
 

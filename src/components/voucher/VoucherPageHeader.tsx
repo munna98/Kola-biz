@@ -11,7 +11,8 @@ import {
     IconList,
     IconDeviceFloppy,
     IconX,
-    IconAlertTriangle
+    IconAlertTriangle,
+    IconCash
 } from '@tabler/icons-react';
 import { Badge } from '@/components/ui/badge';
 import { formatDate } from '@/lib/utils';
@@ -36,6 +37,7 @@ interface VoucherPageHeaderProps {
     onSend?: () => void;
     onNew?: () => void;
     onListView?: () => void;
+    onManagePayments?: () => void;
     loading?: boolean;
 }
 
@@ -59,6 +61,7 @@ export function VoucherPageHeader({
     onSend,
     onNew,
     onListView,
+    onManagePayments,
     loading
 }: VoucherPageHeaderProps) {
     return (
@@ -186,6 +189,18 @@ export function VoucherPageHeader({
                                     <IconTrash size={16} />
                                 </Button>
                             </div>
+                            {onManagePayments && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={onManagePayments}
+                                    className="h-8 text-xs gap-2"
+                                    title="View Payments"
+                                >
+                                    <IconCash size={14} />
+                                    Payments
+                                </Button>
+                            )}
                             <Button
                                 variant="default"
                                 size="sm"
@@ -209,6 +224,18 @@ export function VoucherPageHeader({
                                 <IconX size={14} />
                                 Cancel
                             </Button>
+                            {onManagePayments && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={onManagePayments}
+                                    className="h-8 text-xs gap-2"
+                                    title="Manage Payments"
+                                >
+                                    <IconCash size={14} />
+                                    Payments
+                                </Button>
+                            )}
                             <Button
                                 variant="default"
                                 size="sm"

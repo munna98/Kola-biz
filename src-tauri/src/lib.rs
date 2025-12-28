@@ -137,8 +137,10 @@ pub fn run() {
             create_allocation,
             get_payment_allocations,
             get_invoice_allocations,
+            get_invoice_allocations_with_details,
             delete_allocation,
             create_quick_payment,
+            update_quick_payment,
             // Allocations
             commands::entries::get_account_balance,
             commands::entries::get_pending_invoices,

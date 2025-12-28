@@ -41,7 +41,7 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
-import QuickPaymentDialog from '@/components/dialogs/QuickPaymentDialog';
+import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 
 interface AccountData {
     id: number;
@@ -117,6 +117,9 @@ export default function ReceiptPage() {
         if (field === 'description') {
             const ledger = receivedFromLedgers.find(l => l.account_name === value);
             if (ledger) {
+                // Update account_id alongside description
+                dispatch(updateReceiptItem({ index, data: { account_id: ledger.id } }));
+                
                 // Fetch Balance
                 invoke<number>('get_account_balance', { accountId: ledger.id })
                     .then(bal => setRowBalances(prev => ({ ...prev, [index]: bal })))
@@ -223,11 +226,19 @@ export default function ReceiptPage() {
             items.forEach(item => {
                 dispatch(addReceiptItem({
                     description: item.description,
+                    account_id: item.ledger_id || undefined,
                     amount: item.amount,
                     tax_rate: item.tax_rate,
                     remarks: item.remarks
                 }));
             });
+
+            // Use totals from backend
+            dispatch(setReceiptTotals({
+                subtotal: receipt.subtotal || 0,
+                tax: receipt.tax_amount || 0,
+                grandTotal: receipt.total_amount || 0
+            }));
 
             dispatch(setReceiptMode('viewing'));
             dispatch(setReceiptHasUnsavedChanges(false));
@@ -336,7 +347,7 @@ export default function ReceiptPage() {
                 title="Receipt Vouchers"
             />
 
-            <QuickPaymentDialog
+            <PaymentManagementDialog
                 mode="receipt"
                 open={showQuickDialog}
                 onOpenChange={setShowQuickDialog}
@@ -375,6 +386,7 @@ export default function ReceiptPage() {
                                     }}
                                     placeholder="Select destination account"
                                     searchPlaceholder="Search accounts..."
+                                    disabled={receiptState.mode === 'viewing'}
                                 />
                             </div>
 
@@ -386,6 +398,7 @@ export default function ReceiptPage() {
                                     value={receiptState.form.voucher_date}
                                     onChange={(e) => dispatch(setReceiptDate(e.target.value))}
                                     className="h-8 text-sm"
+                                    disabled={receiptState.mode === 'viewing'}
                                 />
                             </div>
 
@@ -397,6 +410,7 @@ export default function ReceiptPage() {
                                     onChange={(e) => dispatch(setReceiptReference(e.target.value))}
                                     placeholder="Cheque/Ref No"
                                     className="h-8 text-sm"
+                                    disabled={receiptState.mode === 'viewing'}
                                 />
                             </div>
 
@@ -408,6 +422,7 @@ export default function ReceiptPage() {
                                     onChange={(e) => dispatch(setReceiptNarration(e.target.value))}
                                     placeholder="Enter details about this receipt..."
                                     className="h-8 text-sm"
+                                    disabled={receiptState.mode === 'viewing'}
                                 />
                             </div>
                         </div>
@@ -445,6 +460,7 @@ export default function ReceiptPage() {
                                             onChange={(val) => handleUpdateItem(index, 'description', val)}
                                             placeholder="Select Ledger"
                                             searchPlaceholder="Search ledgers..."
+                                            disabled={receiptState.mode === 'viewing'}
                                         />
                                     </div>
 
@@ -458,6 +474,7 @@ export default function ReceiptPage() {
                                             className="h-7 text-xs text-right font-mono"
                                             placeholder="0.00"
                                             step="0.01"
+                                            disabled={receiptState.mode === 'viewing'}
                                         />
                                         <Button
                                             type="button"
@@ -466,7 +483,7 @@ export default function ReceiptPage() {
                                             className={`h-7 w-7 p-0 ${(item.allocations?.length || 0) > 0 ? 'text-blue-600 bg-blue-50' : 'text-muted-foreground'}`}
                                             title="Billwise Allocation"
                                             onClick={() => setAllocatingRowIndex(index)}
-                                            disabled={!item.description}
+                                            disabled={!item.description || receiptState.mode === 'viewing'}
                                         >
                                             <IconReceipt2 size={14} />
                                         </Button>
@@ -479,6 +496,7 @@ export default function ReceiptPage() {
                                             onChange={(e) => handleUpdateItem(index, 'remarks', e.target.value)}
                                             className="h-7 text-xs"
                                             placeholder="e.g. For Invoice #001"
+                                            disabled={receiptState.mode === 'viewing'}
                                         />
                                     </div>
 
@@ -491,6 +509,7 @@ export default function ReceiptPage() {
                                             onClick={() => handleRemoveItem(index)}
                                             className="h-6 w-6 p-0"
                                             title="Delete (Ctrl+D)"
+                                            disabled={receiptState.mode === 'viewing'}
                                         >
                                             <IconTrash size={14} />
                                         </Button>
@@ -507,6 +526,7 @@ export default function ReceiptPage() {
                                 size="sm"
                                 onClick={handleAddItem}
                                 className="text-xs h-7"
+                                disabled={receiptState.mode === 'viewing'}
                             >
                                 <IconPlus size={14} />
                                 Add Item (Ctrl+N)
