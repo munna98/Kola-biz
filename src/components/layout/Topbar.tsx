@@ -1,7 +1,7 @@
 import { IconMoon, IconSun, IconSettings } from '@tabler/icons-react';
 import { useTheme } from '../theme-provider';
-import { useDispatch } from 'react-redux';
-import { setActiveSection } from '../../store';
+import { useDispatch, useSelector } from 'react-redux';
+import { setActiveSection, RootState } from '../../store';
 import {
     NavigationMenu,
     NavigationMenuContent,
@@ -27,9 +27,13 @@ function ThemeToggle() {
 
 export default function Topbar() {
     const dispatch = useDispatch();
+    const { user } = useSelector((state: RootState) => state.auth);
     const handleNavigation = (section: string) => dispatch(setActiveSection(section));
 
     const itemStyle = "block select-none rounded-md px-3 py-2 text-sm font-medium no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground cursor-pointer";
+
+    // Display user's full name if available, otherwise username
+    const displayName = user?.full_name || user?.username || 'User';
 
     return (
         <header className="bg-card border-b h-14 flex items-center px-6 gap-4 relative z-50">
@@ -110,7 +114,9 @@ export default function Topbar() {
 
             <div className="ml-auto flex items-center gap-3">
                 <ThemeToggle />
-                <div className="text-sm font-medium text-muted-foreground">Admin</div>
+                <div className="text-sm font-medium text-muted-foreground" title={user?.username}>
+                    {displayName}
+                </div>
             </div>
         </header>
     );

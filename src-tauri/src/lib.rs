@@ -13,6 +13,11 @@ pub fn run() {
         .setup(|app| {
             let pool = tauri::async_runtime::block_on(async { db::init_db(app.handle()).await })?;
             app.manage(pool);
+
+            // Initialize session store for authentication
+            let session_store = commands::auth::SessionStore::new();
+            app.manage(session_store);
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -135,6 +140,7 @@ pub fn run() {
             // Company Profile
             get_company_profile,
             update_company_profile,
+            get_countries,
             // Invoice Templates
             render_invoice,
             get_invoice_templates,
@@ -155,6 +161,12 @@ pub fn run() {
             // PDF Export
             generate_ledger_pdf,
             get_downloads_path,
+            // Authentication
+            check_if_users_exist,
+            create_initial_user,
+            login,
+            logout,
+            check_session,
         ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())

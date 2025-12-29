@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { IconBuilding, IconFileText, IconCreditCard, IconPhoto } from '@tabler/icons-react';
 
@@ -16,9 +17,11 @@ export default function CompanyProfilePage() {
     const dispatch = useDispatch();
     const { profile, loading } = useSelector((state: RootState) => state.companyProfile);
     const [logoPreview, setLogoPreview] = useState<string>('');
+    const [countries, setCountries] = useState<any[]>([]);
 
     useEffect(() => {
         loadCompanyProfile();
+        loadCountries();
     }, []);
 
     useEffect(() => {
@@ -26,6 +29,15 @@ export default function CompanyProfilePage() {
             setLogoPreview(profile.logo_data);
         }
     }, [profile.logo_data]);
+
+    const loadCountries = async () => {
+        try {
+            const list = await invoke<any[]>('get_countries');
+            setCountries(list);
+        } catch (error) {
+            console.error('Failed to load countries', error);
+        }
+    };
 
     const loadCompanyProfile = async () => {
         try {
@@ -208,12 +220,19 @@ export default function CompanyProfilePage() {
 
                             <div className="space-y-2">
                                 <Label htmlFor="country">Country</Label>
-                                <Input
-                                    id="country"
+                                <Select
                                     value={profile.country}
-                                    onChange={(e) => handleInputChange('country', e.target.value)}
-                                    placeholder="Country"
-                                />
+                                    onValueChange={(value) => handleInputChange('country', value)}
+                                >
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select Country" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {countries.map((c) => (
+                                            <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
 
                             <div className="grid grid-cols-3 gap-4">

@@ -16,6 +16,37 @@ pub async fn init_db(
 
     let pool = SqlitePool::connect(&db_url).await?;
 
+    // Users table for authentication
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            full_name TEXT,
+            role TEXT DEFAULT 'user',
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            last_login DATETIME
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
+        .execute(&pool)
+        .await?;
+
+    // Countries table for dropdown selections
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS countries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL,
+            code TEXT UNIQUE NOT NULL
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
     // Units table
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS units (
@@ -472,6 +503,37 @@ pub async fn init_db(
     // Insert default units
     sqlx::query("INSERT OR IGNORE INTO units (name, symbol) VALUES ('Piece', 'Pcs'), ('Kilogram', 'Kg'), ('Liter', 'L')")
         .execute(&pool).await?;
+
+    // Insert countries
+    sqlx::query(
+        "INSERT OR IGNORE INTO countries (name, code) VALUES
+        ('India', 'IN'),
+        ('United States', 'US'),
+        ('United Kingdom', 'GB'),
+        ('Canada', 'CA'),
+        ('Australia', 'AU'),
+        ('Germany', 'DE'),
+        ('France', 'FR'),
+        ('Japan', 'JP'),
+        ('China', 'CN'),
+        ('Singapore', 'SG'),
+        ('United Arab Emirates', 'AE'),
+        ('Saudi Arabia', 'SA'),
+        ('Malaysia', 'MY'),
+        ('Thailand', 'TH'),
+        ('Indonesia', 'ID'),
+        ('Philippines', 'PH'),
+        ('Vietnam', 'VN'),
+        ('South Korea', 'KR'),
+        ('Bangladesh', 'BD'),
+        ('Pakistan', 'PK'),
+        ('Sri Lanka', 'LK'),
+        ('Nepal', 'NP'),
+        ('Bhutan', 'BT'),
+        ('Maldives', 'MV')",
+    )
+    .execute(&pool)
+    .await?;
 
     // ==================== COMPANY PROFILE ====================
 

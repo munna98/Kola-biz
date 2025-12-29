@@ -36,6 +36,85 @@ const initialState: AppState = {
   currentUser: 'Admin',
 };
 
+// ========== AUTH SLICE ==========
+export interface User {
+  id: number;
+  username: string;
+  full_name: string | null;
+  role: string;
+  is_active: boolean;
+}
+
+export interface AuthState {
+  isAuthenticated: boolean;
+  isLoading: boolean;
+  user: User | null;
+  token: string | null;
+  error: string | null;
+  needsInitialSetup: boolean;
+  needsCompanySetup: boolean;
+}
+
+const authInitialState: AuthState = {
+  isAuthenticated: false,
+  isLoading: true,
+  user: null,
+  token: null,
+  error: null,
+  needsInitialSetup: false,
+  needsCompanySetup: false,
+};
+
+const authSlice = createSlice({
+  name: 'auth',
+  initialState: authInitialState,
+  reducers: {
+    setAuthLoading: (state, action: PayloadAction<boolean>) => {
+      state.isLoading = action.payload;
+    },
+    setNeedsInitialSetup: (state, action: PayloadAction<boolean>) => {
+      state.needsInitialSetup = action.payload;
+    },
+    setNeedsCompanySetup: (state, action: PayloadAction<boolean>) => {
+      state.needsCompanySetup = action.payload;
+    },
+    loginSuccess: (state, action: PayloadAction<{ user: User; token: string }>) => {
+      state.isAuthenticated = true;
+      state.user = action.payload.user;
+      state.token = action.payload.token;
+      state.error = null;
+      state.isLoading = false;
+    },
+    loginFailure: (state, action: PayloadAction<string>) => {
+      state.isAuthenticated = false;
+      state.user = null;
+      state.token = null;
+      state.error = action.payload;
+      state.isLoading = false;
+    },
+    logout: (state) => {
+      state.isAuthenticated = false;
+      state.user = null;
+      state.token = null;
+      state.error = null;
+    },
+    clearAuthError: (state) => {
+      state.error = null;
+    },
+  },
+});
+
+export const {
+  setAuthLoading,
+  setNeedsInitialSetup,
+  setNeedsCompanySetup,
+  loginSuccess,
+  loginFailure,
+  logout,
+  clearAuthError,
+} = authSlice.actions;
+
+
 const appSlice = createSlice({
   name: 'app',
   initialState,
@@ -990,6 +1069,7 @@ export const {
 export const store = configureStore({
   reducer: {
     app: appSlice.reducer,
+    auth: authSlice.reducer,
     purchaseInvoice: purchaseInvoiceSlice.reducer,
     salesInvoice: salesInvoiceSlice.reducer,
     payment: paymentSlice.reducer,

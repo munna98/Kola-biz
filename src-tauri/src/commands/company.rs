@@ -2,6 +2,22 @@ use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::State;
 
+// ============= COUNTRIES =============
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct Country {
+    pub id: i64,
+    pub name: String,
+    pub code: String,
+}
+
+#[tauri::command]
+pub async fn get_countries(pool: State<'_, SqlitePool>) -> Result<Vec<Country>, String> {
+    sqlx::query_as::<_, Country>("SELECT * FROM countries ORDER BY name")
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ============= COMPANY PROFILE =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct CompanyProfile {
