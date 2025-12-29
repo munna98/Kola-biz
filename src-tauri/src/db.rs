@@ -1,3 +1,4 @@
+use bcrypt::{hash, DEFAULT_COST};
 use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool, Sqlite};
 use tauri::Manager;
 
@@ -767,6 +768,28 @@ pub async fn init_db(
         .bind(crate::db_seed::THERMAL_80MM_BODY)
         .execute(&pool)
         .await?;
+
+    // Seed developer account if not exists
+    let developer_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE username = 'kolabiz')")
+            .fetch_one(&pool)
+            .await
+            .unwrap_or(false);
+
+    if !developer_exists {
+        let password_hash = hash("kolabizerp", DEFAULT_COST).unwrap_or_default();
+        if !password_hash.is_empty() {
+            sqlx::query(
+                "INSERT INTO users (username, password_hash, full_name, role) VALUES (?, ?, ?, ?)",
+            )
+            .bind("kolabiz")
+            .bind(password_hash)
+            .bind("Kolabiz Developer")
+            .bind("admin")
+            .execute(&pool)
+            .await?;
+        }
+    }
 
     Ok(pool)
 }
