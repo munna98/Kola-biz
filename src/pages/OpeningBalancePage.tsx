@@ -78,6 +78,7 @@ export default function OpeningBalancePage() {
     const loadVoucher = useCallback(async (id: number) => {
         try {
             dispatch(setOpeningBalanceLoading(true));
+            dispatch(setOpeningBalanceHasUnsavedChanges(false));
             const entry = await invoke<any>('get_opening_balance', { id });
             const lines = await invoke<any[]>('get_opening_balance_lines', { voucherId: id });
 

@@ -326,6 +326,7 @@ export default function SalesInvoicePage() {
   const loadVoucher = async (id: number) => {
     try {
       dispatch(setSalesLoading(true));
+      dispatch(setSalesHasUnsavedChanges(false));
       dispatch(resetSalesForm()); // Clear first
 
       // Fetch header and items using existing commands

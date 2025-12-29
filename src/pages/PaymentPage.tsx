@@ -214,6 +214,7 @@ export default function PaymentPage() {
     const loadVoucher = async (id: number) => {
         try {
             dispatch(setPaymentLoading(true));
+            dispatch(setPaymentHasUnsavedChanges(false));
             dispatch(resetPaymentForm());
 
             const payment = await invoke<any>('get_payment', { id });

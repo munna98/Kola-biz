@@ -80,6 +80,7 @@ export default function JournalEntryPage() {
     const loadVoucher = useCallback(async (id: number) => {
         try {
             dispatch(setJournalLoading(true));
+            dispatch(setJournalHasUnsavedChanges(false));
             const entry = await invoke<any>('get_journal_entry', { id });
             const lines = await invoke<any[]>('get_journal_entry_lines', { voucherId: id });
 

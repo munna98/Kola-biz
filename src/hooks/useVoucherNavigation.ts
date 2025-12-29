@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useDispatch } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { ActionCreatorWithPayload, ActionCreatorWithoutPayload } from '@reduxjs/toolkit';
+import { useConfirm } from './useConfirm';
 
 interface VoucherNavigationActions {
     setMode: ActionCreatorWithPayload<'new' | 'viewing' | 'editing'>;
@@ -26,6 +27,7 @@ export function useVoucherNavigation({
     onLoadVoucher
 }: UseVoucherNavigationProps) {
     const dispatch = useDispatch();
+    const confirm = useConfirm();
     const { mode, currentVoucherId, hasUnsavedChanges, navigationData } = sliceState;
 
     // Check for previous/next IDs when current ID changes
@@ -55,7 +57,13 @@ export function useVoucherNavigation({
 
     const confirmDiscardChanges = async () => {
         if (hasUnsavedChanges) {
-            const confirmed = window.confirm('You have unsaved changes. Discard them?');
+            const confirmed = await confirm({
+                title: 'Unsaved Changes',
+                description: 'You have unsaved changes. Discard them?',
+                confirmText: 'Discard',
+                cancelText: 'Keep Editing',
+                variant: 'destructive'
+            });
             if (!confirmed) return false;
             dispatch(actions.setHasUnsavedChanges(false));
             return true;
@@ -64,7 +72,7 @@ export function useVoucherNavigation({
     };
 
     const handleNavigatePrevious = async () => {
-        if (mode === 'editing') {
+        if (mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
         }
         if (navigationData.previousId) {
@@ -75,7 +83,7 @@ export function useVoucherNavigation({
     };
 
     const handleNavigateNext = async () => {
-        if (mode === 'editing') {
+        if (mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
         }
         if (navigationData.nextId) {
@@ -86,7 +94,8 @@ export function useVoucherNavigation({
     };
 
     const handleListSelect = async (id: number) => {
-        if (mode === 'editing' || hasUnsavedChanges) {
+        // Only show warning if actually in editing mode with unsaved changes
+        if (mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
         }
         dispatch(actions.setMode('viewing'));
@@ -138,7 +147,13 @@ export function useVoucherNavigation({
 
     const handleDelete = async () => {
         if (!currentVoucherId) return false;
-        const confirmed = window.confirm('Are you sure you want to delete this voucher?');
+        const confirmed = await confirm({
+            title: 'Delete Voucher',
+            description: 'Are you sure you want to delete this voucher? This action cannot be undone.',
+            confirmText: 'Delete',
+            cancelText: 'Cancel',
+            variant: 'destructive'
+        });
         return confirmed;
     };
 

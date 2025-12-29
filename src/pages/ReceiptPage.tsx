@@ -208,6 +208,7 @@ export default function ReceiptPage() {
     const loadVoucher = async (id: number) => {
         try {
             dispatch(setReceiptLoading(true));
+            dispatch(setReceiptHasUnsavedChanges(false));
             dispatch(resetReceiptForm());
 
             const receipt = await invoke<any>('get_receipt', { id });

@@ -140,6 +140,7 @@ export default function PurchaseInvoicePage() {
   const handleLoadVoucher = async (id: number) => {
     try {
       dispatch(setLoading(true));
+      dispatch(setPurchaseHasUnsavedChanges(false));
 
       // Fetch voucher header
       const voucher = await invoke<any>('get_purchase_invoice', { id });
