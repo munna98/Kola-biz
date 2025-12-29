@@ -379,11 +379,44 @@ pub async fn create_purchase_invoice(
 
 #[tauri::command]
 pub async fn delete_purchase_invoice(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
-    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'purchase_invoice'")
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // Delete related journal entries
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
         .bind(id)
-        .execute(pool.inner())
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Delete related stock movements
+    sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Delete related payment allocations
+    sqlx::query("DELETE FROM payment_allocations WHERE invoice_voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Delete related voucher items
+    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Soft delete the voucher
+    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'purchase_invoice'")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -992,11 +1025,44 @@ pub async fn create_sales_invoice(
 
 #[tauri::command]
 pub async fn delete_sales_invoice(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
-    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'sales_invoice'")
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // Delete related journal entries
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
         .bind(id)
-        .execute(pool.inner())
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Delete related stock movements
+    sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Delete related payment allocations
+    sqlx::query("DELETE FROM payment_allocations WHERE invoice_voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Delete related voucher items
+    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Soft delete the voucher
+    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'sales_invoice'")
+        .bind(id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
