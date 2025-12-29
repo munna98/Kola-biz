@@ -152,7 +152,11 @@ pub fn run() {
             // Allocations
             commands::entries::get_account_balance,
             commands::entries::get_pending_invoices,
+            // PDF Export
+            generate_ledger_pdf,
+            get_downloads_path,
         ])
+        .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -85,8 +85,50 @@ export default function LedgerReportPage() {
 
   const selectedAccountData = accounts.find(a => a.id === selectedAccount);
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (!selectedAccountData || entries.length === 0) {
+      toast.error('No data to print');
+      return;
+    }
+
+    try {
+      const timestamp = new Date().toISOString().split('T')[0];
+      const fileName = `Ledger-${selectedAccountData.account_code}-${timestamp}.pdf`;
+      
+      // Default path to Downloads folder or home folder
+      const downloadsPath = await invoke<string>('get_downloads_path');
+      const filePath = `${downloadsPath}/${fileName}`;
+
+      // Prepare data for PDF generation
+      const pdfData = {
+        account_code: selectedAccountData.account_code,
+        account_name: selectedAccountData.account_name,
+        period_from: fromDate || 'Beginning',
+        period_to: toDate,
+        opening_balance: openingBalance,
+        closing_balance: closingBalance,
+        entries: entries.map(e => ({
+          date: e.date,
+          voucher_no: e.voucher_no,
+          voucher_type: e.voucher_type,
+          narration: e.narration || '-',
+          debit: e.debit,
+          credit: e.credit,
+          balance: e.balance,
+        })),
+      };
+
+      // Generate PDF
+      await invoke('generate_ledger_pdf', {
+        data: pdfData,
+        filePath,
+      });
+
+      toast.success(`PDF generated at: ${filePath}`);
+    } catch (error) {
+      toast.error('Failed to generate PDF');
+      console.error(error);
+    }
   };
 
   const handleExport = () => {
