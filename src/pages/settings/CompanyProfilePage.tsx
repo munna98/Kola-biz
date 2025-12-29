@@ -146,34 +146,34 @@ export default function CompanyProfilePage() {
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="address_line1">Address Line 1</Label>
-                                <Input
-                                    id="address_line1"
-                                    value={profile.address_line1}
-                                    onChange={(e) => handleInputChange('address_line1', e.target.value)}
-                                    placeholder="Street address"
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="address_line2">Address Line 2</Label>
-                                <Input
-                                    id="address_line2"
-                                    value={profile.address_line2}
-                                    onChange={(e) => handleInputChange('address_line2', e.target.value)}
-                                    placeholder="Apartment, suite, etc."
-                                />
-                            </div>
-
-                            <div className="space-y-2">
-                                <Label htmlFor="address_line3">Address Line 3</Label>
-                                <Input
-                                    id="address_line3"
-                                    value={profile.address_line3}
-                                    onChange={(e) => handleInputChange('address_line3', e.target.value)}
-                                    placeholder="Additional address info"
-                                />
+                            <div className="grid grid-cols-3 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="address_line1">Address Line 1</Label>
+                                    <Input
+                                        id="address_line1"
+                                        value={profile.address_line1}
+                                        onChange={(e) => handleInputChange('address_line1', e.target.value)}
+                                        placeholder="Street address"
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="address_line2">Address Line 2</Label>
+                                    <Input
+                                        id="address_line2"
+                                        value={profile.address_line2}
+                                        onChange={(e) => handleInputChange('address_line2', e.target.value)}
+                                        placeholder="Apartment, suite, etc."
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="address_line3">Address Line 3</Label>
+                                    <Input
+                                        id="address_line3"
+                                        value={profile.address_line3}
+                                        onChange={(e) => handleInputChange('address_line3', e.target.value)}
+                                        placeholder="Additional address info"
+                                    />
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-3 gap-4">

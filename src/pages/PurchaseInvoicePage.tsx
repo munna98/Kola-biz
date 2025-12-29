@@ -405,8 +405,13 @@ export default function PurchaseInvoicePage() {
     if (confirmed && purchaseState.currentVoucherId) {
       try {
         dispatch(setLoading(true));
+        // Delete associated journal entries first
+        await invoke('delete_purchase_invoice_entries', { invoiceId: purchaseState.currentVoucherId });
+        // Delete associated payments
+        await invoke('delete_purchase_invoice_payments', { invoiceId: purchaseState.currentVoucherId });
+        // Then delete the invoice
         await invoke('delete_purchase_invoice', { id: purchaseState.currentVoucherId });
-        toast.success('Voucher deleted');
+        toast.success('Voucher and all associated entries deleted');
         nav.handleNew();
       } catch (e) {
         toast.error('Failed to delete voucher');

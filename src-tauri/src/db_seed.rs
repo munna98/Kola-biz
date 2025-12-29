@@ -566,6 +566,7 @@ body {
     margin: 0;
     padding: 3mm;
     line-height: 1.3;
+    color: #000000;
 }
 .thermal-header {
     text-align: center;
@@ -583,57 +584,68 @@ body {
     font-size: 14pt;
     font-weight: bold;
     margin: 5px 0;
+    color: #000000;
 }
 .thermal-header p {
     font-size: 9pt;
     margin: 2px 0;
+    color: #000000;
 }
 .separator {
-    border-top: 1px dashed #000;
+    border-top: 1px dashed #000000;
     margin: 8px 0;
 }
 .invoice-info {
     font-size: 9pt;
+    color: #000000;
 }
 .invoice-info .row {
     display: flex;
     justify-content: space-between;
     margin: 3px 0;
+    color: #000000;
 }
 .items {
     width: 100%;
     font-size: 9pt;
     border-collapse: collapse;
+    color: #000000;
 }
 .items th {
     text-align: left;
-    border-bottom: 1px solid #000;
+    border-bottom: 1px solid #000000;
     padding: 4px 2px;
     font-weight: bold;
+    color: #000000;
 }
 .items td {
     padding: 4px 2px;
+    color: #000000;
 }
 .items td:nth-child(2),
 .items td:nth-child(3),
-.items td:nth-child(4) {
+.items td:nth-child(4),
+.items td:nth-child(5) {
     text-align: right;
 }
 .totals {
     margin-top: 8px;
     font-size: 9pt;
+    color: #000000;
 }
 .totals .row {
     display: flex;
     justify-content: space-between;
     padding: 2px 0;
+    color: #000000;
 }
 .totals .row.total {
     font-weight: bold;
     font-size: 12pt;
-    border-top: 1px solid #000;
+    border-top: 1px solid #000000;
     padding-top: 5px;
     margin-top: 5px;
+    color: #000000;
 }
 .footer {
     margin-top: 10px;
@@ -641,16 +653,19 @@ body {
 .footer p {
     font-size: 9pt;
     margin: 4px 0;
+    color: #000000;
 }
 .center {
     text-align: center;
 }
 .small {
     font-size: 8pt;
+    color: #000000;
 }
 @media print {
     body {
         width: 72mm;
+        color: #000000;
     }
 }
 "#;

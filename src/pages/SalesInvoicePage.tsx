@@ -414,8 +414,13 @@ export default function SalesInvoicePage() {
     if (confirmed && salesState.currentVoucherId) {
       try {
         dispatch(setSalesLoading(true));
+        // Delete associated journal entries first
+        await invoke('delete_sales_invoice_entries', { invoiceId: salesState.currentVoucherId });
+        // Delete associated payments
+        await invoke('delete_sales_invoice_payments', { invoiceId: salesState.currentVoucherId });
+        // Then delete the invoice
         await invoke('delete_sales_invoice', { id: salesState.currentVoucherId });
-        toast.success('Voucher deleted');
+        toast.success('Voucher and all associated entries deleted');
         handleNew();
       } catch (e) {
         toast.error('Failed to delete voucher');
