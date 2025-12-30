@@ -102,12 +102,12 @@ export default function ProductDialog({
       if (product) {
         await api.products.update(product.id, form);
         toast.success('Product updated successfully');
+        onOpenChange(false);
       } else {
         await api.products.create(form);
         toast.success('Product created successfully');
+        resetForm();
       }
-      onOpenChange(false);
-      resetForm();
       onSuccess?.();
     } catch (error) {
       toast.error(product ? 'Failed to update product' : 'Failed to create product');

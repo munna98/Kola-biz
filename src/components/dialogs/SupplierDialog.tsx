@@ -39,13 +39,13 @@ export default function SupplierDialog({ open, onOpenChange, supplierToEdit, onS
             if (supplierToEdit) {
                 await api.suppliers.update(supplierToEdit.id, form);
                 toast.success('Supplier updated successfully');
+                onOpenChange(false);
             } else {
                 await api.suppliers.create(form);
                 toast.success('Supplier created successfully');
+                setForm({ name: '', email: '', phone: '', address: '' });
             }
             onSave();
-            onOpenChange(false);
-            setForm({ name: '', email: '', phone: '', address: '' });
         } catch (error) {
             toast.error(supplierToEdit ? 'Failed to update supplier' : 'Failed to create supplier');
             console.error(error);

@@ -14,7 +14,8 @@ import {
     IconReportAnalytics,
     IconCalendarStats,
     IconReceiptRefund,
-    IconLayoutDashboard
+    IconLayoutDashboard,
+    IconTruckReturn
 } from '@tabler/icons-react';
 
 interface MenuItem {

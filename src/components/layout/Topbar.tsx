@@ -53,8 +53,14 @@ export default function Topbar() {
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('purchase')}>
                                     Purchase Invoice
                                 </NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('purchase_return')}>
+                                    Purchase Return
+                                </NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('sales')}>
                                     Sales Invoice
+                                </NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('sales_return')}>
+                                    Sales Return
                                 </NavigationMenuLink>
                             </ul>
                         </NavigationMenuContent>

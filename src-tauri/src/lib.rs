@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod db_seed;
+pub mod license;
 pub mod template_engine; // Public so commands can use it
 pub mod utils;
 
@@ -78,6 +79,13 @@ pub fn run() {
             create_purchase_invoice,
             update_purchase_invoice,
             delete_purchase_invoice,
+            // Purchase Returns
+            get_purchase_returns,
+            get_purchase_return,
+            get_purchase_return_items,
+            create_purchase_return,
+            update_purchase_return,
+            delete_purchase_return,
             // Sales Invoices
             get_sales_invoices,
             get_sales_invoice,
@@ -85,6 +93,13 @@ pub fn run() {
             create_sales_invoice,
             update_sales_invoice,
             delete_sales_invoice,
+            // Sales Returns
+            get_sales_returns,
+            get_sales_return,
+            get_sales_return_items,
+            create_sales_return,
+            update_sales_return,
+            delete_sales_return,
             // Payments
             create_payment,
             update_payment,
@@ -167,6 +182,9 @@ pub fn run() {
             login,
             logout,
             check_session,
+            // License
+            get_license_info,
+            activate_license,
         ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())

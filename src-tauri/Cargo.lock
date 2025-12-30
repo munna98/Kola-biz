@@ -1013,7 +1013,7 @@ dependencies = [
  "rustc_version",
  "toml 0.9.10+spec-1.1.0",
  "vswhom",
- "winreg",
+ "winreg 0.55.0",
 ]
 
 [[package]]
@@ -2200,21 +2200,28 @@ dependencies = [
 name = "kola_biz"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "bcrypt",
  "chrono",
  "dirs 5.0.1",
  "handlebars",
+ "hex",
+ "hmac",
+ "machine-uid",
  "once_cell",
  "pdf",
  "printpdf",
+ "rand 0.8.5",
  "serde",
  "serde_json",
+ "sha2",
  "sqlx",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
  "tokio",
  "uuid",
+ "winreg 0.52.0",
 ]
 
 [[package]]
@@ -2385,6 +2392,17 @@ name = "mac"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
+
+[[package]]
+name = "machine-uid"
+version = "0.5.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7d7217d573cdb141d6da43113b098172e057d39915d79c4bdedbc3aacd46bd96"
+dependencies = [
+ "libc",
+ "windows-registry",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "markup5ever"
@@ -5703,6 +5721,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "windows-registry"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02752bf7fbdcce7f2a27a742f798510f3e5ad88dbe84871e5168e2120c3d5720"
+dependencies = [
+ "windows-link 0.2.1",
+ "windows-result 0.4.1",
+ "windows-strings 0.5.1",
+]
+
+[[package]]
 name = "windows-result"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6060,6 +6089,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5a5364e9d77fcdeeaa6062ced926ee3381faa2ee02d3eb83a5c27a8825540829"
 dependencies = [
  "memchr",
+]
+
+[[package]]
+name = "winreg"
+version = "0.52.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a277a57398d4bfa075df44f501a17cfdf8542d224f0d36095a2adc7aee4ef0a5"
+dependencies = [
+ "cfg-if",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]

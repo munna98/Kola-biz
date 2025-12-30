@@ -1065,13 +1065,327 @@ export const {
   setCompanyLoading,
 } = companyProfileSlice.actions;
 
+// ========== PURCHASE RETURN SLICE ==========
+export interface PurchaseReturnItem {
+  id?: string;
+  product_id: number;
+  product_name?: string;
+  description: string;
+  initial_quantity: number;
+  count: number;
+  deduction_per_unit: number;
+  rate: number;
+  tax_rate: number;
+}
+
+export interface PurchaseReturnState extends VoucherNavigationState {
+  currentVoucherNo?: string;
+  form: {
+    supplier_id: number;
+    supplier_name: string;
+    party_type: string;
+    voucher_date: string;
+    reference: string;
+    narration: string;
+    discount_rate: number;
+    discount_amount: number;
+  };
+  items: PurchaseReturnItem[];
+  loading: boolean;
+  savedReturns: any[];
+  totals: {
+    subtotal: number;
+    discount: number;
+    tax: number;
+    grandTotal: number;
+  };
+}
+
+const purchaseReturnInitialState: PurchaseReturnState = {
+  ...initialNavigationState,
+  currentVoucherNo: undefined,
+  form: {
+    supplier_id: 0,
+    supplier_name: '',
+    party_type: 'supplier',
+    voucher_date: new Date().toISOString().split('T')[0],
+    reference: '',
+    narration: '',
+    discount_rate: 0,
+    discount_amount: 0,
+  },
+  items: [],
+  loading: false,
+  savedReturns: [],
+  totals: {
+    subtotal: 0,
+    discount: 0,
+    tax: 0,
+    grandTotal: 0,
+  },
+};
+
+const purchaseReturnSlice = createSlice({
+  name: 'purchaseReturn',
+  initialState: purchaseReturnInitialState,
+  reducers: {
+    setPurchaseReturnMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
+      state.mode = action.payload;
+    },
+    setPurchaseReturnCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+      state.currentVoucherId = action.payload;
+    },
+    setPurchaseReturnCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
+      state.currentVoucherNo = action.payload;
+    },
+    setPurchaseReturnHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setPurchaseReturnNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+      state.navigationData = action.payload;
+    },
+    setPurchaseReturnSupplier: (state, action: PayloadAction<{ id: number; name: string; type?: string }>) => {
+      state.form.supplier_id = action.payload.id;
+      state.form.supplier_name = action.payload.name;
+      state.form.party_type = action.payload.type || 'supplier';
+      state.hasUnsavedChanges = true;
+    },
+    setPurchaseReturnVoucherDate: (state, action: PayloadAction<string>) => {
+      state.form.voucher_date = action.payload;
+    },
+    setPurchaseReturnReference: (state, action: PayloadAction<string>) => {
+      state.form.reference = action.payload;
+    },
+    setPurchaseReturnNarration: (state, action: PayloadAction<string>) => {
+      state.form.narration = action.payload;
+    },
+    setPurchaseReturnDiscountRate: (state, action: PayloadAction<number>) => {
+      state.form.discount_rate = action.payload;
+    },
+    setPurchaseReturnDiscountAmount: (state, action: PayloadAction<number>) => {
+      state.form.discount_amount = action.payload;
+    },
+    addPurchaseReturnItem: (state, action: PayloadAction<PurchaseReturnItem>) => {
+      state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
+    },
+    updatePurchaseReturnItem: (state, action: PayloadAction<{ index: number; data: Partial<PurchaseReturnItem> }>) => {
+      state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
+    },
+    removePurchaseReturnItem: (state, action: PayloadAction<number>) => {
+      state.items.splice(action.payload, 1);
+    },
+    setPurchaseReturnTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; grandTotal: number }>) => {
+      state.totals = action.payload;
+    },
+    resetPurchaseReturnForm: (state) => {
+      state.form = {
+        supplier_id: 0,
+        supplier_name: '',
+        party_type: 'supplier',
+        voucher_date: new Date().toISOString().split('T')[0],
+        reference: '',
+        narration: '',
+        discount_rate: 0,
+        discount_amount: 0,
+      };
+      state.items = [];
+      state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+    },
+    setSavedPurchaseReturns: (state, action: PayloadAction<any[]>) => {
+      state.savedReturns = action.payload;
+    },
+    setPurchaseReturnLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+  },
+});
+
+export const {
+  setPurchaseReturnMode,
+  setPurchaseReturnCurrentVoucherId,
+  setPurchaseReturnCurrentVoucherNo,
+  setPurchaseReturnHasUnsavedChanges,
+  setPurchaseReturnNavigationData,
+  setPurchaseReturnSupplier,
+  setPurchaseReturnVoucherDate,
+  setPurchaseReturnReference,
+  setPurchaseReturnNarration,
+  setPurchaseReturnDiscountRate,
+  setPurchaseReturnDiscountAmount,
+  addPurchaseReturnItem,
+  updatePurchaseReturnItem,
+  removePurchaseReturnItem,
+  setPurchaseReturnTotals,
+  resetPurchaseReturnForm,
+  setSavedPurchaseReturns,
+  setPurchaseReturnLoading,
+} = purchaseReturnSlice.actions;
+
+// ========== SALES RETURN SLICE ==========
+export interface SalesReturnItem {
+  id?: string;
+  product_id: number;
+  product_name?: string;
+  description: string;
+  initial_quantity: number;
+  count: number;
+  deduction_per_unit: number;
+  rate: number;
+  tax_rate: number;
+}
+
+export interface SalesReturnState extends VoucherNavigationState {
+  currentVoucherNo?: string;
+  form: {
+    customer_id: number;
+    customer_name: string;
+    party_type: string;
+    voucher_date: string;
+    reference: string;
+    narration: string;
+    discount_rate: number;
+    discount_amount: number;
+  };
+  items: SalesReturnItem[];
+  loading: boolean;
+  savedReturns: any[];
+  totals: {
+    subtotal: number;
+    discount: number;
+    tax: number;
+    grandTotal: number;
+  };
+}
+
+const salesReturnInitialState: SalesReturnState = {
+  ...initialNavigationState,
+  currentVoucherNo: undefined,
+  form: {
+    customer_id: 0,
+    customer_name: '',
+    party_type: 'customer',
+    voucher_date: new Date().toISOString().split('T')[0],
+    reference: '',
+    narration: '',
+    discount_rate: 0,
+    discount_amount: 0,
+  },
+  items: [],
+  loading: false,
+  savedReturns: [],
+  totals: {
+    subtotal: 0,
+    discount: 0,
+    tax: 0,
+    grandTotal: 0,
+  },
+};
+
+const salesReturnSlice = createSlice({
+  name: 'salesReturn',
+  initialState: salesReturnInitialState,
+  reducers: {
+    setSalesReturnMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
+      state.mode = action.payload;
+    },
+    setSalesReturnCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+      state.currentVoucherId = action.payload;
+    },
+    setSalesReturnCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
+      state.currentVoucherNo = action.payload;
+    },
+    setSalesReturnHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setSalesReturnNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+      state.navigationData = action.payload;
+    },
+    setSalesReturnCustomer: (state, action: PayloadAction<{ id: number; name: string; type?: string }>) => {
+      state.form.customer_id = action.payload.id;
+      state.form.customer_name = action.payload.name;
+      state.form.party_type = action.payload.type || 'customer';
+      state.hasUnsavedChanges = true;
+    },
+    setSalesReturnVoucherDate: (state, action: PayloadAction<string>) => {
+      state.form.voucher_date = action.payload;
+    },
+    setSalesReturnReference: (state, action: PayloadAction<string>) => {
+      state.form.reference = action.payload;
+    },
+    setSalesReturnNarration: (state, action: PayloadAction<string>) => {
+      state.form.narration = action.payload;
+    },
+    setSalesReturnDiscountRate: (state, action: PayloadAction<number>) => {
+      state.form.discount_rate = action.payload;
+    },
+    setSalesReturnDiscountAmount: (state, action: PayloadAction<number>) => {
+      state.form.discount_amount = action.payload;
+    },
+    addSalesReturnItem: (state, action: PayloadAction<SalesReturnItem>) => {
+      state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
+    },
+    updateSalesReturnItem: (state, action: PayloadAction<{ index: number; data: Partial<SalesReturnItem> }>) => {
+      state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
+    },
+    removeSalesReturnItem: (state, action: PayloadAction<number>) => {
+      state.items.splice(action.payload, 1);
+    },
+    setSalesReturnTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; grandTotal: number }>) => {
+      state.totals = action.payload;
+    },
+    resetSalesReturnForm: (state) => {
+      state.form = {
+        customer_id: 0,
+        customer_name: '',
+        party_type: 'customer',
+        voucher_date: new Date().toISOString().split('T')[0],
+        reference: '',
+        narration: '',
+        discount_rate: 0,
+        discount_amount: 0,
+      };
+      state.items = [];
+      state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+    },
+    setSavedSalesReturns: (state, action: PayloadAction<any[]>) => {
+      state.savedReturns = action.payload;
+    },
+    setSalesReturnLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+  },
+});
+
+export const {
+  setSalesReturnMode,
+  setSalesReturnCurrentVoucherId,
+  setSalesReturnCurrentVoucherNo,
+  setSalesReturnHasUnsavedChanges,
+  setSalesReturnNavigationData,
+  setSalesReturnCustomer,
+  setSalesReturnVoucherDate,
+  setSalesReturnReference,
+  setSalesReturnNarration,
+  setSalesReturnDiscountRate,
+  setSalesReturnDiscountAmount,
+  addSalesReturnItem,
+  updateSalesReturnItem,
+  removeSalesReturnItem,
+  setSalesReturnTotals,
+  resetSalesReturnForm,
+  setSavedSalesReturns,
+  setSalesReturnLoading,
+} = salesReturnSlice.actions;
+
 
 export const store = configureStore({
   reducer: {
     app: appSlice.reducer,
     auth: authSlice.reducer,
     purchaseInvoice: purchaseInvoiceSlice.reducer,
+    purchaseReturn: purchaseReturnSlice.reducer,
     salesInvoice: salesInvoiceSlice.reducer,
+    salesReturn: salesReturnSlice.reducer,
     payment: paymentSlice.reducer,
     receipt: receiptSlice.reducer,
     journalEntry: journalEntrySlice.reducer,

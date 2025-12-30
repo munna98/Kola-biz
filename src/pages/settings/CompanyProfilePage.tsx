@@ -10,7 +10,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { IconBuilding, IconFileText, IconCreditCard, IconPhoto } from '@tabler/icons-react';
+import { IconBuilding, IconFileText, IconCreditCard, IconPhoto, IconCertificate } from '@tabler/icons-react';
+import { useLicense } from '@/components/providers/LicenseProvider';
+import { ActivationPage } from '@/pages/ActivationPage';
 
 
 export default function CompanyProfilePage() {
@@ -18,6 +20,8 @@ export default function CompanyProfilePage() {
     const { profile, loading } = useSelector((state: RootState) => state.companyProfile);
     const [logoPreview, setLogoPreview] = useState<string>('');
     const [countries, setCountries] = useState<any[]>([]);
+    const { status } = useLicense();
+    const [showActivation, setShowActivation] = useState(false);
 
     useEffect(() => {
         loadCompanyProfile();
@@ -124,6 +128,10 @@ export default function CompanyProfilePage() {
                     <TabsTrigger value="branding">
                         <IconPhoto size={16} className="mr-2" />
                         Branding
+                    </TabsTrigger>
+                    <TabsTrigger value="license">
+                        <IconCertificate size={16} className="mr-2" />
+                        License
                     </TabsTrigger>
                 </TabsList>
 
@@ -432,6 +440,47 @@ export default function CompanyProfilePage() {
                             </div>
                         </CardContent>
                     </Card>
+
+                </TabsContent>
+
+                {/* License Tab */}
+                <TabsContent value="license" className="space-y-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>License Information</CardTitle>
+                            <CardDescription>
+                                Manage your application license and activation
+                            </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            <div className="bg-muted p-4 rounded-lg flex items-center justify-between">
+                                <div>
+                                    <h3 className="font-semibold text-lg">{status?.license_type} License</h3>
+                                    <p className="text-sm text-muted-foreground">
+                                        Status: <span className={status?.status === 'Active' ? 'text-green-600 font-medium' : 'text-yellow-600'}>{status?.status}</span>
+                                    </p>
+                                    {status?.expiry_date && (
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                            Expires on: {new Date(status.expiry_date * 1000).toLocaleDateString()}
+                                            {status.days_remaining < 30 && status.days_remaining > 0 && (
+                                                <span className="text-red-500 ml-2">({status.days_remaining} days left)</span>
+                                            )}
+                                        </p>
+                                    )}
+                                </div>
+                                <Button onClick={() => setShowActivation(true)}>
+                                    Update License
+                                </Button>
+                            </div>
+
+                            <div className="text-sm text-muted-foreground">
+                                <p className="mb-2">Machine ID:</p>
+                                <code className="bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                                    {status?.machine_id}
+                                </code>
+                            </div>
+                        </CardContent>
+                    </Card>
                 </TabsContent>
 
             </Tabs>
@@ -446,6 +495,10 @@ export default function CompanyProfilePage() {
                     {loading ? 'Saving...' : 'Save Changes'}
                 </Button>
             </div>
+
+            {showActivation && (
+                <ActivationPage onClose={() => setShowActivation(false)} canClose={true} />
+            )}
         </div>
     );
 }

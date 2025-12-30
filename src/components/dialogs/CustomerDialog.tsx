@@ -39,13 +39,13 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
             if (customerToEdit) {
                 await api.customers.update(customerToEdit.id, form);
                 toast.success('Customer updated successfully');
+                onOpenChange(false);
             } else {
                 await api.customers.create(form);
                 toast.success('Customer created successfully');
+                setForm({ name: '', email: '', phone: '', address: '' });
             }
             onSave();
-            onOpenChange(false);
-            setForm({ name: '', email: '', phone: '', address: '' });
         } catch (error) {
             toast.error(customerToEdit ? 'Failed to update customer' : 'Failed to create customer');
             console.error(error);

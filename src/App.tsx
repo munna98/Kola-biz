@@ -8,6 +8,7 @@ import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
 import ChartOfAccountsPage from './pages/ChartOfAccountsPage';
 import PurchaseInvoicePage from './pages/PurchaseInvoicePage';
+import PurchaseReturnPage from './pages/PurchaseReturnPage';
 import PaymentPage from './pages/PaymentPage';
 import ReceiptPage from './pages/ReceiptPage';
 import { Toaster } from '@/components/ui/sonner';
@@ -18,6 +19,7 @@ import './App.css';
 import JournalEntryPage from './pages/JournalEntryPage';
 import OpeningBalancePage from './pages/OpeningBalancePage';
 import SalesInvoicePage from './pages/SalesInvoicePage';
+import SalesReturnPage from './pages/SalesReturnPage';
 import TrialBalancePage from './pages/reports/TrialBalancePage';
 import LedgerReportPage from './pages/reports/LedgerReportPage';
 import BalanceSheetPage from './pages/reports/BalanceSheetPage';
@@ -33,6 +35,8 @@ import CompanySetupPage from './pages/CompanySetupPage';
 import CompanyProfilePage from './pages/settings/CompanyProfilePage';
 import InvoiceSettingsPage from './pages/InvoiceSettingsPage';
 import DashboardPage from './pages/DashboardPage';
+import { LicenseProvider } from './components/providers/LicenseProvider';
+import { LicenseGuard } from './components/LicenseGuard';
 
 
 
@@ -148,7 +152,9 @@ function AppContent() {
       case 'suppliers': return <SuppliersPage />;
       case 'coa': return <ChartOfAccountsPage />;
       case 'purchase': return <PurchaseInvoicePage />;
+      case 'purchase_return': return <PurchaseReturnPage />;
       case 'sales': return <SalesInvoicePage />;
+      case 'sales_return': return <SalesReturnPage />;
       case 'payments': return <PaymentPage />;
       case 'receipts': return <ReceiptPage />;
       case 'journal': return <JournalEntryPage />;
@@ -192,7 +198,11 @@ export default function App() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="erp-theme">
       <Provider store={store}>
-        <AppContent />
+        <LicenseProvider>
+          <LicenseGuard>
+            <AppContent />
+          </LicenseGuard>
+        </LicenseProvider>
       </Provider>
     </ThemeProvider>
   );
