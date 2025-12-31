@@ -15,7 +15,7 @@ import {
     IconCalendarStats,
     IconReceiptRefund,
     IconLayoutDashboard,
-    IconTruckReturn
+    IconCertificate
 } from '@tabler/icons-react';
 
 interface MenuItem {
@@ -37,6 +37,7 @@ const menuItems: MenuItem[] = [
     { id: 'stock_report', label: 'Stock Report', icon: IconReportAnalytics },
     { id: 'day_book', label: 'Day Book', icon: IconCalendarStats },
     { id: 'outstanding', label: 'Party Outstanding', icon: IconReceiptRefund },
+    { id: 'license', label: 'License', icon: IconCertificate },
 ];
 
 export default function Sidebar() {

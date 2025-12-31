@@ -102,7 +102,7 @@ export const ActivationPage: React.FC<ActivationPageProps> = ({ onClose, canClos
                         {loading ? "Verifying..." : "Activate License"}
                     </Button>
                     <div className="text-center text-xs text-muted-foreground mt-4">
-                        Need help? Contact support at +91 XXXXXXXXXX
+                        Need help? Contact support at +91 8086094070
                     </div>
                 </CardFooter>
             </Card>

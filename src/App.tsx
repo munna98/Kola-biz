@@ -33,10 +33,11 @@ import InitialSetupPage from './pages/InitialSetupPage';
 import CompanySetupPage from './pages/CompanySetupPage';
 
 import CompanyProfilePage from './pages/settings/CompanyProfilePage';
-import InvoiceSettingsPage from './pages/InvoiceSettingsPage';
+import { InvoiceTemplatesPage } from './pages/settings/InvoiceTemplatesPage';
 import DashboardPage from './pages/DashboardPage';
 import { LicenseProvider } from './components/providers/LicenseProvider';
 import { LicenseGuard } from './components/LicenseGuard';
+import LicensePage from './pages/LicensePage';
 
 
 
@@ -168,7 +169,8 @@ function AppContent() {
       case 'outstanding': return <PartyOutstandingPage />;
       case 'stock_report': return <StockReportPage />;
       case 'company_profile': return <CompanyProfilePage />;
-      case 'invoice_settings': return <InvoiceSettingsPage />;
+      case 'invoice_settings': return <InvoiceTemplatesPage />;
+      case 'license': return <LicensePage />;
 
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }
