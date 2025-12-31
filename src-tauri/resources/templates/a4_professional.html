@@ -1,0 +1,188 @@
+<!-- [HEADER] -->
+<div class="header">
+    {{#if company.has_logo}}
+    <div class="logo-section">
+        <img src="{{company.logo}}" alt="{{company.name}}" class="company-logo" />
+    </div>
+    {{/if}}
+    <div class="company-info">
+        <h1>{{company.name}}</h1>
+        {{#if company.address_line1}}
+        <p>{{company.address_line1}}</p>
+        {{/if}}
+        {{#if company.address_line2}}
+        <p>{{company.address_line2}}</p>
+        {{/if}}
+        <p>{{company.city}}, {{company.state}} - {{company.pincode}}</p>
+        <div class="contact-line">
+            {{#if company.phone}}<span>Phone: {{company.phone}}</span>{{/if}}
+            {{#if company.email}}<span>Email: {{company.email}}</span>{{/if}}
+        </div>
+        {{#if company.gstin}}
+        <p class="gstin">GSTIN: {{company.gstin}}</p>
+        {{/if}}
+    </div>
+</div>
+
+<div class="invoice-header">
+    <h2>TAX INVOICE</h2>
+</div>
+
+<div class="invoice-meta">
+    <div class="left">
+        <p><strong>Bill To:</strong></p>
+        <p class="party-name">{{party.name}}</p>
+        {{#if party.address}}
+        <p>{{party.address}}</p>
+        {{/if}}
+        {{#if party.phone}}
+        <p>Phone: {{party.phone}}</p>
+        {{/if}}
+        {{#if party.gstin}}
+        <p>GSTIN: {{party.gstin}}</p>
+        {{/if}}
+    </div>
+    <div class="right">
+        <table class="meta-table">
+            <tr>
+                <td><strong>Invoice No:</strong></td>
+                <td>{{voucher_no}}</td>
+            </tr>
+            <tr>
+                <td><strong>Date:</strong></td>
+                <td>{{format_date voucher_date}}</td>
+            </tr>
+            {{#if reference}}
+            <tr>
+                <td><strong>Reference:</strong></td>
+                <td>{{reference}}</td>
+            </tr>
+            {{/if}}
+        </table>
+    </div>
+</div>
+
+<!-- [BODY] -->
+<table class="items-table">
+    <thead>
+        <tr>
+            <th style="width: 5%;">S.No</th>
+            <th style="width: 30%;">Description</th>
+            <th style="width: 8%;">HSN/SAC</th>
+            <th style="width: 8%;">Qty</th>
+            <th style="width: 8%;">Less</th>
+            <th style="width: 8%;">Rate</th>
+            <th style="width: 10%;">Amount</th>
+            <th style="width: 7%;">Tax %</th>
+            <th style="width: 8%;">Total</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{#each items}}
+        <tr>
+            <td class="center">{{@index}}</td>
+            <td>
+                <strong>{{product_name}}</strong>
+                {{#if description}}
+                <br /><small class="text-muted">{{description}}</small>
+                {{/if}}
+            </td>
+            <td class="center">{{hsn_code}}</td>
+            <td class="right">{{format_number initial_quantity 2}}</td>
+            <td class="right">{{format_number less_quantity 2}}</td>
+            <td class="right">{{format_currency rate}}</td>
+            <td class="right">{{format_currency amount}}</td>
+            <td class="center">{{tax_rate}}%</td>
+            <td class="right"><strong>{{format_currency total}}</strong></td>
+        </tr>
+        {{/each}}
+    </tbody>
+</table>
+
+<div class="totals-section">
+    <div class="totals-box">
+        <div class="totals-row">
+            <span>Subtotal:</span>
+            <span>{{format_currency subtotal}}</span>
+        </div>
+        {{#if discount_amount}}
+        <div class="totals-row">
+            <span>Discount {{#if discount_rate}}({{discount_rate}}%){{/if}}:</span>
+            <span class="discount">{{format_currency discount_amount}}</span>
+        </div>
+        {{/if}}
+        {{#if tax_total}}
+        <div class="totals-row">
+            <span>Total Tax:</span>
+            <span>{{format_currency tax_total}}</span>
+        </div>
+        {{/if}}
+        <div class="totals-row grand-total">
+            <span>Grand Total:</span>
+            <span>{{format_currency grand_total}}</span>
+        </div>
+    </div>
+
+    <div class="amount-words">
+        <strong>Amount in Words:</strong><br />
+        <span class="words-text">{{grand_total_words}}</span>
+    </div>
+
+    {{#if narration}}
+    <div class="narration">
+        <strong>Notes:</strong><br />
+        {{narration}}
+    </div>
+    {{/if}}
+</div>
+
+<!-- [FOOTER] -->
+<div class="footer">
+    <div class="footer-section">
+        {{#if bank.has_details}}
+        <div class="bank-details">
+            <h4>Bank Details</h4>
+            <table class="bank-table">
+                <tr>
+                    <td>Bank Name:</td>
+                    <td><strong>{{bank.name}}</strong></td>
+                </tr>
+                <tr>
+                    <td>Account No:</td>
+                    <td><strong>{{bank.account_no}}</strong></td>
+                </tr>
+                <tr>
+                    <td>IFSC Code:</td>
+                    <td><strong>{{bank.ifsc}}</strong></td>
+                </tr>
+                {{#if bank.branch}}
+                <tr>
+                    <td>Branch:</td>
+                    <td>{{bank.branch}}</td>
+                </tr>
+                {{/if}}
+            </table>
+        </div>
+        {{/if}}
+
+        {{#if has_terms}}
+        <div class="terms">
+            <h4>Terms & Conditions</h4>
+            <p>{{terms_and_conditions}}</p>
+        </div>
+        {{/if}}
+    </div>
+
+    <div class="signature-section">
+        <p class="signature-label">For {{company.name}}</p>
+        <div class="signature-line"></div>
+        <p class="signature-text">Authorized Signatory</p>
+    </div>
+</div>
+
+<div class="page-footer">
+    <p>This is a computer-generated invoice and does not require a signature</p>
+    {{#if company.website}}
+    <p>{{company.website}}</p>
+    {{/if}}
+</div>

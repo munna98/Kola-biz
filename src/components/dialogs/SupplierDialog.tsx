@@ -15,21 +15,23 @@ interface SupplierDialogProps {
 }
 
 export default function SupplierDialog({ open, onOpenChange, supplierToEdit, onSave }: SupplierDialogProps) {
-    const [form, setForm] = useState<CreateSupplier>({ name: '', email: '', phone: '', address: '' });
+    const [form, setForm] = useState<CreateSupplier>({ code: '', name: '', email: '', phone: '', address: '' });
 
-    const orderedFields = ['name', 'email', 'phone', 'address'];
+    const orderedFields = ['code', 'name', 'email', 'phone', 'address'];
     const { register, handleKeyDown } = useDialog(open, onOpenChange, orderedFields);
 
     useEffect(() => {
         if (supplierToEdit) {
             setForm({
+                code: supplierToEdit.code,
                 name: supplierToEdit.name,
                 email: supplierToEdit.email || '',
                 phone: supplierToEdit.phone || '',
                 address: supplierToEdit.address || '',
             });
         } else {
-            setForm({ name: '', email: '', phone: '', address: '' });
+            setForm({ code: '', name: '', email: '', phone: '', address: '' });
+            api.suppliers.getNextCode().then(code => setForm(prev => ({ ...prev, code }))).catch(console.error);
         }
     }, [supplierToEdit, open]);
 
@@ -43,7 +45,7 @@ export default function SupplierDialog({ open, onOpenChange, supplierToEdit, onS
             } else {
                 await api.suppliers.create(form);
                 toast.success('Supplier created successfully');
-                setForm({ name: '', email: '', phone: '', address: '' });
+                setForm({ code: '', name: '', email: '', phone: '', address: '' });
             }
             onSave();
         } catch (error) {
@@ -62,15 +64,27 @@ export default function SupplierDialog({ open, onOpenChange, supplierToEdit, onS
                     </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    <div>
-                        <Label>Name *</Label>
-                        <Input
-                            ref={register('name') as any}
-                            value={form.name}
-                            onChange={e => setForm({ ...form, name: e.target.value })}
-                            onKeyDown={(e) => handleKeyDown(e, 'name')}
-                            required
-                        />
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <Label>Code</Label>
+                            <Input
+                                ref={register('code') as any}
+                                value={form.code}
+                                onChange={e => setForm({ ...form, code: e.target.value })}
+                                onKeyDown={(e) => handleKeyDown(e, 'code')}
+                                placeholder="Auto-generated"
+                            />
+                        </div>
+                        <div>
+                            <Label>Name *</Label>
+                            <Input
+                                ref={register('name') as any}
+                                value={form.name}
+                                onChange={e => setForm({ ...form, name: e.target.value })}
+                                onKeyDown={(e) => handleKeyDown(e, 'name')}
+                                required
+                            />
+                        </div>
                     </div>
                     <div>
                         <Label>Email</Label>

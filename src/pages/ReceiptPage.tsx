@@ -205,7 +205,7 @@ export default function ReceiptPage() {
         setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
     };
 
-    const loadVoucher = async (id: number) => {
+    const loadVoucher = async (id: string) => {
         try {
             dispatch(setReceiptLoading(true));
             dispatch(setReceiptHasUnsavedChanges(false));

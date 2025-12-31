@@ -31,7 +31,7 @@ printpdf = "0.7"
 pdf = "0.9"
 dirs = "5.0"
 bcrypt = "0.15"
-uuid = { version = "1.11", features = ["v4", "serde"] }
+uuid = { version = "1.11", features = ["v4", "v7", "serde"] }
 machine-uid = "0.5"
 hmac = "0.12.1"
 sha2 = "0.10.8"

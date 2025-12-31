@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Provider, useSelector, useDispatch } from 'react-redux';
 import { store, RootState } from './store';
-import { setAuthLoading, setNeedsInitialSetup, setNeedsCompanySetup, loginSuccess } from './store';
+import { setAuthLoading, setNeedsCompanySetup, loginSuccess } from './store';
 import { invoke } from '@tauri-apps/api/core';
 import ProductsPage from './pages/ProductsPage';
 import CustomersPage from './pages/CustomersPage';
@@ -29,7 +29,7 @@ import DayBookPage from './pages/reports/DayBookPage';
 import PartyOutstandingPage from './pages/reports/PartyOutstandingPage';
 import StockReportPage from './pages/reports/StockReportPage';
 import LoginPage from './pages/LoginPage';
-import InitialSetupPage from './pages/InitialSetupPage';
+// import InitialSetupPage from './pages/InitialSetupPage'; // Removed
 import CompanySetupPage from './pages/CompanySetupPage';
 
 import CompanyProfilePage from './pages/settings/CompanyProfilePage';
@@ -44,7 +44,7 @@ import LicensePage from './pages/LicensePage';
 function AppContent() {
   const dispatch = useDispatch();
   const { activeSection } = useSelector((state: RootState) => state.app);
-  const { isAuthenticated, isLoading, needsInitialSetup, needsCompanySetup, token } = useSelector((state: RootState) => state.auth);
+  const { isAuthenticated, isLoading, needsCompanySetup, token } = useSelector((state: RootState) => state.auth);
 
   // Reload data when switching to products page
   const [productPageKey, setProductPageKey] = useState(0);
@@ -53,15 +53,10 @@ function AppContent() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // First, check if any users exist
-        const usersExist: boolean = await invoke('check_if_users_exist');
+        // Check if we have a valid session
+        // NOTE: We used to check for users here and redirect to setup, but now we seed a default admin.
 
-        if (!usersExist) {
-          // No users exist, show initial setup
-          dispatch(setNeedsInitialSetup(true));
-          dispatch(setAuthLoading(false));
-          return;
-        }
+        console.log('Users found in database. Proceeding to session check.');
 
         // Users exist, check if we have a valid session
         const storedToken = token || localStorage.getItem('auth_token');
@@ -72,6 +67,7 @@ function AppContent() {
           });
 
           if (sessionResponse.valid && sessionResponse.user) {
+            console.log('Session valid for user:', sessionResponse.user.username);
             dispatch(loginSuccess({
               user: sessionResponse.user,
               token: storedToken,
@@ -81,18 +77,21 @@ function AppContent() {
             // Check if company is set up (not default 'My Company')
             try {
               const companyProfile: any = await invoke('get_company_profile');
-              console.log('Company Profile:', companyProfile); // Debug log
+              console.log('Company Profile check:', companyProfile);
               if (companyProfile && companyProfile.company_name === 'My Company') {
+                console.log('Company not set up. Redirecting to company setup.');
                 dispatch(setNeedsCompanySetup(true));
               }
             } catch (e) {
               console.error('Failed to check company profile:', e);
             }
           } else {
+            console.log('Session invalid. Clearing token.');
             localStorage.removeItem('auth_token');
             dispatch(setAuthLoading(false));
           }
         } else {
+          console.log('No auth token found. Redirecting to login.');
           dispatch(setAuthLoading(false));
         }
       } catch (error) {
@@ -129,10 +128,7 @@ function AppContent() {
     );
   }
 
-  // Show initial setup if needed
-  if (needsInitialSetup) {
-    return <InitialSetupPage />;
-  }
+
 
   // Show login page if not authenticated
   if (!isAuthenticated) {

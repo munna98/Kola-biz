@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::State;
+use uuid::Uuid;
 
 async fn get_next_voucher_number(pool: &SqlitePool, voucher_type: &str) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
@@ -32,10 +33,10 @@ async fn get_next_voucher_number(pool: &SqlitePool, voucher_type: &str) -> Resul
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct PaymentVoucher {
-    pub id: i64,
+    pub id: String,
     pub voucher_no: String,
     pub voucher_date: String,
-    pub account_id: i64,
+    pub account_id: String,
     pub account_name: String,
     pub payment_method: String,
     pub reference_number: Option<String>,
@@ -46,30 +47,30 @@ pub struct PaymentVoucher {
     pub status: String,
     pub created_at: String,
     pub deleted_at: Option<String>,
-    pub created_from_invoice_id: Option<i64>,
+    pub created_from_invoice_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct PaymentItem {
-    pub id: i64,
-    pub voucher_id: i64,
+    pub id: String,
+    pub voucher_id: String,
     pub description: String,
     pub amount: f64,
     pub tax_rate: f64,
     pub tax_amount: f64,
     pub remarks: Option<String>,
-    pub ledger_id: Option<i64>,
+    pub ledger_id: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct AllocationData {
-    pub invoice_id: i64,
+    pub invoice_id: String,
     pub amount: f64,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct PendingInvoice {
-    pub id: i64,
+    pub id: String,
     pub voucher_no: String,
     pub voucher_date: String,
     pub voucher_type: String,
@@ -81,7 +82,7 @@ pub struct PendingInvoice {
 #[derive(Deserialize)]
 pub struct CreatePaymentItem {
     pub description: String,
-    pub account_id: Option<i64>,
+    pub account_id: Option<String>,
     pub amount: f64,
     pub tax_rate: f64,
     pub remarks: Option<String>,
@@ -90,7 +91,7 @@ pub struct CreatePaymentItem {
 
 #[derive(Deserialize)]
 pub struct CreatePayment {
-    pub account_id: i64,
+    pub account_id: String,
     pub voucher_date: String,
     pub payment_method: String,
     pub reference_number: Option<String>,
@@ -102,7 +103,7 @@ pub struct CreatePayment {
 pub async fn create_payment(
     pool: State<'_, SqlitePool>,
     payment: CreatePayment,
-) -> Result<i64, String> {
+) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Generate voucher number
@@ -118,35 +119,37 @@ pub async fn create_payment(
     }
 
     let grand_total = total_amount + total_tax;
+    let voucher_id = Uuid::now_v7().to_string();
 
     // Create voucher
-    let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, account_id)
-         VALUES (?, 'payment', ?, ?, 'account', ?, ?, ?, ?, 'posted', ?)"
+    let _ = sqlx::query(
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, account_id)
+         VALUES (?, ?, 'payment', ?, ?, 'account', ?, ?, ?, ?, 'posted', ?)"
     )
+    .bind(&voucher_id)
     .bind(&voucher_no)
     .bind(&payment.voucher_date)
-    .bind(payment.account_id)
+    .bind(&payment.account_id)
     .bind(&payment.reference_number)
     .bind(total_amount)
     .bind(&payment.payment_method)
     .bind(&payment.narration)
-    .bind(payment.account_id)
+    .bind(&payment.account_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    let voucher_id = result.last_insert_rowid();
-
     // Insert items
     for item in &payment.items {
         let tax_amount = item.amount * (item.tax_rate / 100.0);
+        let item_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(voucher_id)
+        .bind(&item_id)
+        .bind(&voucher_id)
         .bind(&item.description)
         .bind(item.amount)
         .bind(item.tax_rate)
@@ -155,7 +158,7 @@ pub async fn create_payment(
         .bind(1.0)
         .bind(1.0)
         .bind(item.amount)
-        .bind(item.account_id)
+        .bind(&item.account_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -163,12 +166,14 @@ pub async fn create_payment(
         // Insert Allocations
         if let Some(allocations) = &item.allocations {
             for alloc in allocations {
+                let allocation_id = Uuid::now_v7().to_string();
                 sqlx::query(
-                "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date)
-                 VALUES (?, ?, ?, ?)"
+                "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks)
+                 VALUES (?, ?, ?, ?, ?, '')"
             )
-            .bind(voucher_id)
-            .bind(alloc.invoice_id)
+            .bind(&allocation_id)
+            .bind(&voucher_id)
+            .bind(&alloc.invoice_id)
             .bind(alloc.amount)
             .bind(&payment.voucher_date)
             .execute(&mut *tx)
@@ -179,7 +184,7 @@ pub async fn create_payment(
                 let total_allocated: f64 = sqlx::query_scalar(
                     "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
                 )
-                .bind(alloc.invoice_id)
+                .bind(&alloc.invoice_id)
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -191,7 +196,7 @@ pub async fn create_payment(
                      WHERE v.id = ?
                      GROUP BY v.id",
                 )
-                .bind(alloc.invoice_id)
+                .bind(&alloc.invoice_id)
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -206,7 +211,7 @@ pub async fn create_payment(
 
                 sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
                     .bind(status)
-                    .bind(alloc.invoice_id)
+                    .bind(&alloc.invoice_id)
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| e.to_string())?;
@@ -215,13 +220,16 @@ pub async fn create_payment(
     }
 
     // Create journal entries
+    let je_id_1 = Uuid::now_v7().to_string();
+
     // Credit: Cash/Bank Account (the account user selected to pay from)
     sqlx::query(
-        "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, 0, ?, 'Payment made')",
+        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, is_manual, narration)
+         VALUES (?, ?, ?, 0, ?, 0, 'Payment made')",
     )
-    .bind(voucher_id)
-    .bind(payment.account_id)
+    .bind(&je_id_1)
+    .bind(&voucher_id)
+    .bind(&payment.account_id)
     .bind(grand_total)
     .execute(&mut *tx)
     .await
@@ -230,8 +238,8 @@ pub async fn create_payment(
     // Debit: Each Payee/Ledger Account from items
     for item in &payment.items {
         // Look up the account
-        let payee_account: Option<i64> = if let Some(acc_id) = item.account_id {
-            Some(acc_id)
+        let payee_account: Option<String> = if let Some(acc_id) = &item.account_id {
+            Some(acc_id.clone())
         } else {
             sqlx::query_scalar(
                 "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
@@ -243,11 +251,13 @@ pub async fn create_payment(
         };
 
         if let Some(payee_acc) = payee_account {
+            let je_id_2 = Uuid::now_v7().to_string();
             sqlx::query(
-                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-                 VALUES (?, ?, ?, 0, ?)",
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, is_manual, narration)
+                 VALUES (?, ?, ?, ?, 0, 0, ?)",
             )
-            .bind(voucher_id)
+            .bind(&je_id_2)
+            .bind(&voucher_id)
             .bind(payee_acc)
             .bind(item.amount)
             .bind(format!("Payment to {}", item.description))
@@ -259,18 +269,20 @@ pub async fn create_payment(
 
     // Debit: Tax Account if applicable
     if total_tax > 0.0 {
-        let tax_account: Option<i64> =
+        let tax_account: Option<String> =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1005'")
                 .fetch_optional(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
 
         if let Some(tax_acc) = tax_account {
+            let je_id_3 = Uuid::now_v7().to_string();
             sqlx::query(
-                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-                 VALUES (?, ?, ?, 0, 'Tax on payment')",
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, is_manual, narration)
+                 VALUES (?, ?, ?, ?, 0, 0, 'Tax on payment')",
             )
-            .bind(voucher_id)
+            .bind(&je_id_3)
+            .bind(&voucher_id)
             .bind(tax_acc)
             .bind(total_tax)
             .execute(&mut *tx)
@@ -333,7 +345,10 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
 }
 
 #[tauri::command]
-pub async fn get_payment(pool: State<'_, SqlitePool>, id: i64) -> Result<PaymentVoucher, String> {
+pub async fn get_payment(
+    pool: State<'_, SqlitePool>,
+    id: String,
+) -> Result<PaymentVoucher, String> {
     let payment = sqlx::query_as::<_, PaymentVoucher>(
         "SELECT 
             v.id,
@@ -383,7 +398,7 @@ pub async fn get_payment(pool: State<'_, SqlitePool>, id: i64) -> Result<Payment
 #[tauri::command]
 pub async fn get_payment_items(
     pool: State<'_, SqlitePool>,
-    voucher_id: i64,
+    voucher_id: String,
 ) -> Result<Vec<PaymentItem>, String> {
     let items = sqlx::query_as::<_, PaymentItem>(
         "SELECT 
@@ -408,7 +423,7 @@ pub async fn get_payment_items(
 }
 
 #[tauri::command]
-pub async fn delete_payment(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+pub async fn delete_payment(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'payment'")
         .bind(id)
         .execute(pool.inner())
@@ -421,7 +436,7 @@ pub async fn delete_payment(pool: State<'_, SqlitePool>, id: i64) -> Result<(), 
 #[tauri::command]
 pub async fn update_payment(
     pool: State<'_, SqlitePool>,
-    id: i64,
+    id: String,
     payment: CreatePayment,
 ) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
@@ -449,29 +464,29 @@ pub async fn update_payment(
          WHERE id = ? AND voucher_type = 'payment'",
     )
     .bind(&payment.voucher_date)
-    .bind(payment.account_id)
+    .bind(&payment.account_id)
     .bind(&payment.reference_number)
     .bind(total_amount)
     .bind(&payment.payment_method)
     .bind(&payment.narration)
-    .bind(payment.account_id)
-    .bind(id)
+    .bind(&payment.account_id)
+    .bind(&id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
     // 3. Clear existing Allocations (Reverse effect on invoices)
     // We need to re-calculate status for invoices that were allocated
-    let allocated_invoices: Vec<i64> = sqlx::query_scalar(
+    let allocated_invoices: Vec<String> = sqlx::query_scalar(
         "SELECT invoice_voucher_id FROM payment_allocations WHERE payment_voucher_id = ?",
     )
-    .bind(id)
+    .bind(&id)
     .fetch_all(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
     sqlx::query("DELETE FROM payment_allocations WHERE payment_voucher_id = ?")
-        .bind(id)
+        .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -481,7 +496,7 @@ pub async fn update_payment(
         let total_allocated: f64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
         )
-        .bind(inv_id)
+        .bind(&inv_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -493,7 +508,7 @@ pub async fn update_payment(
              WHERE v.id = ?
              GROUP BY v.id",
         )
-        .bind(inv_id)
+        .bind(&inv_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -508,7 +523,7 @@ pub async fn update_payment(
 
         sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
             .bind(status)
-            .bind(inv_id)
+            .bind(&inv_id)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
@@ -516,13 +531,13 @@ pub async fn update_payment(
 
     // 4. Delete existing Items and Journal Entries
     sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
-        .bind(id)
+        .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
 
     sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
-        .bind(id)
+        .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -530,12 +545,14 @@ pub async fn update_payment(
     // 5. Insert New Items & Allocations
     for item in &payment.items {
         let tax_amount = item.amount * (item.tax_rate / 100.0);
+        let item_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(id)
+        .bind(&item_id)
+        .bind(&id)
         .bind(&item.description)
         .bind(item.amount)
         .bind(item.tax_rate)
@@ -544,7 +561,7 @@ pub async fn update_payment(
         .bind(1.0)
         .bind(1.0)
         .bind(item.amount)
-        .bind(item.account_id)
+        .bind(&item.account_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -552,12 +569,14 @@ pub async fn update_payment(
         // Insert Allocations
         if let Some(allocations) = &item.allocations {
             for alloc in allocations {
+                let allocation_id = Uuid::now_v7().to_string();
                 sqlx::query(
-                "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date)
-                 VALUES (?, ?, ?, ?)"
+                    "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks)
+                     VALUES (?, ?, ?, ?, ?, '')"
             )
-            .bind(id)
-            .bind(alloc.invoice_id)
+            .bind(&allocation_id)
+            .bind(&id)
+            .bind(&alloc.invoice_id)
             .bind(alloc.amount)
             .bind(&payment.voucher_date)
             .execute(&mut *tx)
@@ -568,7 +587,7 @@ pub async fn update_payment(
                 let total_allocated: f64 = sqlx::query_scalar(
                     "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
                 )
-                .bind(alloc.invoice_id)
+                .bind(&alloc.invoice_id)
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -580,7 +599,7 @@ pub async fn update_payment(
                      WHERE v.id = ?
                      GROUP BY v.id",
                 )
-                .bind(alloc.invoice_id)
+                .bind(&alloc.invoice_id)
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -595,7 +614,7 @@ pub async fn update_payment(
 
                 sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
                     .bind(status)
-                    .bind(alloc.invoice_id)
+                    .bind(&alloc.invoice_id)
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| e.to_string())?;
@@ -605,12 +624,14 @@ pub async fn update_payment(
 
     // 6. Create New Journal Entries
     // Credit: Cash/Bank Account
+    let je_id_1 = Uuid::now_v7().to_string();
     sqlx::query(
-        "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, 0, ?, 'Payment updated')",
+        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, is_manual, narration)
+         VALUES (?, ?, ?, 0, ?, 0, 'Payment updated')",
     )
-    .bind(id)
-    .bind(payment.account_id)
+    .bind(&je_id_1)
+    .bind(&id)
+    .bind(&payment.account_id)
     .bind(grand_total)
     .execute(&mut *tx)
     .await
@@ -618,8 +639,8 @@ pub async fn update_payment(
 
     // Debit: Each Payee/Ledger Account from items
     for item in &payment.items {
-        let payee_account: Option<i64> = if let Some(acc_id) = item.account_id {
-            Some(acc_id)
+        let payee_account: Option<String> = if let Some(acc_id) = &item.account_id {
+            Some(acc_id.clone())
         } else {
             sqlx::query_scalar(
                 "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
@@ -631,11 +652,13 @@ pub async fn update_payment(
         };
 
         if let Some(payee_acc) = payee_account {
+            let je_id_2 = Uuid::now_v7().to_string();
             sqlx::query(
-                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-                 VALUES (?, ?, ?, 0, ?)",
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, is_manual, narration)
+                 VALUES (?, ?, ?, ?, 0, 0, ?)",
             )
-            .bind(id)
+            .bind(&je_id_2)
+            .bind(&id)
             .bind(payee_acc)
             .bind(item.amount)
             .bind(format!("Payment to {}", item.description))
@@ -647,18 +670,20 @@ pub async fn update_payment(
 
     // Debit: Tax Account if applicable
     if total_tax > 0.0 {
-        let tax_account: Option<i64> =
+        let tax_account: Option<String> =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1005'")
                 .fetch_optional(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
 
         if let Some(tax_acc) = tax_account {
+            let je_id_3 = Uuid::now_v7().to_string();
             sqlx::query(
-                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-                 VALUES (?, ?, ?, 0, 'Tax on payment')",
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, is_manual, narration)
+                 VALUES (?, ?, ?, ?, 0, 0, 'Tax on payment')",
             )
-            .bind(id)
+            .bind(&je_id_3)
+            .bind(&id)
             .bind(tax_acc)
             .bind(total_tax)
             .execute(&mut *tx)
@@ -676,10 +701,10 @@ pub async fn update_payment(
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct ReceiptVoucher {
-    pub id: i64,
+    pub id: String,
     pub voucher_no: String,
     pub voucher_date: String,
-    pub account_id: i64,
+    pub account_id: String,
     pub account_name: String,
     pub receipt_method: String,
     pub reference_number: Option<String>,
@@ -690,25 +715,25 @@ pub struct ReceiptVoucher {
     pub status: String,
     pub created_at: String,
     pub deleted_at: Option<String>,
-    pub created_from_invoice_id: Option<i64>,
+    pub created_from_invoice_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct ReceiptItem {
-    pub id: i64,
-    pub voucher_id: i64,
+    pub id: String,
+    pub voucher_id: String,
     pub description: String,
     pub amount: f64,
     pub tax_rate: f64,
     pub tax_amount: f64,
     pub remarks: Option<String>,
-    pub ledger_id: Option<i64>,
+    pub ledger_id: Option<String>,
 }
 
 #[derive(Deserialize)]
 pub struct CreateReceiptItem {
     pub description: String,
-    pub account_id: Option<i64>,
+    pub account_id: Option<String>,
     pub amount: f64,
     pub tax_rate: f64,
     pub remarks: Option<String>,
@@ -717,7 +742,7 @@ pub struct CreateReceiptItem {
 
 #[derive(Deserialize)]
 pub struct CreateReceipt {
-    pub account_id: i64,
+    pub account_id: String,
     pub voucher_date: String,
     pub receipt_method: String,
     pub reference_number: Option<String>,
@@ -729,7 +754,7 @@ pub struct CreateReceipt {
 pub async fn create_receipt(
     pool: State<'_, SqlitePool>,
     receipt: CreateReceipt,
-) -> Result<i64, String> {
+) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Generate voucher number
@@ -745,35 +770,37 @@ pub async fn create_receipt(
     }
 
     let grand_total = total_amount + total_tax;
+    let voucher_id = Uuid::now_v7().to_string();
 
     // Create voucher
-    let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, account_id)
-         VALUES (?, 'receipt', ?, ?, 'account', ?, ?, ?, ?, 'posted', ?)"
+    let _ = sqlx::query(
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, account_id)
+         VALUES (?, ?, 'receipt', ?, ?, 'account', ?, ?, ?, ?, 'posted', ?)"
     )
+    .bind(&voucher_id)
     .bind(&voucher_no)
     .bind(&receipt.voucher_date)
-    .bind(receipt.account_id)
+    .bind(&receipt.account_id)
     .bind(&receipt.reference_number)
     .bind(total_amount)
     .bind(&receipt.receipt_method)
     .bind(&receipt.narration)
-    .bind(receipt.account_id)
+    .bind(&receipt.account_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    let voucher_id = result.last_insert_rowid();
-
     // Insert items
     for item in &receipt.items {
         let tax_amount = item.amount * (item.tax_rate / 100.0);
+        let item_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(voucher_id)
+        .bind(&item_id)
+        .bind(&voucher_id)
         .bind(&item.description)
         .bind(item.amount)
         .bind(item.tax_rate)
@@ -782,7 +809,7 @@ pub async fn create_receipt(
         .bind(1.0)
         .bind(1.0)
         .bind(item.amount)
-        .bind(item.account_id)
+        .bind(&item.account_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -790,12 +817,14 @@ pub async fn create_receipt(
         // Insert Allocations
         if let Some(allocations) = &item.allocations {
             for alloc in allocations {
+                let allocation_id = Uuid::now_v7().to_string();
                 sqlx::query(
-                    "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date)
-                     VALUES (?, ?, ?, ?)"
+                    "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks)
+                     VALUES (?, ?, ?, ?, ?, '')"
                 )
-                .bind(voucher_id)
-                .bind(alloc.invoice_id)
+                .bind(&allocation_id)
+                .bind(&voucher_id)
+                .bind(&alloc.invoice_id)
                 .bind(alloc.amount)
                 .bind(&receipt.voucher_date)
                 .execute(&mut *tx)
@@ -806,7 +835,7 @@ pub async fn create_receipt(
                 let total_allocated: f64 = sqlx::query_scalar(
                     "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
                 )
-                .bind(alloc.invoice_id)
+                .bind(&alloc.invoice_id)
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -818,7 +847,7 @@ pub async fn create_receipt(
                      WHERE v.id = ?
                      GROUP BY v.id",
                 )
-                .bind(alloc.invoice_id)
+                .bind(&alloc.invoice_id)
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -833,7 +862,7 @@ pub async fn create_receipt(
 
                 sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
                     .bind(status)
-                    .bind(alloc.invoice_id)
+                    .bind(&alloc.invoice_id)
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| e.to_string())?;
@@ -842,13 +871,16 @@ pub async fn create_receipt(
     }
 
     // Create journal entries
+    let je_id_1 = Uuid::now_v7().to_string();
+
     // Debit: Cash/Bank Account (the account user selected to receive payment)
     sqlx::query(
-        "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, 0, 'Receipt received')",
+        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+         VALUES (?, ?, ?, ?, 0, 'Receipt received')",
     )
-    .bind(voucher_id)
-    .bind(receipt.account_id)
+    .bind(&je_id_1)
+    .bind(&voucher_id)
+    .bind(&receipt.account_id)
     .bind(grand_total)
     .execute(&mut *tx)
     .await
@@ -857,8 +889,8 @@ pub async fn create_receipt(
     // Credit: Each Payer/Ledger Account from items
     for item in &receipt.items {
         // Look up the account
-        let payer_account: Option<i64> = if let Some(acc_id) = item.account_id {
-            Some(acc_id)
+        let payer_account: Option<String> = if let Some(acc_id) = &item.account_id {
+            Some(acc_id.clone())
         } else {
             sqlx::query_scalar(
                 "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
@@ -870,11 +902,13 @@ pub async fn create_receipt(
         };
 
         if let Some(payer_acc) = payer_account {
+            let je_id_2 = Uuid::now_v7().to_string();
             sqlx::query(
-                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-                 VALUES (?, ?, 0, ?, ?)",
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0, ?, ?)",
             )
-            .bind(voucher_id)
+            .bind(&je_id_2)
+            .bind(&voucher_id)
             .bind(payer_acc)
             .bind(item.amount)
             .bind(format!("Receipt from {}", item.description))
@@ -886,18 +920,20 @@ pub async fn create_receipt(
 
     // Credit: Tax Account if applicable
     if total_tax > 0.0 {
-        let tax_account: Option<i64> =
+        let tax_account: Option<String> =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1005'")
                 .fetch_optional(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
 
         if let Some(tax_acc) = tax_account {
+            let je_id_3 = Uuid::now_v7().to_string();
             sqlx::query(
-                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-                 VALUES (?, ?, 0, ?, 'Tax on receipt')",
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0, ?, 'Tax on receipt')",
             )
-            .bind(voucher_id)
+            .bind(&je_id_3)
+            .bind(&voucher_id)
             .bind(tax_acc)
             .bind(total_tax)
             .execute(&mut *tx)
@@ -960,7 +996,10 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
 }
 
 #[tauri::command]
-pub async fn get_receipt(pool: State<'_, SqlitePool>, id: i64) -> Result<ReceiptVoucher, String> {
+pub async fn get_receipt(
+    pool: State<'_, SqlitePool>,
+    id: String,
+) -> Result<ReceiptVoucher, String> {
     let receipt = sqlx::query_as::<_, ReceiptVoucher>(
         "SELECT 
             v.id,
@@ -1010,7 +1049,7 @@ pub async fn get_receipt(pool: State<'_, SqlitePool>, id: i64) -> Result<Receipt
 #[tauri::command]
 pub async fn get_receipt_items(
     pool: State<'_, SqlitePool>,
-    voucher_id: i64,
+    voucher_id: String,
 ) -> Result<Vec<ReceiptItem>, String> {
     let items = sqlx::query_as::<_, ReceiptItem>(
         "SELECT 
@@ -1034,7 +1073,7 @@ pub async fn get_receipt_items(
 }
 
 #[tauri::command]
-pub async fn delete_receipt(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+pub async fn delete_receipt(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'receipt'")
         .bind(id)
         .execute(pool.inner())
@@ -1047,7 +1086,7 @@ pub async fn delete_receipt(pool: State<'_, SqlitePool>, id: i64) -> Result<(), 
 #[tauri::command]
 pub async fn update_receipt(
     pool: State<'_, SqlitePool>,
-    id: i64,
+    id: String,
     receipt: CreateReceipt,
 ) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
@@ -1075,28 +1114,28 @@ pub async fn update_receipt(
          WHERE id = ? AND voucher_type = 'receipt'",
     )
     .bind(&receipt.voucher_date)
-    .bind(receipt.account_id)
+    .bind(&receipt.account_id)
     .bind(&receipt.reference_number)
     .bind(total_amount)
     .bind(&receipt.receipt_method)
     .bind(&receipt.narration)
-    .bind(receipt.account_id)
-    .bind(id)
+    .bind(&receipt.account_id)
+    .bind(&id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
     // 3. Clear existing Allocations (Reverse effect on invoices)
-    let allocated_invoices: Vec<i64> = sqlx::query_scalar(
+    let allocated_invoices: Vec<String> = sqlx::query_scalar(
         "SELECT invoice_voucher_id FROM payment_allocations WHERE payment_voucher_id = ?",
     )
-    .bind(id)
+    .bind(&id)
     .fetch_all(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
     sqlx::query("DELETE FROM payment_allocations WHERE payment_voucher_id = ?")
-        .bind(id)
+        .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -1106,7 +1145,7 @@ pub async fn update_receipt(
         let total_allocated: f64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
         )
-        .bind(inv_id)
+        .bind(&inv_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -1118,7 +1157,7 @@ pub async fn update_receipt(
              WHERE v.id = ?
              GROUP BY v.id",
         )
-        .bind(inv_id)
+        .bind(&inv_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -1133,7 +1172,7 @@ pub async fn update_receipt(
 
         sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
             .bind(status)
-            .bind(inv_id)
+            .bind(&inv_id)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
@@ -1141,13 +1180,13 @@ pub async fn update_receipt(
 
     // 4. Delete existing Items and Journal Entries
     sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
-        .bind(id)
+        .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
 
     sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
-        .bind(id)
+        .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -1155,12 +1194,14 @@ pub async fn update_receipt(
     // 5. Insert New Items & Allocations
     for item in &receipt.items {
         let tax_amount = item.amount * (item.tax_rate / 100.0);
+        let item_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(id)
+        .bind(&item_id)
+        .bind(&id)
         .bind(&item.description)
         .bind(item.amount)
         .bind(item.tax_rate)
@@ -1169,7 +1210,7 @@ pub async fn update_receipt(
         .bind(1.0)
         .bind(1.0)
         .bind(item.amount)
-        .bind(item.account_id)
+        .bind(&item.account_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -1177,12 +1218,14 @@ pub async fn update_receipt(
         // Insert Allocations
         if let Some(allocations) = &item.allocations {
             for alloc in allocations {
+                let allocation_id = Uuid::now_v7().to_string();
                 sqlx::query(
-                "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date)
-                 VALUES (?, ?, ?, ?)"
+                "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks)
+                 VALUES (?, ?, ?, ?, ?, '')"
             )
-            .bind(id)
-            .bind(alloc.invoice_id)
+            .bind(&allocation_id)
+            .bind(&id)
+            .bind(&alloc.invoice_id)
             .bind(alloc.amount)
             .bind(&receipt.voucher_date)
             .execute(&mut *tx)
@@ -1193,7 +1236,7 @@ pub async fn update_receipt(
                 let total_allocated: f64 = sqlx::query_scalar(
                     "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
                 )
-                .bind(alloc.invoice_id)
+                .bind(&alloc.invoice_id)
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -1205,7 +1248,7 @@ pub async fn update_receipt(
                      WHERE v.id = ?
                      GROUP BY v.id",
                 )
-                .bind(alloc.invoice_id)
+                .bind(&alloc.invoice_id)
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -1220,7 +1263,7 @@ pub async fn update_receipt(
 
                 sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
                     .bind(status)
-                    .bind(alloc.invoice_id)
+                    .bind(&alloc.invoice_id)
                     .execute(&mut *tx)
                     .await
                     .map_err(|e| e.to_string())?;
@@ -1230,12 +1273,14 @@ pub async fn update_receipt(
 
     // 6. Create New Journal Entries
     // Debit: Cash/Bank Account
+    let je_id_1 = Uuid::now_v7().to_string();
     sqlx::query(
-        "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, 0, 'Receipt updated')",
+        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+         VALUES (?, ?, ?, ?, 0, 'Receipt updated')",
     )
-    .bind(id)
-    .bind(receipt.account_id)
+    .bind(&je_id_1)
+    .bind(&id)
+    .bind(&receipt.account_id)
     .bind(grand_total)
     .execute(&mut *tx)
     .await
@@ -1243,8 +1288,8 @@ pub async fn update_receipt(
 
     // Credit: Each Payer/Ledger Account from items
     for item in &receipt.items {
-        let payer_account: Option<i64> = if let Some(acc_id) = item.account_id {
-            Some(acc_id)
+        let payer_account: Option<String> = if let Some(acc_id) = &item.account_id {
+            Some(acc_id.clone())
         } else {
             sqlx::query_scalar(
                 "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
@@ -1256,11 +1301,13 @@ pub async fn update_receipt(
         };
 
         if let Some(payer_acc) = payer_account {
+            let je_id_2 = Uuid::now_v7().to_string();
             sqlx::query(
-                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-                 VALUES (?, ?, 0, ?, ?)",
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0, ?, ?)",
             )
-            .bind(id)
+            .bind(&je_id_2)
+            .bind(&id)
             .bind(payer_acc)
             .bind(item.amount)
             .bind(format!("Receipt from {}", item.description))
@@ -1272,18 +1319,20 @@ pub async fn update_receipt(
 
     // Credit: Tax Account if applicable
     if total_tax > 0.0 {
-        let tax_account: Option<i64> =
+        let tax_account: Option<String> =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1005'")
                 .fetch_optional(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
 
         if let Some(tax_acc) = tax_account {
+            let je_id_3 = Uuid::now_v7().to_string();
             sqlx::query(
-                "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-                 VALUES (?, ?, 0, ?, 'Tax on receipt')",
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0, ?, 'Tax on receipt')",
             )
-            .bind(id)
+            .bind(&je_id_3)
+            .bind(&id)
             .bind(tax_acc)
             .bind(total_tax)
             .execute(&mut *tx)
@@ -1301,7 +1350,7 @@ pub async fn update_receipt(
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct JournalEntry {
-    pub id: i64,
+    pub id: String,
     pub voucher_no: String,
     pub voucher_date: String,
     pub reference: Option<String>,
@@ -1315,9 +1364,9 @@ pub struct JournalEntry {
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct JournalEntryLine {
-    pub id: i64,
-    pub voucher_id: i64,
-    pub account_id: i64,
+    pub id: String,
+    pub voucher_id: String,
+    pub account_id: String,
     pub account_name: String,
     pub debit: f64,
     pub credit: f64,
@@ -1326,7 +1375,7 @@ pub struct JournalEntryLine {
 
 #[derive(Deserialize)]
 pub struct CreateJournalEntryLine {
-    pub account_id: i64,
+    pub account_id: String,
     pub debit: f64,
     pub credit: f64,
     pub narration: Option<String>,
@@ -1344,7 +1393,7 @@ pub struct CreateJournalEntry {
 pub async fn create_journal_entry(
     pool: State<'_, SqlitePool>,
     entry: CreateJournalEntry,
-) -> Result<i64, String> {
+) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Generate voucher number
@@ -1370,11 +1419,14 @@ pub async fn create_journal_entry(
         }
     }
 
+    let voucher_id = Uuid::now_v7().to_string();
+
     // Create voucher
-    let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, reference, total_amount, narration, status)
-         VALUES (?, 'journal', ?, ?, ?, ?, 'posted')"
+    let _ = sqlx::query(
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, reference, total_amount, narration, status)
+         VALUES (?, ?, 'journal', ?, ?, ?, ?, 'posted')"
     )
+    .bind(&voucher_id)
     .bind(&voucher_no)
     .bind(&entry.voucher_date)
     .bind(&entry.reference)
@@ -1384,16 +1436,16 @@ pub async fn create_journal_entry(
     .await
     .map_err(|e| e.to_string())?;
 
-    let voucher_id = result.last_insert_rowid();
-
     // Insert journal entries
     for line in &entry.lines {
+        let je_id = Uuid::now_v7().to_string();
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, is_manual, narration)
-             VALUES (?, ?, ?, ?, 1, ?)"
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, is_manual, narration)
+             VALUES (?, ?, ?, ?, ?, 1, ?)"
         )
-        .bind(voucher_id)
-        .bind(line.account_id)
+        .bind(&je_id)
+        .bind(&voucher_id)
+        .bind(&line.account_id)
         .bind(line.debit)
         .bind(line.credit)
         .bind(&line.narration)
@@ -1437,7 +1489,7 @@ pub async fn get_journal_entries(pool: State<'_, SqlitePool>) -> Result<Vec<Jour
 #[tauri::command]
 pub async fn get_journal_entry(
     pool: State<'_, SqlitePool>,
-    id: i64,
+    id: String,
 ) -> Result<JournalEntry, String> {
     let entry = sqlx::query_as::<_, JournalEntry>(
         "SELECT 
@@ -1467,7 +1519,7 @@ pub async fn get_journal_entry(
 #[tauri::command]
 pub async fn get_journal_entry_lines(
     pool: State<'_, SqlitePool>,
-    voucher_id: i64,
+    voucher_id: String,
 ) -> Result<Vec<JournalEntryLine>, String> {
     let lines = sqlx::query_as::<_, JournalEntryLine>(
         "SELECT 
@@ -1492,10 +1544,10 @@ pub async fn get_journal_entry_lines(
 }
 
 #[tauri::command]
-pub async fn delete_journal_entry(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+pub async fn delete_journal_entry(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
     // Check if this is a manual journal entry
     let voucher_type: String = sqlx::query_scalar("SELECT voucher_type FROM vouchers WHERE id = ?")
-        .bind(id)
+        .bind(&id)
         .fetch_one(pool.inner())
         .await
         .map_err(|e| e.to_string())?;
@@ -1506,7 +1558,7 @@ pub async fn delete_journal_entry(pool: State<'_, SqlitePool>, id: i64) -> Resul
 
     // Soft delete voucher
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
-        .bind(id)
+        .bind(&id)
         .execute(pool.inner())
         .await
         .map_err(|e| e.to_string())?;
@@ -1518,7 +1570,7 @@ pub async fn delete_journal_entry(pool: State<'_, SqlitePool>, id: i64) -> Resul
 
 #[derive(Serialize, Deserialize)]
 pub struct OpeningBalanceLine {
-    pub account_id: i64,
+    pub account_id: String,
     pub account_name: String,
     pub debit: f64,
     pub credit: f64,
@@ -1608,7 +1660,7 @@ pub async fn create_opening_balance(
 pub async fn get_opening_balances(
     pool: State<'_, SqlitePool>,
 ) -> Result<Vec<serde_json::Value>, String> {
-    sqlx::query_as::<_, (i64, String)>(
+    sqlx::query_as::<_, (String, String)>(
         "SELECT v.id, v.voucher_no FROM vouchers v WHERE v.voucher_type = 'opening_balance' AND v.deleted_at IS NULL ORDER BY v.voucher_date DESC"
     )
     .fetch_all(pool.inner())
@@ -1618,7 +1670,7 @@ pub async fn get_opening_balances(
 }
 
 #[tauri::command]
-pub async fn delete_opening_balance(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+pub async fn delete_opening_balance(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'opening_balance'")
         .bind(id)
         .execute(pool.inner())
@@ -1631,7 +1683,7 @@ pub async fn delete_opening_balance(pool: State<'_, SqlitePool>, id: i64) -> Res
 #[tauri::command]
 pub async fn get_account_balance(
     pool: State<'_, SqlitePool>,
-    account_id: i64,
+    account_id: String,
 ) -> Result<f64, String> {
     let result = sqlx::query_as::<_, (f64, f64)>(
         "SELECT 
@@ -1656,7 +1708,7 @@ pub async fn get_account_balance(
 #[tauri::command]
 pub async fn get_pending_invoices(
     pool: State<'_, SqlitePool>,
-    account_id: i64,
+    account_id: String,
 ) -> Result<Vec<PendingInvoice>, String> {
     // Fetch pending invoices for the party.
     let invoices = sqlx::query_as::<_, PendingInvoice>(
@@ -1691,14 +1743,14 @@ pub async fn get_pending_invoices(
 #[tauri::command]
 pub async fn update_journal_entry(
     pool: State<'_, SqlitePool>,
-    id: i64,
+    id: String,
     entry: CreateJournalEntry,
 ) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Check if this is a manual journal entry
     let voucher_type: String = sqlx::query_scalar("SELECT voucher_type FROM vouchers WHERE id = ?")
-        .bind(id)
+        .bind(&id)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -1740,26 +1792,28 @@ pub async fn update_journal_entry(
     .bind(&entry.reference)
     .bind(total_debit)
     .bind(&entry.narration)
-    .bind(id)
+    .bind(&id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
     // Delete existing journal lines
     sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
-        .bind(id)
+        .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
 
     // Insert new journal lines
     for line in &entry.lines {
+        let je_id = Uuid::now_v7().to_string();
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, is_manual, narration)
-             VALUES (?, ?, ?, ?, 1, ?)"
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, is_manual, narration)
+             VALUES (?, ?, ?, ?, ?, 1, ?)"
         )
-        .bind(id)
-        .bind(line.account_id)
+        .bind(&je_id)
+        .bind(&id)
+        .bind(line.account_id.clone())
         .bind(line.debit)
         .bind(line.credit)
         .bind(&line.narration)
@@ -1776,9 +1830,9 @@ pub async fn update_journal_entry(
 #[tauri::command]
 pub async fn get_opening_balance(
     pool: State<'_, SqlitePool>,
-    id: i64,
+    id: String,
 ) -> Result<serde_json::Value, String> {
-    let voucher = sqlx::query_as::<_, (i64, String, String, Option<String>, Option<String>)>(
+    let voucher = sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>)>(
         "SELECT id, voucher_no, voucher_date, reference, narration 
          FROM vouchers 
          WHERE id = ? AND voucher_type = 'opening_balance' AND deleted_at IS NULL",
@@ -1800,19 +1854,19 @@ pub async fn get_opening_balance(
 #[tauri::command]
 pub async fn get_opening_balance_lines(
     pool: State<'_, SqlitePool>,
-    voucher_id: i64,
+    voucher_id: String,
 ) -> Result<Vec<OpeningBalanceLine>, String> {
     // Only fetch the user-facing entries (not the auto-balancing ones)
     // The auto-balancing entry has account_id 3004.
 
     // Find Opening Balance Adjustment account id
-    let ob_account_id: i64 =
+    let ob_account_id: String =
         sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '3004' LIMIT 1")
             .fetch_one(pool.inner())
             .await
-            .unwrap_or(0); // If not found, 0 won't match anything valid usually
+            .unwrap_or("".to_string()); // empty string won't match anything valid
 
-    let lines = sqlx::query_as::<_, (i64, String, f64, f64, String)>(
+    let lines = sqlx::query_as::<_, (String, String, f64, f64, String)>(
         "SELECT 
             je.account_id,
             coa.account_name,
@@ -1847,14 +1901,14 @@ pub async fn get_opening_balance_lines(
 #[tauri::command]
 pub async fn update_opening_balance(
     pool: State<'_, SqlitePool>,
-    id: i64,
+    id: String,
     entry: CreateOpeningBalance,
 ) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Check voucher type
     let voucher_type: String = sqlx::query_scalar("SELECT voucher_type FROM vouchers WHERE id = ?")
-        .bind(id)
+        .bind(&id)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -1892,13 +1946,13 @@ pub async fn update_opening_balance(
             .and_then(|v| v.as_str())
             .unwrap_or(""),
     )
-    .bind(id)
+    .bind(&id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
     // Find OB Adjustment account
-    let ob_account = sqlx::query_as::<_, (i64,)>(
+    let ob_account = sqlx::query_as::<_, (String,)>(
         "SELECT id FROM chart_of_accounts WHERE account_code = '3004' LIMIT 1",
     )
     .fetch_optional(&mut *tx)
@@ -1910,7 +1964,7 @@ pub async fn update_opening_balance(
 
     // Delete existing journal entries
     sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
-        .bind(id)
+        .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -1918,12 +1972,14 @@ pub async fn update_opening_balance(
     // Insert new journal entries (dual entry logic)
     for line in entry.lines {
         // User entry
+        let je_id_1 = Uuid::now_v7().to_string();
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
-             VALUES (?, ?, ?, ?, ?, 0)"
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration, is_manual)
+             VALUES (?, ?, ?, ?, ?, ?, 0)"
         )
-        .bind(id)
-        .bind(line.account_id)
+        .bind(&je_id_1)
+        .bind(&id)
+        .bind(&line.account_id)
         .bind(line.debit)
         .bind(line.credit)
         .bind(&line.narration)
@@ -1932,12 +1988,14 @@ pub async fn update_opening_balance(
         .map_err(|e| e.to_string())?;
 
         // Balancing entry
+        let je_id_2 = Uuid::now_v7().to_string();
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
-             VALUES (?, ?, ?, ?, ?, 0)"
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration, is_manual)
+             VALUES (?, ?, ?, ?, ?, ?, 0)"
         )
-        .bind(id)
-        .bind(ob_account_id)
+        .bind(&je_id_2)
+        .bind(&id)
+        .bind(&ob_account_id)
         .bind(line.credit)
         .bind(line.debit)
         .bind("Auto-generated balancing entry")

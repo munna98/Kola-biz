@@ -75,7 +75,7 @@ export default function OpeningBalancePage() {
     }, [dispatch]);
 
     // Load Voucher Effect
-    const loadVoucher = useCallback(async (id: number) => {
+    const loadVoucher = useCallback(async (id: string) => {
         try {
             dispatch(setOpeningBalanceLoading(true));
             dispatch(setOpeningBalanceHasUnsavedChanges(false));

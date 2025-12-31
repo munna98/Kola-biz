@@ -74,7 +74,7 @@ export default function PurchaseInvoicePage() {
   const [showListView, setShowListView] = useState(false);
   const [showQuickPayment, setShowQuickPayment] = useState(false);
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
-  const [savedInvoiceId, setSavedInvoiceId] = useState<number | undefined>(undefined);
+  const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
 
   // Refs for focus management
@@ -99,20 +99,6 @@ export default function PurchaseInvoicePage() {
           type: acc.account_group === 'Accounts Payable' ? 'supplier' as const : 'customer' as const
         }));
         setParties(combinedParties);
-
-        // Default to "Cash Purchase" account if available, otherwise first party
-        if (purchaseState.form.supplier_id === 0 && purchaseState.mode === 'new') {
-          const cashPurchaseAccount = combinedParties.find(p => p.name === 'Cash Purchase');
-          const defaultParty = cashPurchaseAccount || combinedParties[0];
-
-          if (defaultParty) {
-            dispatch(setSupplier({
-              id: defaultParty.id,
-              name: defaultParty.name,
-              type: defaultParty.type
-            }));
-          }
-        }
       } catch (error) {
         toast.error('Failed to load data');
         console.error(error);
@@ -124,12 +110,29 @@ export default function PurchaseInvoicePage() {
     loadData();
   }, [dispatch]);
 
+  // Default Party Selection Effect
+  useEffect(() => {
+    if (purchaseState.mode === 'new' && purchaseState.form.supplier_id === 0 && parties.length > 0) {
+      // Default to "Cash Purchase" account if available, otherwise first party
+      const cashPurchaseAccount = parties.find(p => p.name === 'Cash Purchase');
+      const defaultParty = cashPurchaseAccount || parties[0];
+
+      if (defaultParty) {
+        dispatch(setSupplier({
+          id: defaultParty.id,
+          name: defaultParty.name,
+          type: defaultParty.type
+        }));
+      }
+    }
+  }, [purchaseState.mode, purchaseState.form.supplier_id, parties, dispatch]);
+
   // Auto-add first line if empty and in new mode
   useEffect(() => {
     if (purchaseState.mode === 'new' && purchaseState.items.length === 0 && products.length > 0) {
       handleAddItem();
     }
-  }, [purchaseState.mode, products.length]);
+  }, [purchaseState.mode, products.length, purchaseState.items.length]);
 
   const markUnsaved = () => {
     if (!purchaseState.hasUnsavedChanges && purchaseState.mode !== 'viewing') {
@@ -137,7 +140,7 @@ export default function PurchaseInvoicePage() {
     }
   };
 
-  const handleLoadVoucher = async (id: number) => {
+  const handleLoadVoucher = async (id: string) => {
     try {
       dispatch(setLoading(true));
       dispatch(setPurchaseHasUnsavedChanges(false));
@@ -361,7 +364,7 @@ export default function PurchaseInvoicePage() {
 
         toast.success('Purchase invoice updated successfully');
       } else {
-        const newInvoiceId = await invoke<number>('create_purchase_invoice', {
+        const newInvoiceId = await invoke<string>('create_purchase_invoice', {
           invoice: {
             supplier_id: purchaseState.form.supplier_id,
             party_type: purchaseState.form.party_type,

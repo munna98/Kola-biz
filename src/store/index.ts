@@ -8,13 +8,13 @@ interface AppState {
 
 export interface VoucherNavigationState {
   mode: 'new' | 'viewing' | 'editing';
-  currentVoucherId: number | null;
+  currentVoucherId: string | null;
   hasUnsavedChanges: boolean;
   navigationData: {
     hasPrevious: boolean;
     hasNext: boolean;
-    previousId: number | null;
-    nextId: number | null;
+    previousId: string | null;
+    nextId: string | null;
   };
 }
 
@@ -51,7 +51,7 @@ export interface AuthState {
   user: User | null;
   token: string | null;
   error: string | null;
-  needsInitialSetup: boolean;
+
   needsCompanySetup: boolean;
 }
 
@@ -61,7 +61,7 @@ const authInitialState: AuthState = {
   user: null,
   token: null,
   error: null,
-  needsInitialSetup: false,
+
   needsCompanySetup: false,
 };
 
@@ -72,9 +72,7 @@ const authSlice = createSlice({
     setAuthLoading: (state, action: PayloadAction<boolean>) => {
       state.isLoading = action.payload;
     },
-    setNeedsInitialSetup: (state, action: PayloadAction<boolean>) => {
-      state.needsInitialSetup = action.payload;
-    },
+
     setNeedsCompanySetup: (state, action: PayloadAction<boolean>) => {
       state.needsCompanySetup = action.payload;
     },
@@ -106,7 +104,7 @@ const authSlice = createSlice({
 
 export const {
   setAuthLoading,
-  setNeedsInitialSetup,
+
   setNeedsCompanySetup,
   loginSuccess,
   loginFailure,
@@ -195,7 +193,7 @@ const purchaseInvoiceSlice = createSlice({
     setPurchaseMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
       state.mode = action.payload;
     },
-    setPurchaseCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+    setPurchaseCurrentVoucherId: (state, action: PayloadAction<string | null>) => {
       state.currentVoucherId = action.payload;
     },
     setPurchaseCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
@@ -204,7 +202,7 @@ const purchaseInvoiceSlice = createSlice({
     setPurchaseHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
     },
-    setPurchaseNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+    setPurchaseNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
       state.navigationData = action.payload;
     },
     setSupplier: (state, action: PayloadAction<{ id: number; name: string; type?: string }>) => {
@@ -285,7 +283,7 @@ export const {
 } = purchaseInvoiceSlice.actions;
 
 export interface AllocationData {
-  invoice_id: number;
+  invoice_id: string;
   amount: number;
 }
 
@@ -308,7 +306,7 @@ export interface PaymentState extends VoucherNavigationState {
     payment_method: 'cash' | 'bank'; // Cash or Bank
     reference_number: string;
     narration: string;
-    created_from_invoice_id: number | null;
+    created_from_invoice_id: string | null;
   };
   items: PaymentItem[];
   loading: boolean;
@@ -349,7 +347,7 @@ const paymentSlice = createSlice({
     setPaymentMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
       state.mode = action.payload;
     },
-    setPaymentCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+    setPaymentCurrentVoucherId: (state, action: PayloadAction<string | null>) => {
       state.currentVoucherId = action.payload;
     },
     setPaymentCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
@@ -358,7 +356,7 @@ const paymentSlice = createSlice({
     setPaymentHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
     },
-    setPaymentNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+    setPaymentNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
       state.navigationData = action.payload;
     },
     setPaymentAccount: (state, action: PayloadAction<{ id: number; name: string }>) => {
@@ -377,7 +375,7 @@ const paymentSlice = createSlice({
     setPaymentNarration: (state, action: PayloadAction<string>) => {
       state.form.narration = action.payload;
     },
-    setPaymentCreatedFromInvoiceId: (state, action: PayloadAction<number | null>) => {
+    setPaymentCreatedFromInvoiceId: (state, action: PayloadAction<string | null>) => {
       state.form.created_from_invoice_id = action.payload;
     },
     addPaymentItem: (state, action: PayloadAction<PaymentItem>) => {
@@ -434,7 +432,7 @@ export interface ReceiptState extends VoucherNavigationState {
     receipt_method: 'cash' | 'bank'; // Cash or Bank
     reference_number: string;
     narration: string;
-    created_from_invoice_id: number | null;
+    created_from_invoice_id: string | null;
   };
   items: ReceiptItem[];
   loading: boolean;
@@ -475,7 +473,7 @@ const receiptSlice = createSlice({
     setReceiptMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
       state.mode = action.payload;
     },
-    setReceiptCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+    setReceiptCurrentVoucherId: (state, action: PayloadAction<string | null>) => {
       state.currentVoucherId = action.payload;
     },
     setReceiptCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
@@ -484,7 +482,7 @@ const receiptSlice = createSlice({
     setReceiptHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
     },
-    setReceiptNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+    setReceiptNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
       state.navigationData = action.payload;
     },
     setReceiptAccount: (state, action: PayloadAction<{ id: number; name: string }>) => {
@@ -503,7 +501,7 @@ const receiptSlice = createSlice({
     setReceiptNarration: (state, action: PayloadAction<string>) => {
       state.form.narration = action.payload;
     },
-    setReceiptCreatedFromInvoiceId: (state, action: PayloadAction<number | null>) => {
+    setReceiptCreatedFromInvoiceId: (state, action: PayloadAction<string | null>) => {
       state.form.created_from_invoice_id = action.payload;
     },
     addReceiptItem: (state, action: PayloadAction<ReceiptItem>) => {
@@ -636,7 +634,7 @@ const journalEntrySlice = createSlice({
     setJournalMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
       state.mode = action.payload;
     },
-    setJournalCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+    setJournalCurrentVoucherId: (state, action: PayloadAction<string | null>) => {
       state.currentVoucherId = action.payload;
     },
     setJournalCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
@@ -645,7 +643,7 @@ const journalEntrySlice = createSlice({
     setJournalHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
     },
-    setJournalNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+    setJournalNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
       state.navigationData = action.payload;
     },
     setJournalDate: (state, action: PayloadAction<string>) => {
@@ -761,7 +759,7 @@ const openingBalanceSlice = createSlice({
     setOpeningBalanceMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
       state.mode = action.payload;
     },
-    setOpeningBalanceCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+    setOpeningBalanceCurrentVoucherId: (state, action: PayloadAction<string | null>) => {
       state.currentVoucherId = action.payload;
     },
     setOpeningBalanceCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
@@ -770,7 +768,7 @@ const openingBalanceSlice = createSlice({
     setOpeningBalanceHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
     },
-    setOpeningBalanceNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+    setOpeningBalanceNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
       state.navigationData = action.payload;
     },
     setOpeningBalanceDate: (state, action: PayloadAction<string>) => {
@@ -897,7 +895,7 @@ const salesInvoiceSlice = createSlice({
     setSalesMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
       state.mode = action.payload;
     },
-    setSalesCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+    setSalesCurrentVoucherId: (state, action: PayloadAction<string | null>) => {
       state.currentVoucherId = action.payload;
     },
     setSalesCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
@@ -906,7 +904,7 @@ const salesInvoiceSlice = createSlice({
     setSalesHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
     },
-    setSalesNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+    setSalesNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
       state.navigationData = action.payload;
     },
     setSalesCustomer: (state, action: PayloadAction<{ id: number; name: string; type?: string }>) => {
@@ -1132,7 +1130,7 @@ const purchaseReturnSlice = createSlice({
     setPurchaseReturnMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
       state.mode = action.payload;
     },
-    setPurchaseReturnCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+    setPurchaseReturnCurrentVoucherId: (state, action: PayloadAction<string | null>) => {
       state.currentVoucherId = action.payload;
     },
     setPurchaseReturnCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
@@ -1141,7 +1139,7 @@ const purchaseReturnSlice = createSlice({
     setPurchaseReturnHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
     },
-    setPurchaseReturnNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+    setPurchaseReturnNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
       state.navigationData = action.payload;
     },
     setPurchaseReturnSupplier: (state, action: PayloadAction<{ id: number; name: string; type?: string }>) => {
@@ -1288,7 +1286,7 @@ const salesReturnSlice = createSlice({
     setSalesReturnMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
       state.mode = action.payload;
     },
-    setSalesReturnCurrentVoucherId: (state, action: PayloadAction<number | null>) => {
+    setSalesReturnCurrentVoucherId: (state, action: PayloadAction<string | null>) => {
       state.currentVoucherId = action.payload;
     },
     setSalesReturnCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
@@ -1297,7 +1295,7 @@ const salesReturnSlice = createSlice({
     setSalesReturnHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
       state.hasUnsavedChanges = action.payload;
     },
-    setSalesReturnNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>) => {
+    setSalesReturnNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
       state.navigationData = action.payload;
     },
     setSalesReturnCustomer: (state, action: PayloadAction<{ id: number; name: string; type?: string }>) => {

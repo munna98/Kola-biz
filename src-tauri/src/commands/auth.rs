@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 // Session storage (in-memory for simplicity)
 pub struct SessionStore {
-    sessions: Mutex<HashMap<String, i64>>, // token -> user_id
+    sessions: Mutex<HashMap<String, String>>, // token -> user_id
 }
 
 impl SessionStore {
@@ -18,14 +18,14 @@ impl SessionStore {
         }
     }
 
-    pub fn create_session(&self, user_id: i64) -> String {
+    pub fn create_session(&self, user_id: String) -> String {
         let token = Uuid::new_v4().to_string();
         self.sessions.lock().unwrap().insert(token.clone(), user_id);
         token
     }
 
-    pub fn get_user_id(&self, token: &str) -> Option<i64> {
-        self.sessions.lock().unwrap().get(token).copied()
+    pub fn get_user_id(&self, token: &str) -> Option<String> {
+        self.sessions.lock().unwrap().get(token).cloned()
     }
 
     pub fn remove_session(&self, token: &str) {
@@ -35,7 +35,7 @@ impl SessionStore {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct User {
-    pub id: i64,
+    pub id: String,
     pub username: String,
     pub full_name: Option<String>,
     pub role: String,
@@ -93,11 +93,15 @@ pub async fn create_initial_user(
     let password_hash =
         hash(password, DEFAULT_COST).map_err(|e| format!("Failed to hash password: {}", e))?;
 
+    // Generate UUID v7
+    let id = Uuid::now_v7().to_string();
+
     // Insert user
     sqlx::query(
-        "INSERT INTO users (username, password_hash, full_name, role, is_active) 
-         VALUES (?, ?, ?, 'admin', 1)",
+        "INSERT INTO users (id, username, password_hash, full_name, role, is_active) 
+         VALUES (?, ?, ?, ?, 'admin', 1)",
     )
+    .bind(id)
     .bind(username.trim())
     .bind(password_hash)
     .bind(full_name.trim())
@@ -117,7 +121,7 @@ pub async fn login(
     password: String,
 ) -> Result<LoginResponse, String> {
     // Fetch user from database
-    let user_result: Result<(i64, String, String, Option<String>, String, bool), sqlx::Error> =
+    let user_result: Result<(String, String, String, Option<String>, String, i64), sqlx::Error> =
         sqlx::query_as(
             "SELECT id, username, password_hash, full_name, role, is_active 
              FROM users WHERE username = ?",
@@ -127,7 +131,8 @@ pub async fn login(
         .await;
 
     match user_result {
-        Ok((id, username, password_hash, full_name, role, is_active)) => {
+        Ok((id, username, password_hash, full_name, role, is_active_int)) => {
+            let is_active = is_active_int != 0;
             // Check if user is active
             if !is_active {
                 return Ok(LoginResponse {
@@ -153,12 +158,12 @@ pub async fn login(
 
             // Update last login time
             let _ = sqlx::query("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?")
-                .bind(id)
+                .bind(&id)
                 .execute(pool.inner())
                 .await;
 
             // Create session
-            let token = session_store.create_session(id);
+            let token = session_store.create_session(id.clone());
 
             Ok(LoginResponse {
                 success: true,
@@ -173,12 +178,20 @@ pub async fn login(
                 }),
             })
         }
-        Err(_) => Ok(LoginResponse {
-            success: false,
-            message: "Invalid username or password".to_string(),
-            token: None,
-            user: None,
-        }),
+        Err(e) => {
+            let error_msg = if let sqlx::Error::RowNotFound = e {
+                "Invalid username or password".to_string()
+            } else {
+                format!("Database error during login: {}", e)
+            };
+
+            Ok(LoginResponse {
+                success: false,
+                message: error_msg,
+                token: None,
+                user: None,
+            })
+        }
     }
 }
 
@@ -202,7 +215,7 @@ pub async fn check_session(
     match session_store.get_user_id(&token) {
         Some(user_id) => {
             // Fetch user details
-            let user_result: Result<(i64, String, Option<String>, String, bool), sqlx::Error> =
+            let user_result: Result<(String, String, Option<String>, String, i64), sqlx::Error> =
                 sqlx::query_as(
                     "SELECT id, username, full_name, role, is_active 
                      FROM users WHERE id = ?",
@@ -212,7 +225,8 @@ pub async fn check_session(
                 .await;
 
             match user_result {
-                Ok((id, username, full_name, role, is_active)) => {
+                Ok((id, username, full_name, role, is_active_int)) => {
+                    let is_active = is_active_int != 0;
                     if !is_active {
                         session_store.remove_session(&token);
                         return Ok(SessionCheckResponse {

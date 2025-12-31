@@ -164,10 +164,23 @@ export default function ChartOfAccountsPage() {
                     <td className="p-3 flex gap-2">
                       {!showDeleted ? (
                         <>
-                          <Button size="sm" variant="ghost" onClick={() => handleEdit(account)}>
-                            <IconEdit size={16} />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleEdit(account)}
+                            disabled={account.is_system === 1}
+                            title={account.is_system === 1 ? "System Account (Cannot Edit)" : "Edit Account"}
+                          >
+                            <IconEdit size={16} className={account.is_system === 1 ? "text-muted-foreground" : ""} />
                           </Button>
-                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(account.id)}>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className={account.is_system === 1 ? "text-muted-foreground" : "text-destructive hover:text-destructive"}
+                            onClick={() => handleDelete(account.id)}
+                            disabled={account.is_system === 1}
+                            title={account.is_system === 1 ? "System Account (Cannot Delete)" : "Delete Account"}
+                          >
                             <IconTrash size={16} />
                           </Button>
                         </>

@@ -276,7 +276,7 @@ export default function SalesReturnPage() {
                 });
                 toast.success('Sales return updated successfully');
             } else {
-                await invoke<number>('create_sales_return', {
+                await invoke<string>('create_sales_return', {
                     invoice: {
                         customer_id: salesReturnState.form.customer_id,
                         party_type: salesReturnState.form.party_type,
@@ -309,7 +309,7 @@ export default function SalesReturnPage() {
         }
     };
 
-    const loadVoucher = async (id: number) => {
+    const loadVoucher = async (id: string) => {
         try {
             dispatch(setSalesReturnLoading(true));
             dispatch(setSalesReturnHasUnsavedChanges(false));

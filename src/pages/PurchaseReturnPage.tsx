@@ -278,7 +278,7 @@ export default function PurchaseReturnPage() {
                 });
                 toast.success('Purchase return updated successfully');
             } else {
-                await invoke<number>('create_purchase_return', {
+                await invoke<string>('create_purchase_return', {
                     invoice: {
                         supplier_id: purchaseReturnState.form.supplier_id,
                         party_type: purchaseReturnState.form.party_type,
@@ -311,7 +311,7 @@ export default function PurchaseReturnPage() {
         }
     };
 
-    const loadVoucher = async (id: number) => {
+    const loadVoucher = async (id: string) => {
         try {
             dispatch(setPurchaseReturnLoading(true));
             dispatch(setPurchaseReturnHasUnsavedChanges(false));

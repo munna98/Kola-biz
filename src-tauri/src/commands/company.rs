@@ -5,7 +5,7 @@ use tauri::State;
 // ============= COUNTRIES =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct Country {
-    pub id: i64,
+    pub id: String,
     pub name: String,
     pub code: String,
 }

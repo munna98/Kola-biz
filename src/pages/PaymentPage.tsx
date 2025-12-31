@@ -211,7 +211,7 @@ export default function PaymentPage() {
         setTimeout(() => payFromRef.current?.querySelector('button')?.focus(), 100);
     };
 
-    const loadVoucher = async (id: number) => {
+    const loadVoucher = async (id: string) => {
         try {
             dispatch(setPaymentLoading(true));
             dispatch(setPaymentHasUnsavedChanges(false));

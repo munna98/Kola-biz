@@ -1,7 +1,7 @@
 mod commands;
 mod db;
-mod db_seed;
 pub mod license;
+mod seeds;
 pub mod template_engine; // Public so commands can use it
 pub mod utils;
 
@@ -40,6 +40,7 @@ pub fn run() {
             get_deleted_products,
             restore_product,
             hard_delete_product,
+            get_next_product_code,
             // Customers
             get_customers,
             create_customer,
@@ -48,6 +49,7 @@ pub fn run() {
             get_deleted_customers,
             restore_customer,
             hard_delete_customer,
+            get_next_customer_code,
             // Suppliers
             get_suppliers,
             create_supplier,
@@ -56,6 +58,7 @@ pub fn run() {
             get_deleted_suppliers,
             restore_supplier,
             hard_delete_supplier,
+            get_next_supplier_code,
             // Chart of Accounts
             get_chart_of_accounts,
             create_chart_of_account,

@@ -15,7 +15,7 @@ import { toast } from 'sonner';
 interface PrintPreviewModalProps {
     isOpen: boolean;
     onClose: () => void;
-    voucherId: number | null;
+    voucherId: string | null;
     voucherType: string;
     templateId?: number | null;
 }

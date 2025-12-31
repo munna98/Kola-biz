@@ -6,9 +6,9 @@ import { useConfirm } from './useConfirm';
 
 interface VoucherNavigationActions {
     setMode: ActionCreatorWithPayload<'new' | 'viewing' | 'editing'>;
-    setCurrentVoucherId: ActionCreatorWithPayload<number | null>;
+    setCurrentVoucherId: ActionCreatorWithPayload<string | null>;
     setCurrentVoucherNo?: ActionCreatorWithPayload<string | undefined>;
-    setNavigationData: ActionCreatorWithPayload<{ hasPrevious: boolean; hasNext: boolean; previousId: number | null; nextId: number | null }>;
+    setNavigationData: ActionCreatorWithPayload<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>;
     setHasUnsavedChanges: ActionCreatorWithPayload<boolean>;
     resetForm: ActionCreatorWithoutPayload;
 }
@@ -17,7 +17,7 @@ interface UseVoucherNavigationProps {
     voucherType: string;
     sliceState: any; // Checked against VoucherNavigationState
     actions: VoucherNavigationActions;
-    onLoadVoucher: (id: number) => Promise<void>;
+    onLoadVoucher: (id: string) => Promise<void>;
 }
 
 export function useVoucherNavigation({
@@ -37,11 +37,11 @@ export function useVoucherNavigation({
         }
     }, [currentVoucherId]);
 
-    const checkNavigation = async (id: number) => {
+    const checkNavigation = async (id: string) => {
         try {
             const [prevId, nextId] = await Promise.all([
-                invoke<number | null>('get_previous_voucher_id', { voucherType, currentId: id }),
-                invoke<number | null>('get_next_voucher_id', { voucherType, currentId: id })
+                invoke<string | null>('get_previous_voucher_id', { voucherType, currentId: id }),
+                invoke<string | null>('get_next_voucher_id', { voucherType, currentId: id })
             ]);
 
             dispatch(actions.setNavigationData({
@@ -93,7 +93,7 @@ export function useVoucherNavigation({
         }
     };
 
-    const handleListSelect = async (id: number) => {
+    const handleListSelect = async (id: string) => {
         // Only show warning if actually in editing mode with unsaved changes
         if (mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
@@ -137,7 +137,7 @@ export function useVoucherNavigation({
         }
     };
 
-    const handleSaveSuccess = (newId: number) => {
+    const handleSaveSuccess = (newId: string) => {
         dispatch(actions.setHasUnsavedChanges(false));
         dispatch(actions.setMode('viewing'));
         dispatch(actions.setCurrentVoucherId(newId));

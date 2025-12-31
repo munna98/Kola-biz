@@ -14,7 +14,7 @@ import { IconSearch, IconList } from '@tabler/icons-react';
 import { formatDate } from '@/lib/utils';
 
 interface VoucherSummary {
-    id: number;
+    id: string;
     voucher_no: string;
     voucher_date: string;
     party_name: string | null;
@@ -26,7 +26,7 @@ interface VoucherListViewSheetProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     voucherType: string;
-    onSelectVoucher: (id: number) => void;
+    onSelectVoucher: (id: string) => void;
     trigger?: React.ReactNode;
     title?: string;
 }

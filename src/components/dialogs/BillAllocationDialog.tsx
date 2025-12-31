@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
 interface PendingInvoice {
-    id: number;
+    id: string;
     voucher_no: string;
     voucher_date: string;
     voucher_type: string;
@@ -15,7 +15,7 @@ interface PendingInvoice {
 }
 
 export interface AllocationData {
-    invoice_id: number;
+    invoice_id: string;
     amount: number;
 }
 
@@ -42,7 +42,7 @@ export default function BillAllocationDialog({
 
     // Map for easy lookup [invoiceId]: allocatedAmount
     const allocationMap = useMemo(() => {
-        const map = new Map<number, number>();
+        const map = new Map<string, number>();
         allocations.forEach(a => map.set(a.invoice_id, a.amount));
         return map;
     }, [allocations]);

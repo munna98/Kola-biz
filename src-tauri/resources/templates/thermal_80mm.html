@@ -1,0 +1,113 @@
+<!-- [HEADER] -->
+<div class="thermal-header">
+    {{#if company.has_logo}}
+    <div class="logo-wrap">
+        <img src="{{company.logo}}" alt="Logo" class="logo" />
+    </div>
+    {{/if}}
+    <h1>{{company.name}}</h1>
+    <p>{{company.address}}</p>
+    <p>Ph: {{company.phone}}</p>
+    {{#if company.gstin}}
+    <p>GSTIN: {{company.gstin}}</p>
+    {{/if}}
+</div>
+<div class="separator"></div>
+<div class="invoice-info">
+    <div class="row">
+        <span>Invoice:</span>
+        <span><strong>{{voucher_no}}</strong></span>
+    </div>
+    <div class="row">
+        <span>Date:</span>
+        <span>{{format_date voucher_date}}</span>
+    </div>
+    {{#if party.name}}
+    <div class="row">
+        <span>Customer:</span>
+        <span>{{party.name}}</span>
+    </div>
+    {{/if}}
+</div>
+<div class="separator"></div>
+
+<!-- [BODY] -->
+<table class="items">
+    <thead>
+        <tr>
+            <th>Item</th>
+            <th>Qty</th>
+            <th>Less</th>
+            <th>Rate</th>
+            <th>Amt</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{#each items}}
+        <tr>
+            <td>{{product_name}}</td>
+            <td>{{format_number initial_quantity 0}}</td>
+            <td>{{format_number less_quantity 0}}</td>
+            <td>{{format_number rate 2}}</td>
+            <td>{{format_number total 2}}</td>
+        </tr>
+        {{/each}}
+    </tbody>
+</table>
+<div class="separator"></div>
+<div class="totals">
+    <div class="row">
+        <span>Subtotal:</span>
+        <span>₹{{format_number subtotal 2}}</span>
+    </div>
+    {{#if discount_amount}}
+    <div class="row">
+        <span>Discount:</span>
+        <span>₹{{format_number discount_amount 2}}</span>
+    </div>
+    {{/if}}
+    {{#if tax_total}}
+    <div class="row">
+        <span>Tax:</span>
+        <span>₹{{format_number tax_total 2}}</span>
+    </div>
+    {{/if}}
+    <div class="row total">
+        <span>TOTAL:</span>
+        <span>₹{{format_number grand_total 2}}</span>
+    </div>
+</div>
+
+<!-- Account Summary -->
+<div style="border-top: 1px dashed #000; margin: 10px 0; padding: 5px 0; font-size: 11px;">
+    <div style="display: flex; justify-content: space-between;">
+        <span>Old Bal:</span>
+        <span>{{format_number old_balance 2}}</span>
+    </div>
+    <div style="display: flex; justify-content: space-between;">
+        <span>Bill Amt:</span>
+        <span>{{format_number grand_total 2}}</span>
+    </div>
+    <div style="display: flex; justify-content: space-between;">
+        <span>Paid Amt:</span>
+        <span>{{format_number paid_amount 2}}</span>
+    </div>
+    <div
+        style="display: flex; justify-content: space-between; font-weight: bold; border-top: 1px dotted #000; padding-top: 2px; margin-top: 2px;">
+        <span>Bal Due:</span>
+        <span>{{format_number balance_due 2}}</span>
+    </div>
+</div>
+
+<!-- [FOOTER] -->
+<div class="separator"></div>
+<div class="footer">
+    <p class="center"><strong>Thank You for Your Business!</strong></p>
+    {{#if narration}}
+    <p class="center small">{{narration}}</p>
+    {{/if}}
+    {{#if company.website}}
+    <p class="center small">{{company.website}}</p>
+    {{/if}}
+    <p class="center small">Visit Again!</p>
+</div>

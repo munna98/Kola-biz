@@ -1,7 +1,7 @@
+use chrono;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::State;
-use chrono;
 
 // ============= TRIAL BALANCE =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -71,14 +71,14 @@ pub struct LedgerReport {
 #[tauri::command]
 pub async fn get_ledger_report(
     pool: State<'_, SqlitePool>,
-    account_id: i64,
+    account_id: String,
     from_date: Option<String>,
     to_date: String,
 ) -> Result<LedgerReport, String> {
     let account = sqlx::query_as::<_, (f64, String)>(
         "SELECT CAST(opening_balance AS REAL), opening_balance_type FROM chart_of_accounts WHERE id = ?"
     )
-    .bind(account_id)
+    .bind(&account_id)
     .fetch_one(pool.inner())
     .await
     .map_err(|e| format!("Failed to fetch account {}: {}", account_id, e))?;
@@ -98,7 +98,7 @@ pub async fn get_ledger_report(
              JOIN vouchers v ON je.voucher_id = v.id
              WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL",
         )
-        .bind(account_id)
+        .bind(&account_id)
         .bind(from)
         .fetch_optional(pool.inner())
         .await
@@ -413,8 +413,8 @@ pub async fn get_cash_flow(
     to_date: String,
 ) -> Result<CashFlowData, String> {
     // Get opening date (day before from_date)
-    let opening_date_obj = chrono::NaiveDate::parse_from_str(&from_date, "%Y-%m-%d")
-        .map_err(|e| e.to_string())?;
+    let opening_date_obj =
+        chrono::NaiveDate::parse_from_str(&from_date, "%Y-%m-%d").map_err(|e| e.to_string())?;
     let opening_date = (opening_date_obj - chrono::Duration::days(1)).to_string();
 
     // 1. Calculate Opening Cash
@@ -426,7 +426,7 @@ pub async fn get_cash_flow(
         WHERE coa.account_name = 'Cash' 
         AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
-    
+
     let opening_cash: f64 = sqlx::query_scalar(opening_cash_query)
         .bind(&opening_date)
         .fetch_one(pool.inner())
@@ -442,7 +442,7 @@ pub async fn get_cash_flow(
         WHERE coa.account_name = 'Cash' 
         AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
-    
+
     let closing_cash: f64 = sqlx::query_scalar(closing_cash_query)
         .bind(&to_date)
         .fetch_one(pool.inner())
@@ -452,7 +452,7 @@ pub async fn get_cash_flow(
     let net_change = closing_cash - opening_cash;
 
     // 3. Operating Activities - Only track actual cash transactions and working capital changes
-    
+
     // Cash received from customers (Cash sales)
     let cash_sales_query = "
         SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL)
@@ -463,7 +463,7 @@ pub async fn get_cash_flow(
         AND v.voucher_type = 'sales_invoice'
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
-    
+
     let cash_sales: f64 = sqlx::query_scalar(cash_sales_query)
         .bind(&from_date)
         .bind(&to_date)
@@ -481,7 +481,7 @@ pub async fn get_cash_flow(
         AND v.voucher_type = 'purchase_invoice'
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
-    
+
     let cash_purchases: f64 = sqlx::query_scalar(cash_purchases_query)
         .bind(&from_date)
         .bind(&to_date)
@@ -500,7 +500,7 @@ pub async fn get_cash_flow(
         AND v.voucher_type = 'receipt'
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
-    
+
     let debtor_payment: f64 = sqlx::query_scalar(debtor_payment_query)
         .bind(&from_date)
         .bind(&to_date)
@@ -519,7 +519,7 @@ pub async fn get_cash_flow(
         AND v.voucher_type = 'payment'
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
-    
+
     let creditor_payment: f64 = sqlx::query_scalar(creditor_payment_query)
         .bind(&from_date)
         .bind(&to_date)
@@ -538,7 +538,7 @@ pub async fn get_cash_flow(
         AND coa.account_type = 'Expense'
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
-    
+
     let other_expenses: f64 = sqlx::query_scalar(other_expenses_query)
         .bind(&from_date)
         .bind(&to_date)
@@ -599,7 +599,7 @@ pub async fn get_cash_flow(
         AND coa.account_name NOT IN ('Cash', 'Accounts Receivable', 'Cash Sale', 'Bank Account')
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
-    
+
     let net_investing: f64 = sqlx::query_scalar(investing_query)
         .bind(&from_date)
         .bind(&to_date)
@@ -627,7 +627,7 @@ pub async fn get_cash_flow(
         AND v.voucher_type NOT IN ('sales_invoice', 'purchase_invoice', 'receipt', 'payment')
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
-    
+
     let net_financing: f64 = sqlx::query_scalar(financing_query)
         .bind(&from_date)
         .bind(&to_date)
@@ -707,7 +707,7 @@ pub async fn get_day_book(
 // ============= PARTY OUTSTANDING =============
 #[derive(Serialize, Deserialize)]
 pub struct PartyOutstanding {
-    pub party_id: i64,
+    pub party_id: String,
     pub party_name: String,
     pub total_invoices: i64,
     pub total_amount: f64,
@@ -803,7 +803,7 @@ pub async fn get_party_outstanding(
     );
 
     let rows =
-        sqlx::query_as::<_, (i64, String, i64, f64, f64, f64, Option<String>)>(query.as_str())
+        sqlx::query_as::<_, (String, String, i64, f64, f64, f64, Option<String>)>(query.as_str())
             .bind(&as_on_date)
             .bind(voucher_type)
             .bind(&party_type)
@@ -854,7 +854,7 @@ pub struct InvoiceDetail {
 #[tauri::command]
 pub async fn get_party_invoice_details(
     pool: State<'_, SqlitePool>,
-    party_id: i64, // This is coa.id
+    party_id: String, // This is coa.id
     party_type: String,
     as_on_date: String,
 ) -> Result<Vec<InvoiceDetail>, String> {
@@ -919,7 +919,7 @@ pub async fn get_party_invoice_details(
 // ============= STOCK REPORT =============
 #[derive(Serialize, Deserialize)]
 pub struct StockSummary {
-    pub product_id: i64,
+    pub product_id: String,
     pub product_code: String,
     pub product_name: String,
     pub group_name: Option<String>,
@@ -934,11 +934,11 @@ pub struct StockSummary {
 #[tauri::command]
 pub async fn get_stock_report(
     pool: State<'_, SqlitePool>,
-    group_id: Option<i64>,
+    group_id: Option<String>,
     as_on_date: String,
 ) -> Result<Vec<StockSummary>, String> {
     let group_filter = if let Some(gid) = group_id {
-        format!("AND p.group_id = {}", gid)
+        format!("AND p.group_id = '{}'", gid)
     } else {
         String::new()
     };
@@ -1001,7 +1001,7 @@ pub async fn get_stock_report(
     let rows = sqlx::query_as::<
         _,
         (
-            i64,
+            String,
             String,
             String,
             Option<String>,
@@ -1057,7 +1057,7 @@ pub struct StockMovement {
 #[tauri::command]
 pub async fn get_stock_movements(
     pool: State<'_, SqlitePool>,
-    product_id: i64,
+    product_id: String,
     from_date: Option<String>,
     to_date: String,
 ) -> Result<Vec<StockMovement>, String> {
@@ -1085,7 +1085,7 @@ pub async fn get_stock_movements(
              JOIN vouchers v ON sm.voucher_id = v.id
              WHERE sm.product_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL",
         )
-        .bind(product_id)
+        .bind(&product_id)
         .bind(from)
         .fetch_optional(pool.inner())
         .await
@@ -1510,7 +1510,7 @@ pub async fn get_cash_flow_summary(
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct StockAlert {
-    pub product_id: i64,
+    pub product_id: String,
     pub product_name: String,
     pub current_stock: f64,
     pub unit_symbol: String,
@@ -1553,7 +1553,7 @@ pub async fn get_stock_alerts(
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct RecentActivity {
-    pub voucher_id: i64,
+    pub voucher_id: String,
     pub voucher_no: String,
     pub voucher_type: String,
     pub voucher_date: String,

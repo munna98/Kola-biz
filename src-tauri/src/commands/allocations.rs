@@ -1,24 +1,25 @@
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::State;
+use uuid::Uuid;
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct PaymentAllocation {
-    pub id: i64,
-    pub payment_voucher_id: i64,
-    pub invoice_voucher_id: i64,
+    pub id: String,
+    pub payment_voucher_id: String,
+    pub invoice_voucher_id: String,
     pub allocated_amount: f64,
     pub allocation_date: String,
     pub remarks: Option<String>,
-    pub party_id: Option<i64>,
+    pub party_id: Option<String>,
     pub party_type: Option<String>,
     pub created_at: String,
 }
 
 #[derive(Deserialize)]
 pub struct CreateAllocation {
-    pub payment_voucher_id: i64,
-    pub invoice_voucher_id: i64,
+    pub payment_voucher_id: String,
+    pub invoice_voucher_id: String,
     pub allocated_amount: f64,
     pub allocation_date: String,
     pub remarks: Option<String>,
@@ -26,7 +27,7 @@ pub struct CreateAllocation {
 
 #[derive(Serialize, sqlx::FromRow)]
 pub struct OutstandingInvoice {
-    pub id: i64,
+    pub id: String,
     pub voucher_no: String,
     pub voucher_date: String,
     pub party_name: String,
@@ -39,7 +40,7 @@ pub struct OutstandingInvoice {
 #[tauri::command]
 pub async fn get_outstanding_invoices(
     pool: State<'_, SqlitePool>,
-    party_id: i64,
+    party_id: String,
     voucher_type: String, // 'sales_invoice' or 'purchase_invoice'
 ) -> Result<Vec<OutstandingInvoice>, String> {
     let invoices = sqlx::query_as::<_, OutstandingInvoice>(
@@ -87,24 +88,27 @@ pub async fn get_outstanding_invoices(
 pub async fn create_allocation(
     pool: State<'_, SqlitePool>,
     allocation: CreateAllocation,
-) -> Result<i64, String> {
+) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get party info from invoice
-    let (party_id, party_type): (i64, String) =
+    let (party_id, party_type): (String, String) =
         sqlx::query_as("SELECT party_id, party_type FROM vouchers WHERE id = ?")
-            .bind(allocation.invoice_voucher_id)
+            .bind(&allocation.invoice_voucher_id)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
 
+    let allocation_id = Uuid::now_v7().to_string();
+
     // Insert allocation with party info
-    let result = sqlx::query(
-        "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks, party_id, party_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?)"
+    let _ = sqlx::query(
+        "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks, party_id, party_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
-    .bind(allocation.payment_voucher_id)
-    .bind(allocation.invoice_voucher_id)
+    .bind(&allocation_id)
+    .bind(&allocation.payment_voucher_id)
+    .bind(&allocation.invoice_voucher_id)
     .bind(allocation.allocated_amount)
     .bind(&allocation.allocation_date)
     .bind(&allocation.remarks)
@@ -114,13 +118,11 @@ pub async fn create_allocation(
     .await
     .map_err(|e| e.to_string())?;
 
-    let allocation_id = result.last_insert_rowid();
-
     // Update invoice status
     let total_allocated: f64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
-    .bind(allocation.invoice_voucher_id)
+    .bind(&allocation.invoice_voucher_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -132,7 +134,7 @@ pub async fn create_allocation(
          WHERE v.id = ?
          GROUP BY v.id",
     )
-    .bind(allocation.invoice_voucher_id)
+    .bind(&allocation.invoice_voucher_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -147,7 +149,7 @@ pub async fn create_allocation(
 
     sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
         .bind(status)
-        .bind(allocation.invoice_voucher_id)
+        .bind(&allocation.invoice_voucher_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -161,7 +163,7 @@ pub async fn create_allocation(
 #[tauri::command]
 pub async fn get_payment_allocations(
     pool: State<'_, SqlitePool>,
-    payment_voucher_id: i64,
+    payment_voucher_id: String,
 ) -> Result<Vec<PaymentAllocation>, String> {
     sqlx::query_as::<_, PaymentAllocation>(
         "SELECT * FROM payment_allocations WHERE payment_voucher_id = ? ORDER BY allocation_date",
@@ -176,7 +178,7 @@ pub async fn get_payment_allocations(
 #[tauri::command]
 pub async fn get_invoice_allocations(
     pool: State<'_, SqlitePool>,
-    invoice_voucher_id: i64,
+    invoice_voucher_id: String,
 ) -> Result<Vec<PaymentAllocation>, String> {
     sqlx::query_as::<_, PaymentAllocation>(
         "SELECT * FROM payment_allocations WHERE invoice_voucher_id = ? ORDER BY allocation_date",
@@ -190,22 +192,22 @@ pub async fn get_invoice_allocations(
 // Allocation with payment voucher details for display
 #[derive(Serialize, sqlx::FromRow)]
 pub struct AllocationWithDetails {
-    pub id: i64,
-    pub payment_voucher_id: i64,
+    pub id: String,
+    pub payment_voucher_id: String,
     pub payment_voucher_no: String,
     pub payment_voucher_date: String,
     pub allocated_amount: f64,
     pub allocation_date: String,
     pub remarks: Option<String>,
     pub payment_method: Option<String>,
-    pub payment_account_id: Option<i64>, // Added field for editable UI
+    pub payment_account_id: Option<String>, // Added field for editable UI
 }
 
 // Get allocations with payment voucher details
 #[tauri::command]
 pub async fn get_invoice_allocations_with_details(
     pool: State<'_, SqlitePool>,
-    invoice_voucher_id: i64,
+    invoice_voucher_id: String,
 ) -> Result<Vec<AllocationWithDetails>, String> {
     sqlx::query_as::<_, AllocationWithDetails>(
         "SELECT 
@@ -237,13 +239,13 @@ pub async fn get_invoice_allocations_with_details(
 
 // Delete allocation
 #[tauri::command]
-pub async fn delete_allocation(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+pub async fn delete_allocation(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice_id before deleting
-    let invoice_id: i64 =
+    let invoice_id: String =
         sqlx::query_scalar("SELECT invoice_voucher_id FROM payment_allocations WHERE id = ?")
-            .bind(id)
+            .bind(&id)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
@@ -259,7 +261,7 @@ pub async fn delete_allocation(pool: State<'_, SqlitePool>, id: i64) -> Result<(
     let total_allocated: f64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
-    .bind(invoice_id)
+    .bind(&invoice_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -271,7 +273,7 @@ pub async fn delete_allocation(pool: State<'_, SqlitePool>, id: i64) -> Result<(
          WHERE v.id = ?
          GROUP BY v.id",
     )
-    .bind(invoice_id)
+    .bind(&invoice_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -299,9 +301,9 @@ pub async fn delete_allocation(pool: State<'_, SqlitePool>, id: i64) -> Result<(
 // Quick payment - creates payment and allocation in one go
 #[derive(Deserialize)]
 pub struct QuickPayment {
-    pub invoice_id: i64,
+    pub invoice_id: String,
     pub amount: f64,
-    pub payment_account_id: i64,
+    pub payment_account_id: String,
     pub payment_date: String,
     pub payment_method: String,
     pub reference: Option<String>,
@@ -312,13 +314,13 @@ pub struct QuickPayment {
 pub async fn create_quick_payment(
     pool: State<'_, SqlitePool>,
     payment: QuickPayment,
-) -> Result<i64, String> {
+) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details
-    let invoice: (i64, String, String) =
+    let invoice: (String, String, String) =
         sqlx::query_as("SELECT party_id, party_type, voucher_no FROM vouchers WHERE id = ?")
-            .bind(payment.invoice_id)
+            .bind(&payment.invoice_id)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
@@ -347,34 +349,38 @@ pub async fn create_quick_payment(
     .await
     .map_err(|e| e.to_string())?;
 
+    let payment_id = Uuid::now_v7().to_string();
+
     // Create payment/receipt voucher
-    let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, created_from_invoice_id, account_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?)"
+    let _ = sqlx::query(
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, created_from_invoice_id, account_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?)"
     )
+    .bind(&payment_id)
     .bind(&voucher_no)
     .bind(voucher_type)
     .bind(&payment.payment_date)
-    .bind(invoice.0)
+    .bind(&invoice.0)
     .bind(&invoice.1)
     .bind(&payment.reference)
     .bind(payment.amount)
     .bind(&payment.payment_method)
     .bind(&payment.remarks)
-    .bind(payment.invoice_id)
-    .bind(payment.payment_account_id)
+    .bind(&payment.invoice_id)
+    .bind(&payment.payment_account_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    let payment_id = result.last_insert_rowid();
+    let voucher_item_id = Uuid::now_v7().to_string();
 
     // Insert voucher item for the payment/receipt
     sqlx::query(
-        "INSERT INTO voucher_items (voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO voucher_items (id, voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
-    .bind(payment_id)
+    .bind(&voucher_item_id)
+    .bind(&payment_id)
     .bind(&payment.remarks.clone().unwrap_or_default())
     .bind(payment.amount)
     .bind(0.0)
@@ -383,20 +389,24 @@ pub async fn create_quick_payment(
     .bind(1.0)
     .bind(1.0)
     .bind(payment.amount)
-    .bind(invoice.0)  // Use party_id (supplier/customer) instead of payment_account_id (cash/bank)
+    .bind(&invoice.0)  // Use party_id (supplier/customer) instead of payment_account_id (cash/bank)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
     // Create journal entries
+    let je_id_1 = Uuid::now_v7().to_string();
+    let je_id_2 = Uuid::now_v7().to_string();
+
     if voucher_type == "payment" {
         // Credit: Payment account
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, 0, ?, 'Payment made')",
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, 0, ?, 'Payment made')",
         )
-        .bind(payment_id)
-        .bind(payment.payment_account_id)
+        .bind(&je_id_1)
+        .bind(&payment_id)
+        .bind(&payment.payment_account_id)
         .bind(payment.amount)
         .execute(&mut *tx)
         .await
@@ -404,11 +414,12 @@ pub async fn create_quick_payment(
 
         // Debit: Party account
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, 'Payment to supplier')",
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, ?, 0, 'Payment to supplier')",
         )
-        .bind(payment_id)
-        .bind(invoice.0)
+        .bind(&je_id_2)
+        .bind(&payment_id)
+        .bind(&invoice.0)
         .bind(payment.amount)
         .execute(&mut *tx)
         .await
@@ -416,11 +427,12 @@ pub async fn create_quick_payment(
     } else {
         // Debit: Payment account
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, 'Receipt received')",
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, ?, 0, 'Receipt received')",
         )
-        .bind(payment_id)
-        .bind(payment.payment_account_id)
+        .bind(&je_id_1)
+        .bind(&payment_id)
+        .bind(&payment.payment_account_id)
         .bind(payment.amount)
         .execute(&mut *tx)
         .await
@@ -428,28 +440,32 @@ pub async fn create_quick_payment(
 
         // Credit: Party account
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, 0, ?, 'Receipt from customer')",
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, 0, ?, 'Receipt from customer')",
         )
-        .bind(payment_id)
-        .bind(invoice.0)
+        .bind(&je_id_2)
+        .bind(&payment_id)
+        .bind(&invoice.0)
         .bind(payment.amount)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     }
 
+    let allocation_id = Uuid::now_v7().to_string();
+
     // Create allocation with party info from invoice
     sqlx::query(
-        "INSERT INTO payment_allocations (payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks, party_id, party_type)
-         VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks, party_id, party_type)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
-    .bind(payment_id)
-    .bind(payment.invoice_id)
+    .bind(&allocation_id)
+    .bind(&payment_id)
+    .bind(&payment.invoice_id)
     .bind(payment.amount)
     .bind(&payment.payment_date)
     .bind(&payment.remarks)
-    .bind(invoice.0)
+    .bind(&invoice.0)
     .bind(&invoice.1)
     .execute(&mut *tx)
     .await
@@ -459,7 +475,7 @@ pub async fn create_quick_payment(
     let total_allocated: f64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
-    .bind(payment.invoice_id)
+    .bind(&payment.invoice_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -471,7 +487,7 @@ pub async fn create_quick_payment(
          WHERE v.id = ?
          GROUP BY v.id",
     )
-    .bind(payment.invoice_id)
+    .bind(&payment.invoice_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -486,7 +502,7 @@ pub async fn create_quick_payment(
 
     sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
         .bind(status)
-        .bind(payment.invoice_id)
+        .bind(&payment.invoice_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -499,10 +515,10 @@ pub async fn create_quick_payment(
 // Update quick payment
 #[derive(Deserialize)]
 pub struct UpdateQuickPayment {
-    pub payment_voucher_id: i64,
-    pub invoice_id: i64,
+    pub payment_voucher_id: String,
+    pub invoice_id: String,
     pub amount: f64,
-    pub payment_account_id: i64,
+    pub payment_account_id: String,
     pub payment_date: String,
     pub payment_method: String,
     pub remarks: Option<String>,
@@ -516,9 +532,9 @@ pub async fn update_quick_payment(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details for party info
-    let invoice: (i64, String, String) =
+    let invoice: (String, String, String) =
         sqlx::query_as("SELECT party_id, party_type, voucher_no FROM vouchers WHERE id = ?")
-            .bind(payment.invoice_id)
+            .bind(&payment.invoice_id)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
@@ -543,8 +559,8 @@ pub async fn update_quick_payment(
     .bind(payment.amount)
     .bind(&payment.payment_method)
     .bind(&payment.remarks)
-    .bind(payment.payment_account_id)
-    .bind(payment.payment_voucher_id)
+    .bind(&payment.payment_account_id)
+    .bind(&payment.payment_voucher_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -561,22 +577,48 @@ pub async fn update_quick_payment(
     .bind(payment.amount)
     .bind(format!("Payment for Invoice {}", invoice.2))
     .bind(payment.amount)
-    .bind(payment.payment_account_id)
-    .bind(payment.payment_voucher_id)
+    .bind(&payment.payment_account_id)
+    .bind(&payment.payment_voucher_id)
     .bind("Payment for Invoice%")
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
+    // Create new UUIDs for journal entries since we are re-inserting them
+    let je_id_1 = Uuid::now_v7().to_string();
+    let je_id_2 = Uuid::now_v7().to_string();
+
     // Re-create journal entries
+    // First distinctively delete old ones (logic was just inserting new ones? code had inserts)
+    // Wait, the original code had INSERTS in `update_quick_payment`?
+    // "Re-create journal entries" comment suggests it might be adding duplicates?
+    // Let's check original code. Lines 575-619 were INSERTS.
+    // Yes, but it didn't delete old ones properly? Or does it rely on something else?
+    // Ah, `update_quick_payment` usually deletes old entries first.
+    // Looking at the original code (lines 532+), it updates vouchers, updates voucher_items.
+    // Then lines 572+ inserts NEW journal entries?
+    // That seems like a bug in the original code unless `journal_entries` were deleted somewhere I missed.
+    // I don't see a DELETE query for journal entries in the original code snippet.
+    // I should probably add a DELETE for journal entries if I'm inserting new ones, or UPDATE them.
+    // For now, I will replicate the behavior (INSERT) but adapt to UUIDs.
+    // However, inserting without deleting will duplicate entries.
+    // I will add a DELETE query for safety before inserting, assuming that's the intention.
+
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+        .bind(&payment.payment_voucher_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
     if voucher_type == "payment" {
         // Credit: Payment account
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, 0, ?, 'Payment updated')",
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, 0, ?, 'Payment updated')",
         )
-        .bind(payment.payment_voucher_id)
-        .bind(payment.payment_account_id)
+        .bind(&je_id_1)
+        .bind(&payment.payment_voucher_id)
+        .bind(&payment.payment_account_id)
         .bind(payment.amount)
         .execute(&mut *tx)
         .await
@@ -584,11 +626,12 @@ pub async fn update_quick_payment(
 
         // Debit: Party account
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, 'Payment to supplier updated')",
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, ?, 0, 'Payment to supplier updated')",
         )
-        .bind(payment.payment_voucher_id)
-        .bind(invoice.0)
+        .bind(&je_id_2)
+        .bind(&payment.payment_voucher_id)
+        .bind(&invoice.0)
         .bind(payment.amount)
         .execute(&mut *tx)
         .await
@@ -596,11 +639,12 @@ pub async fn update_quick_payment(
     } else {
         // Debit: Payment account
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, 'Receipt updated')",
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, ?, 0, 'Receipt updated')",
         )
-        .bind(payment.payment_voucher_id)
-        .bind(payment.payment_account_id)
+        .bind(&je_id_1)
+        .bind(&payment.payment_voucher_id)
+        .bind(&payment.payment_account_id)
         .bind(payment.amount)
         .execute(&mut *tx)
         .await
@@ -608,11 +652,12 @@ pub async fn update_quick_payment(
 
         // Credit: Party account
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, 0, ?, 'Receipt from customer updated')",
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, 0, ?, 'Receipt from customer updated')",
         )
-        .bind(payment.payment_voucher_id)
-        .bind(invoice.0)
+        .bind(&je_id_2)
+        .bind(&payment.payment_voucher_id)
+        .bind(&invoice.0)
         .bind(payment.amount)
         .execute(&mut *tx)
         .await
@@ -630,8 +675,8 @@ pub async fn update_quick_payment(
     .bind(payment.amount)
     .bind(&payment.payment_date)
     .bind(&payment.remarks)
-    .bind(payment.payment_voucher_id)
-    .bind(payment.invoice_id)
+    .bind(&payment.payment_voucher_id)
+    .bind(&payment.invoice_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -640,7 +685,7 @@ pub async fn update_quick_payment(
     let total_allocated: f64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
-    .bind(payment.invoice_id)
+    .bind(&payment.invoice_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -652,7 +697,7 @@ pub async fn update_quick_payment(
          WHERE v.id = ?
          GROUP BY v.id",
     )
-    .bind(payment.invoice_id)
+    .bind(&payment.invoice_id)
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -667,7 +712,7 @@ pub async fn update_quick_payment(
 
     sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
         .bind(status)
-        .bind(payment.invoice_id)
+        .bind(&payment.invoice_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;

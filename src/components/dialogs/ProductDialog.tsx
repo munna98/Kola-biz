@@ -72,6 +72,14 @@ export default function ProductDialog({
     }
   }, [open, product, units]);
 
+  useEffect(() => {
+    if (open && !product) {
+      api.products.getNextCode().then((code) => {
+        setForm(prev => ({ ...prev, code }));
+      }).catch(console.error);
+    }
+  }, [open, product]);
+
   const resetForm = () => {
     setForm({
       code: '',

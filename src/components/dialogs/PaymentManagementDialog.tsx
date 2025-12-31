@@ -22,7 +22,7 @@ interface PaymentManagementDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onSuccess?: () => void;
-    invoiceId?: number;
+    invoiceId?: string;
     invoiceNo?: string;
     invoiceAmount?: number;
     invoiceDate?: string;
@@ -31,8 +31,8 @@ interface PaymentManagementDialogProps {
 }
 
 interface Allocation {
-    id: number;
-    payment_voucher_id: number;
+    id: string;
+    payment_voucher_id: string;
     payment_voucher_no: string;
     payment_voucher_date: string;
     allocated_amount: number;
@@ -49,7 +49,7 @@ interface CashBankAccount {
 
 interface PaymentLine {
     id: string;
-    payment_voucher_id?: number; // Exists for existing payments
+    payment_voucher_id?: string; // Exists for existing payments
     account_id: number;
     amount: number;
     method: string;

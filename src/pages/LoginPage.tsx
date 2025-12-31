@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useDispatch } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
@@ -14,6 +14,14 @@ export default function LoginPage() {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const passwordRef = useRef<HTMLInputElement>(null);
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            passwordRef.current?.focus();
+        }
+    };
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -31,13 +39,17 @@ export default function LoginPage() {
                 password: password,
             });
 
+            console.log('Login response:', response);
+
             if (response.success && response.token && response.user) {
+                console.log('Login successful, user:', response.user);
                 dispatch(loginSuccess({
                     user: response.user,
                     token: response.token,
                 }));
                 toast.success('Login successful!');
             } else {
+                console.warn('Login failed:', response.message);
                 dispatch(loginFailure(response.message || 'Login failed'));
                 toast.error(response.message || 'Login failed');
             }
@@ -74,6 +86,7 @@ export default function LoginPage() {
                                     className="pl-10"
                                     autoFocus
                                     disabled={isLoading}
+                                    onKeyDown={handleKeyDown}
                                 />
                             </div>
                         </div>
@@ -90,6 +103,7 @@ export default function LoginPage() {
                                     onChange={(e) => setPassword(e.target.value)}
                                     className="pl-10"
                                     disabled={isLoading}
+                                    ref={passwordRef}
                                 />
                             </div>
                         </div>

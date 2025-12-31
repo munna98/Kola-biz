@@ -11,7 +11,7 @@ use tauri::State;
 // ============= INVOICE TEMPLATE STRUCT =============
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct InvoiceTemplate {
-    pub id: i64,
+    pub id: String,
     pub template_number: String,
     pub name: String,
     pub description: Option<String>,
@@ -71,9 +71,9 @@ pub async fn get_invoice_templates(
 #[tauri::command]
 pub async fn set_default_template(
     pool: State<'_, SqlitePool>,
-    template_id: i64,
+    template_id: String,
     voucher_type: String,
-) -> Result<i64, String> {
+) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // 1. Unset default for all templates of this type
@@ -85,7 +85,7 @@ pub async fn set_default_template(
 
     // 2. Set default for selected template
     sqlx::query("UPDATE invoice_templates SET is_default = 1 WHERE id = ?")
-        .bind(template_id)
+        .bind(&template_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -112,9 +112,9 @@ pub struct TemplateSettingsUpdate {
 #[tauri::command]
 pub async fn update_template_settings(
     pool: State<'_, SqlitePool>,
-    template_id: i64,
+    template_id: String,
     settings: TemplateSettingsUpdate,
-) -> Result<i64, String> {
+) -> Result<String, String> {
     let mut query_builder = sqlx::QueryBuilder::new("UPDATE invoice_templates SET ");
     let mut separated = query_builder.separated(", ");
 
@@ -163,7 +163,7 @@ pub async fn update_template_settings(
     separated.push("updated_at = DATE('now')");
 
     query_builder.push(" WHERE id = ");
-    query_builder.push_bind(template_id);
+    query_builder.push_bind(&template_id);
 
     let query = query_builder.build();
     query
@@ -177,9 +177,9 @@ pub async fn update_template_settings(
 #[tauri::command]
 pub async fn render_invoice(
     pool: State<'_, SqlitePool>,
-    voucher_id: i64,
+    voucher_id: String,
     voucher_type: String,
-    template_id: Option<i64>,
+    template_id: Option<String>,
 ) -> Result<String, String> {
     // 1. Get template
     let template = if let Some(tid) = template_id {
@@ -231,15 +231,16 @@ async fn get_template_by_voucher_type(
 // Data getters - reusing existing commands
 async fn get_purchase_invoice_data(
     pool: State<'_, SqlitePool>,
-    id: i64,
+    id: String,
 ) -> Result<serde_json::Value, String> {
-    let invoice = crate::commands::invoices::get_purchase_invoice(pool.clone(), id).await?;
+    let invoice = crate::commands::invoices::get_purchase_invoice(pool.clone(), id.clone()).await?;
     let items = crate::commands::invoices::get_purchase_invoice_items(pool.clone(), id).await?;
 
     // Fetch supplier details
-    let supplier = crate::commands::parties::get_supplier(pool.clone(), invoice.supplier_id)
-        .await
-        .ok();
+    let supplier =
+        crate::commands::parties::get_supplier(pool.clone(), invoice.supplier_id.clone())
+            .await
+            .ok();
 
     // Format items with calculated fields for template
     let formatted_items: Vec<serde_json::Value> = items
@@ -312,15 +313,17 @@ async fn get_purchase_invoice_data(
 
 async fn get_sales_invoice_data(
     pool: State<'_, SqlitePool>,
-    id: i64,
+    id: String,
 ) -> Result<serde_json::Value, String> {
-    let invoice = crate::commands::invoices::get_sales_invoice(pool.clone(), id).await?;
-    let items = crate::commands::invoices::get_sales_invoice_items(pool.clone(), id).await?;
+    let invoice = crate::commands::invoices::get_sales_invoice(pool.clone(), id.clone()).await?;
+    let items =
+        crate::commands::invoices::get_sales_invoice_items(pool.clone(), id.clone()).await?;
 
     // Fetch customer details
-    let customer = crate::commands::parties::get_customer(pool.clone(), invoice.customer_id)
-        .await
-        .ok();
+    let customer =
+        crate::commands::parties::get_customer(pool.clone(), invoice.customer_id.clone())
+            .await
+            .ok();
 
     // Calculate Old Balance (Ledger balance BEFORE this invoice)
     // We need the account ID for the customer.
@@ -328,10 +331,10 @@ async fn get_sales_invoice_data(
     // Usually customer ID in 'customers' table maps to party_id in vouchers.
     // And chart_of_accounts entry exists for this customer.
     // Let's get the account_id from chart_of_accounts for this customer.
-    let account_id: Option<i64> = sqlx::query_scalar(
+    let account_id: Option<String> = sqlx::query_scalar(
         "SELECT id FROM chart_of_accounts WHERE account_code = '1003-' || ? AND is_active = 1",
     )
-    .bind(invoice.customer_id)
+    .bind(&invoice.customer_id)
     .fetch_optional(pool.inner())
     .await
     .map_err(|e| e.to_string())?;
@@ -340,6 +343,9 @@ async fn get_sales_invoice_data(
     if let Some(acc_id) = account_id {
         // Sum of all debit - credit for this account for vouchers BEFORE this one
         // We use voucher_date and id to strictly order "before"
+        // Note: ID comparison for strings (UUIDs) is not strictly chronological, but we rely on voucher_date mostly.
+        // For same date, UUID sorting is arbitrary but deterministic.
+        // Ideally we should use created_at or sequence number, but existing logic used ID.
         let balance_res: (f64, f64) = sqlx::query_as(
             "SELECT 
                 COALESCE(SUM(je.debit), 0.0) as total_debit, 
@@ -353,7 +359,7 @@ async fn get_sales_invoice_data(
         .bind(acc_id)
         .bind(&invoice.voucher_date)
         .bind(&invoice.voucher_date)
-        .bind(id)
+        .bind(&id)
         .fetch_one(pool.inner())
         .await
         .unwrap_or((0.0, 0.0));
@@ -438,10 +444,6 @@ async fn get_sales_invoice_data(
             obj.insert("old_balance".to_string(), json!(old_balance));
             obj.insert("paid_amount".to_string(), json!(paid_amount));
             // Balance Due = Old Balance + Current Bill - Paid Amount
-            // Note: Ideally, invoice.grand_total IS the bill amount.
-            // The old_balance represents previous dues.
-            // So Total Receivable = Old + Current.
-            // Balance Due = Total Receivable - Paid.
             let balance_due = old_balance + invoice.grand_total - paid_amount;
             obj.insert("balance_due".to_string(), json!(balance_due));
         }
@@ -453,7 +455,7 @@ async fn get_sales_invoice_data(
 
 async fn get_payment_data(
     pool: State<'_, SqlitePool>,
-    id: i64,
+    id: String,
 ) -> Result<serde_json::Value, String> {
     // Custom query to fetch single payment
     let voucher = sqlx::query_as::<_, PaymentVoucher>(
@@ -493,7 +495,7 @@ async fn get_payment_data(
         WHERE v.id = ? AND v.voucher_type = 'payment' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
-    .bind(id)
+    .bind(id.clone())
     .fetch_one(pool.inner())
     .await
     .map_err(|e| e.to_string())?;
@@ -512,7 +514,7 @@ async fn get_payment_data(
 
 async fn get_receipt_data(
     pool: State<'_, SqlitePool>,
-    id: i64,
+    id: String,
 ) -> Result<serde_json::Value, String> {
     // Custom query to fetch single receipt
     let voucher = sqlx::query_as::<_, ReceiptVoucher>(
@@ -552,7 +554,7 @@ async fn get_receipt_data(
         WHERE v.id = ? AND v.voucher_type = 'receipt' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
-    .bind(id)
+    .bind(id.clone())
     .fetch_one(pool.inner())
     .await
     .map_err(|e| e.to_string())?;

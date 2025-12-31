@@ -1,0 +1,160 @@
+<!-- [HEADER] -->
+<div class="invoice-header">
+    <div class="invoice-title">
+        <h1>INVOICE</h1>
+    </div>
+    <div class="logo-placeholder">
+        {{#if company.has_logo}}
+        <img src="{{company.logo}}" alt="{{company.name}}" class="company-logo" />
+        {{else}}
+        <div class="logo-box">
+            <p>YOUR COMPANY'S<br />LOGO GOES HERE</p>
+        </div>
+        {{/if}}
+    </div>
+</div>
+
+<div class="invoice-details">
+    <div class="detail-row">
+        <span class="label">INVOICE NR:</span>
+        <span class="value">{{voucher_no}}</span>
+    </div>
+    <div class="detail-row">
+        <span class="label">DATE:</span>
+        <span class="value">{{format_date voucher_date}}</span>
+    </div>
+    {{#if due_date}}
+    <div class="detail-row">
+        <span class="label">DUE DATE:</span>
+        <span class="value">{{format_date due_date}}</span>
+    </div>
+    {{/if}}
+</div>
+
+<div class="parties-section">
+    <div class="bill-to">
+        <h3>BILL TO:</h3>
+        <div class="party-details">
+            <p class="party-name">{{party.name}}</p>
+            {{#if party.business_title}}
+            <p>{{party.business_title}}</p>
+            {{/if}}
+            {{#if party.address}}
+            <p>{{party.address}}</p>
+            {{/if}}
+            {{#if party.email}}
+            <p>{{party.email}}</p>
+            {{/if}}
+        </div>
+    </div>
+
+    <div class="payable-to">
+        <h3>PAYABLE TO:</h3>
+        <div class="party-details">
+            <p class="party-name">{{company.name}}</p>
+            <p>{{company.address}}</p>
+            {{#if company.phone}}
+            <p>+ {{company.phone}}</p>
+            {{/if}}
+            {{#if company.email}}
+            <p>{{company.email}}</p>
+            {{/if}}
+        </div>
+    </div>
+</div>
+
+<!-- [BODY] -->
+<table class="items-table">
+    <thead>
+        <tr>
+            <th class="col-no">NO.</th>
+            <th class="col-description">DESCRIPTION</th>
+            <th class="col-qty">QTY</th>
+            <th class="col-price">PRICE</th>
+            <th class="col-total">TOTAL</th>
+        </tr>
+    </thead>
+    <tbody>
+        {{#each items}}
+        <tr>
+            <td class="col-no">{{increment @index}}.</td>
+            <td class="col-description">{{product_name}}</td>
+            <td class="col-qty">{{format_number final_quantity 0}}</td>
+            <td class="col-price">₹{{format_number rate 0}}</td>
+            <td class="col-total">₹{{format_number total 0}}</td>
+        </tr>
+        {{/each}}
+    </tbody>
+</table>
+
+<div class="totals-section">
+    <div class="totals-rows">
+        <div class="total-row">
+            <span class="total-label">subtotal:</span>
+            <span class="total-value">₹{{format_number subtotal 0}}</span>
+        </div>
+
+        {{#if discount_amount}}
+        <div class="total-row">
+            <span class="total-label">discount:</span>
+            <span class="total-value">₹{{format_number discount_amount 0}}</span>
+        </div>
+        {{/if}}
+
+        {{#if tax_total}}
+        <div class="total-row">
+            <span class="total-label">taxes:</span>
+            <span class="total-value">₹{{format_number tax_total 0}}</span>
+        </div>
+        {{/if}}
+
+        <div class="total-row grand-total">
+            <span class="total-label">Grand Total</span>
+            <span class="total-value">₹{{format_number grand_total 2}}</span>
+        </div>
+    </div>
+</div>
+
+<!-- Account Summary -->
+<div class="account-summary" style="margin-top: 20px; border-top: 1px dashed #ccc; padding-top: 10px;">
+    <h4 style="margin: 0 0 10px 0; font-size: 10pt; text-transform: uppercase;">Account Summary</h4>
+    <div style="display: flex; justify-content: space-between; font-size: 9pt;">
+        <div>
+            <span style="display: block; color: #666; font-size: 8pt;">Old Balance</span>
+            <span style="font-weight: bold;">₹{{format_number old_balance 2}}</span>
+        </div>
+        <div>
+            <span style="display: block; color: #666; font-size: 8pt;">Bill Amount</span>
+            <span style="font-weight: bold;">₹{{format_number grand_total 2}}</span>
+        </div>
+        <div>
+            <span style="display: block; color: #666; font-size: 8pt;">Paid Amount</span>
+            <span style="font-weight: bold;">₹{{format_number paid_amount 2}}</span>
+        </div>
+        <div>
+            <span style="display: block; color: #666; font-size: 8pt;">Balance Due</span>
+            <span style="font-weight: bold;">₹{{format_number balance_due 2}}</span>
+        </div>
+    </div>
+</div>
+
+<!-- [FOOTER] -->
+<div class="footer-section">
+    <div class="bank-details">
+        {{#if bank.has_details}}
+        <div class="bank-row">
+            <span class="bank-label">BANK NAME:</span>
+            <span class="bank-value">{{bank.name}}</span>
+        </div>
+        <div class="bank-row">
+            <span class="bank-label">ACCOUNT:</span>
+            <span class="bank-value">{{bank.account_no}}</span>
+        </div>
+        {{/if}}
+    </div>
+
+    <div class="signature-area">
+        <div class="signature-line"></div>
+        <p class="thank-you">THANK YOU FOR YOUR PURCHASE</p>
+    </div>
+</div>

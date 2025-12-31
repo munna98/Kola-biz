@@ -50,6 +50,7 @@ export interface CreateProduct {
 
 export interface Customer {
   id: number;
+  code: string;
   name: string;
   email?: string;
   phone?: string;
@@ -59,6 +60,7 @@ export interface Customer {
 }
 
 export interface CreateCustomer {
+  code?: string;
   name: string;
   email?: string;
   phone?: string;
@@ -67,6 +69,7 @@ export interface CreateCustomer {
 
 export interface Supplier {
   id: number;
+  code: string;
   name: string;
   email?: string;
   phone?: string;
@@ -76,6 +79,7 @@ export interface Supplier {
 }
 
 export interface CreateSupplier {
+  code?: string;
   name: string;
   email?: string;
   phone?: string;
@@ -91,7 +95,9 @@ export interface ChartOfAccount {
   description?: string;
   opening_balance: number;
   opening_balance_type: string;
+  party_id?: string;
   is_active: number;
+  is_system: number;
   created_at: string;
   updated_at: string;
 }
@@ -170,6 +176,7 @@ export const api = {
     delete: (id: number, deletedBy: string) => invoke<void>('delete_product', { id, deletedBy }),
     restore: (id: number) => invoke<void>('restore_product', { id }),
     hardDelete: (id: number) => invoke<void>('hard_delete_product', { id }),
+    getNextCode: () => invoke<string>('get_next_product_code'),
   },
   productGroups: {
     list: () => invoke<ProductGroup[]>('get_product_groups'),
@@ -185,6 +192,7 @@ export const api = {
     delete: (id: number) => invoke<void>('delete_customer', { id }),
     restore: (id: number) => invoke<void>('restore_customer', { id }),
     hardDelete: (id: number) => invoke<void>('hard_delete_customer', { id }),
+    getNextCode: () => invoke<string>('get_next_customer_code'),
   },
   suppliers: {
     list: () => invoke<Supplier[]>('get_suppliers'),
@@ -194,6 +202,7 @@ export const api = {
     delete: (id: number) => invoke<void>('delete_supplier', { id }),
     restore: (id: number) => invoke<void>('restore_supplier', { id }),
     hardDelete: (id: number) => invoke<void>('hard_delete_supplier', { id }),
+    getNextCode: () => invoke<string>('get_next_supplier_code'),
   },
   chartOfAccounts: {
     list: () => invoke<ChartOfAccount[]>('get_chart_of_accounts'),

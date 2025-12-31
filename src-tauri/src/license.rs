@@ -1,4 +1,4 @@
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::NaiveDate;
 use hex;
 use hmac::{Hmac, Mac};
 use machine_uid;
