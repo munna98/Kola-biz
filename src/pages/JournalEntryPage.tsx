@@ -139,7 +139,8 @@ export default function JournalEntryPage() {
         handleNavigatePrevious,
         handleNavigateNext,
         handleNew,
-        handleCancel
+        handleCancel,
+        handleDelete
     } = useVoucherNavigation({
         voucherType: 'journal',
         sliceState: journalState,
@@ -153,6 +154,23 @@ export default function JournalEntryPage() {
         },
         onLoadVoucher: loadVoucher,
     });
+
+    const handleDeleteVoucher = async () => {
+        const confirmed = await handleDelete();
+        if (confirmed && journalState.currentVoucherId) {
+            try {
+                dispatch(setJournalLoading(true));
+                await invoke('delete_journal_entry', { id: journalState.currentVoucherId });
+                toast.success('Journal entry deleted successfully');
+                handleNew();
+            } catch (error) {
+                console.error('Failed to delete journal entry:', error);
+                toast.error(error instanceof Error ? error.message : 'Failed to delete');
+            } finally {
+                dispatch(setJournalLoading(false));
+            }
+        }
+    };
 
     // Auto-add first line when data is loaded (ONLY for new mode)
     useEffect(() => {
@@ -335,6 +353,7 @@ export default function JournalEntryPage() {
                 onNew={handleNew}
                 onEdit={() => dispatch(setJournalMode('editing'))}
                 onCancel={handleCancel}
+                onDelete={handleDeleteVoucher}
                 onSave={() => formRef.current?.requestSubmit()}
                 onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
                 onListView={() => setIsListViewOpen(true)}

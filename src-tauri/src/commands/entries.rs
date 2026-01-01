@@ -424,11 +424,70 @@ pub async fn get_payment_items(
 
 #[tauri::command]
 pub async fn delete_payment(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
-    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'payment'")
-        .bind(id)
-        .execute(pool.inner())
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // Get affected invoices before deleting allocations
+    let affected_invoices: Vec<String> = sqlx::query_scalar(
+        "SELECT invoice_voucher_id FROM payment_allocations WHERE payment_voucher_id = ?",
+    )
+    .bind(&id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Delete allocations
+    sqlx::query("DELETE FROM payment_allocations WHERE payment_voucher_id = ?")
+        .bind(&id)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Soft delete voucher
+    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'payment'")
+        .bind(&id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Recalculate status for affected invoices
+    for inv_id in affected_invoices {
+        let total_allocated: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+        )
+        .bind(&inv_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let invoice_total: f64 = sqlx::query_scalar(
+            "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
+             FROM vouchers v
+             LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+             WHERE v.id = ?
+             GROUP BY v.id",
+        )
+        .bind(&inv_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let status = if (total_allocated - invoice_total).abs() < 0.01 {
+            "paid"
+        } else if total_allocated > 0.0 {
+            "partially_paid"
+        } else {
+            "unpaid"
+        };
+
+        sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
+            .bind(status)
+            .bind(&inv_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -1074,11 +1133,70 @@ pub async fn get_receipt_items(
 
 #[tauri::command]
 pub async fn delete_receipt(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
-    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'receipt'")
-        .bind(id)
-        .execute(pool.inner())
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // Get affected invoices before deleting allocations
+    let affected_invoices: Vec<String> = sqlx::query_scalar(
+        "SELECT invoice_voucher_id FROM payment_allocations WHERE payment_voucher_id = ?",
+    )
+    .bind(&id)
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Delete allocations
+    sqlx::query("DELETE FROM payment_allocations WHERE payment_voucher_id = ?")
+        .bind(&id)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+    // Soft delete voucher
+    sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'receipt'")
+        .bind(&id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Recalculate status for affected invoices
+    for inv_id in affected_invoices {
+        let total_allocated: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+        )
+        .bind(&inv_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let invoice_total: f64 = sqlx::query_scalar(
+            "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
+             FROM vouchers v
+             LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+             WHERE v.id = ?
+             GROUP BY v.id",
+        )
+        .bind(&inv_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let status = if (total_allocated - invoice_total).abs() < 0.01 {
+            "paid"
+        } else if total_allocated > 0.0 {
+            "partially_paid"
+        } else {
+            "unpaid"
+        };
+
+        sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
+            .bind(status)
+            .bind(&inv_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }

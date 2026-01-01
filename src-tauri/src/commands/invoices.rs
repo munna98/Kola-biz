@@ -1410,7 +1410,7 @@ pub async fn get_previous_voucher_id(
     current_id: String,
 ) -> Result<Option<String>, String> {
     sqlx::query_scalar::<_, String>(
-        "SELECT id FROM vouchers WHERE voucher_type = ? AND id < ? ORDER BY id DESC LIMIT 1",
+        "SELECT id FROM vouchers WHERE voucher_type = ? AND id < ? AND deleted_at IS NULL ORDER BY id DESC LIMIT 1",
     )
     .bind(voucher_type)
     .bind(current_id)
@@ -1426,7 +1426,7 @@ pub async fn get_next_voucher_id(
     current_id: String,
 ) -> Result<Option<String>, String> {
     sqlx::query_scalar::<_, String>(
-        "SELECT id FROM vouchers WHERE voucher_type = ? AND id > ? ORDER BY id ASC LIMIT 1",
+        "SELECT id FROM vouchers WHERE voucher_type = ? AND id > ? AND deleted_at IS NULL ORDER BY id ASC LIMIT 1",
     )
     .bind(voucher_type)
     .bind(current_id)
@@ -1443,7 +1443,7 @@ pub async fn get_voucher_by_id(
 ) -> Result<serde_json::Value, String> {
     // Fetch generic voucher data
     let voucher = sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>, f64, String, String, String, String)>(
-        "SELECT id, voucher_no, voucher_date, reference, narration, total_amount, status, created_at, party_id, party_type FROM vouchers WHERE id = ? AND voucher_type = ?"
+        "SELECT id, voucher_no, voucher_date, reference, narration, total_amount, status, created_at, party_id, party_type FROM vouchers WHERE id = ? AND voucher_type = ? AND deleted_at IS NULL"
     )
     .bind(&id)
     .bind(&voucher_type)
