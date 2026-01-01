@@ -242,7 +242,7 @@ export default function OpeningBalancePage() {
                 await invoke('update_opening_balance', {
                     id: openingBalanceState.currentVoucherId,
                     entry: {
-                        ...openingBalanceState.form,
+                        form: openingBalanceState.form,
                         lines: openingBalanceState.lines
                     }
                 });
@@ -252,7 +252,7 @@ export default function OpeningBalancePage() {
             } else {
                 await invoke('create_opening_balance', {
                     entry: {
-                        ...openingBalanceState.form,
+                        form: openingBalanceState.form,
                         lines: openingBalanceState.lines
                     }
                 });

@@ -1705,19 +1705,20 @@ pub struct CreateOpeningBalance {
 pub async fn create_opening_balance(
     pool: State<'_, SqlitePool>,
     entry: CreateOpeningBalance,
-) -> Result<i64, String> {
+) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get next voucher number
     let voucher_no = get_next_voucher_number(&pool, "opening_balance").await?;
+    let voucher_id = Uuid::now_v7().to_string();
 
     // Create voucher master record
-    let result = sqlx::query(
-        "INSERT INTO vouchers (voucher_no, voucher_type, voucher_date, reference, narration, status)
-         VALUES (?, ?, ?, ?, ?, 'posted')"
+    let _ = sqlx::query(
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, reference, narration, status)
+         VALUES (?, ?, 'opening_balance', ?, ?, ?, 'posted')"
     )
+    .bind(&voucher_id)
     .bind(&voucher_no)
-    .bind("opening_balance")
     .bind(entry.form.get("voucher_date").and_then(|v| v.as_str()).unwrap_or(""))
     .bind(entry.form.get("reference").and_then(|v| v.as_str()).unwrap_or(""))
     .bind(entry.form.get("narration").and_then(|v| v.as_str()).unwrap_or(""))
@@ -1725,10 +1726,8 @@ pub async fn create_opening_balance(
     .await
     .map_err(|e| e.to_string())?;
 
-    let voucher_id = result.last_insert_rowid();
-
     // Find Opening Balance Adjustment account (code 3004)
-    let ob_account = sqlx::query_as::<_, (i64,)>(
+    let ob_account = sqlx::query_as::<_, (String,)>(
         "SELECT id FROM chart_of_accounts WHERE account_code = '3004' LIMIT 1",
     )
     .fetch_optional(&mut *tx)
@@ -1741,11 +1740,13 @@ pub async fn create_opening_balance(
     // Insert journal entries for each line - create dual entries
     for line in entry.lines {
         // First entry: user's account with their debit/credit (auto-generated, not manual)
+        let je_id_1 = Uuid::now_v7().to_string();
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
-             VALUES (?, ?, ?, ?, ?, 0)"
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration, is_manual)
+             VALUES (?, ?, ?, ?, ?, ?, 0)"
         )
-        .bind(voucher_id)
+        .bind(&je_id_1)
+        .bind(&voucher_id)
         .bind(line.account_id)
         .bind(line.debit)
         .bind(line.credit)
@@ -1756,12 +1757,14 @@ pub async fn create_opening_balance(
 
         // Second entry: balancing entry in Opening Balance Adjustment account (auto-generated)
         // If user has debit, this is credit (and vice versa)
+        let je_id_2 = Uuid::now_v7().to_string();
         sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration, is_manual)
-             VALUES (?, ?, ?, ?, ?, 0)"
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration, is_manual)
+             VALUES (?, ?, ?, ?, ?, ?, 0)"
         )
-        .bind(voucher_id)
-        .bind(ob_account_id)
+        .bind(&je_id_2)
+        .bind(&voucher_id)
+        .bind(&ob_account_id)
         .bind(line.credit)  // Reverse: credit becomes debit
         .bind(line.debit)   // Reverse: debit becomes credit
         .bind("Auto-generated balancing entry")
