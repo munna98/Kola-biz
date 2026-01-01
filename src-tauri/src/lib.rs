@@ -188,6 +188,14 @@ pub fn run() {
             // License
             get_license_info,
             activate_license,
+            // Settings & Printing
+            get_app_setting,
+            set_app_setting,
+            get_print_settings,
+            save_print_settings,
+            get_system_printers,
+            get_default_printer,
+            print_silently,
         ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())

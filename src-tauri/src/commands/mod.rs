@@ -12,6 +12,7 @@ pub mod products;
 pub mod purchase_returns;
 pub mod reports;
 pub mod sales_returns;
+pub mod settings;
 pub mod templates;
 
 // Re-export all public functions
@@ -40,3 +41,4 @@ pub use auth::*;
 pub use license::*;
 pub use purchase_returns::*;
 pub use sales_returns::*;
+pub use settings::*;

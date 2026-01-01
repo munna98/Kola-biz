@@ -37,7 +37,7 @@ import {
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
-import { PrintPreviewModal } from '@/components/common/PrintPreviewModal';
+import { usePrint } from '@/hooks/usePrint';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
@@ -73,7 +73,7 @@ export default function PurchaseReturnPage() {
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
-    const [showPrintModal, setShowPrintModal] = useState(false);
+    const { print } = usePrint();
 
     // Refs for focus management
     const formRef = useRef<HTMLFormElement>(null);
@@ -416,7 +416,7 @@ export default function PurchaseReturnPage() {
             toast.error("Please save first");
             return;
         }
-        setShowPrintModal(true);
+        print({ voucherId: purchaseReturnState.currentVoucherId, voucherType: 'purchase_return' });
     };
 
 
@@ -486,12 +486,7 @@ export default function PurchaseReturnPage() {
                 onSelectVoucher={handleListSelect}
             />
 
-            <PrintPreviewModal
-                isOpen={showPrintModal}
-                onClose={() => setShowPrintModal(false)}
-                voucherId={purchaseReturnState.currentVoucherId}
-                voucherType="purchase_return"
-            />
+
 
             {/* Form Content */}
             <div className="flex-1 overflow-hidden">

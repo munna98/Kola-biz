@@ -17,9 +17,17 @@ import {
     IconEye,
     IconCheck,
     IconStar,
+    IconPrinter,
 } from '@tabler/icons-react';
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 import { toast } from 'sonner';
-import { PrintPreviewModal } from '@/components/common/PrintPreviewModal';
+import { usePrint } from '@/hooks/usePrint';
 
 interface InvoiceTemplate {
     id: number;
@@ -57,15 +65,47 @@ const FEATURE_LABELS: Record<string, string> = {
 export function InvoiceTemplatesPage() {
     const [templates, setTemplates] = useState<InvoiceTemplate[]>([]);
     const [loading, setLoading] = useState(false);
-    const [previewId, setPreviewId] = useState<number | null>(null);
-    const [previewType, setPreviewType] = useState<string>('');
-    const [previewTemplateId, setPreviewTemplateId] = useState<number | null>(null);
-    const [showPreview, setShowPreview] = useState(false);
+    const { print } = usePrint();
+    const [printSettings, setPrintSettings] = useState({ silent_print: false, default_printer: '' });
+    const [printers, setPrinters] = useState<string[]>([]);
+
 
     useEffect(() => {
         loadTemplates();
+        loadPrintSettings();
     }, []);
 
+    const loadPrintSettings = async () => {
+        try {
+            const [settings, printerList] = await Promise.all([
+                invoke<{ silent_print: boolean, default_printer: string | null }>('get_print_settings'),
+                invoke<string[]>('get_system_printers')
+            ]);
+            setPrintSettings({
+                silent_print: settings.silent_print,
+                default_printer: settings.default_printer || ''
+            });
+            setPrinters(printerList);
+        } catch (error) {
+            console.error('Failed to load print settings', error);
+        }
+    };
+
+    const handleUpdatePrintSettings = async (key: string, value: any) => {
+        try {
+            const newSettings = { ...printSettings, [key]: value };
+            setPrintSettings(newSettings);
+            await invoke('save_print_settings', {
+                settings: {
+                    silent_print: newSettings.silent_print,
+                    default_printer: newSettings.default_printer || null
+                }
+            });
+            toast.success('Print settings saved');
+        } catch (error) {
+            toast.error('Failed to save print settings');
+        }
+    };
     const loadTemplates = async () => {
         try {
             setLoading(true);
@@ -118,13 +158,8 @@ export function InvoiceTemplatesPage() {
     };
 
     const handlePreview = (template: InvoiceTemplate) => {
-        // Use dummy ID 1 or first available voucher for preview?
-        // Ideally backend render_invoice handles a missing ID with dummy data or we pass dummy data.
-        // For now, let's assume we have at least one voucher of that type or handle error in modal
-        setPreviewId(1); // Assuming ID 1 exists for test, or user will see error/blank
-        setPreviewType(template.voucher_type);
-        setPreviewTemplateId(template.id); // Pass the specific template ID
-        setShowPreview(true);
+        // Use dummy ID "1" for preview - backend should handle with sample data
+        print({ voucherId: '1', voucherType: template.voucher_type, templateId: template.id });
     }
 
     // Group by voucher type
@@ -154,6 +189,56 @@ export function InvoiceTemplatesPage() {
             </div>
 
             <div className="grid gap-6">
+                {/* Global Print Settings */}
+                <Card>
+                    <CardHeader>
+                        <CardTitle className="text-lg flex items-center gap-2">
+                            <IconPrinter size={20} />
+                            Global Print Settings
+                        </CardTitle>
+                        <CardDescription>
+                            Configure how invoices are printed across the application
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                        <div className="flex items-center justify-between p-4 border rounded-lg bg-muted/20">
+                            <div className="space-y-0.5">
+                                <Label className="text-base">Silent Printing</Label>
+                                <p className="text-sm text-muted-foreground">
+                                    Skip the print preview dialog and print directly to the default printer
+                                </p>
+                            </div>
+                            <Switch
+                                checked={printSettings.silent_print}
+                                onCheckedChange={(checked) => handleUpdatePrintSettings('silent_print', checked)}
+                            />
+                        </div>
+
+                        <div className="space-y-2">
+                            <Label>Default Printer</Label>
+                            <Select
+                                value={printSettings.default_printer}
+                                onValueChange={(value) => handleUpdatePrintSettings('default_printer', value)}
+                                disabled={!printers.length}
+                            >
+                                <SelectTrigger className="w-full md:w-[400px]">
+                                    <SelectValue placeholder={printers.length ? "Select a printer" : "No printers found"} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {printers.map((printer) => (
+                                        <SelectItem key={printer} value={printer}>
+                                            {printer}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-xs text-muted-foreground">
+                                Required for silent printing. If not set, the system default will be used.
+                            </p>
+                        </div>
+                    </CardContent>
+                </Card>
+
                 {loading ? (
                     <div className="flex justify-center p-8">Loading templates...</div>
                 ) : Object.entries(groupedTemplates).map(([type, typeTemplates]) => (
@@ -260,13 +345,7 @@ export function InvoiceTemplatesPage() {
                     </Card>
                 ))}
 
-                <PrintPreviewModal
-                    isOpen={showPreview}
-                    onClose={() => setShowPreview(false)}
-                    voucherId={previewId}
-                    voucherType={previewType}
-                    templateId={previewTemplateId}
-                />
+
             </div>
         </div>
     );

@@ -37,7 +37,7 @@ import {
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
-import { PrintPreviewModal } from '@/components/common/PrintPreviewModal';
+import { usePrint } from '@/hooks/usePrint';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
@@ -73,7 +73,7 @@ export default function SalesInvoicePage() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showListView, setShowListView] = useState(false);
-  const [showPrintModal, setShowPrintModal] = useState(false);
+  const { print } = usePrint();
   const [showQuickPayment, setShowQuickPayment] = useState(false);
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
@@ -436,7 +436,7 @@ export default function SalesInvoicePage() {
       toast.error("Please save the invoice before printing");
       return;
     }
-    setShowPrintModal(true);
+    print({ voucherId: salesState.currentVoucherId, voucherType: 'sales_invoice' });
   };
 
 
@@ -522,12 +522,7 @@ export default function SalesInvoicePage() {
         }}
       />
 
-      <PrintPreviewModal
-        isOpen={showPrintModal}
-        onClose={() => setShowPrintModal(false)}
-        voucherId={salesState.currentVoucherId}
-        voucherType="sales_invoice"
-      />
+
 
       {/* Form Content */}
       <div className="flex-1 overflow-hidden">
