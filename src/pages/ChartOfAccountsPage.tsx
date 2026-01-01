@@ -168,10 +168,9 @@ export default function ChartOfAccountsPage() {
                             size="sm"
                             variant="ghost"
                             onClick={() => handleEdit(account)}
-                            disabled={account.is_system === 1}
-                            title={account.is_system === 1 ? "System Account (Cannot Edit)" : "Edit Account"}
+                            title={account.is_system === 1 ? "Edit System Account" : "Edit Account"}
                           >
-                            <IconEdit size={16} className={account.is_system === 1 ? "text-muted-foreground" : ""} />
+                            <IconEdit size={16} />
                           </Button>
                           <Button
                             size="sm"

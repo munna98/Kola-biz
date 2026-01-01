@@ -119,6 +119,7 @@ export default function ChartOfAccountDialog({
                                 onChange={e => setForm({ ...form, account_code: e.target.value })}
                                 onKeyDown={(e) => handleKeyDown(e, 'code')}
                                 required
+                                disabled={accountToEdit?.is_system === 1}
                             />
                         </div>
                         <div>
@@ -129,6 +130,7 @@ export default function ChartOfAccountDialog({
                                 onChange={e => setForm({ ...form, account_name: e.target.value })}
                                 onKeyDown={(e) => handleKeyDown(e, 'name')}
                                 required
+                                disabled={accountToEdit?.is_system === 1}
                             />
                         </div>
                     </div>
@@ -152,6 +154,7 @@ export default function ChartOfAccountDialog({
                                 onKeyDown={(e) => handleSelectKeyDown(e, 'group')}
                                 placeholder="Search group..."
                                 className="w-full"
+                                disabled={accountToEdit?.is_system === 1}
                             />
                         </div>
                         <div>
@@ -172,6 +175,7 @@ export default function ChartOfAccountDialog({
                             onChange={e => setForm({ ...form, description: e.target.value })}
                             onKeyDown={(e) => handleKeyDown(e, 'description')}
                             placeholder="Optional description"
+                            disabled={accountToEdit?.is_system === 1}
                         />
                     </div>
 

@@ -234,13 +234,56 @@ async fn get_purchase_invoice_data(
     id: String,
 ) -> Result<serde_json::Value, String> {
     let invoice = crate::commands::invoices::get_purchase_invoice(pool.clone(), id.clone()).await?;
-    let items = crate::commands::invoices::get_purchase_invoice_items(pool.clone(), id).await?;
+    let items =
+        crate::commands::invoices::get_purchase_invoice_items(pool.clone(), id.clone()).await?;
 
     // Fetch supplier details
     let supplier =
         crate::commands::parties::get_supplier(pool.clone(), invoice.supplier_id.clone())
             .await
             .ok();
+
+    // Calculate Old Balance (Ledger balance BEFORE this invoice)
+    // supplier_id IS the account_id in the new design
+    let account_id = invoice.supplier_id.clone();
+
+    // Sum of all debit - credit for this account for vouchers BEFORE this one
+    // We use voucher_date and id to strictly order "before"
+    // For Suppliers (Creditors), Balance is Cr - Dr usually, but the system stores debit/credit.
+    // Let's stick to Dr - Cr for consistent math, and UI handles Dr/Cr suffix.
+    // Or if we want "Amount Payable", it's Cr - Dr.
+    // Let's use Dr - Cr (Net) consistent with sales.
+    let balance_res: (f64, f64) = sqlx::query_as(
+        "SELECT 
+            COALESCE(SUM(je.debit), 0.0) as total_debit, 
+            COALESCE(SUM(je.credit), 0.0) as total_credit
+            FROM journal_entries je
+            JOIN vouchers v ON je.voucher_id = v.id
+            WHERE je.account_id = ? 
+            AND (v.voucher_date < ? OR (v.voucher_date = ? AND v.id < ?))
+            AND v.deleted_at IS NULL",
+    )
+    .bind(&account_id)
+    .bind(&invoice.voucher_date)
+    .bind(&invoice.voucher_date)
+    .bind(&id)
+    .fetch_one(pool.inner())
+    .await
+    .unwrap_or((0.0, 0.0));
+
+    // Old Balance (Dr - Cr)
+    let old_balance = balance_res.0 - balance_res.1;
+
+    // Calculate Paid Amount for this specific invoice
+    // For Purchase, we pay, so we look for payments allocated to this invoice
+    // payment_allocations table links payment_voucher_id to invoice_voucher_id
+    let paid_amount: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+    )
+    .bind(&id)
+    .fetch_one(pool.inner())
+    .await
+    .unwrap_or(0.0);
 
     // Format items with calculated fields for template
     let formatted_items: Vec<serde_json::Value> = items
@@ -304,6 +347,42 @@ async fn get_purchase_invoice_data(
                 invoice.grand_total - invoice.tax_amount + invoice.discount_amount.unwrap_or(0.0);
             obj.insert("subtotal".to_string(), json!(subtotal));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
+
+            // Add Balance Details
+            // Note: For suppliers, credit balance is normal (we owe them).
+            // old_balance is Dr - Cr. If we owe 1000, old_balance is -1000.
+            // invoice increases what we owe (Credit). invoice amount is positive.
+            // To get "Balance Due" (what we still owe):
+            // We want positive number if we owe money?
+            // Sales logic: bal_due = old (Dr-Cr) + invoice - paid.
+            // Purchase logic:
+            // old_balance (Dr-Cr).
+            // invoice creates Cr.
+            // paid creates Dr.
+            // Net Balance = Old (Dr-Cr) - Invoice (Cr) + Paid (Dr)  <-- This is new balance Dr-Cr.
+            // BUT for template display "Balance Due", we usually want the magnitude.
+            // Let's pass the raw Dr-Cr values and let the template decide or helper format it?
+            // Actually sales template just displays {{balance_due}} directly.
+            // Let's calculate proper Net Balance (Dr-Cr)
+            // Current Invoice Effect: It's a Purchase, so it CREDITS the supplier.
+            // So we subtract grand_total from Net Balance (Dr-Cr).
+            // Payment: It's a Payment, so it DEBITS the supplier.
+            // So we add paid_amount to Net Balance (Dr-Cr).
+            // Wait, payment_allocations logic?
+            // If I pay 100 against this invoice, I Debit supplier 100.
+            // So changes are:
+            // Balance Due = Old Balance (Dr-Cr) - Invoice Grand Total + Paid Amount.
+            // Example: Start 0. Buy 1000. Old=0. Invoice=1000(Cr). Paid=0. New = -1000. (Cr 1000). Correct.
+            // Pay 200. Paid=200. New = -1000 + 200 = -800. (Cr 800). Correct.
+
+            // The template likely expects "how much is pending for this bill" or "total party balance"?
+            // Usually "Balance Due" on an invoice means the total party closing balance.
+            // Let's stick to the Net Balance logic.
+            let balance_due = old_balance - invoice.grand_total + paid_amount;
+
+            obj.insert("old_balance".to_string(), json!(old_balance));
+            obj.insert("paid_amount".to_string(), json!(paid_amount));
+            obj.insert("balance_due".to_string(), json!(balance_due));
         }
         Ok(invoice_val)
     } else {

@@ -108,6 +108,52 @@ pub async fn seed_handlebars_templates(
     .execute(pool)
     .await?;
 
+    // ==================== PURCHASE INVOICE TEMPLATES ====================
+
+    // Purchase Invoice A4 (Reuse Professional A4)
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-PI-001")
+    .bind("Standard Purchase Order")
+    .bind("Professional purchase invoice format")
+    .bind("purchase_invoice")
+    .bind("a4_portrait")
+    .bind("standard")
+    .bind(&a4_h)
+    .bind(&a4_b)
+    .bind(&a4_f)
+    .bind(A4_CSS)
+    .bind(1)
+    .execute(pool)
+    .await?;
+
+    // Purchase Invoice Thermal (Reuse Thermal)
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-PI-002")
+    .bind("Thermal Purchase Receipt")
+    .bind("Thermal print format for purchase invoices")
+    .bind("purchase_invoice")
+    .bind("thermal_80mm")
+    .bind("compact")
+    .bind(&t80_h)
+    .bind(&t80_b)
+    .bind(&t80_f)
+    .bind(THERMAL_80MM_CSS)
+    .bind(0)
+    .execute(pool)
+    .await?;
+
     // Update default templates with latest content
     sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ? WHERE template_number = 'TPL-SI-001' AND design_mode = 'standard'")
         .bind(&a4_h)

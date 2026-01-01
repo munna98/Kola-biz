@@ -42,6 +42,7 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
+import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
 import SupplierDialog from '@/components/dialogs/SupplierDialog';
 
 interface Product {
@@ -79,6 +80,9 @@ export default function PurchaseInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[] } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
+
+  // New state for print preview
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
 
   // Create Supplier Shortcut State
   const [showCreateSupplier, setShowCreateSupplier] = useState(false);
@@ -454,6 +458,15 @@ export default function PurchaseInvoicePage() {
     }
   };
 
+  const handlePrint = () => {
+    if (purchaseState.mode === 'new' || !purchaseState.currentVoucherId) {
+      toast.error("Please save the invoice before printing");
+      return;
+    }
+    // Instead of direct print, open preview
+    setShowPrintPreview(true);
+  };
+
   // Global keyboard shortcuts hook
   useVoucherShortcuts({
     onSave: () => formRef.current?.requestSubmit(),
@@ -552,7 +565,9 @@ export default function PurchaseInvoicePage() {
         onEdit={nav.handleEdit}
         onCancel={nav.handleCancel}
         onSave={() => formRef.current?.requestSubmit()}
+
         onDelete={handleDelete}
+        onPrint={handlePrint}
         onListView={() => setShowListView(true)}
         onManagePayments={purchaseState.mode !== 'new' ? () => setShowQuickPayment(true) : undefined}
         loading={purchaseState.loading}
@@ -582,6 +597,14 @@ export default function PurchaseInvoicePage() {
         onOpenChange={setShowListView}
         voucherType="purchase_invoice"
         onSelectVoucher={nav.handleListSelect}
+      />
+
+      <PrintPreviewDialog
+        open={showPrintPreview}
+        onOpenChange={setShowPrintPreview}
+        voucherId={purchaseState.currentVoucherId || undefined}
+        voucherType="purchase_invoice"
+        title={`Print Invoice - ${purchaseState.currentVoucherNo}`}
       />
 
       <SupplierDialog

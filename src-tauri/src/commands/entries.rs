@@ -1712,16 +1712,26 @@ pub async fn create_opening_balance(
     let voucher_no = get_next_voucher_number(&pool, "opening_balance").await?;
     let voucher_id = Uuid::now_v7().to_string();
 
+    // Calculate total amount and identify party_id
+    let total_amount: f64 = entry.lines.iter().map(|l| l.debit + l.credit).sum();
+    let party_id = if entry.lines.len() == 1 {
+        Some(entry.lines[0].account_id.clone())
+    } else {
+        None
+    };
+
     // Create voucher master record
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, reference, narration, status)
-         VALUES (?, ?, 'opening_balance', ?, ?, ?, 'posted')"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, reference, narration, status, party_id, total_amount)
+         VALUES (?, ?, 'opening_balance', ?, ?, ?, 'posted', ?, ?)"
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
     .bind(entry.form.get("voucher_date").and_then(|v| v.as_str()).unwrap_or(""))
     .bind(entry.form.get("reference").and_then(|v| v.as_str()).unwrap_or(""))
     .bind(entry.form.get("narration").and_then(|v| v.as_str()).unwrap_or(""))
+    .bind(party_id)
+    .bind(total_amount)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -2038,12 +2048,22 @@ pub async fn update_opening_balance(
         return Err("Can only update opening balance vouchers".to_string());
     }
 
+    // Calculate total amount and identify party_id
+    let total_amount: f64 = entry.lines.iter().map(|l| l.debit + l.credit).sum();
+    let party_id = if entry.lines.len() == 1 {
+        Some(entry.lines[0].account_id.clone())
+    } else {
+        None
+    };
+
     // Update voucher master
     sqlx::query(
         "UPDATE vouchers SET 
             voucher_date = ?, 
             reference = ?, 
-            narration = ?
+            narration = ?,
+            party_id = ?,
+            total_amount = ?
          WHERE id = ?",
     )
     .bind(
@@ -2067,6 +2087,8 @@ pub async fn update_opening_balance(
             .and_then(|v| v.as_str())
             .unwrap_or(""),
     )
+    .bind(party_id)
+    .bind(total_amount)
     .bind(&id)
     .execute(&mut *tx)
     .await

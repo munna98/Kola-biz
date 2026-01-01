@@ -140,8 +140,8 @@ pub async fn create_chart_of_account(
 
         // Create voucher entry
         let _ = sqlx::query(
-            "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, reference, narration, status)
-             VALUES (?, ?, ?, ?, ?, ?, 'posted')"
+            "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, reference, narration, status, party_id, total_amount)
+             VALUES (?, ?, ?, ?, ?, ?, 'posted', ?, ?)"
         )
         .bind(&voucher_id)
         .bind(&voucher_no)
@@ -149,6 +149,8 @@ pub async fn create_chart_of_account(
         .bind("2025-12-21")
         .bind(format!("Opening balance for {}", account.account_name))
         .bind(format!("Initial balance for account: {}", account.account_name))
+        .bind(&id)
+        .bind(opening_balance)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -302,20 +304,31 @@ pub async fn update_chart_of_account(
         .map_err(|e| e.to_string())?;
 
         let voucher_id = if let Some(vid) = opening_balance_voucher {
+            // Update existing voucher with new amount and confirm party_id
+            let _ = sqlx::query("UPDATE vouchers SET total_amount = ?, party_id = ? WHERE id = ?")
+                .bind(new_opening_balance)
+                .bind(&id)
+                .bind(&vid)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
             vid
         } else {
             // Create a new opening balance voucher if one doesn't exist
             let voucher_no = get_next_voucher_number(&pool, "opening_balance").await?;
             let new_vid = Uuid::now_v7().to_string();
             let _ = sqlx::query(
-                "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, reference, narration, status)
-                 VALUES (?, ?, 'opening_balance', ?, ?, ?, 'posted')"
+                "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, reference, narration, status, party_id, total_amount)
+                 VALUES (?, ?, 'opening_balance', ?, ?, ?, 'posted', ?, ?)"
             )
             .bind(&new_vid)
             .bind(&voucher_no)
             .bind(chrono::Local::now().format("%Y-%m-%d").to_string())
             .bind(format!("Opening balance for {}", account.account_name))
             .bind(format!("Initial balance for account: {}", account.account_name))
+            .bind(&id)
+            .bind(new_opening_balance)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
