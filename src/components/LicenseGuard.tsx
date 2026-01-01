@@ -31,16 +31,13 @@ export const LicenseGuard: React.FC<{ children: React.ReactNode }> = ({ children
 
             {status.status === 'Trial' && (
                 <div
-                    className="fixed bottom-4 right-4 z-40 max-w-sm animate-in slide-in-from-bottom-5 cursor-pointer hover:scale-105 transition-transform"
+                    className="fixed bottom-4 left-4 z-40 animate-in slide-in-from-bottom-5 cursor-pointer hover:scale-105 transition-transform"
                     onClick={() => setShowActivation(true)}
                 >
-                    <div className="bg-yellow-500/10 border border-yellow-500/50 text-yellow-600 dark:text-yellow-400 p-4 rounded-lg shadow-lg flex items-start gap-3">
-                        <Clock className="h-5 w-5 mt-0.5" />
-                        <div>
-                            <h4 className="font-semibold tracking-tight">Trial Mode</h4>
-                            <div className="text-sm opacity-90">
-                                {status.days_remaining} days remaining. Click to Activate.
-                            </div>
+                    <div className="bg-yellow-500/10 border border-yellow-500/50 text-yellow-600 dark:text-yellow-400 p-2 rounded-md shadow-lg flex items-center gap-2">
+                        <Clock className="h-4 w-4" />
+                        <div className="text-xs font-medium">
+                            Trial: {status.days_remaining} days remaining
                         </div>
                     </div>
                 </div>
