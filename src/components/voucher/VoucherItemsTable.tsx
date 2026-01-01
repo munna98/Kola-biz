@@ -11,6 +11,7 @@ interface VoucherItemsTableProps {
     disableAdd?: boolean;
     className?: string;
     height?: string | number;
+    footerRightContent?: ReactNode;
 }
 
 export function VoucherItemsTable({
@@ -20,7 +21,8 @@ export function VoucherItemsTable({
     addItemLabel = 'Add Item (Ctrl+N)',
     disableAdd = false,
     className,
-    height = 'calc(5 * 3.25rem + 2.5rem + 2.5rem)'
+    height = 'calc(5 * 3.25rem + 2.5rem + 2.5rem)',
+    footerRightContent
 }: VoucherItemsTableProps) {
     return (
         <div
@@ -39,7 +41,7 @@ export function VoucherItemsTable({
 
             {/* Add Item Button */}
             {!disableAdd && (
-                <div className="bg-muted/30 border-t px-3 py-2 shrink-0">
+                <div className="bg-muted/30 border-t px-3 py-2 shrink-0 flex justify-between items-center">
                     <Button
                         type="button"
                         variant="ghost"
@@ -50,6 +52,12 @@ export function VoucherItemsTable({
                         <IconPlus size={14} />
                         {addItemLabel}
                     </Button>
+                    {footerRightContent}
+                </div>
+            )}
+            {disableAdd && footerRightContent && (
+                <div className="bg-muted/30 border-t px-3 py-2 shrink-0 flex justify-end items-center">
+                    {footerRightContent}
                 </div>
             )}
         </div>

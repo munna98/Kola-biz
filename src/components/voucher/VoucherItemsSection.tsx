@@ -51,6 +51,7 @@ export interface VoucherItemsSectionProps {
     addItemLabel?: string;
     disableAdd?: boolean;
     settings?: { columns: ColumnSettings[] };
+    footerRightContent?: React.ReactNode;
 }
 
 const DEFAULT_COLUMNS: ColumnSettings[] = [
@@ -77,7 +78,8 @@ export function VoucherItemsSection({
     header,
     addItemLabel,
     disableAdd,
-    settings
+    settings,
+    footerRightContent
 }: VoucherItemsSectionProps) {
 
     // Internal row navigation handling
@@ -126,6 +128,7 @@ export function VoucherItemsSection({
             onAddItem={onAddItem}
             addItemLabel={addItemLabel}
             disableAdd={disableAdd ?? isReadOnly}
+            footerRightContent={footerRightContent}
         >
             {items.map((item, idx) => {
                 const calc = getItemAmount(item);

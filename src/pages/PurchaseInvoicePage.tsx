@@ -77,6 +77,7 @@ export default function PurchaseInvoicePage() {
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[] } | undefined>(undefined);
+  const [partyBalance, setPartyBalance] = useState<number | null>(null);
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -128,6 +129,9 @@ export default function PurchaseInvoicePage() {
           name: defaultParty.name,
           type: defaultParty.type
         }));
+        invoke<number>('get_account_balance', { accountId: defaultParty.id })
+          .then(bal => setPartyBalance(bal))
+          .catch(console.error);
       }
     }
   }, [purchaseState.mode, purchaseState.form.supplier_id, parties, dispatch]);
@@ -168,6 +172,9 @@ export default function PurchaseInvoicePage() {
         name: voucher.supplier_name,
         type: voucher.party_type
       }));
+      invoke<number>('get_account_balance', { accountId: voucher.supplier_id })
+        .then(bal => setPartyBalance(bal))
+        .catch(console.error);
       dispatch(setVoucherDate(voucher.voucher_date));
       dispatch(setReference(voucher.reference || ''));
       dispatch(setNarration(voucher.narration || ''));
@@ -542,6 +549,9 @@ export default function PurchaseInvoicePage() {
                     if (party) {
                       dispatch(setSupplier({ id: party.id, name: party.name, type: party.type }));
                       markUnsaved();
+                      invoke<number>('get_account_balance', { accountId: party.id })
+                        .then(bal => setPartyBalance(bal))
+                        .catch(console.error);
                     }
                   }}
                   placeholder="Select party"
@@ -589,6 +599,13 @@ export default function PurchaseInvoicePage() {
             addItemLabel="Add Item (Ctrl+N)"
             disableAdd={isReadOnly}
             settings={voucherSettings}
+            footerRightContent={
+              partyBalance !== null ? (
+                <div className={`text-xs font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  Balance: ₹ {Math.abs(partyBalance).toLocaleString()} {partyBalance >= 0 ? 'Dr' : 'Cr'}
+                </div>
+              ) : null
+            }
           />
 
           {/* Totals and Notes */}

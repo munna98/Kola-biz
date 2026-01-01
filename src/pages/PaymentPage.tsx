@@ -445,19 +445,21 @@ export default function PaymentPage() {
                         addItemLabel="Add Item (Ctrl+N)"
                         disableAdd={paymentState.mode === 'viewing'}
                         rowBalances={rowBalances}
+
                         onFocusRow={setFocusedRowIndex}
+                        footerRightContent={
+                            focusedRowIndex !== null && rowBalances[focusedRowIndex] !== undefined ? (
+                                <div className={`text-xs font-mono font-bold ${rowBalances[focusedRowIndex] >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                    Balance: ₹ {Math.abs(rowBalances[focusedRowIndex]).toLocaleString()} {rowBalances[focusedRowIndex] >= 0 ? 'Dr' : 'Cr'}
+                                </div>
+                            ) : null
+                        }
                     />
 
                     {/* Totals */}
                     <div className="bg-card border rounded-lg p-3 shrink-0">
                         <div className="flex justify-between items-end">
-                            <div>
-                                {focusedRowIndex !== null && rowBalances[focusedRowIndex] !== undefined && (
-                                    <div className={`text-sm font-bold ${rowBalances[focusedRowIndex] >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                        Cur Bal: ₹ {Math.abs(rowBalances[focusedRowIndex]).toLocaleString()} {rowBalances[focusedRowIndex] >= 0 ? 'Dr' : 'Cr'}
-                                    </div>
-                                )}
-                            </div>
+                            <div></div>
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Payment</div>
                                 <div className="text-lg font-mono font-bold">

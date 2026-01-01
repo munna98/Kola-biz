@@ -80,6 +80,7 @@ export default function SalesInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[] } | undefined>(undefined);
+  const [partyBalance, setPartyBalance] = useState<number | null>(null);
 
 
   // Refs for focus management
@@ -132,6 +133,9 @@ export default function SalesInvoicePage() {
           name: defaultParty.name,
           type: defaultParty.type
         }));
+        invoke<number>('get_account_balance', { accountId: defaultParty.id })
+          .then(bal => setPartyBalance(bal))
+          .catch(console.error);
       }
     }
   }, [salesState.mode, salesState.form.customer_id, parties, dispatch]);
@@ -362,6 +366,9 @@ export default function SalesInvoicePage() {
 
       // Populate Form
       dispatch(setSalesCustomer({ id: invoice.customer_id, name: invoice.customer_name, type: 'customer' })); // Assuming customer only for now
+      invoke<number>('get_account_balance', { accountId: invoice.customer_id })
+        .then(bal => setPartyBalance(bal))
+        .catch(console.error);
       dispatch(setSalesVoucherDate(invoice.voucher_date));
       dispatch(setSalesReference(invoice.reference || ''));
       dispatch(setSalesNarration(invoice.narration || ''));
@@ -564,6 +571,9 @@ export default function SalesInvoicePage() {
                     const party = parties.find((p) => p.id === value);
                     if (party) {
                       dispatch(setSalesCustomer({ id: party.id, name: party.name, type: party.type }));
+                      invoke<number>('get_account_balance', { accountId: party.id })
+                        .then(bal => setPartyBalance(bal))
+                        .catch(console.error);
                     }
                   }}
                   placeholder="Select party"
@@ -618,6 +628,13 @@ export default function SalesInvoicePage() {
             addItemLabel="Add Item (Ctrl+N)"
             disableAdd={isReadOnly}
             settings={voucherSettings}
+            footerRightContent={
+              partyBalance !== null ? (
+                <div className={`text-xs font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  Balance: ₹ {Math.abs(partyBalance).toLocaleString()} {partyBalance >= 0 ? 'Dr' : 'Cr'}
+                </div>
+              ) : null
+            }
           />
 
           {/* Totals and Notes */}

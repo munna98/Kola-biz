@@ -24,6 +24,7 @@ export interface VoucherLedgerSectionProps {
     disableAdd?: boolean;
     rowBalances?: Record<number, number>;
     onFocusRow?: (index: number) => void;
+    footerRightContent?: React.ReactNode;
 }
 
 export function VoucherLedgerSection({
@@ -37,7 +38,8 @@ export function VoucherLedgerSection({
     header,
     addItemLabel,
     disableAdd,
-    onFocusRow
+    onFocusRow,
+    footerRightContent
 }: VoucherLedgerSectionProps) {
 
     // Internal row navigation handling
@@ -63,6 +65,7 @@ export function VoucherLedgerSection({
             onAddItem={onAddItem}
             addItemLabel={addItemLabel}
             disableAdd={disableAdd ?? isReadOnly}
+            footerRightContent={footerRightContent}
         >
             {items.map((item, index) => (
                 <div
