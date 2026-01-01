@@ -25,6 +25,7 @@ export interface VoucherLedgerSectionProps {
     rowBalances?: Record<number, number>;
     onFocusRow?: (index: number) => void;
     footerRightContent?: React.ReactNode;
+    onCreateLedger?: (name: string, index: number) => void;
 }
 
 export function VoucherLedgerSection({
@@ -39,7 +40,8 @@ export function VoucherLedgerSection({
     addItemLabel,
     disableAdd,
     onFocusRow,
-    footerRightContent
+    footerRightContent,
+    onCreateLedger,
 }: VoucherLedgerSectionProps) {
 
     // Internal row navigation handling
@@ -75,7 +77,7 @@ export function VoucherLedgerSection({
                     onKeyDown={(e) => handleRowKeyDown(e, index)}
                 >
                     {/* Ledger Selection */}
-                    <div className="col-span-5" onFocus={() => onFocusRow?.(index)}>
+                    <div className="col-span-5 flex gap-1 items-center" onFocus={() => onFocusRow?.(index)}>
                         <Combobox
                             value={item.description}
                             options={ledgers.map(l => ({ value: l.account_name, label: l.account_name }))}
@@ -83,6 +85,9 @@ export function VoucherLedgerSection({
                             placeholder="Select Ledger"
                             searchPlaceholder="Search ledgers..."
                             disabled={isReadOnly}
+                            onCreate={onCreateLedger ? (val) => onCreateLedger(val, index) : undefined}
+                            onActionClick={onCreateLedger ? () => onCreateLedger('', index) : undefined}
+                            className="flex-1"
                         />
                     </div>
 

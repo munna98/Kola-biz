@@ -31,6 +31,7 @@ interface ComboboxProps {
   className?: string
   onKeyDown?: (e: React.KeyboardEvent) => void
   openOnFocus?: boolean
+  onActionClick?: () => void
 }
 
 export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { disabled?: boolean }>(({
@@ -44,6 +45,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   disabled = false,
   onKeyDown,
   openOnFocus = true,
+  onActionClick,
 }, ref) => {
   const [open, setOpen] = React.useState(false)
   const [hasOpenedOnFocus, setHasOpenedOnFocus] = React.useState(false)
@@ -79,17 +81,32 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className={cn("justify-between h-8 text-sm w-full font-normal", className)}
+          className={cn("justify-between h-8 text-sm w-full font-normal group", className)}
           disabled={disabled}
           onKeyDown={onKeyDown}
           onFocus={handleFocus}
           onPointerDown={() => { isPointerDown.current = true }}
           onPointerUp={() => { setTimeout(() => { isPointerDown.current = false }, 300) }}
         >
-          <span className="truncate text-left">
+          <span className="truncate text-left flex-1">
             {selectedOption?.label || placeholder}
           </span>
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+          <div className="flex items-center gap-1">
+            {onActionClick && (
+              <div
+                role="button"
+                className="h-5 w-5 flex items-center justify-center rounded-sm hover:bg-muted text-muted-foreground hover:text-primary z-10"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onActionClick();
+                }}
+                onPointerDown={(e) => e.stopPropagation()}
+              >
+                <Plus size={14} />
+              </div>
+            )}
+            <ChevronsUpDown className="ml-1 h-4 w-4 shrink-0 opacity-50" />
+          </div>
         </Button>
       </PopoverTrigger>
       <PopoverContent

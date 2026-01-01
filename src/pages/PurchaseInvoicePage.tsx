@@ -32,7 +32,6 @@ import {
   IconCheck,
   IconX,
 } from '@tabler/icons-react';
-import { Plus } from 'lucide-react';
 
 // Global Voucher Components & Hooks
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
@@ -601,22 +600,7 @@ export default function PurchaseInvoicePage() {
             <div className="grid grid-cols-6 gap-3">
               {/* Supplier */}
               <div ref={supplierRef} className="col-span-2">
-                <div className="flex justify-between items-center mb-1">
-                  <Label className="text-xs font-medium">Party (Supplier/Customer) *</Label>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-4 w-4 text-muted-foreground hover:text-primary"
-                    onClick={() => {
-                      setNewSupplierName('');
-                      setShowCreateSupplier(true);
-                    }}
-                    title="Create New Supplier (Alt+C)"
-                  >
-                    <Plus size={14} />
-                  </Button>
-                </div>
+                <Label className="text-xs font-medium mb-1 block">Party (Supplier/Customer) *</Label>
                 <Combobox
                   options={parties.map(p => ({
                     value: p.id,
@@ -636,6 +620,10 @@ export default function PurchaseInvoicePage() {
                   placeholder="Select party"
                   searchPlaceholder="Search parties..."
                   disabled={isReadOnly}
+                  onActionClick={() => {
+                    setNewSupplierName('');
+                    setShowCreateSupplier(true);
+                  }}
                   onCreate={(name) => {
                     setNewSupplierName(name);
                     setShowCreateSupplier(true);

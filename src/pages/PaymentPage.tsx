@@ -40,6 +40,8 @@ import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherLedgerSection } from '@/components/voucher/VoucherLedgerSection';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import BillAllocationDialog, { AllocationData } from '@/components/dialogs/BillAllocationDialog';
+import ChartOfAccountDialog from '@/components/dialogs/ChartOfAccountDialog';
+import { AccountGroup, api } from '@/lib/tauri';
 
 interface AccountData {
     id: number;
@@ -57,10 +59,16 @@ export default function PaymentPage() {
 
     const [payFromAccounts, setPayFromAccounts] = useState<AccountData[]>([]);
     const [payToLedgers, setPayToLedgers] = useState<LedgerAccount[]>([]);
+    const [accountGroups, setAccountGroups] = useState<AccountGroup[]>([]); // For Create Dialog
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showQuickDialog, setShowQuickDialog] = useState(false);
     const [showListView, setShowListView] = useState(false);
+
+    // Create Account State
+    const [showCreateAccount, setShowCreateAccount] = useState(false);
+    const [newAccountName, setNewAccountName] = useState('');
+    const [creatingForIndex, setCreatingForIndex] = useState<number | null>(null);
 
     // Allocation & Balance State
     // Allocation & Balance State
@@ -75,12 +83,14 @@ export default function PaymentPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [cashBankData, allLedgersData] = await Promise.all([
+                const [cashBankData, allLedgersData, allGroups] = await Promise.all([
                     invoke<AccountData[]>('get_cash_bank_accounts').catch(() => []),
                     invoke<LedgerAccount[]>('get_chart_of_accounts').catch(() => []),
+                    api.accountGroups.list().catch(() => []),
                 ]);
                 setPayFromAccounts(cashBankData);
                 setPayToLedgers(allLedgersData);
+                setAccountGroups(allGroups);
 
                 if (cashBankData.length > 0 && paymentState.form.account_id === 0) {
                     dispatch(setPaymentAccount({ id: cashBankData[0].id, name: cashBankData[0].name }));
@@ -307,6 +317,60 @@ export default function PaymentPage() {
         showShortcuts
     });
 
+    // Global "Alt+C" Shortcut for creating account (generic)
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.altKey && (e.key === 'c' || e.key === 'C')) {
+                e.preventDefault();
+                setNewAccountName('');
+                setCreatingForIndex(null); // Generic creation, not tied to specific row initially
+                setShowCreateAccount(true);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    const handleCreateAccountSave = async (newAccount?: any) => {
+        // Refresh ledgers
+        try {
+            const allLedgersData = await invoke<LedgerAccount[]>('get_chart_of_accounts');
+            setPayToLedgers(allLedgersData);
+
+            if (newAccount) {
+                // If created for a specific row, update that row
+                if (creatingForIndex !== null) {
+                    handleUpdateItem(creatingForIndex, 'description', newAccount.account_name);
+                    // handleUpdateItem handles account_id update via name lookup, but we just updated the list
+                    // so we might need to Trigger it or manually set it.
+                    // The handleUpdateItem logic: const ledger = payToLedgers.find...
+                    // Since setPayToLedgers is async/batched, the find inside handleUpdateItem might use old state.
+                    // It's safer to dispatch directly here for the specific updates.
+
+                    // Find in NEW list? Or just use the returned object.
+                    // Ideally we should dispatch the update.
+                    dispatch(updatePaymentItem({
+                        index: creatingForIndex,
+                        data: {
+                            description: newAccount.account_name,
+                            account_id: newAccount.id
+                        }
+                    }));
+
+                    // Fetch Balance for the new account
+                    invoke<number>('get_account_balance', { accountId: newAccount.id })
+                        .then(bal => setRowBalances(prev => ({ ...prev, [creatingForIndex]: bal })))
+                        .catch(console.error);
+                }
+            }
+        } catch (e) {
+            console.error("Failed to refresh accounts after create", e);
+        }
+        setShowCreateAccount(false);
+        setCreatingForIndex(null);
+    };
+
 
 
     if (isInitializing) {
@@ -373,6 +437,15 @@ export default function PaymentPage() {
                 />
             )}
 
+            <ChartOfAccountDialog
+                open={showCreateAccount}
+                onOpenChange={setShowCreateAccount}
+                accountToEdit={null}
+                onSave={handleCreateAccountSave}
+                accountGroups={accountGroups}
+                initialName={newAccountName}
+            />
+
             {/* Form Content */}
             <div className="flex-1 overflow-hidden">
                 <form ref={formRef} onSubmit={handleSubmit} className="h-full p-5 max-w-7xl mx-auto flex flex-col gap-4">
@@ -392,6 +465,11 @@ export default function PaymentPage() {
                                     placeholder="Select source account"
                                     searchPlaceholder="Search accounts..."
                                     disabled={paymentState.mode === 'viewing'}
+                                    onCreate={(name) => {
+                                        setNewAccountName(name);
+                                        setCreatingForIndex(null);
+                                        setShowCreateAccount(true);
+                                    }}
                                 />
                             </div>
 
@@ -445,6 +523,11 @@ export default function PaymentPage() {
                         addItemLabel="Add Item (Ctrl+N)"
                         disableAdd={paymentState.mode === 'viewing'}
                         rowBalances={rowBalances}
+                        onCreateLedger={(name, index) => {
+                            setNewAccountName(name);
+                            setCreatingForIndex(index);
+                            setShowCreateAccount(true);
+                        }}
 
                         onFocusRow={setFocusedRowIndex}
                         footerRightContent={

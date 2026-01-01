@@ -41,6 +41,8 @@ import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet'
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherLedgerSection } from '@/components/voucher/VoucherLedgerSection';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
+import ChartOfAccountDialog from '@/components/dialogs/ChartOfAccountDialog';
+import { AccountGroup, api } from '@/lib/tauri';
 
 interface AccountData {
     id: number;
@@ -58,10 +60,16 @@ export default function ReceiptPage() {
 
     const [depositToAccounts, setDepositToAccounts] = useState<AccountData[]>([]);
     const [receivedFromLedgers, setReceivedFromLedgers] = useState<LedgerAccount[]>([]);
+    const [accountGroups, setAccountGroups] = useState<AccountGroup[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showQuickDialog, setShowQuickDialog] = useState(false);
     const [showListView, setShowListView] = useState(false);
+
+    // Create Account State
+    const [showCreateAccount, setShowCreateAccount] = useState(false);
+    const [newAccountName, setNewAccountName] = useState('');
+    const [creatingForIndex, setCreatingForIndex] = useState<number | null>(null);
 
     // Allocation & Balance State
     const [allocatingRowIndex, setAllocatingRowIndex] = useState<number | null>(null);
@@ -75,12 +83,14 @@ export default function ReceiptPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [cashBankData, allLedgersData] = await Promise.all([
+                const [cashBankData, allLedgersData, allGroups] = await Promise.all([
                     invoke<AccountData[]>('get_cash_bank_accounts').catch(() => []),
                     invoke<LedgerAccount[]>('get_chart_of_accounts').catch(() => []),
+                    api.accountGroups.list().catch(() => []),
                 ]);
                 setDepositToAccounts(cashBankData);
                 setReceivedFromLedgers(allLedgersData);
+                setAccountGroups(allGroups);
 
                 if (cashBankData.length > 0 && receiptState.form.account_id === 0) {
                     dispatch(setReceiptAccount({ id: cashBankData[0].id, name: cashBankData[0].name }));
@@ -301,6 +311,51 @@ export default function ReceiptPage() {
         showShortcuts
     });
 
+    // Global "Alt+C" Shortcut for creating account
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.altKey && (e.key === 'c' || e.key === 'C')) {
+                e.preventDefault();
+                setNewAccountName('');
+                setCreatingForIndex(null);
+                setShowCreateAccount(true);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    const handleCreateAccountSave = async (newAccount?: any) => {
+        // Refresh ledgers
+        try {
+            const allLedgersData = await invoke<LedgerAccount[]>('get_chart_of_accounts');
+            setReceivedFromLedgers(allLedgersData);
+
+            if (newAccount) {
+                // If created for a specific row, update that row
+                if (creatingForIndex !== null) {
+                    dispatch(updateReceiptItem({
+                        index: creatingForIndex,
+                        data: {
+                            description: newAccount.account_name,
+                            account_id: newAccount.id
+                        }
+                    }));
+
+                    // Fetch Balance for the new account
+                    invoke<number>('get_account_balance', { accountId: newAccount.id })
+                        .then(bal => setRowBalances(prev => ({ ...prev, [creatingForIndex]: bal })))
+                        .catch(console.error);
+                }
+            }
+        } catch (e) {
+            console.error("Failed to refresh accounts after create", e);
+        }
+        setShowCreateAccount(false);
+        setCreatingForIndex(null);
+    };
+
 
 
     if (isInitializing) {
@@ -367,6 +422,15 @@ export default function ReceiptPage() {
                 />
             )}
 
+            <ChartOfAccountDialog
+                open={showCreateAccount}
+                onOpenChange={setShowCreateAccount}
+                accountToEdit={null}
+                onSave={handleCreateAccountSave}
+                accountGroups={accountGroups}
+                initialName={newAccountName}
+            />
+
             {/* Form Content */}
             <div className="flex-1 overflow-hidden">
                 <form ref={formRef} onSubmit={handleSubmit} className="h-full p-5 max-w-7xl mx-auto flex flex-col gap-4">
@@ -386,6 +450,11 @@ export default function ReceiptPage() {
                                     placeholder="Select destination account"
                                     searchPlaceholder="Search accounts..."
                                     disabled={receiptState.mode === 'viewing'}
+                                    onCreate={(name) => {
+                                        setNewAccountName(name);
+                                        setCreatingForIndex(null);
+                                        setShowCreateAccount(true);
+                                    }}
                                 />
                             </div>
 
@@ -439,6 +508,11 @@ export default function ReceiptPage() {
                         addItemLabel="Add Item (Ctrl+N)"
                         disableAdd={receiptState.mode === 'viewing'}
                         rowBalances={rowBalances}
+                        onCreateLedger={(name, index) => {
+                            setNewAccountName(name);
+                            setCreatingForIndex(index);
+                            setShowCreateAccount(true);
+                        }}
                         onFocusRow={setFocusedRowIndex}
                         header={
                             <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground items-center">

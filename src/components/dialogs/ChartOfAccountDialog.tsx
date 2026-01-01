@@ -14,8 +14,9 @@ interface ChartOfAccountDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     accountToEdit: ChartOfAccount | null;
-    onSave: () => void;
+    onSave: (account?: ChartOfAccount) => void;
     accountGroups: AccountGroup[];
+    initialName?: string;
 }
 
 export default function ChartOfAccountDialog({
@@ -23,7 +24,8 @@ export default function ChartOfAccountDialog({
     onOpenChange,
     accountToEdit,
     onSave,
-    accountGroups
+    accountGroups,
+    initialName = ''
 }: ChartOfAccountDialogProps) {
     const [form, setForm] = useState<CreateChartOfAccount>({
         account_code: '',
@@ -56,7 +58,7 @@ export default function ChartOfAccountDialog({
         } else {
             setForm({
                 account_code: '',
-                account_name: '',
+                account_name: initialName,
                 account_type: 'Asset',
                 account_group: 'Current Assets',
                 description: '',
@@ -64,19 +66,20 @@ export default function ChartOfAccountDialog({
                 opening_balance_type: 'Dr',
             });
         }
-    }, [accountToEdit, open]);
+    }, [accountToEdit, open, initialName]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
+            let result: ChartOfAccount | undefined;
             if (accountToEdit) {
                 await api.chartOfAccounts.update(accountToEdit.id, form);
                 toast.success('Account updated successfully');
             } else {
-                await api.chartOfAccounts.create(form);
+                result = await api.chartOfAccounts.create(form);
                 toast.success('Account created successfully');
             }
-            onSave();
+            onSave(result);
             onOpenChange(false);
             resetForm();
         } catch (error) {
