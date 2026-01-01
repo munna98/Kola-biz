@@ -19,6 +19,7 @@ interface ColumnSettings {
 
 interface VoucherSettings {
     columns: ColumnSettings[];
+    autoPrint?: boolean;
     // Future: defaultParty, etc.
 }
 
@@ -44,6 +45,7 @@ const VOUCHER_TYPES = [
 export default function VoucherSettingsPage() {
     const [selectedVoucher, setSelectedVoucher] = useState('sales_invoice');
     const [columns, setColumns] = useState<ColumnSettings[]>([]);
+    const [autoPrint, setAutoPrint] = useState(false);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -58,6 +60,9 @@ export default function VoucherSettingsPage() {
             let initialColumns: ColumnSettings[] = [];
 
             if (savedSettings && savedSettings.columns) {
+                // Set Auto Print
+                setAutoPrint(savedSettings.autoPrint || false);
+
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
                 const savedMap = new Map(savedSettings.columns.map(c => [c.id, c]));
@@ -104,7 +109,8 @@ export default function VoucherSettingsPage() {
         setLoading(true);
         try {
             const settings: VoucherSettings = {
-                columns: columns
+                columns: columns,
+                autoPrint: autoPrint
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -177,6 +183,25 @@ export default function VoucherSettingsPage() {
                 <div className="max-w-4xl mx-auto space-y-6">
 
                     <div className="bg-card border rounded-lg p-4">
+                        <div className="flex items-center gap-4 mb-6">
+                            <Checkbox
+                                id="auto-print"
+                                checked={autoPrint}
+                                onCheckedChange={(checked) => setAutoPrint(checked as boolean)}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                                <label
+                                    htmlFor="auto-print"
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                    Auto Print on Save
+                                </label>
+                                <p className="text-sm text-muted-foreground">
+                                    Automatically open print preview after saving a new voucher.
+                                </p>
+                            </div>
+                        </div>
+
                         <h3 className="text-lg font-medium mb-4">Column Configuration</h3>
                         <div className="space-y-2">
                             {/* Header Row */}

@@ -88,7 +88,7 @@ export default function SalesInvoicePage() {
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[] } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
 
   // New state for print preview
@@ -325,6 +325,11 @@ export default function SalesInvoicePage() {
           },
         });
         toast.success('Sales invoice updated successfully');
+
+        // Auto Print Check
+        if (voucherSettings?.autoPrint) {
+          setShowPrintPreview(true);
+        }
       } else {
         const newInvoiceId = await invoke<string>('create_sales_invoice', {
           invoice: {
@@ -354,6 +359,12 @@ export default function SalesInvoicePage() {
         const customer = parties.find(p => p.id === salesState.form.customer_id);
         setSavedPartyName(customer?.name || 'Cash Sale');
         setSavedPartyId(customer?.id);
+
+        // Auto Print Check (before payment prompt if needed, or after? Usually print first)
+        if (voucherSettings?.autoPrint) {
+          setShowPrintPreview(true);
+        }
+
         setShowQuickPayment(true);
       }
 
