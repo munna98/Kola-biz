@@ -326,47 +326,31 @@ async fn get_sales_invoice_data(
             .ok();
 
     // Calculate Old Balance (Ledger balance BEFORE this invoice)
-    // We need the account ID for the customer.
-    // If we have customer object, we can get it or infer it.
-    // Usually customer ID in 'customers' table maps to party_id in vouchers.
-    // And chart_of_accounts entry exists for this customer.
-    // Let's get the account_id from chart_of_accounts for this customer.
-    let account_id: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM chart_of_accounts WHERE account_code = '1003-' || ? AND is_active = 1",
+    // customer_id IS the account_id in the new design
+    let account_id = invoice.customer_id.clone();
+
+    // Sum of all debit - credit for this account for vouchers BEFORE this one
+    // We use voucher_date and id to strictly order "before"
+    let balance_res: (f64, f64) = sqlx::query_as(
+        "SELECT 
+            COALESCE(SUM(je.debit), 0.0) as total_debit, 
+            COALESCE(SUM(je.credit), 0.0) as total_credit
+            FROM journal_entries je
+            JOIN vouchers v ON je.voucher_id = v.id
+            WHERE je.account_id = ? 
+            AND (v.voucher_date < ? OR (v.voucher_date = ? AND v.id < ?))
+            AND v.deleted_at IS NULL",
     )
-    .bind(&invoice.customer_id)
-    .fetch_optional(pool.inner())
+    .bind(&account_id)
+    .bind(&invoice.voucher_date)
+    .bind(&invoice.voucher_date)
+    .bind(&id)
+    .fetch_one(pool.inner())
     .await
-    .map_err(|e| e.to_string())?;
+    .unwrap_or((0.0, 0.0));
 
-    let mut old_balance = 0.0;
-    if let Some(acc_id) = account_id {
-        // Sum of all debit - credit for this account for vouchers BEFORE this one
-        // We use voucher_date and id to strictly order "before"
-        // Note: ID comparison for strings (UUIDs) is not strictly chronological, but we rely on voucher_date mostly.
-        // For same date, UUID sorting is arbitrary but deterministic.
-        // Ideally we should use created_at or sequence number, but existing logic used ID.
-        let balance_res: (f64, f64) = sqlx::query_as(
-            "SELECT 
-                COALESCE(SUM(je.debit), 0.0) as total_debit, 
-                COALESCE(SUM(je.credit), 0.0) as total_credit
-             FROM journal_entries je
-             JOIN vouchers v ON je.voucher_id = v.id
-             WHERE je.account_id = ? 
-             AND (v.voucher_date < ? OR (v.voucher_date = ? AND v.id < ?))
-             AND v.deleted_at IS NULL",
-        )
-        .bind(acc_id)
-        .bind(&invoice.voucher_date)
-        .bind(&invoice.voucher_date)
-        .bind(&id)
-        .fetch_one(pool.inner())
-        .await
-        .unwrap_or((0.0, 0.0));
-
-        // For Assets (debtors), Balance is Dr - Cr
-        old_balance = balance_res.0 - balance_res.1;
-    }
+    // For Assets (debtors), Balance is Dr - Cr
+    let old_balance = balance_res.0 - balance_res.1;
 
     // Calculate Paid Amount for this specific invoice
     let paid_amount: f64 = sqlx::query_scalar(

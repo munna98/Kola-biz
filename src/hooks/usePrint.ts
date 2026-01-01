@@ -21,31 +21,25 @@ export function usePrint() {
     const [isPrinting, setIsPrinting] = useState(false);
     const iframeRef = useRef<HTMLIFrameElement | null>(null);
 
-    const print = useCallback(async ({ voucherId, voucherType, templateId }: PrintOptions) => {
-        if (!voucherId) {
-            toast.error('Please save the invoice before printing');
-            return;
-        }
-
+    /**
+     * Prints the provided HTML content.
+     * Handles both silent printing and system dialog via iframe.
+     */
+    const printRaw = useCallback(async (content: string, settings?: PrintSettings) => {
         try {
             setIsPrinting(true);
 
-            // 1. Fetch Print Settings
-            let settings: PrintSettings = { silent_print: false, default_printer: null };
-            try {
-                settings = await invoke<PrintSettings>('get_print_settings');
-            } catch (e) {
-                console.warn('Failed to fetch print settings, defaulting to dialog', e);
+            // Fetch settings if not provided
+            if (!settings) {
+                try {
+                    settings = await invoke<PrintSettings>('get_print_settings');
+                } catch (e) {
+                    console.warn('Failed to fetch print settings, defaulting to dialog', e);
+                    settings = { silent_print: false, default_printer: null };
+                }
             }
 
-            // 2. Fetch Rendered Content
-            const content = await invoke<string>('render_invoice', {
-                voucherId,
-                voucherType,
-                templateId: templateId || null,
-            });
-
-            // 3. Handle Silent Printing
+            // Handle Silent Printing
             if (settings.silent_print) {
                 try {
                     toast.info('Printing silently...');
@@ -54,15 +48,14 @@ export function usePrint() {
                         printerName: settings.default_printer
                     });
                     toast.success('Sent to printer');
-                    return; // Success, exit
+                    return;
                 } catch (e) {
                     console.error('Silent print failed, falling back to dialog:', e);
                     toast.error('Silent print failed. Opening print dialog...');
-                    // Fallthrough to iframe method
                 }
             }
 
-            // 4. Fallback/Standard: Iframe Print (System Dialog)
+            // Fallback/Standard: Iframe Print (System Dialog)
             if (!iframeRef.current) {
                 const iframe = document.createElement('iframe');
                 iframe.style.position = 'fixed';
@@ -99,12 +92,35 @@ export function usePrint() {
             }, 500);
 
         } catch (error) {
-            console.error('Failed to print:', error);
-            toast.error('Failed to generate print content');
+            console.error('Failed to process print:', error);
+            toast.error('Failed to print');
         } finally {
             setIsPrinting(false);
         }
     }, []);
 
-    return { print, isPrinting };
+    const print = useCallback(async ({ voucherId, voucherType, templateId }: PrintOptions) => {
+        if (!voucherId) {
+            toast.error('Please save the invoice before printing');
+            return;
+        }
+
+        try {
+            setIsPrinting(true);
+            const content = await invoke<string>('render_invoice', {
+                voucherId,
+                voucherType,
+                templateId: templateId || null,
+            });
+
+            await printRaw(content);
+
+        } catch (error) {
+            console.error('Failed to fetch/render print content:', error);
+            toast.error('Failed to generate print content');
+            setIsPrinting(false);
+        }
+    }, [printRaw]);
+
+    return { print, printRaw, isPrinting };
 }

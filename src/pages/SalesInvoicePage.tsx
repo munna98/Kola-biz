@@ -37,12 +37,13 @@ import {
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
-import { usePrint } from '@/hooks/usePrint';
+// import { usePrint } from '@/hooks/usePrint';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
+import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
 
 interface Product {
   id: number;
@@ -73,7 +74,13 @@ export default function SalesInvoicePage() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showListView, setShowListView] = useState(false);
-  const { print } = usePrint();
+  // const { print } = usePrint(); // Removed as we use PrintPreviewDialog which uses usePrint internally // Keeping usePrint for now as it might be used later or we can remove it if completely unused.
+  // Actually, wait, usePrint is NOT used at all in this file anymore? 
+  // checking... yes, only for print() which we removed. 
+  // BUT we might want to keep the hook call if it does other init stuff?
+  // No, usePrint just returns { print, isPrinting }. 
+  // isPrinting is also not used here (it's used in header via salesState.loading maybe? No).
+  // I will just remove the line.
   const [showQuickPayment, setShowQuickPayment] = useState(false);
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
@@ -81,6 +88,9 @@ export default function SalesInvoicePage() {
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[] } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
+
+  // New state for print preview
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
 
 
   // Refs for focus management
@@ -464,7 +474,8 @@ export default function SalesInvoicePage() {
       toast.error("Please save the invoice before printing");
       return;
     }
-    print({ voucherId: salesState.currentVoucherId, voucherType: 'sales_invoice' });
+    // Instead of direct print, open preview
+    setShowPrintPreview(true);
   };
 
 
@@ -548,6 +559,14 @@ export default function SalesInvoicePage() {
         onSuccess={() => {
           toast.success('Payment saved!');
         }}
+      />
+
+      <PrintPreviewDialog
+        open={showPrintPreview}
+        onOpenChange={setShowPrintPreview}
+        voucherId={salesState.currentVoucherId || undefined}
+        voucherType="sales_invoice"
+        title={`Print Invoice - ${salesState.currentVoucherNo}`}
       />
 
 
