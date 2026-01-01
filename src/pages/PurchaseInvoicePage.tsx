@@ -40,7 +40,7 @@ import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet'
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
-import { VoucherItemsSection } from '@/components/voucher/VoucherItemsSection';
+import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 
 interface Product {
@@ -76,6 +76,7 @@ export default function PurchaseInvoicePage() {
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[] } | undefined>(undefined);
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -85,13 +86,17 @@ export default function PurchaseInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, accountsData] = await Promise.all([
+        const [productsData, unitsData, accountsData, settingsData] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable'] }),
+          invoke<any>('get_voucher_settings', { voucherType: 'purchase_invoice' }),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
+        if (settingsData) {
+          setVoucherSettings(settingsData);
+        }
 
         const combinedParties = accountsData.map(acc => ({
           id: acc.id,
@@ -215,16 +220,31 @@ export default function PurchaseInvoicePage() {
   });
 
   const handleAddItem = () => {
+    // Get defaults from settings
+    const getDesc = (id: string) => {
+      const col = voucherSettings?.columns.find(c => c.id === id);
+      if (col && col.defaultValue !== undefined && col.defaultValue !== "") {
+        return col.defaultValue;
+      }
+      // Hardcoded defaults if not in settings or empty
+      if (id === 'count') return 1;
+      if (id === 'deduction') return 1.5;
+      return 0;
+    };
+
+    // Helper to safely parse
+    const parseNum = (val: string | number) => typeof val === 'string' ? parseFloat(val) || 0 : val;
+
     dispatch(
       addItem({
         product_id: 0,
         product_name: '',
         description: '',
-        initial_quantity: 0,
-        count: 1,
-        deduction_per_unit: 1.5,
-        rate: 0,
-        tax_rate: 0,
+        initial_quantity: parseNum(getDesc('quantity') as string | number),
+        count: parseNum(getDesc('count') as string | number) || 1,
+        deduction_per_unit: parseNum(getDesc('deduction') as string | number),
+        rate: parseNum(getDesc('rate') as string | number),
+        tax_rate: parseNum(getDesc('tax_rate') as string | number),
       })
     );
     markUnsaved();
@@ -568,6 +588,7 @@ export default function PurchaseInvoicePage() {
             getItemAmount={getItemAmount}
             addItemLabel="Add Item (Ctrl+N)"
             disableAdd={isReadOnly}
+            settings={voucherSettings}
           />
 
           {/* Totals and Notes */}

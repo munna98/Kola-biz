@@ -223,3 +223,50 @@ pub async fn print_silently(
         Err("Silent printing is only supported on Windows".to_string())
     }
 }
+
+/// Get voucher settings for a specific voucher type
+#[tauri::command]
+pub async fn get_voucher_settings(
+    pool: State<'_, SqlitePool>,
+    voucher_type: String,
+) -> Result<Option<serde_json::Value>, String> {
+    let result = sqlx::query_scalar::<_, String>(
+        "SELECT settings FROM voucher_settings WHERE voucher_type = ?",
+    )
+    .bind(&voucher_type)
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match result {
+        Some(json_str) => serde_json::from_str(&json_str)
+            .map(Some)
+            .map_err(|e| e.to_string()),
+        None => Ok(None),
+    }
+}
+
+/// Save voucher settings for a specific voucher type
+#[tauri::command]
+pub async fn save_voucher_settings(
+    pool: State<'_, SqlitePool>,
+    voucher_type: String,
+    settings: serde_json::Value,
+) -> Result<(), String> {
+    let settings_json = serde_json::to_string(&settings).map_err(|e| e.to_string())?;
+
+    sqlx::query(
+        "INSERT INTO voucher_settings (voucher_type, settings, updated_at) 
+         VALUES (?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(voucher_type) DO UPDATE SET 
+         settings = excluded.settings,
+         updated_at = CURRENT_TIMESTAMP",
+    )
+    .bind(&voucher_type)
+    .bind(&settings_json)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}

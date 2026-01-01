@@ -31,6 +31,7 @@ import StockReportPage from './pages/reports/StockReportPage';
 import LoginPage from './pages/LoginPage';
 // import InitialSetupPage from './pages/InitialSetupPage'; // Removed
 import CompanySetupPage from './pages/CompanySetupPage';
+import VoucherSettingsPage from './pages/VoucherSettingsPage';
 
 import CompanyProfilePage from './pages/settings/CompanyProfilePage';
 import { InvoiceTemplatesPage } from './pages/settings/InvoiceTemplatesPage';
@@ -166,6 +167,7 @@ function AppContent() {
       case 'stock_report': return <StockReportPage />;
       case 'company_profile': return <CompanyProfilePage />;
       case 'invoice_settings': return <InvoiceTemplatesPage />;
+      case 'voucher_settings': return <VoucherSettingsPage />;
       case 'license': return <LicensePage />;
 
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;

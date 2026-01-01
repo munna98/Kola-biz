@@ -448,6 +448,17 @@ pub async fn init_db(
     .execute(&pool)
     .await?;
 
+    // Voucher Settings
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS voucher_settings (
+            voucher_type TEXT PRIMARY KEY,
+            settings TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS app_settings (
             id TEXT PRIMARY KEY,

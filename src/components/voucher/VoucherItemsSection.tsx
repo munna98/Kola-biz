@@ -1,15 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
 import { IconTrash } from '@tabler/icons-react';
 import { VoucherItemsTable } from '@/components/voucher/VoucherItemsTable';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
-
-// Types typically used in voucher items
-// We define them locally or import them if they are shared. 
-// For now, based on the page, we'll define interfaces or use 'any' where generic.
-// Ideally, these should be shared types, but for this refactor we stick to the requested props.
+import { cn } from '@/lib/utils';
 
 interface Product {
     id: number;
@@ -33,6 +29,15 @@ interface ItemAmount {
     total: number;
 }
 
+export interface ColumnSettings {
+    id: string;
+    label: string;
+    visible: boolean;
+    order: number;
+    defaultValue?: string | number;
+    width?: string;
+}
+
 export interface VoucherItemsSectionProps {
     items: any[];
     products: Product[];
@@ -45,7 +50,20 @@ export interface VoucherItemsSectionProps {
     header?: React.ReactNode;
     addItemLabel?: string;
     disableAdd?: boolean;
+    settings?: { columns: ColumnSettings[] };
 }
+
+const DEFAULT_COLUMNS: ColumnSettings[] = [
+    { id: 'product', label: 'Product', visible: true, order: 0 },
+    { id: 'quantity', label: 'Qty', visible: true, order: 1 },
+    { id: 'unit', label: 'Unit', visible: true, order: 2 },
+    { id: 'rate', label: 'Rate', visible: true, order: 3 },
+    { id: 'count', label: 'Count', visible: true, order: 4 },
+    { id: 'deduction', label: 'Deduction', visible: true, order: 5 },
+    { id: 'final_qty', label: 'Final Qty', visible: true, order: 6 },
+    { id: 'amount', label: 'Amount', visible: true, order: 7 },
+    { id: 'total', label: 'Total', visible: true, order: 8 },
+];
 
 export function VoucherItemsSection({
     items,
@@ -58,7 +76,8 @@ export function VoucherItemsSection({
     getItemAmount,
     header,
     addItemLabel,
-    disableAdd
+    disableAdd,
+    settings
 }: VoucherItemsSectionProps) {
 
     // Internal row navigation handling
@@ -67,17 +86,36 @@ export function VoucherItemsSection({
         onAddItem
     });
 
+    const columns = useMemo(() => {
+        if (!settings?.columns) return DEFAULT_COLUMNS;
+        return [...settings.columns].sort((a, b) => a.order - b.order).filter(c => c.visible);
+    }, [settings]);
+
+    // Replicate grid-cols-12 behavior dynamically
+    const getGridTemplate = () => {
+        return columns.map(col => {
+            if (col.id === 'product') return '3fr';
+            return '1fr';
+        }).join(' ') + ' 32px'; // w-8 equivalent for delete button
+    };
+
+    const gridStyle = {
+        gridTemplateColumns: getGridTemplate(),
+        display: 'grid',
+        gap: '0.5rem',
+        alignItems: 'center'
+    };
+
     const defaultHeader = (
-        <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground">
-            <div className="col-span-3">Product</div>
-            <div>Qty</div>
-            <div>Unit</div>
-            <div>Rate</div>
-            <div>Count</div>
-            <div>Deduction</div>
-            <div>Final Qty</div>
-            <div className="text-right">Amount</div>
-            <div className="text-right">Total</div>
+        <div style={gridStyle} className="px-3 py-2 text-xs font-medium text-muted-foreground border-b bg-muted/20">
+            {columns.map(col => (
+                <div key={col.id} className={cn(
+                    col.id === 'amount' || col.id === 'total' ? 'text-right' : '',
+                    col.id === 'final_qty' ? 'text-center' : ''
+                )}>
+                    {col.label}
+                </div>
+            ))}
             <div className="w-8"></div>
         </div>
     );
@@ -98,98 +136,124 @@ export function VoucherItemsSection({
                     onUpdateItem(idx, field, parseFloat(val) || 0);
                 };
 
+                const renderCell = (col: ColumnSettings) => {
+                    switch (col.id) {
+                        case 'product':
+                            return (
+                                <Combobox
+                                    key={col.id}
+                                    options={products.map(p => ({ value: p.id, label: `${p.code} - ${p.name}` }))}
+                                    value={item.product_id}
+                                    onChange={(value) => onUpdateItem(idx, 'product_id', value)}
+                                    placeholder="Select product"
+                                    searchPlaceholder="Search products..."
+                                    disabled={isReadOnly}
+                                />
+                            );
+                        case 'quantity':
+                            return (
+                                <Input
+                                    key={col.id}
+                                    type="number"
+                                    value={item.initial_quantity || ''}
+                                    onChange={(e) => handleNumberChange('initial_quantity', e.target.value)}
+                                    className="h-7 text-xs text-right font-mono"
+                                    placeholder="0.00"
+                                    step="0.01"
+                                    disabled={isReadOnly}
+                                />
+                            );
+                        case 'unit':
+                            return (
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-medium text-muted-foreground">
+                                    {units.find(u => u.id === product?.unit_id)?.symbol || '-'}
+                                </div>
+                            );
+                        case 'rate':
+                            return (
+                                <Input
+                                    key={col.id}
+                                    type="number"
+                                    value={item.rate || ''}
+                                    onChange={(e) => handleNumberChange('rate', e.target.value)}
+                                    className="h-7 text-xs text-right font-mono"
+                                    placeholder="0.00"
+                                    step="0.01"
+                                    disabled={isReadOnly}
+                                />
+                            );
+                        case 'count':
+                            return (
+                                <Input
+                                    key={col.id}
+                                    type="number"
+                                    value={item.count || ''}
+                                    onChange={(e) => handleNumberChange('count', e.target.value)}
+                                    className="h-7 text-xs text-right font-mono"
+                                    placeholder="1.00"
+                                    step="0.01"
+                                    disabled={isReadOnly}
+                                />
+                            );
+                        case 'deduction':
+                            return (
+                                <Input
+                                    key={col.id}
+                                    type="number"
+                                    value={item.deduction_per_unit || ''}
+                                    onChange={(e) => handleNumberChange('deduction_per_unit', e.target.value)}
+                                    className="h-7 text-xs text-right font-mono"
+                                    placeholder="0.00"
+                                    step="0.01"
+                                    disabled={isReadOnly}
+                                />
+                            );
+                        case 'final_qty':
+                            return (
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-center bg-muted/50 border border-input rounded-md font-medium font-mono">
+                                    {calc.finalQty.toFixed(2)}
+                                </div>
+                            );
+                        case 'amount':
+                            return (
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-medium font-mono">
+                                    ₹{calc.amount.toFixed(2)}
+                                </div>
+                            );
+                        case 'tax_rate':
+                            return (
+                                <Input
+                                    key={col.id}
+                                    type="number"
+                                    value={item.tax_rate || ''}
+                                    onChange={(e) => handleNumberChange('tax_rate', e.target.value)}
+                                    className="h-7 text-xs text-right font-mono"
+                                    placeholder="0.00"
+                                    step="0.01"
+                                    disabled={isReadOnly}
+                                />
+                            );
+                        case 'total':
+                            return (
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-bold font-mono">
+                                    ₹{calc.total.toFixed(2)}
+                                </div>
+                            );
+                        default:
+                            return <div key={col.id}></div>;
+                    }
+                };
+
                 return (
                     <div
-                        key={item.id || idx} // Fallback to idx if id is missing, though id is preferred
+                        key={item.id || idx}
                         data-row-index={idx}
-                        className="grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50"
+                        style={gridStyle}
+                        className="px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50 border-b last:border-0"
                         onKeyDown={(e) => handleRowKeyDown(e, idx)}
                     >
-                        {/* Product */}
-                        <div className="col-span-3">
-                            <Combobox
-                                options={products.map(p => ({ value: p.id, label: `${p.code} - ${p.name}` }))}
-                                value={item.product_id}
-                                onChange={(value) => onUpdateItem(idx, 'product_id', value)}
-                                placeholder="Select product"
-                                searchPlaceholder="Search products..."
-                                disabled={isReadOnly}
-                            />
-                        </div>
+                        {columns.map(col => renderCell(col))}
 
-                        {/* Initial Quantity */}
-                        <div>
-                            <Input
-                                type="number"
-                                value={item.initial_quantity || ''}
-                                onChange={(e) => handleNumberChange('initial_quantity', e.target.value)}
-                                className="h-7 text-xs text-right font-mono"
-                                placeholder="0.00"
-                                step="0.01"
-                                disabled={isReadOnly}
-                            />
-                        </div>
-
-                        {/* Unit */}
-                        <div className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-medium text-muted-foreground">
-                            {units.find(u => u.id === product?.unit_id)?.symbol || '-'}
-                        </div>
-
-                        {/* Rate */}
-                        <div>
-                            <Input
-                                type="number"
-                                value={item.rate || ''}
-                                onChange={(e) => handleNumberChange('rate', e.target.value)}
-                                className="h-7 text-xs text-right font-mono"
-                                placeholder="0.00"
-                                step="0.01"
-                                disabled={isReadOnly}
-                            />
-                        </div>
-
-                        {/* Count */}
-                        <div>
-                            <Input
-                                type="number"
-                                value={item.count || ''}
-                                onChange={(e) => handleNumberChange('count', e.target.value)}
-                                className="h-7 text-xs text-right font-mono"
-                                placeholder="1.00"
-                                step="0.01"
-                                disabled={isReadOnly}
-                            />
-                        </div>
-
-                        {/* Deduction */}
-                        <div>
-                            <Input
-                                type="number"
-                                value={item.deduction_per_unit || ''}
-                                onChange={(e) => handleNumberChange('deduction_per_unit', e.target.value)}
-                                className="h-7 text-xs text-right font-mono"
-                                placeholder="0.00"
-                                step="0.01"
-                                disabled={isReadOnly}
-                            />
-                        </div>
-
-                        {/* Final Qty */}
-                        <div className="h-7 text-xs flex items-center justify-center bg-muted/50 border border-input rounded-md font-medium font-mono">
-                            {calc.finalQty.toFixed(2)}
-                        </div>
-
-                        {/* Amount */}
-                        <div className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-medium font-mono">
-                            ₹{calc.amount.toFixed(2)}
-                        </div>
-
-                        {/* Total */}
-                        <div className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-bold font-mono">
-                            ₹{calc.total.toFixed(2)}
-                        </div>
-
-                        {/* Delete */}
                         <div className="flex justify-end">
                             <Button
                                 type="button"
@@ -209,3 +273,5 @@ export function VoucherItemsSection({
         </VoucherItemsTable>
     );
 }
+
+

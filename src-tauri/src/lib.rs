@@ -196,6 +196,8 @@ pub fn run() {
             get_system_printers,
             get_default_printer,
             print_silently,
+            get_voucher_settings,
+            save_voucher_settings,
         ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())

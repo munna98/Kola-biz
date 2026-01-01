@@ -111,6 +111,7 @@ export default function Topbar() {
                             <ul className="flex flex-col w-48">
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('company_profile')}>Company Profile</NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('invoice_settings')}>Invoice Settings</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('voucher_settings')}>Voucher Settings</NavigationMenuLink>
                             </ul>
                         </NavigationMenuContent>
                     </NavigationMenuItem>
