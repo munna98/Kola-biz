@@ -11,10 +11,11 @@ interface CustomerDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     customerToEdit: Customer | null;
-    onSave: () => void;
+    onSave: (customer?: Customer) => void;
+    initialName?: string;
 }
 
-export default function CustomerDialog({ open, onOpenChange, customerToEdit, onSave }: CustomerDialogProps) {
+export default function CustomerDialog({ open, onOpenChange, customerToEdit, onSave, initialName = '' }: CustomerDialogProps) {
     const [form, setForm] = useState<CreateCustomer>({ code: '', name: '', email: '', phone: '', address: '' });
 
     const orderedFields = ['code', 'name', 'email', 'phone', 'address'];
@@ -30,24 +31,28 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
                 address: customerToEdit.address || '',
             });
         } else {
-            setForm({ code: '', name: '', email: '', phone: '', address: '' });
+            setForm({ code: '', name: initialName, email: '', phone: '', address: '' });
             api.customers.getNextCode().then(code => setForm(prev => ({ ...prev, code }))).catch(console.error);
         }
-    }, [customerToEdit, open]);
+    }, [customerToEdit, open, initialName]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
+            let result: Customer | undefined;
             if (customerToEdit) {
+                // update doesn't return the object, so we might not be able to pass it back directly if API doesn't return it.
+                // But for editing, we might not need to auto-select (it's already selected).
                 await api.customers.update(customerToEdit.id, form);
                 toast.success('Customer updated successfully');
+                // For completeness, we could construct it, but it's less critical for edit.
                 onOpenChange(false);
             } else {
-                await api.customers.create(form);
+                result = await api.customers.create(form);
                 toast.success('Customer created successfully');
                 setForm({ code: '', name: '', email: '', phone: '', address: '' });
             }
-            onSave();
+            onSave(result);
         } catch (error) {
             toast.error(customerToEdit ? 'Failed to update customer' : 'Failed to create customer');
             console.error(error);

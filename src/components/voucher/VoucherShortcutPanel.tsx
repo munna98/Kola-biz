@@ -10,6 +10,10 @@ export function VoucherShortcutPanel({ show }: VoucherShortcutPanelProps) {
             <div className="grid grid-cols-3 gap-4 text-xs">
                 <div className="space-y-1">
                     <div className="flex items-center gap-2">
+                        <kbd className="px-2 py-1 bg-background border rounded font-mono">Alt+C</kbd>
+                        <span>Create new Customer/Supplier</span>
+                    </div>
+                    <div className="flex items-center gap-2">
                         <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+N</kbd>
                         <span>New item / line</span>
                     </div>

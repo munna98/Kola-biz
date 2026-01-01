@@ -11,10 +11,11 @@ interface SupplierDialogProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     supplierToEdit: Supplier | null;
-    onSave: () => void;
+    onSave: (supplier?: Supplier) => void;
+    initialName?: string;
 }
 
-export default function SupplierDialog({ open, onOpenChange, supplierToEdit, onSave }: SupplierDialogProps) {
+export default function SupplierDialog({ open, onOpenChange, supplierToEdit, onSave, initialName = '' }: SupplierDialogProps) {
     const [form, setForm] = useState<CreateSupplier>({ code: '', name: '', email: '', phone: '', address: '' });
 
     const orderedFields = ['code', 'name', 'email', 'phone', 'address'];
@@ -30,24 +31,25 @@ export default function SupplierDialog({ open, onOpenChange, supplierToEdit, onS
                 address: supplierToEdit.address || '',
             });
         } else {
-            setForm({ code: '', name: '', email: '', phone: '', address: '' });
+            setForm({ code: '', name: initialName, email: '', phone: '', address: '' });
             api.suppliers.getNextCode().then(code => setForm(prev => ({ ...prev, code }))).catch(console.error);
         }
-    }, [supplierToEdit, open]);
+    }, [supplierToEdit, open, initialName]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
+            let result: Supplier | undefined;
             if (supplierToEdit) {
                 await api.suppliers.update(supplierToEdit.id, form);
                 toast.success('Supplier updated successfully');
                 onOpenChange(false);
             } else {
-                await api.suppliers.create(form);
+                result = await api.suppliers.create(form);
                 toast.success('Supplier created successfully');
                 setForm({ code: '', name: '', email: '', phone: '', address: '' });
             }
-            onSave();
+            onSave(result);
         } catch (error) {
             toast.error(supplierToEdit ? 'Failed to update supplier' : 'Failed to create supplier');
             console.error(error);

@@ -32,6 +32,7 @@ import {
   IconCheck,
   IconX,
 } from '@tabler/icons-react';
+import { Plus } from 'lucide-react';
 
 // Global Voucher Components & Hooks
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
@@ -42,6 +43,7 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
+import SupplierDialog from '@/components/dialogs/SupplierDialog';
 
 interface Product {
   id: number;
@@ -78,6 +80,10 @@ export default function PurchaseInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[] } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
+
+  // Create Supplier Shortcut State
+  const [showCreateSupplier, setShowCreateSupplier] = useState(false);
+  const [newSupplierName, setNewSupplierName] = useState('');
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -459,6 +465,56 @@ export default function PurchaseInvoicePage() {
     showShortcuts
   });
 
+  // Global "Alt+C" Shortcut for creating supplier
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        setNewSupplierName('');
+        setShowCreateSupplier(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleCreateSupplierSave = async (newSupplier?: any) => {
+    // Refresh parties list
+    try {
+      const accountsData = await invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable'] });
+      const combinedParties = accountsData.map(acc => ({
+        id: acc.id,
+        name: acc.account_name,
+        type: acc.account_group === 'Accounts Payable' ? 'supplier' as const : 'customer' as const
+      }));
+      setParties(combinedParties);
+
+      // If a new supplier was returned (created), select it
+      if (newSupplier) {
+        console.log("New supplier created:", newSupplier);
+        // Find the party in the new list by name to ensure we get the correct Account ID
+        const createdParty = combinedParties.find(p => p.name === newSupplier.name);
+        console.log("Found supplier in list:", createdParty);
+
+        if (createdParty) {
+          dispatch(setSupplier({
+            id: createdParty.id,
+            name: createdParty.name,
+            type: 'supplier'
+          }));
+          // Balance is 0 for new
+          setPartyBalance(0);
+        } else {
+          console.warn("Could not find created supplier in refreshed list. Names:", combinedParties.map(p => p.name));
+        }
+      }
+    } catch (e) {
+      console.error("Failed to refresh parties after create", e);
+    }
+    setShowCreateSupplier(false);
+  };
+
 
 
   if (isInitializing) {
@@ -529,6 +585,14 @@ export default function PurchaseInvoicePage() {
         onSelectVoucher={nav.handleListSelect}
       />
 
+      <SupplierDialog
+        open={showCreateSupplier}
+        onOpenChange={setShowCreateSupplier}
+        supplierToEdit={null}
+        onSave={handleCreateSupplierSave}
+        initialName={newSupplierName}
+      />
+
       {/* Form Content */}
       <div className="flex-1 overflow-hidden">
         <form ref={formRef} onSubmit={handleSubmit} className="h-full p-5 max-w-7xl mx-auto flex flex-col gap-4">
@@ -537,7 +601,22 @@ export default function PurchaseInvoicePage() {
             <div className="grid grid-cols-6 gap-3">
               {/* Supplier */}
               <div ref={supplierRef} className="col-span-2">
-                <Label className="text-xs font-medium mb-1 block">Party (Supplier/Customer) *</Label>
+                <div className="flex justify-between items-center mb-1">
+                  <Label className="text-xs font-medium">Party (Supplier/Customer) *</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-4 w-4 text-muted-foreground hover:text-primary"
+                    onClick={() => {
+                      setNewSupplierName('');
+                      setShowCreateSupplier(true);
+                    }}
+                    title="Create New Supplier (Alt+C)"
+                  >
+                    <Plus size={14} />
+                  </Button>
+                </div>
                 <Combobox
                   options={parties.map(p => ({
                     value: p.id,
@@ -557,6 +636,10 @@ export default function PurchaseInvoicePage() {
                   placeholder="Select party"
                   searchPlaceholder="Search parties..."
                   disabled={isReadOnly}
+                  onCreate={(name) => {
+                    setNewSupplierName(name);
+                    setShowCreateSupplier(true);
+                  }}
                 />
               </div>
 

@@ -1,5 +1,5 @@
 import * as React from "react"
-import { ChevronsUpDown, Check } from "lucide-react"
+import { ChevronsUpDown, Check, Plus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -25,6 +25,7 @@ interface ComboboxProps {
   options: ComboboxOption[]
   value?: string | number
   onChange: (value: string | number) => void
+  onCreate?: (value: string) => void
   placeholder?: string
   searchPlaceholder?: string
   className?: string
@@ -36,6 +37,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   options,
   value,
   onChange,
+  onCreate,
   placeholder = "Select option...",
   searchPlaceholder = "Search...",
   className,
@@ -45,6 +47,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
 }, ref) => {
   const [open, setOpen] = React.useState(false)
   const [hasOpenedOnFocus, setHasOpenedOnFocus] = React.useState(false)
+  const [inputValue, setInputValue] = React.useState("")
   const skipOpen = React.useRef(false)
   const isPointerDown = React.useRef(false)
 
@@ -62,6 +65,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   React.useEffect(() => {
     if (!open) {
       setHasOpenedOnFocus(false);
+      setInputValue("");
     }
   }, [open]);
 
@@ -96,9 +100,36 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
         }}
       >
         <Command>
-          <CommandInput placeholder={searchPlaceholder} autoFocus />
+          <CommandInput
+            placeholder={searchPlaceholder}
+            autoFocus
+            onValueChange={setInputValue}
+          />
           <CommandList>
-            <CommandEmpty>No results found.</CommandEmpty>
+            <CommandEmpty>
+              {onCreate && inputValue ? (
+                <div className="p-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start text-left font-normal"
+                    onClick={() => {
+                      onCreate(inputValue);
+                      setOpen(false);
+                      skipOpen.current = true;
+                      setTimeout(() => {
+                        skipOpen.current = false;
+                      }, 300);
+                    }}
+                  >
+                    <Plus className="mr-2 h-4 w-4" />
+                    Create "{inputValue}"
+                  </Button>
+                </div>
+              ) : (
+                "No results found."
+              )}
+            </CommandEmpty>
             <CommandGroup>
               {options.map((option) => (
                 <CommandItem

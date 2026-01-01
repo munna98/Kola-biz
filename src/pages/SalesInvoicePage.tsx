@@ -31,6 +31,7 @@ import {
   IconCheck,
   IconX,
 } from '@tabler/icons-react';
+import { Plus } from 'lucide-react';
 
 
 // Global Voucher Components & Hooks
@@ -42,8 +43,10 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
+
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
+import CustomerDialog from '@/components/dialogs/CustomerDialog';
 
 interface Product {
   id: number;
@@ -91,6 +94,10 @@ export default function SalesInvoicePage() {
 
   // New state for print preview
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+
+  // Create Customer Shortcut State
+  const [showCreateCustomer, setShowCreateCustomer] = useState(false);
+  const [newCustomerName, setNewCustomerName] = useState('');
 
 
   // Refs for focus management
@@ -490,6 +497,51 @@ export default function SalesInvoicePage() {
     showShortcuts
   });
 
+  // Global "Alt+C" Shortcut for creating customer
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.altKey && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        setNewCustomerName(''); // Reset name for blank create
+        setShowCreateCustomer(true);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  const handleCreateCustomerSave = async (newCustomer?: any) => {
+    // Refresh parties list
+    try {
+      const accountsData = await invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable'] });
+      const combinedParties = accountsData.map(acc => ({
+        id: acc.id,
+        name: acc.account_name,
+        type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const
+      }));
+      setParties(combinedParties);
+
+      // If a new customer was returned (created), select it
+      if (newCustomer) {
+        // Find the party in the new list by name to ensure we get the correct Account ID (which might differ from Customer ID)
+        const createdParty = combinedParties.find(p => p.name === newCustomer.name);
+
+        if (createdParty) {
+          dispatch(setSalesCustomer({
+            id: createdParty.id,
+            name: createdParty.name,
+            type: 'customer'
+          }));
+          setPartyBalance(0);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to refresh parties after create", e);
+    }
+    setShowCreateCustomer(false);
+  };
+
 
 
   if (isInitializing) {
@@ -569,6 +621,14 @@ export default function SalesInvoicePage() {
         title={`Print Invoice - ${salesState.currentVoucherNo}`}
       />
 
+      <CustomerDialog
+        open={showCreateCustomer}
+        onOpenChange={setShowCreateCustomer}
+        customerToEdit={null}
+        onSave={handleCreateCustomerSave}
+        initialName={newCustomerName}
+      />
+
 
 
       {/* Form Content */}
@@ -579,7 +639,22 @@ export default function SalesInvoicePage() {
             <div className="grid grid-cols-6 gap-3">
               {/* Customer */}
               <div ref={customerRef} className="col-span-2">
-                <Label className="text-xs font-medium mb-1 block">Party (Customer/Supplier) *</Label>
+                <div className="flex justify-between items-center mb-1">
+                  <Label className="text-xs font-medium">Party (Customer/Supplier) *</Label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="h-4 w-4 text-muted-foreground hover:text-primary"
+                    onClick={() => {
+                      setNewCustomerName('');
+                      setShowCreateCustomer(true);
+                    }}
+                    title="Create New Customer (Alt+C)"
+                  >
+                    <Plus size={14} />
+                  </Button>
+                </div>
                 <Combobox
                   options={parties.map(p => ({
                     value: p.id,
