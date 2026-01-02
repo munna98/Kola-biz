@@ -86,6 +86,7 @@ export default function SalesInvoicePage() {
   const [showQuickPayment, setShowQuickPayment] = useState(false);
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
+  const [savedInvoiceNo, setSavedInvoiceNo] = useState<string | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean } | undefined>(undefined);
@@ -135,6 +136,14 @@ export default function SalesInvoicePage() {
 
     loadData();
   }, [dispatch]);
+
+  // Clear savedInvoiceId when navigating to a different voucher (so we don't hold onto stale IDs)
+  useEffect(() => {
+    if (salesState.currentVoucherId) {
+      setSavedInvoiceId(undefined);
+      setSavedInvoiceNo(undefined);
+    }
+  }, [salesState.currentVoucherId]);
 
   // Default Party Selection Effect
   useEffect(() => {
@@ -276,6 +285,11 @@ export default function SalesInvoicePage() {
     dispatch(setSalesTotals({ subtotal, discount: finalDiscountAmount, tax: totalTax, grandTotal }));
   };
 
+  // Ref to track if auto-print is pending after payment dialog
+  const autoPrintPending = useRef(false);
+
+  // ... (existing code)
+
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
 
@@ -326,10 +340,23 @@ export default function SalesInvoicePage() {
         });
         toast.success('Sales invoice updated successfully');
 
-        // Auto Print Check
+        toast.success('Sales invoice updated successfully');
+
+        // Prepare state for Payment Dialog & Print (persist before reset)
+        setSavedInvoiceId(salesState.currentVoucherId);
+        setSavedInvoiceNo(salesState.currentVoucherNo);
+        setSavedInvoiceAmount(salesState.totals.grandTotal);
+        const customer = parties.find(p => p.id === salesState.form.customer_id);
+        setSavedPartyName(customer?.name || 'Cash Sale');
+        setSavedPartyId(customer?.id);
+
+        // Auto Print Check - Defer until after payment dialog
         if (voucherSettings?.autoPrint) {
-          setShowPrintPreview(true);
+          autoPrintPending.current = true;
         }
+
+        // Show Payment Dialog
+        setShowQuickPayment(true);
       } else {
         const newInvoiceId = await invoke<string>('create_sales_invoice', {
           invoice: {
@@ -356,13 +383,20 @@ export default function SalesInvoicePage() {
         // Auto-prompt for payment after creating invoice
         setSavedInvoiceAmount(salesState.totals.grandTotal);
         setSavedInvoiceId(newInvoiceId);
+
+        // Fetch new invoice to get the generated voucher number
+        invoke<any>('get_sales_invoice', { id: newInvoiceId })
+          .then(inv => setSavedInvoiceNo(inv.voucher_no))
+          .catch(console.error);
+
         const customer = parties.find(p => p.id === salesState.form.customer_id);
         setSavedPartyName(customer?.name || 'Cash Sale');
         setSavedPartyId(customer?.id);
 
-        // Auto Print Check (before payment prompt if needed, or after? Usually print first)
+        // Auto Print Check - Defer until after payment dialog
         if (voucherSettings?.autoPrint) {
-          setShowPrintPreview(true);
+          autoPrintPending.current = true;
+          // setShowPrintPreview(true); // REMOVED: Deferred
         }
 
         setShowQuickPayment(true);
@@ -611,9 +645,18 @@ export default function SalesInvoicePage() {
       <PaymentManagementDialog
         mode="receipt"
         open={showQuickPayment}
-        onOpenChange={setShowQuickPayment}
+        onOpenChange={(open) => {
+          setShowQuickPayment(open);
+          if (!open && autoPrintPending.current) {
+            autoPrintPending.current = false;
+            // Small timeout to allow dialog to fully close visually before opening next one (optional but nicer)
+            setTimeout(() => {
+              setShowPrintPreview(true);
+            }, 100);
+          }
+        }}
         invoiceId={savedInvoiceId || salesState.currentVoucherId || undefined}
-        invoiceNo={salesState.currentVoucherNo}
+        invoiceNo={savedInvoiceNo || salesState.currentVoucherNo}
         invoiceAmount={savedInvoiceAmount || salesState.totals.grandTotal}
         invoiceDate={salesState.form.voucher_date}
         partyName={savedPartyName}
@@ -626,9 +669,9 @@ export default function SalesInvoicePage() {
       <PrintPreviewDialog
         open={showPrintPreview}
         onOpenChange={setShowPrintPreview}
-        voucherId={salesState.currentVoucherId || undefined}
+        voucherId={savedInvoiceId || salesState.currentVoucherId || undefined}
         voucherType="sales_invoice"
-        title={`Print Invoice - ${salesState.currentVoucherNo}`}
+        title={savedInvoiceNo || salesState.currentVoucherNo ? `Print Invoice - ${savedInvoiceNo || salesState.currentVoucherNo}` : 'Print Invoice'}
       />
 
       <CustomerDialog
@@ -822,6 +865,6 @@ export default function SalesInvoicePage() {
           )}
         </form>
       </div>
-    </div>
+    </div >
   );
 }

@@ -43,7 +43,7 @@ impl TemplateEngine {
             .map_err(|e| format!("Footer template error: {}", e))?;
 
         // Prepare template data
-        let data = self.prepare_template_data(company, voucher_data)?;
+        let data = self.prepare_template_data(template, company, voucher_data)?;
 
         // Render sections
         let header_html = self
@@ -67,9 +67,58 @@ impl TemplateEngine {
 
     fn prepare_template_data(
         &self,
+        template: &InvoiceTemplate,
         company: &CompanyProfile,
         mut voucher_data: serde_json::Value,
     ) -> Result<serde_json::Value, String> {
+        // Inject Template Settings
+        if let Some(obj) = voucher_data.as_object_mut() {
+            obj.insert(
+                "show_logo".to_string(),
+                json!(template.show_logo.unwrap_or(1) == 1),
+            ); // Default for safety
+            obj.insert(
+                "show_company_address".to_string(),
+                json!(template.show_company_address.unwrap_or(1) == 1),
+            );
+            obj.insert(
+                "show_party_address".to_string(),
+                json!(template.show_party_address.unwrap_or(1) == 1),
+            );
+            obj.insert(
+                "show_gstin".to_string(),
+                json!(template.show_gstin.unwrap_or(1) == 1),
+            );
+            obj.insert(
+                "show_item_images".to_string(),
+                json!(template.show_item_images.unwrap_or(0) == 1),
+            );
+            obj.insert(
+                "show_item_hsn".to_string(),
+                json!(template.show_item_hsn.unwrap_or(0) == 1),
+            );
+            obj.insert(
+                "show_bank_details".to_string(),
+                json!(template.show_bank_details.unwrap_or(1) == 1),
+            );
+            obj.insert(
+                "show_qr_code".to_string(),
+                json!(template.show_qr_code.unwrap_or(0) == 1),
+            );
+            obj.insert(
+                "show_signature".to_string(),
+                json!(template.show_signature.unwrap_or(1) == 1),
+            );
+            obj.insert(
+                "show_terms".to_string(),
+                json!(template.show_terms.unwrap_or(1) == 1),
+            );
+            obj.insert(
+                "show_less_column".to_string(),
+                json!(template.show_less_column.unwrap_or(1) == 1),
+            );
+        }
+
         // Add company data
         voucher_data["company"] = json!({
             "name": company.company_name,
@@ -312,10 +361,7 @@ fn increment_helper(
     _: &mut RenderContext,
     out: &mut dyn Output,
 ) -> HelperResult {
-    let value = h
-        .param(0)
-        .and_then(|v| v.value().as_u64())
-        .unwrap_or(0);
+    let value = h.param(0).and_then(|v| v.value().as_u64()).unwrap_or(0);
 
     out.write(&format!("{}", value + 1))?;
     Ok(())

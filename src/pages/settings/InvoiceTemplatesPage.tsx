@@ -47,6 +47,7 @@ interface InvoiceTemplate {
     show_qr_code: number;
     show_signature: number;
     show_terms: number;
+    show_less_column: number;
 }
 
 const FEATURE_LABELS: Record<string, string> = {
@@ -60,6 +61,7 @@ const FEATURE_LABELS: Record<string, string> = {
     show_qr_code: 'QR Code',
     show_signature: 'Signature',
     show_terms: 'Terms',
+    show_less_column: 'Show Less Column',
 };
 
 export function InvoiceTemplatesPage() {

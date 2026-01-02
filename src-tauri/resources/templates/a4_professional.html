@@ -70,7 +70,9 @@
             <th style="width: 30%;">Description</th>
             <th style="width: 8%;">HSN/SAC</th>
             <th style="width: 8%;">Qty</th>
+            {{#if show_less_column}}
             <th style="width: 8%;">Less</th>
+            {{/if}}
             <th style="width: 8%;">Rate</th>
             <th style="width: 10%;">Amount</th>
             <th style="width: 7%;">Tax %</th>
@@ -89,7 +91,9 @@
             </td>
             <td class="center">{{hsn_code}}</td>
             <td class="right">{{format_number initial_quantity 2}}</td>
+            {{#if show_less_column}}
             <td class="right">{{format_number less_quantity 2}}</td>
+            {{/if}}
             <td class="right">{{format_currency rate}}</td>
             <td class="right">{{format_currency amount}}</td>
             <td class="center">{{tax_rate}}%</td>

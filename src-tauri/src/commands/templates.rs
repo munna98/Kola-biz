@@ -39,6 +39,7 @@ pub struct InvoiceTemplate {
     pub show_qr_code: Option<i64>,
     pub show_signature: Option<i64>,
     pub show_terms: Option<i64>,
+    pub show_less_column: Option<i64>,
 
     // Print Settings
     pub auto_print: Option<i64>,
@@ -107,6 +108,7 @@ pub struct TemplateSettingsUpdate {
     pub show_qr_code: Option<bool>,
     pub show_signature: Option<bool>,
     pub show_terms: Option<bool>,
+    pub show_less_column: Option<bool>,
 }
 
 #[tauri::command]
@@ -156,6 +158,10 @@ pub async fn update_template_settings(
     }
     if let Some(val) = settings.show_terms {
         separated.push("show_terms = ");
+        separated.push_bind_unseparated(if val { 1 } else { 0 });
+    }
+    if let Some(val) = settings.show_less_column {
+        separated.push("show_less_column = ");
         separated.push_bind_unseparated(if val { 1 } else { 0 });
     }
 

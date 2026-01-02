@@ -376,6 +376,7 @@ pub async fn init_db(
             show_qr_code INTEGER DEFAULT 0,
             show_signature INTEGER DEFAULT 1,
             show_terms INTEGER DEFAULT 1,
+            show_less_column INTEGER DEFAULT 1,
             auto_print INTEGER DEFAULT 0,
             copies INTEGER DEFAULT 1,
             is_default INTEGER DEFAULT 0,
@@ -386,6 +387,12 @@ pub async fn init_db(
     )
     .execute(&pool)
     .await?;
+
+    // Migration: Add show_less_column if not exists
+    let _ =
+        sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_less_column INTEGER DEFAULT 1")
+            .execute(&pool)
+            .await;
 
     // Voucher Sequences
     sqlx::query(
