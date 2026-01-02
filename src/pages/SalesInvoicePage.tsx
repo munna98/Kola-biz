@@ -46,6 +46,8 @@ import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/Vouche
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
+import ProductDialog from '@/components/dialogs/ProductDialog';
+import { ProductGroup, Unit } from '@/lib/tauri';
 
 interface Product {
   id: number;
@@ -55,11 +57,7 @@ interface Product {
   sales_rate: number;
 }
 
-interface Unit {
-  id: number;
-  name: string;
-  symbol: string;
-}
+
 
 interface Party {
   id: number;
@@ -77,6 +75,10 @@ export default function SalesInvoicePage() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showListView, setShowListView] = useState(false);
   // const { print } = usePrint(); // Removed as we use PrintPreviewDialog which uses usePrint internally // Keeping usePrint for now as it might be used later or we can remove it if completely unused.
+  const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
+  const [showCreateProduct, setShowCreateProduct] = useState(false);
+  const [newProductName, setNewProductName] = useState('');
+  const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
   // Actually, wait, usePrint is NOT used at all in this file anymore? 
   // checking... yes, only for print() which we removed. 
   // BUT we might want to keep the hook call if it does other init stuff?
@@ -108,17 +110,19 @@ export default function SalesInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, accountsData, settingsData] = await Promise.all([
+        const [productsData, unitsData, accountsData, settingsData, groupsData] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable'] }),
           invoke<any>('get_voucher_settings', { voucherType: 'sales_invoice' }),
+          invoke<ProductGroup[]>('get_product_groups'),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
         if (settingsData) {
           setVoucherSettings(settingsData);
         }
+        setProductGroups(groupsData);
 
         const combinedParties = accountsData.map(acc => ({
           id: acc.id,
@@ -587,6 +591,50 @@ export default function SalesInvoicePage() {
     setShowCreateCustomer(false);
   };
 
+  const handleProductCreate = (name: string, rowIndex: number) => {
+    setNewProductName(name);
+    setCreatingProductRowIndex(rowIndex);
+    setShowCreateProduct(true);
+  };
+
+  const handleCreateProductSave = async () => {
+    try {
+      // Refresh products
+      const productsData = await invoke<Product[]>('get_products');
+      setProducts(productsData);
+
+      // If we have a pending row index and a name, try to find and select the new product
+      if (creatingProductRowIndex !== null && newProductName) {
+        // We match by name since we don't get the ID back directly reliably without a return from dialog
+        // But since we just created it, it should be there.
+        // Actually, the dialog doesn't return the product, but we can search for it.
+        // Ideally the dialog should return it, but for now we look up by name.
+        // Wait, the ProductDialog calls onSucccess but doesn't pass the product. 
+        // We'll trust the name is unique enough or just use the last created one if we could.
+        // Searching by name_is_exact match is safest.
+
+        // Wait, the newProductName state might hold the name we typed, but the USER might have changed it in the dialog.
+        // So this is imperfect. 
+        // However, standard flow is user types "NewProd", dialog opens with "NewProd", user saves "NewProd".
+        // Use a heuristic: find product with this name.
+
+        // BETTER APPROACH: get_products returns most recent? or we sort?
+        // Let's just look for the name we initialized with. If user changed it, they might need to select manually.
+        // OR better: we can't easily know. 
+        // But for "Quick Add", likely they keep the name.
+
+        const createdProduct = productsData.find(p => p.name.toLowerCase() === newProductName.toLowerCase());
+        if (createdProduct) {
+          handleUpdateItem(creatingProductRowIndex, 'product_id', createdProduct.id);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to refresh products", e);
+    }
+    setShowCreateProduct(false);
+    setCreatingProductRowIndex(null);
+  };
+
 
 
   if (isInitializing) {
@@ -683,6 +731,15 @@ export default function SalesInvoicePage() {
         initialName={newCustomerName}
       />
 
+      <ProductDialog
+        open={showCreateProduct}
+        onOpenChange={setShowCreateProduct}
+        units={units}
+        groups={productGroups}
+        onSuccess={handleCreateProductSave}
+        product={undefined} // Always new
+      />
+
 
 
       {/* Form Content */}
@@ -769,6 +826,7 @@ export default function SalesInvoicePage() {
             addItemLabel="Add Item (Ctrl+N)"
             disableAdd={isReadOnly}
             settings={voucherSettings}
+            onProductCreate={handleProductCreate}
             footerRightContent={
               partyBalance !== null ? (
                 <div className={`text-xs font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>

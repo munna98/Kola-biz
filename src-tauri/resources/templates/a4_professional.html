@@ -13,7 +13,8 @@
         {{#if company.address_line2}}
         <p>{{company.address_line2}}</p>
         {{/if}}
-        <p>{{company.city}}, {{company.state}} - {{company.pincode}}</p>
+        <p>{{company.city}}{{#if company.state}}, {{company.state}}{{/if}}{{#if company.pincode}} -
+            {{company.pincode}}{{/if}}</p>
         <div class="contact-line">
             {{#if company.phone}}<span>Phone: {{company.phone}}</span>{{/if}}
             {{#if company.email}}<span>Email: {{company.email}}</span>{{/if}}
@@ -82,7 +83,7 @@
     <tbody>
         {{#each items}}
         <tr>
-            <td class="center">{{@index}}</td>
+            <td class="center">{{increment @index}}</td>
             <td>
                 <strong>{{product_name}}</strong>
                 {{#if description}}

@@ -44,19 +44,14 @@ import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/Vouche
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
 import SupplierDialog from '@/components/dialogs/SupplierDialog';
-
+import ProductDialog from '@/components/dialogs/ProductDialog';
+import { ProductGroup, Unit } from '@/lib/tauri';
 interface Product {
   id: number;
   code: string;
   name: string;
   unit_id: number;
   purchase_rate: number;
-}
-
-interface Unit {
-  id: number;
-  name: string;
-  symbol: string;
 }
 
 interface Party {
@@ -81,6 +76,11 @@ export default function PurchaseInvoicePage() {
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[] } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
 
+  const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
+  const [showCreateProduct, setShowCreateProduct] = useState(false);
+  const [newProductName, setNewProductName] = useState('');
+  const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
+
   // New state for print preview
   const [showPrintPreview, setShowPrintPreview] = useState(false);
 
@@ -96,17 +96,19 @@ export default function PurchaseInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, accountsData, settingsData] = await Promise.all([
+        const [productsData, unitsData, accountsData, settingsData, groupsData] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable'] }),
           invoke<any>('get_voucher_settings', { voucherType: 'purchase_invoice' }),
+          invoke<ProductGroup[]>('get_product_groups'),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
         if (settingsData) {
           setVoucherSettings(settingsData);
         }
+        setProductGroups(groupsData);
 
         const combinedParties = accountsData.map(acc => ({
           id: acc.id,
@@ -527,6 +529,32 @@ export default function PurchaseInvoicePage() {
     setShowCreateSupplier(false);
   };
 
+  const handleProductCreate = (name: string, rowIndex: number) => {
+    setNewProductName(name);
+    setCreatingProductRowIndex(rowIndex);
+    setShowCreateProduct(true);
+  };
+
+  const handleCreateProductSave = async () => {
+    try {
+      // Refresh products
+      const productsData = await invoke<Product[]>('get_products');
+      setProducts(productsData);
+
+      // If we have a pending row index and a name, try to find and select the new product
+      if (creatingProductRowIndex !== null && newProductName) {
+        const createdProduct = productsData.find(p => p.name.toLowerCase() === newProductName.toLowerCase());
+        if (createdProduct) {
+          handleUpdateItem(creatingProductRowIndex, 'product_id', createdProduct.id);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to refresh products", e);
+    }
+    setShowCreateProduct(false);
+    setCreatingProductRowIndex(null);
+  };
+
 
 
   if (isInitializing) {
@@ -615,6 +643,15 @@ export default function PurchaseInvoicePage() {
         initialName={newSupplierName}
       />
 
+      <ProductDialog
+        open={showCreateProduct}
+        onOpenChange={setShowCreateProduct}
+        units={units}
+        groups={productGroups}
+        onSuccess={handleCreateProductSave}
+        product={undefined} // Always new
+      />
+
       {/* Form Content */}
       <div className="flex-1 overflow-hidden">
         <form ref={formRef} onSubmit={handleSubmit} className="h-full p-5 max-w-7xl mx-auto flex flex-col gap-4">
@@ -693,6 +730,7 @@ export default function PurchaseInvoicePage() {
             addItemLabel="Add Item (Ctrl+N)"
             disableAdd={isReadOnly}
             settings={voucherSettings}
+            onProductCreate={handleProductCreate}
             footerRightContent={
               partyBalance !== null ? (
                 <div className={`text-xs font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>

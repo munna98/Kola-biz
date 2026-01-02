@@ -52,6 +52,7 @@ export interface VoucherItemsSectionProps {
     disableAdd?: boolean;
     settings?: { columns: ColumnSettings[] };
     footerRightContent?: React.ReactNode;
+    onProductCreate?: (name: string, rowIndex: number) => void;
 }
 
 const DEFAULT_COLUMNS: ColumnSettings[] = [
@@ -79,7 +80,8 @@ export function VoucherItemsSection({
     addItemLabel,
     disableAdd,
     settings,
-    footerRightContent
+    footerRightContent,
+    onProductCreate
 }: VoucherItemsSectionProps) {
 
     // Internal row navigation handling
@@ -153,6 +155,8 @@ export function VoucherItemsSection({
                                     placeholder="Select product"
                                     searchPlaceholder="Search products..."
                                     disabled={isReadOnly}
+                                    onActionClick={() => onProductCreate?.('', idx)}
+                                    onCreate={(name) => onProductCreate?.(name, idx)}
                                 />
                             );
                         case 'quantity':

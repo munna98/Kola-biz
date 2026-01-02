@@ -3,6 +3,11 @@
     size: 80mm auto;
 }
 
+* {
+    color: #000000 !important;
+    border-color: #000000 !important;
+}
+
 body {
     font-family: 'Courier New', 'Courier', monospace;
     font-size: 11pt;
