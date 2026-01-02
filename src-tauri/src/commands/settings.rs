@@ -2,6 +2,11 @@ use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
 use tauri::{Manager, State};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PrintSettings {
     pub silent_print: bool,
@@ -96,6 +101,7 @@ pub async fn get_system_printers() -> Result<Vec<String>, String> {
 
         // Use PowerShell to get printer list
         let output = Command::new("powershell")
+            .creation_flags(CREATE_NO_WINDOW)
             .args([
                 "-Command",
                 "Get-Printer | Select-Object -ExpandProperty Name",
@@ -131,6 +137,7 @@ pub async fn get_default_printer() -> Result<Option<String>, String> {
         use std::process::Command;
 
         let output = Command::new("powershell")
+            .creation_flags(CREATE_NO_WINDOW)
             .args(["-Command", "Get-Printer | Where-Object {$_.IsDefault -eq $true} | Select-Object -ExpandProperty Name"])
             .output()
             .map_err(|e| format!("Failed to get default printer: {}", e))?;
@@ -186,6 +193,7 @@ pub async fn print_silently(
         if printer.is_empty() {
             // Open print dialog (not truly silent, but uses system default)
             let result = Command::new("rundll32")
+                .creation_flags(CREATE_NO_WINDOW)
                 .args(["mshtml.dll,PrintHTML", temp_file.to_str().unwrap()])
                 .spawn();
 
@@ -208,6 +216,7 @@ pub async fn print_silently(
             );
 
             let result = Command::new("powershell")
+                .creation_flags(CREATE_NO_WINDOW)
                 .args(["-Command", &ps_script])
                 .spawn();
 

@@ -15,7 +15,8 @@ import {
     IconCalendarStats,
     IconReceiptRefund,
     IconLayoutDashboard,
-    IconCertificate
+    IconCertificate,
+    IconHistory
 } from '@tabler/icons-react';
 
 interface MenuItem {
@@ -35,6 +36,7 @@ const menuItems: MenuItem[] = [
     { id: 'receipts', label: 'Receipts', icon: IconCashBanknoteMoveBack },
     { id: 'journal', label: 'Journal Entry', icon: IconNotebook },
     { id: 'stock_report', label: 'Stock Report', icon: IconReportAnalytics },
+    { id: 'transactions', label: 'Transaction Report', icon: IconHistory },
     { id: 'day_book', label: 'Day Book', icon: IconCalendarStats },
     { id: 'outstanding', label: 'Party Outstanding', icon: IconReceiptRefund },
     { id: 'license', label: 'License', icon: IconCertificate },

@@ -15,10 +15,12 @@ pub async fn init_db(
     }
 
     let pool = SqlitePool::connect(&db_url).await?;
+    println!("DB: Connected successfully");
 
     // ==================== CORE TABLES ====================
 
     // Users table
+    println!("DB: Creating users table...");
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
@@ -38,8 +40,10 @@ pub async fn init_db(
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
         .execute(&pool)
         .await?;
+    println!("DB: Users table created/checked");
 
     // Countries
+    println!("DB: Creating countries table...");
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS countries (
             id TEXT PRIMARY KEY,

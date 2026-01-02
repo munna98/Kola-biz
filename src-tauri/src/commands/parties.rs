@@ -544,3 +544,26 @@ pub async fn hard_delete_supplier(pool: State<'_, SqlitePool>, id: String) -> Re
 
     Ok(())
 }
+
+// ============= COMMON PARTY =============
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct Party {
+    pub id: String,
+    pub party_name: String,
+    pub party_type: String,
+}
+
+#[tauri::command]
+pub async fn get_all_parties(pool: State<'_, SqlitePool>) -> Result<Vec<Party>, String> {
+    let query = "
+        SELECT id, account_name as party_name, party_type 
+        FROM chart_of_accounts 
+        WHERE party_type IS NOT NULL AND deleted_at IS NULL
+        ORDER BY account_name ASC
+    ";
+
+    sqlx::query_as::<_, Party>(query)
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| e.to_string())
+}

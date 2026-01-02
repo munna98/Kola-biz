@@ -142,6 +142,9 @@ pub fn run() {
             get_party_invoice_details,
             get_stock_report,
             get_stock_movements,
+            get_stock_movements,
+            get_transaction_report,
+            commands::parties::get_all_parties,
             // Dashboard
             get_dashboard_metrics,
             get_revenue_trend,

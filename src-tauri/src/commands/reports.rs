@@ -704,6 +704,74 @@ pub async fn get_day_book(
         .map_err(|e| e.to_string())
 }
 
+// ============= TRANSACTION REPORT =============
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct Transaction {
+    pub id: String,
+    pub voucher_no: String,
+    pub voucher_type: String,
+    pub voucher_date: String,
+    pub party_id: Option<String>,
+    pub party_name: Option<String>,
+    pub amount: f64,
+    pub narration: Option<String>,
+    pub created_at: String,
+}
+
+#[tauri::command]
+pub async fn get_transaction_report(
+    pool: State<'_, SqlitePool>,
+    from_date: String,
+    to_date: String,
+    voucher_type: Option<String>,
+    party_id: Option<String>,
+) -> Result<Vec<Transaction>, String> {
+    let mut checklist = Vec::new();
+
+    let mut query_str = String::from(
+        "SELECT 
+            v.id,
+            v.voucher_no,
+            v.voucher_type,
+            v.voucher_date,
+            v.party_id,
+            coa.account_name as party_name,
+            v.total_amount as amount,
+            v.narration,
+            v.created_at
+        FROM vouchers v
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        WHERE v.deleted_at IS NULL 
+        AND v.voucher_date >= ? AND v.voucher_date <= ?",
+    );
+
+    checklist.push(from_date);
+    checklist.push(to_date);
+
+    if let Some(vt) = voucher_type {
+        query_str.push_str(" AND v.voucher_type = ?");
+        checklist.push(vt);
+    }
+
+    if let Some(pid) = party_id {
+        query_str.push_str(" AND v.party_id = ?");
+        checklist.push(pid);
+    }
+
+    query_str.push_str(" ORDER BY v.voucher_date DESC, v.created_at DESC");
+
+    let mut query = sqlx::query_as::<_, Transaction>(&query_str);
+
+    for param in checklist {
+        query = query.bind(param);
+    }
+
+    query
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ============= PARTY OUTSTANDING =============
 #[derive(Serialize, Deserialize)]
 pub struct PartyOutstanding {

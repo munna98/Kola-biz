@@ -396,7 +396,46 @@ pub async fn delete_purchase_invoice(
 ) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    // Delete related journal entries
+    // Get all payment/receipt vouchers created from this invoice
+    let related_payment_ids: Vec<String> =
+        sqlx::query_scalar("SELECT id FROM vouchers WHERE created_from_invoice_id = ?")
+            .bind(&id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    // Delete related data for each payment/receipt voucher created from this invoice
+    for payment_id in &related_payment_ids {
+        // Delete journal entries for the payment
+        sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+            .bind(payment_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Delete voucher items for the payment
+        sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+            .bind(payment_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Delete payment allocations where this payment voucher is involved
+        sqlx::query("DELETE FROM payment_allocations WHERE payment_voucher_id = ?")
+            .bind(payment_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Delete the payment voucher itself
+        sqlx::query("DELETE FROM vouchers WHERE id = ?")
+            .bind(payment_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Delete related journal entries for the invoice
     sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
         .bind(&id)
         .execute(&mut *tx)
@@ -410,7 +449,7 @@ pub async fn delete_purchase_invoice(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Delete related payment allocations
+    // Delete related payment allocations for the invoice
     sqlx::query("DELETE FROM payment_allocations WHERE invoice_voucher_id = ?")
         .bind(&id)
         .execute(&mut *tx)
@@ -1066,7 +1105,46 @@ pub async fn create_sales_invoice(
 pub async fn delete_sales_invoice(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    // Delete related journal entries
+    // Get all payment/receipt vouchers created from this invoice
+    let related_receipt_ids: Vec<String> =
+        sqlx::query_scalar("SELECT id FROM vouchers WHERE created_from_invoice_id = ?")
+            .bind(&id)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    // Delete related data for each payment/receipt voucher created from this invoice
+    for receipt_id in &related_receipt_ids {
+        // Delete journal entries for the receipt
+        sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+            .bind(receipt_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Delete voucher items for the receipt
+        sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+            .bind(receipt_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Delete payment allocations where this receipt voucher is involved
+        sqlx::query("DELETE FROM payment_allocations WHERE payment_voucher_id = ?")
+            .bind(receipt_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Delete the receipt voucher itself
+        sqlx::query("DELETE FROM vouchers WHERE id = ?")
+            .bind(receipt_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Delete related journal entries for the invoice
     sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
         .bind(&id)
         .execute(&mut *tx)
@@ -1080,7 +1158,7 @@ pub async fn delete_sales_invoice(pool: State<'_, SqlitePool>, id: String) -> Re
         .await
         .map_err(|e| e.to_string())?;
 
-    // Delete related payment allocations
+    // Delete related payment allocations for the invoice
     sqlx::query("DELETE FROM payment_allocations WHERE invoice_voucher_id = ?")
         .bind(&id)
         .execute(&mut *tx)
