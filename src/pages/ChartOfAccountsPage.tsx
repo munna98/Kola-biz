@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconPlus, IconEdit, IconTrash, IconSettings, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
 import { api, ChartOfAccount, AccountGroup } from '@/lib/tauri';
 import { toast } from 'sonner';
@@ -9,13 +11,13 @@ import ChartOfAccountDialog from '@/components/dialogs/ChartOfAccountDialog';
 
 export default function ChartOfAccountsPage() {
   const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
-
   const [accountGroups, setAccountGroups] = useState<AccountGroup[]>([]);
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState(false);
   const [groupsDialogOpen, setGroupsDialogOpen] = useState(false);
   const [accountToEdit, setAccountToEdit] = useState<ChartOfAccount | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const load = async () => {
     try {
@@ -86,6 +88,13 @@ export default function ChartOfAccountsPage() {
     setOpen(true);
   };
 
+  const filteredAccounts = accounts.filter(account =>
+    account.account_code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    account.account_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    account.account_group.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (account.description && account.description.toLowerCase().includes(searchTerm.toLowerCase()))
+  );
+
   if (loading) {
     return (
       <div className="p-6">
@@ -98,30 +107,50 @@ export default function ChartOfAccountsPage() {
 
   return (
     <div className="p-6 space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="flex justify-between items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold">{showDeleted ? 'Recycle Bin - Accounts' : 'Chart of Accounts'}</h2>
           <p className="text-sm text-muted-foreground mt-1">
             {showDeleted ? 'View and restore deleted accounts' : 'Manage your accounting chart'}
           </p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant='outline'
-            onClick={() => setShowDeleted(!showDeleted)}
-          >
-            {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
-          </Button>
-          {!showDeleted && (
-            <>
-              <Button variant="outline" onClick={() => setGroupsDialogOpen(true)}>
-                <IconSettings size={16} /> Manage Groups
-              </Button>
-              <Button onClick={handleOpenDialog}>
-                <IconPlus size={16} /> Add Account
-              </Button>
-            </>
-          )}
+        <div className="flex gap-2 items-center">
+          <Input
+            placeholder="Search accounts..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-64"
+          />
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant='outline'
+                  onClick={() => setShowDeleted(!showDeleted)}
+                >
+                  {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {showDeleted ? 'View Active Accounts' : 'View Recycle Bin'}
+              </TooltipContent>
+            </Tooltip>
+            {!showDeleted && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => setGroupsDialogOpen(true)}>
+                      <IconSettings size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Manage Groups</TooltipContent>
+                </Tooltip>
+                <Button onClick={handleOpenDialog}>
+                  <IconPlus size={16} /> Add Account
+                </Button>
+              </>
+            )}
+          </TooltipProvider>
         </div>
       </div>
 
@@ -141,14 +170,14 @@ export default function ChartOfAccountsPage() {
               </tr>
             </thead>
             <tbody>
-              {accounts.length === 0 ? (
+              {filteredAccounts.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="p-6 text-center text-muted-foreground">
-                    No accounts found. Add your first account to get started.
+                    {searchTerm ? 'No accounts match your search.' : 'No accounts found. Add your first account to get started.'}
                   </td>
                 </tr>
               ) : (
-                accounts.map(account => (
+                filteredAccounts.map(account => (
                   <tr key={account.id} className="border-b hover:bg-muted/30">
                     <td className="p-3 font-mono text-sm font-medium">{account.account_code}</td>
                     <td className="p-3">{account.account_name}</td>
