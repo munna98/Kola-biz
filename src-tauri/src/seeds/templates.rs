@@ -169,5 +169,20 @@ pub async fn seed_handlebars_templates(
         .execute(pool)
         .await?;
 
+    // Update Purchase Invoice Templates
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ? WHERE template_number = 'TPL-PI-001'")
+        .bind(&a4_h)
+        .bind(&a4_b)
+        .bind(&a4_f)
+        .execute(pool)
+        .await?;
+
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ? WHERE template_number = 'TPL-PI-002'")
+        .bind(&t80_h)
+        .bind(&t80_b)
+        .bind(&t80_f)
+        .execute(pool)
+        .await?;
+
     Ok(())
 }

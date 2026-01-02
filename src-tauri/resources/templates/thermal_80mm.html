@@ -50,7 +50,7 @@
         <tr>
             <td>{{product_name}}</td>
             <td>{{format_number initial_quantity 0}}</td>
-            {{#if show_less_column}}
+            {{#if @root.show_less_column}}
             <td>{{format_number less_quantity 0}}</td>
             {{/if}}
             <td>{{format_number rate 2}}</td>

@@ -91,7 +91,7 @@
             </td>
             <td class="center">{{hsn_code}}</td>
             <td class="right">{{format_number initial_quantity 2}}</td>
-            {{#if show_less_column}}
+            {{#if @root.show_less_column}}
             <td class="right">{{format_number less_quantity 2}}</td>
             {{/if}}
             <td class="right">{{format_currency rate}}</td>

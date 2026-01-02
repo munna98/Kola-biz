@@ -21,38 +21,41 @@ export function useVoucherShortcuts({
 }: UseVoucherShortcutsProps) {
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
+            // Use e.code for physical key detection (more reliable across keyboard layouts)
+            // and e.key.toLowerCase() for special keys that vary
+
             // Ctrl/Cmd + N: New item
-            if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+            if ((e.ctrlKey || e.metaKey) && e.code === 'KeyN') {
                 e.preventDefault();
                 onNewItem();
             }
 
             // Ctrl/Cmd + S: Save
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') {
                 e.preventDefault();
                 onSave();
             }
 
             // Ctrl/Cmd + K: Clear form
-            if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+            if ((e.ctrlKey || e.metaKey) && e.code === 'KeyK') {
                 e.preventDefault();
                 onClear();
             }
 
             // Ctrl/Cmd + Q: Quick Entry Dialog (Payment/Receipt)
-            if ((e.ctrlKey || e.metaKey) && e.key === 'q' && onQuickEntry) {
+            if ((e.ctrlKey || e.metaKey) && e.code === 'KeyQ' && onQuickEntry) {
                 e.preventDefault();
                 onQuickEntry();
             }
 
-            // Ctrl/Cmd + /: Show shortcuts
-            if ((e.ctrlKey || e.metaKey) && e.key === '/') {
+            // Ctrl/Cmd + /: Show shortcuts (Slash key)
+            if ((e.ctrlKey || e.metaKey) && e.code === 'Slash') {
                 e.preventDefault();
                 onToggleShortcuts();
             }
 
             // Escape: Close shortcuts panel
-            if (e.key === 'Escape' && showShortcuts) {
+            if (e.code === 'Escape' && showShortcuts) {
                 onCloseShortcuts();
             }
         };

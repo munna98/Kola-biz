@@ -542,9 +542,10 @@ export default function SalesInvoicePage() {
   });
 
   // Global "Alt+C" Shortcut for creating customer
+  // Using e.code for physical key detection (more reliable across keyboard layouts)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.altKey && (e.key === 'c' || e.key === 'C')) {
+      if (e.altKey && e.code === 'KeyC') {
         e.preventDefault();
         setNewCustomerName(''); // Reset name for blank create
         setShowCreateCustomer(true);

@@ -158,14 +158,16 @@ export function useVoucherNavigation({
     };
 
     // Keyboard shortcuts
+    // Using e.code for physical key detection (more reliable across keyboard layouts)
     useEffect(() => {
         const handleKeyDown = async (e: KeyboardEvent) => {
-            // Alt+Left / Alt+Right
-            if (e.altKey && e.key === 'ArrowLeft') {
+            // Alt+Left: Navigate previous
+            if (e.altKey && e.code === 'ArrowLeft') {
                 e.preventDefault();
                 handleNavigatePrevious();
             }
-            if (e.altKey && e.key === 'ArrowRight') {
+            // Alt+Right: Navigate next
+            if (e.altKey && e.code === 'ArrowRight') {
                 e.preventDefault();
                 handleNavigateNext();
             }

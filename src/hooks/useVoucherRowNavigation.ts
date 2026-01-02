@@ -15,7 +15,8 @@ export function useVoucherRowNavigation({
         const currentIndex = inputs.indexOf(document.activeElement as HTMLElement);
 
         // Ctrl/Cmd + D: Delete current row
-        if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+        // Using e.code for physical key detection (more reliable across keyboard layouts)
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyD') {
             e.preventDefault();
             onRemoveItem(rowIndex);
             return;
