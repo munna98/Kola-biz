@@ -79,7 +79,7 @@ export function PrintPreviewDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0 gap-0">
+            <DialogContent className="max-w-[90vw] h-[90vh] flex flex-col p-0 gap-0">
                 <DialogHeader className="px-6 py-4 border-b shrink-0 flex flex-row items-center justify-between space-y-0">
                     <div>
                         <DialogTitle>{title}</DialogTitle>

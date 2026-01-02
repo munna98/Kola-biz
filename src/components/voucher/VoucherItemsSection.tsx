@@ -97,6 +97,7 @@ export function VoucherItemsSection({
     const getGridTemplate = () => {
         return columns.map(col => {
             if (col.id === 'product') return '3fr';
+            if (col.id === 'deduction' || col.id === 'amount') return '0.6fr';
             return '1fr';
         }).join(' ') + ' 32px'; // w-8 equivalent for delete button
     };
@@ -113,7 +114,8 @@ export function VoucherItemsSection({
             {columns.map(col => (
                 <div key={col.id} className={cn(
                     col.id === 'amount' || col.id === 'total' ? 'text-right' : '',
-                    col.id === 'final_qty' ? 'text-center' : ''
+                    col.id === 'final_qty' ? 'text-center' : '',
+                    col.id === 'deduction' ? 'text-left' : ''
                 )}>
                     {col.label}
                 </div>
@@ -205,7 +207,7 @@ export function VoucherItemsSection({
                                     type="number"
                                     value={item.deduction_per_unit || ''}
                                     onChange={(e) => handleNumberChange('deduction_per_unit', e.target.value)}
-                                    className="h-7 text-xs text-right font-mono"
+                                    className="h-7 text-xs text-left font-mono"
                                     placeholder="0.00"
                                     step="0.01"
                                     disabled={isReadOnly}
@@ -219,7 +221,7 @@ export function VoucherItemsSection({
                             );
                         case 'amount':
                             return (
-                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-medium font-mono">
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-start px-3 bg-muted/50 border border-input rounded-md font-medium font-mono">
                                     ₹{calc.amount.toFixed(2)}
                                 </div>
                             );

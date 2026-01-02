@@ -77,7 +77,6 @@ export function VoucherListViewSheet({
                         {title || 'Voucher List'}
                     </SheetTitle>
                     <SheetDescription>
-                        Search.
                     </SheetDescription>
                     <div className="relative mt-2">
                         <IconSearch className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

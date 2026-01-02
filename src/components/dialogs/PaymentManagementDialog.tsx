@@ -82,6 +82,7 @@ export default function PaymentManagementDialog({
     const totalAllocated = allocations.reduce((sum, a) => sum + a.allocated_amount, 0);
 
     const saveButtonRef = useRef<HTMLButtonElement>(null);
+    const hasInitialized = useRef(false);
 
     const paymentMethods = [
         { value: 'cash', label: 'Cash' },
@@ -94,6 +95,7 @@ export default function PaymentManagementDialog({
     // Load cash/bank accounts
     useEffect(() => {
         if (open) {
+            hasInitialized.current = false; // Reset init state on open
             loadCashBankAccounts();
             if (invoiceId) {
                 loadAllocations();
@@ -160,22 +162,26 @@ export default function PaymentManagementDialog({
     };
 
     // Effect to add default line if everything loaded and empty
+    // Only run this ONCE after loading is done and we have no lines
     useEffect(() => {
-        if (!loadingAllocations && cashBankAccounts.length > 0 && paymentLines.length === 0 && invoiceId) {
-            const cashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];
-            // Initial load calc
-            const remaining = invoiceAmount; // If no lines, then fully remaining
-            const prefillAmount = remaining > 0 ? remaining : 0;
+        if (!loadingAllocations && cashBankAccounts.length > 0 && invoiceId && !hasInitialized.current) {
+            if (paymentLines.length === 0) {
+                const cashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];
+                // Initial load calc
+                const remaining = invoiceAmount; // If no lines, then fully remaining
+                const prefillAmount = remaining > 0 ? remaining : 0;
 
-            const newLine: PaymentLine = {
-                id: `line-${Date.now()}-${Math.random()}`,
-                account_id: cashAccount.id,
-                amount: prefillAmount,
-                method: 'cash',
-            };
-            setPaymentLines([newLine]);
+                const newLine: PaymentLine = {
+                    id: `line-${Date.now()}-${Math.random()}`,
+                    account_id: cashAccount.id,
+                    amount: prefillAmount,
+                    method: 'cash',
+                };
+                setPaymentLines([newLine]);
+            }
+            hasInitialized.current = true;
         }
-    }, [loadingAllocations, cashBankAccounts, paymentLines.length, invoiceId, invoiceAmount]);
+    }, [loadingAllocations, cashBankAccounts, invoiceId, invoiceAmount]); // Removed paymentLines.length to prevent re-adding
 
     const addPaymentLine = () => {
         const cashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];
@@ -227,9 +233,9 @@ export default function PaymentManagementDialog({
             a => !currentPaymentVoucherIds.has(a.payment_voucher_id)
         );
 
-        if (validLines.length === 0 && deletedAllocations.length === 0) {
-            toast.error('Please enter at least one valid payment amount');
-            return;
+        if (paymentLines.length > 0) {
+            // If we have lines, but none are valid (e.g. all 0), effectively we are clearing payments.
+            // We allow this execution path to proceed (it will delete removed allocations and add nothing).
         }
 
         try {
@@ -404,7 +410,6 @@ export default function PaymentManagementDialog({
                                                     size="sm"
                                                     onClick={() => removePaymentLine(line.id)}
                                                     className="h-8 w-8 p-0"
-                                                    disabled={paymentLines.length === 1 && !line.payment_voucher_id} // Disable delete only if it's the only NEW line. If it's existing, allow delete (which is effectively deleting later)
                                                 >
                                                     <IconTrash size={14} />
                                                 </Button>

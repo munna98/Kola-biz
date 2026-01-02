@@ -787,59 +787,51 @@ export default function SalesInvoicePage() {
                 value={salesState.form.narration}
                 onChange={(e) => { dispatch(setSalesNarration(e.target.value)); dispatch(setSalesHasUnsavedChanges(true)); }}
                 placeholder="Additional notes or remarks..."
-                className="min-h-14 text-xs"
+                className="min-h-8 text-xs"
                 disabled={isReadOnly}
               />
             </div>
 
             {/* Totals */}
-            <div className="col-span-2 bg-card border rounded-lg p-2.5 space-y-1.5">
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs">
-                  <span className="text-muted-foreground">Subtotal:</span>
-                  <span className="font-medium font-mono">₹{salesState.totals.subtotal.toFixed(2)}</span>
-                </div>
-
-                {/* Discount */}
-                <div className="space-y-1 text-xs">
-                  <div className="flex gap-2">
-                    <div className="flex-1">
-                      <Label className="text-xs font-medium mb-1 block">Discount %</Label>
-                      <Input
-                        type="number"
-                        value={salesState.form.discount_rate || ''}
-                        onChange={(e) => {
-                          const rate = parseFloat(e.target.value) || 0;
-                          dispatch(setSalesHasUnsavedChanges(true));
-                          updateTotalsWithItems(salesState.items, rate, undefined);
-                        }}
-                        placeholder="0.00"
-                        className="h-6.5 font-mono text-xs"
-                        step="0.01"
-                        disabled={isReadOnly}
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <Label className="text-xs font-medium mb-1 block">Discount ₹</Label>
-                      <Input
-                        type="number"
-                        value={salesState.form.discount_amount || ''}
-                        onChange={(e) => {
-                          const amount = parseFloat(e.target.value) || 0;
-                          dispatch(setSalesHasUnsavedChanges(true));
-                          updateTotalsWithItems(salesState.items, undefined, amount);
-                        }}
-                        placeholder="0.00"
-                        className="h-6.5 font-mono text-xs"
-                        step="0.01"
-                        disabled={isReadOnly}
-                      />
-                    </div>
+            <div className="col-span-2 bg-card border rounded-lg p-3 shrink-0">
+              <div className="flex justify-between items-end">
+                <div className="flex gap-3">
+                  <div>
+                    <Label className="text-xs font-medium mb-1 block">Discount %</Label>
+                    <Input
+                      type="number"
+                      value={salesState.form.discount_rate || ''}
+                      onChange={(e) => {
+                        const rate = parseFloat(e.target.value) || 0;
+                        dispatch(setSalesHasUnsavedChanges(true));
+                        updateTotalsWithItems(salesState.items, rate, undefined);
+                      }}
+                      placeholder="0.00"
+                      className="h-7 w-24 font-mono text-xs"
+                      step="0.01"
+                      disabled={isReadOnly}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs font-medium mb-1 block">Discount ₹</Label>
+                    <Input
+                      type="number"
+                      value={salesState.form.discount_amount || ''}
+                      onChange={(e) => {
+                        const amount = parseFloat(e.target.value) || 0;
+                        dispatch(setSalesHasUnsavedChanges(true));
+                        updateTotalsWithItems(salesState.items, undefined, amount);
+                      }}
+                      placeholder="0.00"
+                      className="h-7 w-28 font-mono text-xs"
+                      step="0.01"
+                      disabled={isReadOnly}
+                    />
                   </div>
                 </div>
-                <div className="border-t pt-1.5 flex justify-between text-sm">
-                  <span className="font-semibold">Grand Total:</span>
-                  <span className="font-bold font-mono text-primary">₹{salesState.totals.grandTotal.toFixed(2)}</span>
+                <div className="text-right">
+                  <div className="text-xs font-mono font-medium mb-2">₹ {salesState.totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                  <div className="text-lg font-mono font-bold">₹ {salesState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                 </div>
               </div>
             </div>

@@ -21,13 +21,17 @@ export function VoucherItemsTable({
     addItemLabel = 'Add Item (Ctrl+N)',
     disableAdd = false,
     className,
-    height = 'calc(5 * 3.25rem + 2.5rem + 2.5rem)',
+    height,
     footerRightContent
 }: VoucherItemsTableProps) {
     return (
         <div
-            className={cn("bg-card border rounded-lg overflow-hidden flex flex-col shrink-0", className)}
-            style={{ height }}
+            className={cn(
+                "bg-card border rounded-lg overflow-hidden flex flex-col",
+                height ? "shrink-0" : "flex-1 min-h-0",
+                className
+            )}
+            style={height ? { height } : undefined}
         >
             {/* Table Header */}
             <div className="bg-muted/50 border-b shrink-0">
