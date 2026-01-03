@@ -328,8 +328,8 @@ export default function PaymentPage() {
             }
         };
 
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
+        window.addEventListener('keydown', handleKeyDown, true);
+        return () => window.removeEventListener('keydown', handleKeyDown, true);
     }, []);
 
     const handleCreateAccountSave = async (newAccount?: any) => {

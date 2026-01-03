@@ -167,8 +167,8 @@ export default function PaymentManagementDialog({
         if (!loadingAllocations && cashBankAccounts.length > 0 && invoiceId && !hasInitialized.current) {
             if (paymentLines.length === 0) {
                 const cashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];
-                // Initial load calc
-                const remaining = invoiceAmount; // If no lines, then fully remaining
+                // Initial load calc - show remaining balance for new payment
+                const remaining = invoiceAmount - totalAllocated;
                 const prefillAmount = remaining > 0 ? remaining : 0;
 
                 const newLine: PaymentLine = {
@@ -195,11 +195,7 @@ export default function PaymentManagementDialog({
     };
 
     const removePaymentLine = (id: string) => {
-        // Allow removing if it's not the only line, or if it's the only line but it's an existing payment (which will be deleted on save)
-        if (paymentLines.length === 1 && !paymentLines[0].payment_voucher_id) {
-            toast.error('At least one payment line is required');
-            return;
-        }
+        // Allow removing any line during editing
         setPaymentLines(paymentLines.filter(line => line.id !== id));
     };
 
@@ -224,9 +220,10 @@ export default function PaymentManagementDialog({
         const validLines = paymentLines.filter(line => line.amount > 0);
 
         // Find deleted allocations
-        // Any allocation in `allocations` that is NOT in `paymentLines` (by checking payment_voucher_id)
+        // Any allocation in `allocations` that is NOT in `validLines` (by checking payment_voucher_id)
+        // This includes allocations for lines that were removed OR had amount set to 0
         const currentPaymentVoucherIds = new Set(
-            paymentLines.map(l => l.payment_voucher_id).filter(id => id !== undefined)
+            validLines.map(l => l.payment_voucher_id).filter(id => id !== undefined)
         );
 
         const deletedAllocations = allocations.filter(
