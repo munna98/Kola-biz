@@ -15,6 +15,7 @@ impl TemplateEngine {
         handlebars.register_helper("format_date", Box::new(format_date_helper));
         handlebars.register_helper("number_to_words", Box::new(number_to_words_helper));
         handlebars.register_helper("format_number", Box::new(format_number_helper));
+        handlebars.register_helper("abs_format_number", Box::new(abs_format_number_helper));
         handlebars.register_helper("increment", Box::new(increment_helper));
 
         // Disable strict mode to allow optional fields in templates
@@ -350,6 +351,24 @@ fn format_number_helper(
     let value = h.param(0).and_then(|v| v.value().as_f64()).unwrap_or(0.0);
 
     out.write(&format!("{:.1$}", value, decimals))?;
+    Ok(())
+}
+
+// Format number as absolute value (positive) with specified decimals
+// Useful for displaying balances that should show as positive regardless of sign
+fn abs_format_number_helper(
+    h: &Helper,
+    _: &HB,
+    _: &Context,
+    _: &mut RenderContext,
+    out: &mut dyn Output,
+) -> HelperResult {
+    let decimals = h.param(1).and_then(|v| v.value().as_u64()).unwrap_or(2) as usize;
+
+    // Handle null/undefined values gracefully
+    let value = h.param(0).and_then(|v| v.value().as_f64()).unwrap_or(0.0);
+
+    out.write(&format!("{:.1$}", value.abs(), decimals))?;
     Ok(())
 }
 

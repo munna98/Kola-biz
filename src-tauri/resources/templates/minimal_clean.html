@@ -3,15 +3,11 @@
     <div class="invoice-title">
         <h1>INVOICE</h1>
     </div>
+    {{#if company.has_logo}}
     <div class="logo-placeholder">
-        {{#if company.has_logo}}
         <img src="{{company.logo}}" alt="{{company.name}}" class="company-logo" />
-        {{else}}
-        <div class="logo-box">
-            <p>YOUR COMPANY'S<br />LOGO GOES HERE</p>
-        </div>
-        {{/if}}
     </div>
+    {{/if}}
 </div>
 
 <div class="invoice-details">
@@ -121,7 +117,7 @@
     <div style="display: flex; justify-content: space-between; font-size: 9pt;">
         <div>
             <span style="display: block; color: #666; font-size: 8pt;">Old Balance</span>
-            <span style="font-weight: bold;">₹{{format_number old_balance 2}}</span>
+            <span style="font-weight: bold;">₹{{abs_format_number old_balance 2}}</span>
         </div>
         <div>
             <span style="display: block; color: #666; font-size: 8pt;">Bill Amount</span>
@@ -133,7 +129,7 @@
         </div>
         <div>
             <span style="display: block; color: #666; font-size: 8pt;">Balance Due</span>
-            <span style="font-weight: bold;">₹{{format_number balance_due 2}}</span>
+            <span style="font-weight: bold;">₹{{abs_format_number balance_due 2}}</span>
         </div>
     </div>
 </div>
