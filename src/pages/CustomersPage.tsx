@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
 import { api, Customer } from '@/lib/tauri';
@@ -11,6 +12,7 @@ export default function CustomersPage() {
   const [open, setOpen] = useState(false);
   const [customerToEdit, setCustomerToEdit] = useState<Customer | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const load = async () => {
     try {
@@ -74,7 +76,13 @@ export default function CustomersPage() {
             {showDeleted ? 'View and restore deleted customers' : 'Manage your customer database'}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <Input
+            placeholder="Search customers..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-64"
+          />
           <Button
             variant="outline"
             onClick={() => setShowDeleted(!showDeleted)}
@@ -102,14 +110,22 @@ export default function CustomersPage() {
               </tr>
             </thead>
             <tbody>
-              {customers.length === 0 ? (
+              {customers.filter(c =>
+                c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (c.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (c.phone || '').includes(searchTerm)
+              ).length === 0 ? (
                 <tr>
                   <td colSpan={5} className="p-6 text-center text-muted-foreground">
-                    No customers found. Add your first customer to get started.
+                    {searchTerm ? 'No customers match your search.' : 'No customers found. Add your first customer to get started.'}
                   </td>
                 </tr>
               ) : (
-                customers.map(c => (
+                customers.filter(c =>
+                  c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (c.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (c.phone || '').includes(searchTerm)
+                ).map(c => (
                   <tr key={c.id} className="border-b hover:bg-muted/30">
                     <td className="p-3 font-medium">{c.name}</td>
                     <td className="p-3 text-sm text-muted-foreground">{c.email || '-'}</td>

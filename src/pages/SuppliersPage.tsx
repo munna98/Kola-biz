@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
 import { api, Supplier } from '@/lib/tauri';
@@ -11,6 +12,7 @@ export default function SuppliersPage() {
   const [open, setOpen] = useState(false);
   const [supplierToEdit, setSupplierToEdit] = useState<Supplier | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
 
   const load = async () => {
     try {
@@ -74,7 +76,13 @@ export default function SuppliersPage() {
             {showDeleted ? 'View and restore deleted suppliers' : 'Manage your supplier database'}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <Input
+            placeholder="Search suppliers..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-64"
+          />
           <Button
             variant="outline"
             onClick={() => setShowDeleted(!showDeleted)}
@@ -102,14 +110,22 @@ export default function SuppliersPage() {
               </tr>
             </thead>
             <tbody>
-              {suppliers.length === 0 ? (
+              {suppliers.filter(s =>
+                s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (s.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (s.phone || '').includes(searchTerm)
+              ).length === 0 ? (
                 <tr>
                   <td colSpan={5} className="p-6 text-center text-muted-foreground">
-                    No suppliers found. Add your first supplier to get started.
+                    {searchTerm ? 'No suppliers match your search.' : 'No suppliers found. Add your first supplier to get started.'}
                   </td>
                 </tr>
               ) : (
-                suppliers.map(s => (
+                suppliers.filter(s =>
+                  s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (s.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (s.phone || '').includes(searchTerm)
+                ).map(s => (
                   <tr key={s.id} className="border-b hover:bg-muted/30">
                     <td className="p-3 font-medium">{s.name}</td>
                     <td className="p-3 text-sm text-muted-foreground">{s.email || '-'}</td>

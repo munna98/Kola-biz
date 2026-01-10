@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
@@ -21,6 +22,7 @@ export default function ProductsPage() {
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | undefined>(undefined);
   const [showDeleted, setShowDeleted] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
   const currentUser = useSelector((state: RootState) => state.app.currentUser);
 
   const load = async () => {
@@ -122,7 +124,13 @@ export default function ProductsPage() {
             {showDeleted ? 'View and restore deleted products' : 'Manage your product inventory'}
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
+          <Input
+            placeholder="Search products..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-64"
+          />
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -181,14 +189,22 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {products.length === 0 ? (
+              {products.filter(p =>
+                p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                (groups.find(g => g.id === p.group_id)?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
+              ).length === 0 ? (
                 <tr>
                   <td colSpan={9} className="p-4 text-center text-muted-foreground">
-                    No products found. Add your first product to get started.
+                    {searchTerm ? 'No products match your search.' : 'No products found. Add your first product to get started.'}
                   </td>
                 </tr>
               ) : (
-                products.map(p => (
+                products.filter(p =>
+                  p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (groups.find(g => g.id === p.group_id)?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
+                ).map(p => (
                   <tr key={p.id} className="border-b hover:bg-muted/30">
                     <td className="p-3 font-mono text-sm">{p.code}</td>
                     <td className="p-3">{p.name}</td>
