@@ -91,7 +91,7 @@ export default function SalesInvoicePage() {
   const [savedInvoiceNo, setSavedInvoiceNo] = useState<string | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
 
   // New state for print preview
@@ -389,21 +389,59 @@ export default function SalesInvoicePage() {
         setSavedInvoiceId(newInvoiceId);
 
         // Fetch new invoice to get the generated voucher number
-        invoke<any>('get_sales_invoice', { id: newInvoiceId })
-          .then(inv => setSavedInvoiceNo(inv.voucher_no))
-          .catch(console.error);
+        const newInvoice = await invoke<any>('get_sales_invoice', { id: newInvoiceId });
+        setSavedInvoiceNo(newInvoice.voucher_no);
 
         const customer = parties.find(p => p.id === salesState.form.customer_id);
-        setSavedPartyName(customer?.name || 'Cash Sale');
+        const partyName = customer?.name || 'Cash Sale';
+        setSavedPartyName(partyName);
         setSavedPartyId(customer?.id);
 
-        // Auto Print Check - Defer until after payment dialog
-        if (voucherSettings?.autoPrint) {
-          autoPrintPending.current = true;
-          // setShowPrintPreview(true); // REMOVED: Deferred
-        }
+        // Check payment modal setting (default true if undefined)
+        const shouldShowPaymentModal = voucherSettings?.showPaymentModal !== false;
 
-        setShowQuickPayment(true);
+        if (!shouldShowPaymentModal) {
+          // Payment modal disabled - handle conditionally
+          const isCashSale = partyName === 'Cash Sale';
+
+          if (isCashSale && salesState.totals.grandTotal > 0) {
+            // Auto-record payment for Cash Sale
+            try {
+              const cashBankAccounts = await invoke<{ id: number; name: string }[]>('get_cash_bank_accounts');
+              const defaultCashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];
+
+              if (defaultCashAccount) {
+                await invoke('create_quick_payment', {
+                  payment: {
+                    invoice_id: newInvoiceId,
+                    amount: salesState.totals.grandTotal,
+                    payment_account_id: defaultCashAccount.id,
+                    payment_date: salesState.form.voucher_date,
+                    payment_method: 'cash',
+                    reference: null,
+                    remarks: `Auto payment for ${newInvoice.voucher_no}`,
+                  },
+                });
+                toast.success('Payment recorded automatically');
+              }
+            } catch (paymentError) {
+              console.error('Failed to auto-record payment:', paymentError);
+              toast.error('Invoice saved but payment recording failed');
+            }
+          }
+          // For non-Cash Sale parties: skip payment modal (invoice remains unpaid)
+
+          // Auto Print if enabled
+          if (voucherSettings?.autoPrint) {
+            setShowPrintPreview(true);
+          }
+        } else {
+          // Show payment modal as usual
+          if (voucherSettings?.autoPrint) {
+            autoPrintPending.current = true;
+          }
+          setShowQuickPayment(true);
+        }
       }
 
       dispatch(setSalesHasUnsavedChanges(false));
