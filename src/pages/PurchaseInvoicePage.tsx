@@ -21,6 +21,7 @@ import {
   setPurchaseCurrentVoucherNo,
   setPurchaseHasUnsavedChanges,
   setPurchaseNavigationData,
+  setPurchaseCreatedByName
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -63,6 +64,7 @@ interface Party {
 export default function PurchaseInvoicePage() {
   const dispatch = useDispatch<AppDispatch>();
   const purchaseState = useSelector((state: RootState) => state.purchaseInvoice);
+  const user = useSelector((state: RootState) => state.auth.user);
   const [products, setProducts] = useState<Product[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
@@ -193,6 +195,9 @@ export default function PurchaseInvoicePage() {
       // Load discount fields from backend
       dispatch(setDiscountRate(voucher.discount_rate || 0));
       dispatch(setDiscountAmount(voucher.discount_amount || 0));
+
+      // Set Creator Name
+      dispatch(setPurchaseCreatedByName(voucher.created_by_name));
 
       // Add items
       const mappedItems = items.map(item => ({
@@ -420,6 +425,7 @@ export default function PurchaseInvoicePage() {
               rate: item.rate,
               tax_rate: item.tax_rate
             })),
+            user_id: user?.id.toString(),
           },
         });
         toast.success('Purchase invoice created successfully');
@@ -579,10 +585,11 @@ export default function PurchaseInvoicePage() {
     <div className="h-full flex flex-col bg-background">
       <VoucherPageHeader
         title="Purchase Invoice"
-        description="Create and manage purchase invoices"
+        description="Record and manage purchase invoices"
         mode={purchaseState.mode}
         voucherNo={purchaseState.currentVoucherNo}
         voucherDate={purchaseState.form.voucher_date}
+        createdBy={purchaseState.created_by_name}
         isUnsaved={purchaseState.hasUnsavedChanges}
         hasPrevious={purchaseState.navigationData.hasPrevious}
         hasNext={purchaseState.navigationData.hasNext}

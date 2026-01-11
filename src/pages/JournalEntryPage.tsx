@@ -18,7 +18,8 @@ import {
     setJournalCurrentVoucherNo,
     setJournalHasUnsavedChanges,
     setJournalNavigationData,
-    setJournalLines
+    setJournalLines,
+    setJournalCreatedByName
 } from '@/store';
 import type { RootState, AppDispatch, JournalEntryLine } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -52,6 +53,7 @@ interface LedgerAccount {
 export default function JournalEntryPage() {
     const dispatch = useDispatch<AppDispatch>();
     const journalState = useSelector((state: RootState) => state.journalEntry);
+    const user = useSelector((state: RootState) => state.auth.user);
 
     const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
@@ -111,6 +113,9 @@ export default function JournalEntryPage() {
             dispatch(setJournalDate(entry.voucher_date));
             dispatch(setJournalReference(entry.reference || ''));
             dispatch(setJournalNarration(entry.narration || ''));
+
+            // Set Creator Name
+            dispatch(setJournalCreatedByName(entry.created_by_name));
 
             // Add lines
             dispatch(setJournalLines(lines));
@@ -287,7 +292,8 @@ export default function JournalEntryPage() {
                 await invoke('create_journal_entry', {
                     entry: {
                         ...journalState.form,
-                        lines: journalState.lines
+                        lines: journalState.lines,
+                        user_id: user?.id.toString()
                     }
                 });
                 toast.success('Journal entry saved successfully');
@@ -345,6 +351,8 @@ export default function JournalEntryPage() {
                 description="Create manual journal entries for adjustments and corrections"
                 mode={journalState.mode}
                 voucherNo={journalState.currentVoucherNo}
+                voucherDate={journalState.form.voucher_date}
+                createdBy={journalState.created_by_name}
                 isUnsaved={journalState.hasUnsavedChanges}
                 hasPrevious={journalState.navigationData.hasPrevious}
                 hasNext={journalState.navigationData.hasNext}

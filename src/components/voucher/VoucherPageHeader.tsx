@@ -23,6 +23,7 @@ interface VoucherPageHeaderProps {
     mode?: 'new' | 'viewing' | 'editing';
     voucherNo?: string;
     voucherDate?: string;
+    createdBy?: string;
     isUnsaved?: boolean;
     hasPrevious?: boolean;
     hasNext?: boolean;
@@ -49,6 +50,7 @@ export function VoucherPageHeader({
     mode = 'new',
     voucherNo,
     voucherDate,
+    createdBy,
     isUnsaved,
     hasPrevious,
     hasNext,
@@ -120,6 +122,12 @@ export function VoucherPageHeader({
                                             <>
                                                 <span className="text-muted-foreground">•</span>
                                                 <span className="text-sm text-muted-foreground">{formatDate(voucherDate)}</span>
+                                                {createdBy && (
+                                                    <>
+                                                        <span className="text-muted-foreground">•</span>
+                                                        <span className="text-sm text-muted-foreground">By {createdBy}</span>
+                                                    </>
+                                                )}
                                             </>
                                         )}
                                         {isUnsaved && (

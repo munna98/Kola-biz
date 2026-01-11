@@ -19,7 +19,8 @@ import {
     setPaymentHasUnsavedChanges,
     setPaymentNavigationData,
     setPaymentMethod,
-    setPaymentCreatedFromInvoiceId
+    setPaymentCreatedFromInvoiceId,
+    setPaymentCreatedByName
 } from '@/store';
 import type { RootState, AppDispatch, PaymentItem } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -56,6 +57,7 @@ interface LedgerAccount {
 export default function PaymentPage() {
     const dispatch = useDispatch<AppDispatch>();
     const paymentState = useSelector((state: RootState) => state.payment);
+    const user = useSelector((state: RootState) => state.auth.user);
 
     const [payFromAccounts, setPayFromAccounts] = useState<AccountData[]>([]);
     const [payToLedgers, setPayToLedgers] = useState<LedgerAccount[]>([]);
@@ -200,7 +202,7 @@ export default function PaymentPage() {
                 return;
             }
 
-            await invoke('create_payment', { payment: { ...paymentState.form, items: paymentState.items } });
+            await invoke('create_payment', { payment: { ...paymentState.form, items: paymentState.items, user_id: user?.id.toString() } });
             toast.success('Payment saved successfully');
             dispatch(resetPaymentForm());
             handleAddItem();
@@ -238,6 +240,9 @@ export default function PaymentPage() {
             dispatch(setPaymentNarration(payment.narration || ''));
             dispatch(setPaymentMethod(payment.payment_method || 'bank'));
             dispatch(setPaymentCreatedFromInvoiceId(payment.created_from_invoice_id || null));
+
+            // Set Creator Name
+            dispatch(setPaymentCreatedByName(payment.created_by_name));
 
             // Populate Items
             items.forEach(item => {
@@ -385,9 +390,11 @@ export default function PaymentPage() {
         <div className="h-full flex flex-col bg-background">
             <VoucherPageHeader
                 title="Payment Voucher"
-                description="Record money paid out from bank or cash"
+                description="Record payments to suppliers or expenses"
                 mode={paymentState.mode}
                 voucherNo={paymentState.currentVoucherNo}
+                voucherDate={paymentState.form.voucher_date}
+                createdBy={paymentState.created_by_name}
                 isUnsaved={paymentState.hasUnsavedChanges}
                 hasPrevious={paymentState.navigationData.hasPrevious}
                 hasNext={paymentState.navigationData.hasNext}

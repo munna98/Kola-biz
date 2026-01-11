@@ -221,6 +221,7 @@ pub async fn init_db(
             created_from_invoice_id TEXT,
             account_id TEXT,
             metadata TEXT,
+            created_by TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             deleted_at DATETIME
@@ -228,6 +229,26 @@ pub async fn init_db(
     )
     .execute(&pool)
     .await?;
+
+    // Migration: Add show_less_column if not exists
+    let _ =
+        sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_less_column INTEGER DEFAULT 1")
+            .execute(&pool)
+            .await;
+
+    // Migration: Add salesperson_id to vouchers if not exists
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN salesperson_id TEXT")
+        .execute(&pool)
+        .await;
+
+    // Migration: Add created_by to vouchers if not exists
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN created_by TEXT")
+        .execute(&pool)
+        .await;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_salesperson ON vouchers(salesperson_id)")
+        .execute(&pool)
+        .await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_type ON vouchers(voucher_type)")
         .execute(&pool)
@@ -480,6 +501,36 @@ pub async fn init_db(
     )
     .execute(&pool)
     .await?;
+
+    // ==================== HR & PAYROLL MODULE ====================
+
+    // Employees
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS employees (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            account_id TEXT,
+            code TEXT UNIQUE,
+            name TEXT NOT NULL,
+            designation TEXT,
+            phone TEXT,
+            email TEXT,
+            address TEXT,
+            joining_date DATE,
+            status TEXT DEFAULT 'active',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_employees_user ON employees(user_id)")
+        .execute(&pool)
+        .await?;
 
     // ==================== SEEDING ====================
 

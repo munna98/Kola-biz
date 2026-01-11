@@ -19,7 +19,8 @@ import {
     setReceiptHasUnsavedChanges,
     setReceiptNavigationData,
     setReceiptMethod,
-    setReceiptCreatedFromInvoiceId
+    setReceiptCreatedFromInvoiceId,
+    setReceiptCreatedByName
 } from '@/store';
 import type { RootState, AppDispatch, ReceiptItem } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -57,6 +58,7 @@ interface LedgerAccount {
 export default function ReceiptPage() {
     const dispatch = useDispatch<AppDispatch>();
     const receiptState = useSelector((state: RootState) => state.receipt);
+    const user = useSelector((state: RootState) => state.auth.user);
 
     const [depositToAccounts, setDepositToAccounts] = useState<AccountData[]>([]);
     const [receivedFromLedgers, setReceivedFromLedgers] = useState<LedgerAccount[]>([]);
@@ -195,7 +197,7 @@ export default function ReceiptPage() {
                 return;
             }
 
-            await invoke('create_receipt', { receipt: { ...receiptState.form, items: receiptState.items } });
+            await invoke('create_receipt', { receipt: { ...receiptState.form, items: receiptState.items, user_id: user?.id.toString() } });
             toast.success('Receipt saved successfully');
             dispatch(resetReceiptForm());
             handleAddItem();
@@ -232,6 +234,9 @@ export default function ReceiptPage() {
             dispatch(setReceiptNarration(receipt.narration || ''));
             dispatch(setReceiptMethod(receipt.receipt_method || 'bank'));
             dispatch(setReceiptCreatedFromInvoiceId(receipt.created_from_invoice_id || null));
+
+            // Set Creator Name
+            dispatch(setReceiptCreatedByName(receipt.created_by_name));
 
             // Populate Items
             items.forEach(item => {
@@ -373,6 +378,8 @@ export default function ReceiptPage() {
                 description="Record money received into bank or cash"
                 mode={receiptState.mode}
                 voucherNo={receiptState.currentVoucherNo}
+                voucherDate={receiptState.form.voucher_date}
+                createdBy={receiptState.created_by_name}
                 isUnsaved={receiptState.hasUnsavedChanges}
                 hasPrevious={receiptState.navigationData.hasPrevious}
                 hasNext={receiptState.navigationData.hasNext}

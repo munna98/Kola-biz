@@ -99,7 +99,8 @@ export interface ChartOfAccount {
   is_active: number;
   is_system: number;
   created_at: string;
-  updated_at: string;
+  deleted_at?: string;
+  created_by_name?: string;
 }
 
 export interface CreateChartOfAccount {
@@ -125,6 +126,15 @@ export interface CreateAccountGroup {
   account_type: string;
 }
 
+export interface CreateSalesInvoiceItem {
+  product_id: number;
+  description: string;
+  count: number;
+  deduction_per_unit: number;
+  rate: number;
+  tax_rate: number;
+}
+
 export interface SalesInvoiceItem {
   product_id: number;
   product_name?: string;
@@ -138,17 +148,21 @@ export interface SalesInvoiceItem {
 
 export interface CreateSalesInvoice {
   customer_id: number;
+  salesperson_id?: string;
   voucher_date: string;
   reference?: string;
   narration?: string;
   discount_rate?: number;
   discount_amount?: number;
-  items: SalesInvoiceItem[];
+  items: CreateSalesInvoiceItem[];
+  user_id?: string;
+  created_by?: string;
 }
 
 export interface SalesInvoice {
   id: number;
   customer_id: number;
+  salesperson_id?: string;
   voucher_number: string;
   voucher_date: string;
   reference?: string;
@@ -159,6 +173,7 @@ export interface SalesInvoice {
   tax: number;
   grand_total: number;
   created_at: string;
+  created_by_name?: string;
 }
 
 export const api = {
@@ -220,4 +235,82 @@ export const api = {
     create: (data: CreateAccountGroup) => invoke<AccountGroup>('create_account_group', { group: data }),
     delete: (id: number) => invoke<void>('delete_account_group', { id }),
   },
+  employees: {
+    list: () => invoke<Employee[]>('get_employees'),
+    create: (data: CreateEmployee) => invoke<void>('create_employee', { data }),
+    update: (data: UpdateEmployee) => invoke<void>('update_employee', { data }),
+    delete: (id: string) => invoke<void>('delete_employee', { id }),
+  },
+  users: {
+    list: () => invoke<User[]>('get_users'),
+    create: (data: any) => invoke<void>('create_user', data), // Flat args still
+    update: (data: UpdateUser) => invoke<void>('update_user', { data }),
+    delete: (id: string) => invoke<void>('delete_user', { id }),
+    resetPassword: (data: ResetPassword) => invoke<void>('reset_user_password', { data }),
+  },
 };
+
+export interface Employee {
+  id: string;
+  user_id?: string;
+  account_id?: string;
+  code?: string;
+  name: string;
+  designation?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  joining_date?: string;
+  status: string;
+  created_at: string;
+}
+
+export interface CreateEmployee {
+  code?: string;
+  name: string;
+  designation?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  joining_date?: string;
+  create_user: boolean;
+  username?: string;
+  password?: string;
+  role?: string;
+}
+
+export interface UpdateEmployee {
+  id: string;
+  code?: string;
+  name: string;
+  designation?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  joining_date?: string;
+  status: string;
+  create_user: boolean;
+  username?: string;
+  password?: string;
+  role?: string;
+}
+
+export interface User {
+  id: string;
+  username: string;
+  fullName?: string;
+  role: string;
+  isActive: boolean;
+}
+
+export interface UpdateUser {
+  id: string;
+  fullName: string;
+  role: string;
+  isActive: boolean;
+}
+
+export interface ResetPassword {
+  id: string;
+  password: string;
+}

@@ -16,7 +16,9 @@ import {
     IconReceiptRefund,
     IconLayoutDashboard,
     IconCertificate,
-    IconHistory
+    IconHistory,
+    IconBriefcase,
+    IconShieldLock,
 } from '@tabler/icons-react';
 
 interface MenuItem {
@@ -30,6 +32,7 @@ const menuItems: MenuItem[] = [
     { id: 'products', label: 'Products', icon: IconPackage },
     { id: 'customers', label: 'Customers', icon: IconUserDown },
     { id: 'suppliers', label: 'Suppliers', icon: IconUserUp },
+    { id: 'employees', label: 'Employees', icon: IconBriefcase },
     { id: 'purchase', label: 'Purchase', icon: IconTruck },
     { id: 'sales', label: 'Sales', icon: IconShoppingBag },
     { id: 'payments', label: 'Payments', icon: IconCashBanknoteMove },
@@ -40,6 +43,7 @@ const menuItems: MenuItem[] = [
     { id: 'day_book', label: 'Day Book', icon: IconCalendarStats },
     { id: 'outstanding', label: 'Party Outstanding', icon: IconReceiptRefund },
     { id: 'license', label: 'License', icon: IconCertificate },
+    { id: 'users', label: 'Users', icon: IconShieldLock },
 ];
 
 export default function Sidebar() {

@@ -42,3 +42,5 @@ pub use license::*;
 pub use purchase_returns::*;
 pub use sales_returns::*;
 pub use settings::*;
+pub mod employees;
+pub use employees::*;

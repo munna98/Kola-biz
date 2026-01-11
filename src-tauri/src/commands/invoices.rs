@@ -22,6 +22,7 @@ pub struct PurchaseInvoice {
     pub status: String,
     pub created_at: String,
     pub deleted_at: Option<String>,
+    pub created_by_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -64,6 +65,7 @@ pub struct CreatePurchaseInvoice {
     pub discount_rate: Option<f64>,
     pub discount_amount: Option<f64>,
     pub items: Vec<CreatePurchaseInvoiceItem>,
+    pub user_id: Option<String>,
 }
 
 async fn get_next_voucher_number(pool: &SqlitePool, voucher_type: &str) -> Result<String, String> {
@@ -113,10 +115,12 @@ pub async fn get_purchase_invoices(
             v.narration,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            u.full_name as created_by_name
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        LEFT JOIN users u ON v.created_by = u.id
         WHERE v.voucher_type = 'purchase_invoice' AND v.deleted_at IS NULL
         GROUP BY v.id
         ORDER BY v.voucher_date DESC, v.id DESC",
@@ -151,10 +155,12 @@ pub async fn get_purchase_invoice(
             v.narration,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            u.full_name as created_by_name
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        LEFT JOIN users u ON v.created_by = u.id
         WHERE v.id = ? AND v.voucher_type = 'purchase_invoice' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -212,8 +218,8 @@ pub async fn create_purchase_invoice(
 
     // Create voucher
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, total_amount, narration, status)
-         VALUES (?, ?, 'purchase_invoice', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted')"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, total_amount, narration, status, created_by)
+         VALUES (?, ?, 'purchase_invoice', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?)"
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -226,6 +232,7 @@ pub async fn create_purchase_invoice(
     .bind(discount_amount)
     .bind(total_amount)
     .bind(&invoice.narration)
+    .bind(&invoice.user_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -754,6 +761,7 @@ pub struct SalesInvoice {
     pub voucher_date: String,
     pub customer_id: String,
     pub customer_name: String,
+    pub salesperson_id: Option<String>,
     pub party_type: String,
     pub reference: Option<String>,
     pub total_amount: f64,
@@ -765,6 +773,7 @@ pub struct SalesInvoice {
     pub status: String,
     pub created_at: String,
     pub deleted_at: Option<String>,
+    pub created_by_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -800,6 +809,7 @@ pub struct CreateSalesInvoiceItem {
 #[derive(Deserialize)]
 pub struct CreateSalesInvoice {
     pub customer_id: String,
+    pub salesperson_id: Option<String>,
     pub party_type: String,
     pub voucher_date: String,
     pub reference: Option<String>,
@@ -807,6 +817,7 @@ pub struct CreateSalesInvoice {
     pub discount_rate: Option<f64>,
     pub discount_amount: Option<f64>,
     pub items: Vec<CreateSalesInvoiceItem>,
+    pub user_id: Option<String>,
 }
 
 #[tauri::command]
@@ -818,6 +829,7 @@ pub async fn get_sales_invoices(pool: State<'_, SqlitePool>) -> Result<Vec<Sales
             v.voucher_date,
             v.party_id as customer_id,
             coa.account_name as customer_name,
+            v.salesperson_id,
             v.party_type,
             v.reference,
             v.total_amount,
@@ -828,10 +840,12 @@ pub async fn get_sales_invoices(pool: State<'_, SqlitePool>) -> Result<Vec<Sales
             v.narration,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            u.full_name as created_by_name
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+         LEFT JOIN users u ON v.created_by = u.id
          WHERE v.voucher_type = 'sales_invoice' AND v.deleted_at IS NULL
          GROUP BY v.id
          ORDER BY v.voucher_date DESC, v.id DESC",
@@ -853,6 +867,7 @@ pub async fn get_sales_invoice(
             v.voucher_date,
             v.party_id as customer_id,
             coa.account_name as customer_name,
+            v.salesperson_id,
             v.party_type,
             v.reference,
             v.total_amount,
@@ -863,10 +878,12 @@ pub async fn get_sales_invoice(
             v.narration,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            u.full_name as created_by_name
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        LEFT JOIN users u ON v.created_by = u.id
         WHERE v.id = ? AND v.voucher_type = 'sales_invoice' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -922,13 +939,14 @@ pub async fn create_sales_invoice(
     // Create voucher
     let voucher_id = Uuid::now_v7().to_string();
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, total_amount, narration, status)
-         VALUES (?, ?, 'sales_invoice', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted')"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, total_amount, narration, status, created_by)
+         VALUES (?, ?, 'sales_invoice', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?)"
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
     .bind(&invoice.voucher_date)
     .bind(&invoice.customer_id)
+    .bind(&invoice.salesperson_id)
     .bind(&invoice.party_type)
     .bind(&invoice.reference)
     .bind(subtotal)
@@ -936,6 +954,7 @@ pub async fn create_sales_invoice(
     .bind(discount_amount)
     .bind(total_amount)
     .bind(&invoice.narration)
+    .bind(&invoice.user_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -1219,11 +1238,12 @@ pub async fn update_sales_invoice(
     // Update voucher header
     sqlx::query(
         "UPDATE vouchers 
-         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, total_amount = ?, narration = ?, status = 'posted'
+         SET voucher_date = ?, party_id = ?, salesperson_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, total_amount = ?, narration = ?, status = 'posted'
          WHERE id = ? AND voucher_type = 'sales_invoice'"
     )
     .bind(&invoice.voucher_date)
     .bind(&invoice.customer_id)
+    .bind(&invoice.salesperson_id)
     .bind(&invoice.party_type)
     .bind(&invoice.reference)
     .bind(subtotal)

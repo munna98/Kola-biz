@@ -18,8 +18,10 @@ import {
   setSalesMode,
   setSalesCurrentVoucherId,
   setSalesCurrentVoucherNo,
-  setSalesHasUnsavedChanges,
   setSalesNavigationData,
+  setSalesSalespersonId,
+  setSalesHasUnsavedChanges,
+  setSalesCreatedByName,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -47,7 +49,7 @@ import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialo
 import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
 import ProductDialog from '@/components/dialogs/ProductDialog';
-import { ProductGroup, Unit } from '@/lib/tauri';
+import { ProductGroup, Unit, Employee } from '@/lib/tauri';
 
 interface Product {
   id: number;
@@ -68,9 +70,11 @@ interface Party {
 export default function SalesInvoicePage() {
   const dispatch = useDispatch<AppDispatch>();
   const salesState = useSelector((state: RootState) => state.salesInvoice);
+  const user = useSelector((state: RootState) => state.auth.user);
   const [products, setProducts] = useState<Product[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showListView, setShowListView] = useState(false);
@@ -110,12 +114,13 @@ export default function SalesInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, accountsData, settingsData, groupsData] = await Promise.all([
+        const [productsData, unitsData, accountsData, settingsData, groupsData, employeesData] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable'] }),
           invoke<any>('get_voucher_settings', { voucherType: 'sales_invoice' }),
           invoke<ProductGroup[]>('get_product_groups'),
+          invoke<Employee[]>('get_employees'),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
@@ -123,6 +128,7 @@ export default function SalesInvoicePage() {
           setVoucherSettings(settingsData);
         }
         setProductGroups(groupsData);
+        setEmployees(employeesData.filter((e: Employee) => e.status === 'active'));
 
         const combinedParties = accountsData.map(acc => ({
           id: acc.id,
@@ -325,6 +331,7 @@ export default function SalesInvoicePage() {
           id: salesState.currentVoucherId,
           invoice: {
             customer_id: salesState.form.customer_id,
+            salesperson_id: salesState.form.salesperson_id || null,
             party_type: salesState.form.party_type,
             voucher_date: salesState.form.voucher_date,
             reference: salesState.form.reference || null,
@@ -365,6 +372,7 @@ export default function SalesInvoicePage() {
         const newInvoiceId = await invoke<string>('create_sales_invoice', {
           invoice: {
             customer_id: salesState.form.customer_id,
+            salesperson_id: salesState.form.salesperson_id || null,
             party_type: salesState.form.party_type,
             voucher_date: salesState.form.voucher_date,
             reference: salesState.form.reference || null,
@@ -380,6 +388,7 @@ export default function SalesInvoicePage() {
               rate: item.rate,
               tax_rate: item.tax_rate
             })),
+            user_id: user?.id.toString(),
           },
         });
         toast.success('Sales invoice created successfully');
@@ -473,10 +482,14 @@ export default function SalesInvoicePage() {
         .then(bal => setPartyBalance(bal))
         .catch(console.error);
       dispatch(setSalesVoucherDate(invoice.voucher_date));
+      dispatch(setSalesSalespersonId(invoice.salesperson_id || undefined));
       dispatch(setSalesReference(invoice.reference || ''));
       dispatch(setSalesNarration(invoice.narration || ''));
       dispatch(setSalesDiscountRate(invoice.discount_rate || 0));
       dispatch(setSalesDiscountAmount(invoice.discount_amount || 0));
+
+      // Set Creator Name
+      dispatch(setSalesCreatedByName(invoice.created_by_name));
 
       // Populate Items
       // Clear default empty item
@@ -701,6 +714,7 @@ export default function SalesInvoicePage() {
         mode={salesState.mode}
         voucherNo={salesState.currentVoucherNo}
         voucherDate={salesState.form.voucher_date}
+        createdBy={salesState.created_by_name}
         isUnsaved={salesState.hasUnsavedChanges}
         hasPrevious={salesState.navigationData.hasPrevious}
         hasNext={salesState.navigationData.hasNext}
@@ -829,6 +843,25 @@ export default function SalesInvoicePage() {
                     dispatch(setSalesHasUnsavedChanges(true));
                   }}
                   className="h-8 text-sm"
+                  disabled={isReadOnly}
+                />
+              </div>
+
+              {/* Sales Rep (Salesperson) */}
+              <div>
+                <Label className="text-xs font-medium mb-1 block">Sales Rep</Label>
+                <Combobox
+                  options={employees.map(e => ({
+                    value: e.id,
+                    label: e.name
+                  }))}
+                  value={salesState.form.salesperson_id || ''}
+                  onChange={(value) => {
+                    dispatch(setSalesSalespersonId(value as string || undefined));
+                    dispatch(setSalesHasUnsavedChanges(true));
+                  }}
+                  placeholder="Select Sales Rep"
+                  searchPlaceholder="Search employees..."
                   disabled={isReadOnly}
                 />
               </div>

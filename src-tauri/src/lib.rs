@@ -145,6 +145,12 @@ pub fn run() {
             get_stock_movements,
             get_transaction_report,
             commands::parties::get_all_parties,
+            // User Management (New)
+            commands::auth::get_users,
+            commands::auth::create_user,
+            commands::auth::update_user,
+            commands::auth::delete_user,
+            commands::auth::reset_user_password,
             // Dashboard
             get_dashboard_metrics,
             get_revenue_trend,
@@ -182,6 +188,11 @@ pub fn run() {
             // PDF Export
             generate_ledger_pdf,
             get_downloads_path,
+            // Employees
+            create_employee,
+            get_employees,
+            update_employee,
+            delete_employee,
             // Authentication
             check_if_users_exist,
             create_initial_user,

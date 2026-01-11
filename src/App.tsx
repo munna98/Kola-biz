@@ -6,6 +6,7 @@ import { invoke } from '@tauri-apps/api/core';
 import ProductsPage from './pages/ProductsPage';
 import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
+import EmployeesPage from './pages/EmployeesPage';
 import ChartOfAccountsPage from './pages/ChartOfAccountsPage';
 import PurchaseInvoicePage from './pages/PurchaseInvoicePage';
 import PurchaseReturnPage from './pages/PurchaseReturnPage';
@@ -33,6 +34,7 @@ import LoginPage from './pages/LoginPage';
 // import InitialSetupPage from './pages/InitialSetupPage'; // Removed
 import CompanySetupPage from './pages/CompanySetupPage';
 import VoucherSettingsPage from './pages/VoucherSettingsPage';
+import UsersPage from './pages/UsersPage';
 
 import CompanyProfilePage from './pages/settings/CompanyProfilePage';
 import { InvoiceTemplatesPage } from './pages/settings/InvoiceTemplatesPage';
@@ -149,6 +151,7 @@ function AppContent() {
       case 'products': return <ProductsPage key={productPageKey} />;
       case 'customers': return <CustomersPage />;
       case 'suppliers': return <SuppliersPage />;
+      case 'employees': return <EmployeesPage />;
       case 'coa': return <ChartOfAccountsPage />;
       case 'purchase': return <PurchaseInvoicePage />;
       case 'purchase_return': return <PurchaseReturnPage />;
@@ -171,6 +174,7 @@ function AppContent() {
       case 'invoice_settings': return <InvoiceTemplatesPage />;
       case 'voucher_settings': return <VoucherSettingsPage />;
       case 'license': return <LicensePage />;
+      case 'users': return <UsersPage />;
 
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }

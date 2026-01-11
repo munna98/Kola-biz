@@ -48,6 +48,7 @@ pub struct PaymentVoucher {
     pub created_at: String,
     pub deleted_at: Option<String>,
     pub created_from_invoice_id: Option<String>,
+    pub created_by_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -97,6 +98,7 @@ pub struct CreatePayment {
     pub reference_number: Option<String>,
     pub narration: Option<String>,
     pub items: Vec<CreatePaymentItem>,
+    pub user_id: Option<String>,
 }
 
 #[tauri::command]
@@ -123,8 +125,8 @@ pub async fn create_payment(
 
     // Create voucher
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, account_id)
-         VALUES (?, ?, 'payment', ?, ?, 'account', ?, ?, ?, ?, 'posted', ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, account_id, created_by)
+         VALUES (?, ?, 'payment', ?, ?, 'account', ?, ?, ?, ?, 'posted', ?, ?)"
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -135,6 +137,7 @@ pub async fn create_payment(
     .bind(&payment.payment_method)
     .bind(&payment.narration)
     .bind(&payment.account_id)
+    .bind(&payment.user_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -320,7 +323,8 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
             v.status,
             v.created_at,
             v.deleted_at,
-            v.created_from_invoice_id
+            v.created_from_invoice_id,
+            u.full_name as created_by_name
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
@@ -333,6 +337,7 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
             WHERE credit > 0
         ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        LEFT JOIN users u ON v.created_by = u.id
         WHERE v.voucher_type = 'payment' AND v.deleted_at IS NULL
         GROUP BY v.id
         ORDER BY v.voucher_date DESC, v.id DESC",
@@ -371,7 +376,8 @@ pub async fn get_payment(
             v.status,
             v.created_at,
             v.deleted_at,
-            v.created_from_invoice_id
+            v.created_from_invoice_id,
+            u.full_name as created_by_name
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
@@ -384,6 +390,7 @@ pub async fn get_payment(
             WHERE credit > 0
         ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        LEFT JOIN users u ON v.created_by = u.id
         WHERE v.id = ? AND v.voucher_type = 'payment' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -775,6 +782,7 @@ pub struct ReceiptVoucher {
     pub created_at: String,
     pub deleted_at: Option<String>,
     pub created_from_invoice_id: Option<String>,
+    pub created_by_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -807,6 +815,7 @@ pub struct CreateReceipt {
     pub reference_number: Option<String>,
     pub narration: Option<String>,
     pub items: Vec<CreateReceiptItem>,
+    pub user_id: Option<String>,
 }
 
 #[tauri::command]
@@ -833,8 +842,8 @@ pub async fn create_receipt(
 
     // Create voucher
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, account_id)
-         VALUES (?, ?, 'receipt', ?, ?, 'account', ?, ?, ?, ?, 'posted', ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, account_id, created_by)
+         VALUES (?, ?, 'receipt', ?, ?, 'account', ?, ?, ?, ?, 'posted', ?, ?)"
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -845,6 +854,7 @@ pub async fn create_receipt(
     .bind(&receipt.receipt_method)
     .bind(&receipt.narration)
     .bind(&receipt.account_id)
+    .bind(&receipt.user_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -1030,7 +1040,8 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
             v.status,
             v.created_at,
             v.deleted_at,
-            v.created_from_invoice_id
+            v.created_from_invoice_id,
+            u.full_name as created_by_name
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
@@ -1043,6 +1054,7 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
             WHERE debit > 0
         ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        LEFT JOIN users u ON v.created_by = u.id
         WHERE v.voucher_type = 'receipt' AND v.deleted_at IS NULL
         GROUP BY v.id
         ORDER BY v.voucher_date DESC, v.id DESC",
@@ -1081,7 +1093,8 @@ pub async fn get_receipt(
             v.status,
             v.created_at,
             v.deleted_at,
-            v.created_from_invoice_id
+            v.created_from_invoice_id,
+            u.full_name as created_by_name
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
@@ -1094,6 +1107,7 @@ pub async fn get_receipt(
             WHERE debit > 0
         ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        LEFT JOIN users u ON v.created_by = u.id
         WHERE v.id = ? AND v.voucher_type = 'receipt' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -1505,6 +1519,7 @@ pub struct CreateJournalEntry {
     pub reference: Option<String>,
     pub narration: Option<String>,
     pub lines: Vec<CreateJournalEntryLine>,
+    pub user_id: Option<String>,
 }
 
 #[tauri::command]
@@ -1541,8 +1556,8 @@ pub async fn create_journal_entry(
 
     // Create voucher
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, reference, total_amount, narration, status)
-         VALUES (?, ?, 'journal', ?, ?, ?, ?, 'posted')"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, reference, total_amount, narration, status, created_by)
+         VALUES (?, ?, 'journal', ?, ?, ?, ?, 'posted', ?)"
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -1550,6 +1565,7 @@ pub async fn create_journal_entry(
     .bind(&entry.reference)
     .bind(total_debit)
     .bind(&entry.narration)
+    .bind(&entry.user_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -1590,12 +1606,14 @@ pub async fn get_journal_entries(pool: State<'_, SqlitePool>) -> Result<Vec<Jour
             COALESCE(SUM(je.credit), 0.0) as total_credit,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            u.full_name as created_by_name
         FROM vouchers v
         LEFT JOIN journal_entries je ON v.id = je.voucher_id
+        LEFT JOIN users u ON v.created_by = u.id
         WHERE v.voucher_type = 'journal' AND v.deleted_at IS NULL
-        GROUP BY v.id
-        ORDER BY v.voucher_date DESC, v.id DESC",
+        GROUP BY v.id, u.full_name
+        ORDER BY v.voucher_date DESC, v.created_at DESC, v.id DESC",
     )
     .fetch_all(pool.inner())
     .await
@@ -1620,9 +1638,11 @@ pub async fn get_journal_entry(
             COALESCE(SUM(je.credit), 0.0) as total_credit,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            u.full_name as created_by_name
         FROM vouchers v
         LEFT JOIN journal_entries je ON v.id = je.voucher_id
+        LEFT JOIN users u ON v.created_by = u.id
         WHERE v.id = ? AND v.voucher_type = 'journal' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
