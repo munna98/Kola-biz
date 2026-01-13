@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { IconPlus, IconEdit, IconTrash, IconUser, IconId, IconBriefcase, IconMail, IconPhone } from '@tabler/icons-react';
+import { Badge } from '@/components/ui/badge';
+import { IconPlus, IconEdit, IconTrash, IconUser, IconMail, IconPhone } from '@tabler/icons-react';
 import { api, Employee } from '@/lib/tauri';
 import { toast } from 'sonner';
 import EmployeeDialog from '@/components/dialogs/EmployeeDialog';
@@ -46,11 +47,13 @@ export default function EmployeesPage() {
     const filteredEmployees = employees.filter(e =>
         e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (e.code || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-        (e.designation || '').toLowerCase().includes(searchTerm.toLowerCase())
+        (e.designation || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (e.phone || '').includes(searchTerm) ||
+        (e.email || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
 
     return (
-        <div className="p-6 space-y-6">
+        <div className="p-6 space-y-4">
             <div className="flex justify-between items-center">
                 <div>
                     <h2 className="text-2xl font-bold">Employees</h2>
@@ -71,65 +74,67 @@ export default function EmployeesPage() {
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {filteredEmployees.map(emp => (
-                    <Card key={emp.id} className="hover:shadow-md transition-shadow">
-                        <CardContent className="p-6 space-y-4">
-                            <div className="flex justify-between items-start">
-                                <div className="flex gap-3">
-                                    <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                                        <IconUser size={20} />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-semibold">{emp.name}</h3>
-                                        {emp.designation && <p className="text-sm text-muted-foreground flex items-center gap-1"><IconBriefcase size={12} /> {emp.designation}</p>}
-                                        {emp.code && <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1"><IconId size={12} /> {emp.code}</p>}
-                                    </div>
-                                </div>
-                                <div className="flex gap-1">
-                                    <Button size="icon" variant="ghost" className="h-8 w-8" onClick={() => handleEdit(emp)}>
-                                        <IconEdit size={16} />
-                                    </Button>
-                                    <Button size="icon" variant="ghost" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={() => handleDelete(emp.id)}>
-                                        <IconTrash size={16} />
-                                    </Button>
-                                </div>
-                            </div>
-
-                            <div className="pt-2 space-y-2 text-sm">
-                                {emp.phone && (
-                                    <div className="flex items-center gap-2 text-muted-foreground">
-                                        <IconPhone size={14} />
-                                        <span>{emp.phone}</span>
-                                    </div>
-                                )}
-                                {emp.email && (
-                                    <div className="flex items-center gap-2 text-muted-foreground">
-                                        <IconMail size={14} />
-                                        <span>{emp.email}</span>
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="pt-2 flex items-center justify-between border-t mt-2">
-                                <div className={`text-xs px-2 py-1 rounded-full ${emp.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-                                    {emp.status}
-                                </div>
-                                {emp.user_id && (
-                                    <div className="text-xs px-2 py-1 rounded-full bg-blue-100 text-blue-700 flex items-center gap-1">
-                                        Has Login
-                                    </div>
-                                )}
-                            </div>
-                        </CardContent>
-                    </Card>
-                ))}
-                {filteredEmployees.length === 0 && (
-                    <div className="col-span-full text-center py-10 text-muted-foreground">
-                        No employees found.
-                    </div>
-                )}
-            </div>
+            <Card>
+                <CardContent className="p-0">
+                    <table className="w-full">
+                        <thead className="border-b bg-muted/50">
+                            <tr className="text-left text-sm">
+                                <th className="p-3">Name</th>
+                                <th className="p-3">Code</th>
+                                <th className="p-3">Designation</th>
+                                <th className="p-3">Contact</th>
+                                <th className="p-3">Status</th>
+                                <th className="p-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {filteredEmployees.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                                        {searchTerm ? 'No employees match your search.' : 'No employees found.'}
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredEmployees.map(emp => (
+                                    <tr key={emp.id} className="border-b hover:bg-muted/30">
+                                        <td className="p-3 font-medium">
+                                            <div className="flex items-center gap-2">
+                                                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                                                    <IconUser size={16} />
+                                                </div>
+                                                <div>
+                                                    <div>{emp.name}</div>
+                                                    {emp.user_id && <span className="text-[10px] bg-blue-100 text-blue-700 px-1 rounded">Has Login</span>}
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td className="p-3 text-sm text-muted-foreground">{emp.code || '-'}</td>
+                                        <td className="p-3 text-sm">{emp.designation || '-'}</td>
+                                        <td className="p-3 text-sm">
+                                            <div className="flex flex-col gap-1">
+                                                {emp.phone && <div className="flex items-center gap-1"><IconPhone size={12} className="text-muted-foreground" /> {emp.phone}</div>}
+                                                {emp.email && <div className="flex items-center gap-1"><IconMail size={12} className="text-muted-foreground" /> {emp.email}</div>}
+                                                {!emp.phone && !emp.email && '-'}
+                                            </div>
+                                        </td>
+                                        <td className="p-3 text-sm">
+                                            <Badge variant={emp.status === 'active' ? 'default' : 'secondary'} className="capitalize">
+                                                {emp.status}
+                                            </Badge>
+                                        </td>
+                                        <td className="p-3">
+                                            <div className="flex gap-2">
+                                                <Button size="sm" variant="ghost" onClick={() => handleEdit(emp)}><IconEdit size={16} /></Button>
+                                                <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(emp.id)}><IconTrash size={16} /></Button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
+                </CardContent>
+            </Card>
 
             <EmployeeDialog
                 open={open}

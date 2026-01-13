@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Badge } from '@/components/ui/badge';
 import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
 import { api, Product, Unit, ProductGroup } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
@@ -213,7 +214,11 @@ export default function ProductsPage() {
                     <td className="p-3">₹{p.purchase_rate.toFixed(2)}</td>
                     <td className="p-3">₹{p.sales_rate.toFixed(2)}</td>
                     <td className="p-3">₹{p.mrp.toFixed(2)}</td>
-                    <td className="p-3">{p.is_active ? '✓' : '✗'}</td>
+                    <td className="p-3">
+                      <Badge variant={p.is_active ? 'default' : 'secondary'}>
+                        {p.is_active ? 'Active' : 'Inactive'}
+                      </Badge>
+                    </td>
                     <td className="p-3 flex gap-2">
                       {!showDeleted ? (
                         <>
