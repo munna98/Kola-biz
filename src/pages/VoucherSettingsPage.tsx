@@ -92,6 +92,8 @@ export default function VoucherSettingsPage() {
 
             } else {
                 // No saved settings, use defaults
+                setAutoPrint(voucherType === 'sales_invoice');
+                setShowPaymentModal(true);
                 initialColumns = AVAILABLE_COLUMNS.map((col, index) => ({
                     id: col.id,
                     label: col.label,

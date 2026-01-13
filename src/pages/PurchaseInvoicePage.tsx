@@ -74,8 +74,10 @@ export default function PurchaseInvoicePage() {
   const [showQuickPayment, setShowQuickPayment] = useState(false);
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
+  const [savedInvoiceNo, setSavedInvoiceNo] = useState<string | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[] } | undefined>(undefined);
+  const [, setSavedPartyId] = useState<number | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
 
   const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
@@ -93,6 +95,9 @@ export default function PurchaseInvoicePage() {
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
   const supplierRef = useRef<HTMLDivElement>(null);
+
+  // Ref to track if auto-print is pending after payment dialog
+  const autoPrintPending = useRef(false);
 
   // Load initial data
   useEffect(() => {
@@ -430,6 +435,22 @@ export default function PurchaseInvoicePage() {
         });
 
         toast.success('Purchase invoice updated successfully');
+
+        // Prepare state for Payment Dialog & Print (persist before reset)
+        setSavedInvoiceId(purchaseState.currentVoucherId);
+        setSavedInvoiceNo(purchaseState.currentVoucherNo);
+        setSavedInvoiceAmount(purchaseState.totals.grandTotal);
+        const supplier = parties.find(p => p.id === purchaseState.form.supplier_id);
+        setSavedPartyName(supplier?.name || 'Cash Purchase');
+        setSavedPartyId(supplier?.id);
+
+        // Auto Print Check - Defer until after payment dialog
+        if (voucherSettings?.autoPrint) {
+          autoPrintPending.current = true;
+        }
+
+        // Show Payment Dialog
+        setShowQuickPayment(true);
       } else {
         const newInvoiceId = await invoke<string>('create_purchase_invoice', {
           invoice: {
@@ -457,9 +478,61 @@ export default function PurchaseInvoicePage() {
         // Auto-prompt for payment after creating invoice
         setSavedInvoiceAmount(purchaseState.totals.grandTotal);
         setSavedInvoiceId(newInvoiceId);
+
+        // Fetch new invoice to get the generated voucher number
+        const newInvoice = await invoke<any>('get_purchase_invoice', { id: newInvoiceId });
+        setSavedInvoiceNo(newInvoice.voucher_no);
+
         const supplier = parties.find(p => p.id === purchaseState.form.supplier_id);
-        setSavedPartyName(supplier?.name || 'Cash Purchase');
-        setShowQuickPayment(true);
+        const partyName = supplier?.name || 'Cash Purchase';
+        setSavedPartyName(partyName);
+        setSavedPartyId(supplier?.id);
+
+        // Check payment modal setting (default true if undefined)
+        const shouldShowPaymentModal = voucherSettings?.showPaymentModal !== false;
+
+        if (!shouldShowPaymentModal) {
+          // Payment modal disabled - handle conditionally
+          const isCashPurchase = partyName === 'Cash Purchase';
+
+          if (isCashPurchase && purchaseState.totals.grandTotal > 0) {
+            // Auto-record payment for Cash Purchase
+            try {
+              const cashBankAccounts = await invoke<{ id: number; name: string }[]>('get_cash_bank_accounts');
+              const defaultCashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];
+
+              if (defaultCashAccount) {
+                await invoke('create_quick_payment', {
+                  payment: {
+                    invoice_id: newInvoiceId,
+                    amount: purchaseState.totals.grandTotal,
+                    payment_account_id: defaultCashAccount.id,
+                    payment_date: purchaseState.form.voucher_date,
+                    payment_method: 'cash',
+                    reference: null,
+                    remarks: `Auto payment for ${newInvoice.voucher_no}`,
+                  },
+                });
+                toast.success('Payment recorded automatically');
+              }
+            } catch (paymentError) {
+              console.error('Failed to auto-record payment:', paymentError);
+              toast.error('Invoice saved but payment recording failed');
+            }
+          }
+          // For non-Cash Purchase parties: skip payment modal (invoice remains unpaid)
+
+          // Auto Print if enabled
+          if (voucherSettings?.autoPrint) {
+            setShowPrintPreview(true);
+          }
+        } else {
+          // Show payment modal as usual
+          if (voucherSettings?.autoPrint) {
+            autoPrintPending.current = true;
+          }
+          setShowQuickPayment(true);
+        }
       }
 
       dispatch(setPurchaseHasUnsavedChanges(false));
@@ -639,9 +712,18 @@ export default function PurchaseInvoicePage() {
       <PaymentManagementDialog
         mode="payment"
         open={showQuickPayment}
-        onOpenChange={setShowQuickPayment}
+        onOpenChange={(open) => {
+          setShowQuickPayment(open);
+          if (!open && autoPrintPending.current) {
+            autoPrintPending.current = false;
+            // Small timeout to allow dialog to fully close visually before opening next one
+            setTimeout(() => {
+              setShowPrintPreview(true);
+            }, 100);
+          }
+        }}
         invoiceId={savedInvoiceId || purchaseState.currentVoucherId || undefined}
-        invoiceNo={purchaseState.currentVoucherNo}
+        invoiceNo={savedInvoiceNo || purchaseState.currentVoucherNo}
         invoiceAmount={savedInvoiceAmount || purchaseState.totals.grandTotal}
         invoiceDate={purchaseState.form.voucher_date}
         partyName={savedPartyName}
@@ -661,9 +743,9 @@ export default function PurchaseInvoicePage() {
       <PrintPreviewDialog
         open={showPrintPreview}
         onOpenChange={setShowPrintPreview}
-        voucherId={purchaseState.currentVoucherId || undefined}
+        voucherId={savedInvoiceId || purchaseState.currentVoucherId || undefined}
         voucherType="purchase_invoice"
-        title={`Print Invoice - ${purchaseState.currentVoucherNo}`}
+        title={savedInvoiceNo || purchaseState.currentVoucherNo ? `Print Invoice - ${savedInvoiceNo || purchaseState.currentVoucherNo}` : 'Print Invoice'}
       />
 
       <SupplierDialog
