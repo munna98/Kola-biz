@@ -38,6 +38,7 @@ import UsersPage from './pages/UsersPage';
 
 import CompanyProfilePage from './pages/settings/CompanyProfilePage';
 import { InvoiceTemplatesPage } from './pages/settings/InvoiceTemplatesPage';
+import BarcodeSettingsPage from './pages/settings/BarcodeSettingsPage';
 import DashboardPage from './pages/DashboardPage';
 import { LicenseProvider } from './components/providers/LicenseProvider';
 import { LicenseGuard } from './components/LicenseGuard';
@@ -175,6 +176,7 @@ function AppContent() {
       case 'voucher_settings': return <VoucherSettingsPage />;
       case 'license': return <LicensePage />;
       case 'users': return <UsersPage />;
+      case 'barcode_settings': return <BarcodeSettingsPage />;
 
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }

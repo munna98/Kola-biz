@@ -773,11 +773,11 @@ export default function PurchaseInvoicePage() {
             <div className="grid grid-cols-6 gap-3">
               {/* Supplier */}
               <div ref={supplierRef} className="col-span-2">
-                <Label className="text-xs font-medium mb-1 block">Party (Supplier/Customer) *</Label>
+                <Label className="text-xs font-medium mb-1 block">Party *</Label>
                 <Combobox
                   options={parties.map(p => ({
                     value: p.id,
-                    label: `${p.name} (${p.type === 'supplier' ? 'Supplier' : 'Customer'})`
+                    label: p.name
                   }))}
                   value={purchaseState.form.supplier_id}
                   onChange={(value) => {

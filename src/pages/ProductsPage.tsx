@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
-import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode } from '@tabler/icons-react';
 import { api, Product, Unit, ProductGroup } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import ProductDialog from '@/components/dialogs/ProductDialog';
 import UnitsDialog from '@/components/dialogs/UnitsDialog';
 import ProductGroupsDialog from '@/components/dialogs/ProductGroupsDialog';
+import BarcodeLabelDialog from '@/components/dialogs/BarcodeLabelDialog';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -24,6 +25,8 @@ export default function ProductsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | undefined>(undefined);
   const [showDeleted, setShowDeleted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [barcodeDialogOpen, setBarcodeDialogOpen] = useState(false);
+  const [barcodeProduct, setBarcodeProduct] = useState<Product | null>(null);
   const currentUser = useSelector((state: RootState) => state.app.currentUser);
 
   const load = async () => {
@@ -222,6 +225,12 @@ export default function ProductsPage() {
                     <td className="p-3 flex gap-2">
                       {!showDeleted ? (
                         <>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="sm" variant="ghost" onClick={() => { setBarcodeProduct(p); setBarcodeDialogOpen(true); }}><IconBarcode size={16} /></Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Print Barcode</TooltipContent>
+                          </Tooltip>
                           <Button size="sm" variant="ghost" onClick={() => handleEdit(p)}><IconEdit size={16} /></Button>
                           <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.id)}><IconTrash size={16} /></Button>
                         </>
@@ -262,6 +271,13 @@ export default function ProductsPage() {
         open={groupsOpen}
         onOpenChange={setGroupsOpen}
         onGroupsChange={handleGroupsChange}
+      />
+
+      {/* Barcode Label Dialog */}
+      <BarcodeLabelDialog
+        open={barcodeDialogOpen}
+        onOpenChange={setBarcodeDialogOpen}
+        products={barcodeProduct ? [{ code: barcodeProduct.code, name: barcodeProduct.name, salesRate: barcodeProduct.sales_rate }] : []}
       />
     </div>
   );

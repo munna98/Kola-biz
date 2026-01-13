@@ -7,10 +7,11 @@ import {
     DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { IconPrinter } from '@tabler/icons-react';
+import { IconPrinter, IconBarcode } from '@tabler/icons-react';
 import { usePrint } from '@/hooks/usePrint';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
+import BarcodeLabelDialog from './BarcodeLabelDialog';
 
 interface PrintPreviewDialogProps {
     open: boolean;
@@ -19,6 +20,17 @@ interface PrintPreviewDialogProps {
     voucherType: string;
     templateId?: number;
     title?: string;
+}
+
+interface VoucherSettings {
+    enableBarcodePrinting?: boolean;
+}
+
+interface InvoiceItem {
+    product_code: string;
+    product_name: string;
+    rate: number;
+    count: number;
 }
 
 export function PrintPreviewDialog({
@@ -32,11 +44,18 @@ export function PrintPreviewDialog({
     const { printRaw, isPrinting } = usePrint();
     const [content, setContent] = useState<string>('');
     const [loading, setLoading] = useState(false);
+    const [enableBarcode, setEnableBarcode] = useState(false);
+    const [barcodeDialogOpen, setBarcodeDialogOpen] = useState(false);
+    const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
     const frameRef = useRef<HTMLIFrameElement>(null);
 
     useEffect(() => {
         if (open && voucherId) {
             loadContent();
+            if (voucherType === 'purchase_invoice') {
+                loadBarcodeSettings();
+                loadInvoiceItems();
+            }
         }
     }, [open, voucherId, voucherType, templateId]);
 
@@ -58,10 +77,36 @@ export function PrintPreviewDialog({
         }
     };
 
+    const loadBarcodeSettings = async () => {
+        try {
+            const settings = await invoke<VoucherSettings | null>('get_voucher_settings', {
+                voucherType: 'purchase_invoice'
+            });
+            setEnableBarcode(settings?.enableBarcodePrinting || false);
+        } catch (error) {
+            console.error('Failed to load barcode settings:', error);
+        }
+    };
+
+    const loadInvoiceItems = async () => {
+        try {
+            const items = await invoke<InvoiceItem[]>('get_purchase_invoice_items', {
+                voucherId: voucherId
+            });
+            setInvoiceItems(items);
+        } catch (error) {
+            console.error('Failed to load invoice items:', error);
+        }
+    };
+
     const handlePrint = async () => {
         if (!content) return;
         await printRaw(content);
         // Optional: close on print? keeping open for now so they can reprint if needed
+    };
+
+    const handlePrintLabels = () => {
+        setBarcodeDialogOpen(true);
     };
 
     // Inject content into iframe when it loads or content changes
@@ -78,46 +123,69 @@ export function PrintPreviewDialog({
     }, [content, open, loading]);
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-[90vw] h-[90vh] flex flex-col p-0 gap-0" showCloseButton={false}>
-                <DialogHeader className="px-6 py-4 border-b shrink-0 flex flex-row items-center justify-between space-y-0">
-                    <div>
-                        <DialogTitle>{title}</DialogTitle>
-                        <DialogDescription className="hidden">Preview of the document before printing</DialogDescription>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => onOpenChange(false)}
-                        >
-                            Close
-                        </Button>
-                        <Button
-                            size="sm"
-                            onClick={handlePrint}
-                            disabled={loading || isPrinting || !content}
-                        >
-                            <IconPrinter size={16} className="mr-2" />
-                            {isPrinting ? 'Printing...' : 'Print'}
-                        </Button>
-                    </div>
-                </DialogHeader>
-
-                <div className="flex-1 bg-muted/30 p-4 overflow-hidden relative">
-                    {loading ? (
-                        <div className="absolute inset-0 flex items-center justify-center">
-                            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <>
+            <Dialog open={open} onOpenChange={onOpenChange}>
+                <DialogContent className="max-w-[90vw] h-[90vh] flex flex-col p-0 gap-0" showCloseButton={false}>
+                    <DialogHeader className="px-6 py-4 border-b shrink-0 flex flex-row items-center justify-between space-y-0">
+                        <div>
+                            <DialogTitle>{title}</DialogTitle>
+                            <DialogDescription className="hidden">Preview of the document before printing</DialogDescription>
                         </div>
-                    ) : (
-                        <iframe
-                            ref={frameRef}
-                            className="w-full h-full bg-white shadow-sm rounded-md border"
-                            title="Print Preview"
-                        />
-                    )}
-                </div>
-            </DialogContent>
-        </Dialog>
+                        <div className="flex items-center gap-2">
+                            {enableBarcode && voucherType === 'purchase_invoice' && invoiceItems.length > 0 && (
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={handlePrintLabels}
+                                >
+                                    <IconBarcode size={16} className="mr-2" />
+                                    Print Labels
+                                </Button>
+                            )}
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => onOpenChange(false)}
+                            >
+                                Close
+                            </Button>
+                            <Button
+                                size="sm"
+                                onClick={handlePrint}
+                                disabled={loading || isPrinting || !content}
+                            >
+                                <IconPrinter size={16} className="mr-2" />
+                                {isPrinting ? 'Printing...' : 'Print'}
+                            </Button>
+                        </div>
+                    </DialogHeader>
+
+                    <div className="flex-1 bg-muted/30 p-4 overflow-hidden relative">
+                        {loading ? (
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                            </div>
+                        ) : (
+                            <iframe
+                                ref={frameRef}
+                                className="w-full h-full bg-white shadow-sm rounded-md border"
+                                title="Print Preview"
+                            />
+                        )}
+                    </div>
+                </DialogContent>
+            </Dialog>
+
+            <BarcodeLabelDialog
+                open={barcodeDialogOpen}
+                onOpenChange={setBarcodeDialogOpen}
+                products={invoiceItems.map(item => ({
+                    code: item.product_code,
+                    name: item.product_name,
+                    salesRate: item.rate,
+                    quantity: item.count,
+                }))}
+            />
+        </>
     );
 }

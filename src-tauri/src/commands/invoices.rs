@@ -30,6 +30,7 @@ pub struct PurchaseInvoiceItem {
     pub id: String,
     pub voucher_id: String,
     pub product_id: String,
+    pub product_code: String,
     pub product_name: String,
     pub description: Option<String>,
     pub initial_quantity: f64,
@@ -183,7 +184,7 @@ pub async fn get_purchase_invoice_items(
     voucher_id: String,
 ) -> Result<Vec<PurchaseInvoiceItem>, String> {
     sqlx::query_as::<_, PurchaseInvoiceItem>(
-        "SELECT vi.*, p.name as product_name 
+        "SELECT vi.*, p.code as product_code, p.name as product_name 
          FROM voucher_items vi
          JOIN products p ON vi.product_id = p.id
          WHERE vi.voucher_id = ?",

@@ -21,6 +21,7 @@ interface VoucherSettings {
     columns: ColumnSettings[];
     autoPrint?: boolean;
     showPaymentModal?: boolean; // Default true - when false, Cash Sale auto-pays, others stay unpaid
+    enableBarcodePrinting?: boolean; // Show barcode print button in print preview
 }
 
 const AVAILABLE_COLUMNS = [
@@ -49,6 +50,7 @@ export default function VoucherSettingsPage() {
     const [columns, setColumns] = useState<ColumnSettings[]>([]);
     const [autoPrint, setAutoPrint] = useState(false);
     const [showPaymentModal, setShowPaymentModal] = useState(true);
+    const [enableBarcodePrinting, setEnableBarcodePrinting] = useState(false);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -66,6 +68,7 @@ export default function VoucherSettingsPage() {
                 // Set Auto Print and Payment Modal
                 setAutoPrint(savedSettings.autoPrint || false);
                 setShowPaymentModal(savedSettings.showPaymentModal !== false); // Default true
+                setEnableBarcodePrinting(savedSettings.enableBarcodePrinting || false);
 
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
@@ -94,6 +97,7 @@ export default function VoucherSettingsPage() {
                 // No saved settings, use defaults
                 setAutoPrint(voucherType === 'sales_invoice');
                 setShowPaymentModal(true);
+                setEnableBarcodePrinting(false);
                 initialColumns = AVAILABLE_COLUMNS.map((col, index) => ({
                     id: col.id,
                     label: col.label,
@@ -117,7 +121,8 @@ export default function VoucherSettingsPage() {
             const settings: VoucherSettings = {
                 columns: columns,
                 autoPrint: autoPrint,
-                showPaymentModal: showPaymentModal
+                showPaymentModal: showPaymentModal,
+                enableBarcodePrinting: enableBarcodePrinting
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -172,17 +177,23 @@ export default function VoucherSettingsPage() {
                         Configure voucher columns and defaults
                     </p>
                 </div>
-                <div className="w-[200px]">
-                    <Select value={selectedVoucher} onValueChange={setSelectedVoucher}>
-                        <SelectTrigger>
-                            <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                            {VOUCHER_TYPES.map(type => (
-                                <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
+                <div className="flex items-center gap-4">
+                    <div className="w-[200px]">
+                        <Select value={selectedVoucher} onValueChange={setSelectedVoucher}>
+                            <SelectTrigger>
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {VOUCHER_TYPES.map(type => (
+                                    <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <Button onClick={handleSave} disabled={loading}>
+                        <IconDeviceFloppy className="mr-2 h-4 w-4" />
+                        Save Settings
+                    </Button>
                 </div>
             </div>
 
@@ -227,6 +238,27 @@ export default function VoucherSettingsPage() {
                                 </p>
                             </div>
                         </div>
+
+                        {selectedVoucher === 'purchase_invoice' && (
+                            <div className="flex items-center gap-4 mb-6">
+                                <Checkbox
+                                    id="enable-barcode"
+                                    checked={enableBarcodePrinting}
+                                    onCheckedChange={(checked) => setEnableBarcodePrinting(checked as boolean)}
+                                />
+                                <div className="grid gap-1.5 leading-none">
+                                    <label
+                                        htmlFor="enable-barcode"
+                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                    >
+                                        Enable Barcode Printing
+                                    </label>
+                                    <p className="text-sm text-muted-foreground">
+                                        Show "Print Labels" button in print preview for this voucher type.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
 
                         <h3 className="text-lg font-medium mb-4">Column Configuration</h3>
                         <div className="space-y-2">
@@ -287,12 +319,7 @@ export default function VoucherSettingsPage() {
                         </div>
                     </div>
 
-                    <div className="flex justify-end">
-                        <Button onClick={handleSave} disabled={loading}>
-                            <IconDeviceFloppy className="mr-2 h-4 w-4" />
-                            Save Settings
-                        </Button>
-                    </div>
+
 
                 </div>
             </div>

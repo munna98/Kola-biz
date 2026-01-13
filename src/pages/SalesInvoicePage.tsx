@@ -832,11 +832,11 @@ export default function SalesInvoicePage() {
             <div className="grid grid-cols-6 gap-3">
               {/* Customer */}
               <div ref={customerRef} className="col-span-2">
-                <Label className="text-xs font-medium mb-1 block">Party (Customer/Supplier) *</Label>
+                <Label className="text-xs font-medium mb-1 block">Party *</Label>
                 <Combobox
                   options={parties.map(p => ({
                     value: p.id,
-                    label: `${p.name} (${p.type === 'customer' ? 'Customer' : 'Supplier'})`
+                    label: p.name
                   }))}
                   value={salesState.form.customer_id}
                   onChange={(value) => {
