@@ -40,6 +40,8 @@ pub struct PurchaseInvoiceItem {
     pub amount: f64,
     pub tax_rate: f64,
     pub tax_amount: f64,
+    pub discount_percent: f64,
+    pub discount_amount: f64,
     pub remarks: Option<String>,
 }
 
@@ -52,6 +54,8 @@ pub struct CreatePurchaseInvoiceItem {
     pub deduction_per_unit: f64,
     pub rate: f64,
     pub tax_rate: f64,
+    pub discount_percent: Option<f64>,
+    pub discount_amount: Option<f64>,
     pub remarks: Option<String>,
 }
 
@@ -206,8 +210,13 @@ pub async fn create_purchase_invoice(
     for item in &invoice.items {
         let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let amount = final_qty * item.rate;
-
-        subtotal += amount;
+        let discount_percent = item.discount_percent.unwrap_or(0.0);
+        let discount_amount = if discount_percent > 0.0 {
+            amount * (discount_percent / 100.0)
+        } else {
+            item.discount_amount.unwrap_or(0.0)
+        };
+        subtotal += amount - discount_amount;
     }
 
     // Apply discounts
@@ -241,12 +250,19 @@ pub async fn create_purchase_invoice(
     for item in &invoice.items {
         let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let amount = final_qty * item.rate;
-        let tax_amount = amount * (item.tax_rate / 100.0);
+        let discount_percent = item.discount_percent.unwrap_or(0.0);
+        let discount_amount = if discount_percent > 0.0 {
+            amount * (discount_percent / 100.0)
+        } else {
+            item.discount_amount.unwrap_or(0.0)
+        };
+        let taxable_amount = amount - discount_amount;
+        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
         let item_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount, remarks)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item_id)
         .bind(&voucher_id)
@@ -260,6 +276,8 @@ pub async fn create_purchase_invoice(
         .bind(amount)
         .bind(item.tax_rate)
         .bind(tax_amount)
+        .bind(item.discount_percent.unwrap_or(0.0))
+        .bind(item.discount_amount.unwrap_or(0.0))
         .bind(&item.remarks)
         .execute(&mut *tx)
         .await
@@ -507,7 +525,13 @@ pub async fn update_purchase_invoice(
     for item in &invoice.items {
         let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let amount = final_qty * item.rate;
-        subtotal += amount;
+        let discount_percent = item.discount_percent.unwrap_or(0.0);
+        let discount_amount = if discount_percent > 0.0 {
+            amount * (discount_percent / 100.0)
+        } else {
+            item.discount_amount.unwrap_or(0.0)
+        };
+        subtotal += amount - discount_amount;
     }
 
     // Apply discounts
@@ -605,12 +629,19 @@ pub async fn update_purchase_invoice(
     for item in &invoice.items {
         let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let amount = final_qty * item.rate;
-        let tax_amount = amount * (item.tax_rate / 100.0);
+        let discount_percent = item.discount_percent.unwrap_or(0.0);
+        let discount_amount = if discount_percent > 0.0 {
+            amount * (discount_percent / 100.0)
+        } else {
+            item.discount_amount.unwrap_or(0.0)
+        };
+        let taxable_amount = amount - discount_amount;
+        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
 
         let item_id = Uuid::now_v7().to_string();
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item_id)
         .bind(&id)
@@ -624,6 +655,8 @@ pub async fn update_purchase_invoice(
         .bind(amount)
         .bind(item.tax_rate)
         .bind(tax_amount)
+        .bind(item.discount_percent.unwrap_or(0.0))
+        .bind(item.discount_amount.unwrap_or(0.0))
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -790,7 +823,10 @@ pub struct SalesInvoiceItem {
     pub rate: f64,
     pub amount: f64,
     pub tax_rate: f64,
+
     pub tax_amount: f64,
+    pub discount_percent: f64,
+    pub discount_amount: f64,
     pub remarks: Option<String>,
 }
 
@@ -803,6 +839,8 @@ pub struct CreateSalesInvoiceItem {
     pub deduction_per_unit: f64,
     pub rate: f64,
     pub tax_rate: f64,
+    pub discount_percent: Option<f64>,
+    pub discount_amount: Option<f64>,
     pub remarks: Option<String>,
 }
 
@@ -929,7 +967,13 @@ pub async fn create_sales_invoice(
     for item in &invoice.items {
         let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let amount = final_quantity * item.rate;
-        subtotal += amount;
+        let discount_percent = item.discount_percent.unwrap_or(0.0);
+        let discount_amount = if discount_percent > 0.0 {
+            amount * (discount_percent / 100.0)
+        } else {
+            item.discount_amount.unwrap_or(0.0)
+        };
+        subtotal += amount - discount_amount;
     }
 
     // Apply discounts
@@ -940,7 +984,7 @@ pub async fn create_sales_invoice(
     let voucher_id = Uuid::now_v7().to_string();
     let _ = sqlx::query(
         "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, total_amount, narration, status, created_by)
-         VALUES (?, ?, 'sales_invoice', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?)"
+         VALUES (?, ?, 'sales_invoice', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?)"
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -963,12 +1007,19 @@ pub async fn create_sales_invoice(
     for item in &invoice.items {
         let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let amount = final_quantity * item.rate;
-        let tax_amount = amount * (item.tax_rate / 100.0);
+        let discount_percent = item.discount_percent.unwrap_or(0.0);
+        let discount_amount = if discount_percent > 0.0 {
+            amount * (discount_percent / 100.0)
+        } else {
+            item.discount_amount.unwrap_or(0.0)
+        };
+        let taxable_amount = amount - discount_amount;
+        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
         let item_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount, remarks)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item_id)
         .bind(&voucher_id)
@@ -982,6 +1033,8 @@ pub async fn create_sales_invoice(
         .bind(amount)
         .bind(item.tax_rate)
         .bind(tax_amount)
+        .bind(item.discount_percent.unwrap_or(0.0))
+        .bind(item.discount_amount.unwrap_or(0.0))
         .bind(&item.remarks)
         .execute(&mut *tx)
         .await
@@ -1228,7 +1281,13 @@ pub async fn update_sales_invoice(
     for item in &invoice.items {
         let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let amount = final_quantity * item.rate;
-        subtotal += amount;
+        let discount_percent = item.discount_percent.unwrap_or(0.0);
+        let discount_amount = if discount_percent > 0.0 {
+            amount * (discount_percent / 100.0)
+        } else {
+            item.discount_amount.unwrap_or(0.0)
+        };
+        subtotal += amount - discount_amount;
     }
 
     // Apply discounts
@@ -1294,12 +1353,19 @@ pub async fn update_sales_invoice(
     for item in &invoice.items {
         let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let amount = final_quantity * item.rate;
-        let tax_amount = amount * (item.tax_rate / 100.0);
+        let discount_percent = item.discount_percent.unwrap_or(0.0);
+        let discount_amount = if discount_percent > 0.0 {
+            amount * (discount_percent / 100.0)
+        } else {
+            item.discount_amount.unwrap_or(0.0)
+        };
+        let taxable_amount = amount - discount_amount;
+        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
         let item_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount, remarks)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item_id)
         .bind(&id)
@@ -1313,6 +1379,8 @@ pub async fn update_sales_invoice(
         .bind(amount)
         .bind(item.tax_rate)
         .bind(tax_amount)
+        .bind(item.discount_percent.unwrap_or(0.0))
+        .bind(item.discount_amount.unwrap_or(0.0))
         .bind(&item.remarks)
         .execute(&mut *tx)
         .await

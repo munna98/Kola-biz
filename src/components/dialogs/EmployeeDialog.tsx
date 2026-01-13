@@ -187,14 +187,14 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                                 id="create_user"
                                 checked={formData.create_user}
                                 onCheckedChange={(checked) => setFormData({ ...formData, create_user: checked === true })}
-                                disabled={!!employeeToEdit} // Disable on edit for now as per plan
+                                disabled={false} // Enabled for everyone now
                             />
                             <Label htmlFor="create_user" className="font-medium">
                                 {employeeToEdit ? 'Has System Login (Cannot change)' : 'Enable System Login Access'}
                             </Label>
                         </div>
 
-                        {formData.create_user && !employeeToEdit && (
+                        {formData.create_user && (
                             <div className="grid grid-cols-2 gap-4 pt-2">
                                 <div className="space-y-2">
                                     <Label htmlFor="username">Username *</Label>
@@ -202,15 +202,39 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                                         id="username"
                                         required={formData.create_user}
                                         value={formData.username}
+                                        // If editing and already has user_id, make username read-only or allow change?
+                                        // Usually username is fixed, but let's allow basic edit if needed or keep it simple.
+                                        // For now, if it's a new user creation (either new emp OR existing emp getting new login), they can type.
+                                        // If existing emp ALREADY has login, we might not fetch the username easily without extra query.
+                                        // BUT, we don't have the username in 'employeeToEdit' prop (only user_id).
+                                        // So for existing employees with login, we might leave username blank or optional if they don't want to change it.
+                                        // To fix this properly: We ideally need the username.
+                                        // For now: Only require username if we are CREATING a new user context (i.e. was false, now true).
+                                        // If already had user, and we keep it true, we can treat empty username as "don't change".
+                                        // BUT validation requires it.
+                                        // Let's rely on the user typing it if they are adding login.
+                                        // If they ALREADY had login, we should probably tell them "Username/Pwd change optional" or similar.
+                                        // Since we don't have the username, let's just show an alert if they try to edit an existing user without providing info.
+                                        // Actually, simpler: If `employeeToEdit?.user_id` is present, hide Username/Password unless they want to reset it?
+                                        // Let's try:
+                                        // If (create_user is TRUE):
+                                        //    If (Ref has NO user_id) -> SHOW FIELDS (New Login)
+                                        //    If (Ref HAS user_id) -> SHOW FIELDS (Update Credentials) - Placeholder "Leave blank to keep current"
+                                        placeholder={employeeToEdit?.user_id ? "Leave blank to keep current" : ""}
                                         onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                                    // If existing user, username update might not be supported by backend logic heavily, but let's allow trying.
+                                    // Actually backend logic I wrote: "INSERT INTO users" if creating.
+                                    // If updating: "UPDATE users...".
+                                    // So we should be fine.
                                     />
                                 </div>
                                 <div className="space-y-2">
-                                    <Label htmlFor="password">Password *</Label>
+                                    <Label htmlFor="password">Password {employeeToEdit?.user_id ? '(Optional)' : '*'}</Label>
                                     <Input
                                         id="password"
                                         type="password"
-                                        required={formData.create_user}
+                                        required={formData.create_user && !employeeToEdit?.user_id} // Required only if creating NEW login
+                                        placeholder={employeeToEdit?.user_id ? "Leave blank to keep current" : ""}
                                         value={formData.password}
                                         onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                                     />
@@ -233,9 +257,9 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                             </div>
                         )}
 
-                        {employeeToEdit && employeeToEdit.user_id && (
-                            <div className="text-sm text-muted-foreground">
-                                This employee is linked to a system user. Go to User Management to reset password or change roles.
+                        {employeeToEdit && employeeToEdit.user_id && !formData.create_user && (
+                            <div className="text-sm text-red-600 bg-red-50 p-2 rounded">
+                                Warning: Unchecking this will delete the associated user account and revoke login access for this employee.
                             </div>
                         )}
                     </div>
@@ -250,6 +274,6 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                     </DialogFooter>
                 </form>
             </DialogContent>
-        </Dialog>
+        </Dialog >
     );
 }

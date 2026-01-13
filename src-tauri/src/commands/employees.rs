@@ -196,13 +196,90 @@ pub async fn update_employee(
             .map_err(|e| format!("Failed to update ledger name: {}", e))?;
     }
 
-    // 3. Update or Create User if requested
-    // Logic for updating/creating user on edit is complex (password changes etc),
-    // for now we'll keep it simple or skip it to keep this function clean.
-    // If they want to manage the User, they can do it from User Management or we add specific logic later.
-    // But if 'create_user' is true and they don't have one, we could create it.
+    // 3. Handle User Login Access
+    let current_user_id: Option<String> = sqlx::query("SELECT user_id FROM employees WHERE id = ?")
+        .bind(&data.id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|row| row.get(0));
 
-    // For MVP, let's just stick to Employee details updates.
+    if data.create_user {
+        // CASE A: User wants login, but currently has none -> Create User
+        if current_user_id.is_none() {
+            if let (Some(username), Some(password)) = (&data.username, &data.password) {
+                let uid = Uuid::now_v7().to_string();
+                let password_hash =
+                    bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|e| e.to_string())?;
+
+                sqlx::query("INSERT INTO users (id, username, password_hash, full_name, role, is_active) VALUES (?, ?, ?, ?, ?, 1)")
+                    .bind(&uid)
+                    .bind(username)
+                    .bind(password_hash)
+                    .bind(&data.name)
+                    .bind(data.role.unwrap_or("user".to_string()))
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| format!("Failed to create user: {}", e))?;
+
+                // Link to employee
+                sqlx::query("UPDATE employees SET user_id = ? WHERE id = ?")
+                    .bind(&uid)
+                    .bind(&data.id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| format!("Failed to link new user to employee: {}", e))?;
+            } else {
+                return Err(
+                    "Username and password are required to enable login access.".to_string()
+                );
+            }
+        }
+        // CASE B: User wants login, and ALREADY has one -> Update User (Optional logic)
+        else if let Some(uid) = current_user_id {
+            // Optional: Update role if changed
+            if let Some(role) = &data.role {
+                sqlx::query("UPDATE users SET role = ?, full_name = ? WHERE id = ?")
+                    .bind(role)
+                    .bind(&data.name)
+                    .bind(&uid)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| format!("Failed to update user role: {}", e))?;
+            }
+
+            // Optional: Update password if provided
+            if let Some(password) = &data.password {
+                if !password.is_empty() {
+                    let password_hash =
+                        bcrypt::hash(password, bcrypt::DEFAULT_COST).map_err(|e| e.to_string())?;
+                    sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+                        .bind(password_hash)
+                        .bind(&uid)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| format!("Failed to update user password: {}", e))?;
+                }
+            }
+        }
+    } else {
+        // CASE C: User wants NO login, but CURRENTLY has one -> Delete User (Revoke Access)
+        if let Some(uid) = current_user_id {
+            // Unlink from employee first
+            sqlx::query("UPDATE employees SET user_id = NULL WHERE id = ?")
+                .bind(&data.id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("Failed to unlink user from employee: {}", e))?;
+
+            // Delete user
+            sqlx::query("DELETE FROM users WHERE id = ?")
+                .bind(&uid)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("Failed to delete associated user: {}", e))?;
+        }
+    }
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok("Employee updated successfully".to_string())

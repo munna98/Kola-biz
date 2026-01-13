@@ -64,7 +64,9 @@ const DEFAULT_COLUMNS: ColumnSettings[] = [
     { id: 'deduction', label: 'Deduction', visible: true, order: 5 },
     { id: 'final_qty', label: 'Final Qty', visible: true, order: 6 },
     { id: 'amount', label: 'Amount', visible: true, order: 7 },
-    { id: 'total', label: 'Total', visible: true, order: 8 },
+    { id: 'discount_percent', label: 'Disc %', visible: false, order: 8 },
+    { id: 'discount_amount', label: 'Disc', visible: false, order: 9 },
+    { id: 'total', label: 'Total', visible: true, order: 10 },
 ];
 
 export function VoucherItemsSection({
@@ -99,7 +101,7 @@ export function VoucherItemsSection({
     const getGridTemplate = () => {
         return columns.map(col => {
             if (col.id === 'product') return '3fr';
-            if (col.id === 'deduction' || col.id === 'amount') return '0.6fr';
+            if (['deduction', 'amount', 'discount_percent', 'discount_amount', 'tax_rate'].includes(col.id)) return '0.6fr';
             return '1fr';
         }).join(' ') + ' 32px'; // w-8 equivalent for delete button
     };
@@ -228,6 +230,32 @@ export function VoucherItemsSection({
                                 <div key={col.id} className="h-7 text-xs flex items-center justify-start px-3 bg-muted/50 border border-input rounded-md font-medium font-mono">
                                     ₹{calc.amount.toFixed(2)}
                                 </div>
+                            );
+                        case 'discount_percent':
+                            return (
+                                <Input
+                                    key={col.id}
+                                    type="number"
+                                    value={item.discount_percent || ''}
+                                    onChange={(e) => handleNumberChange('discount_percent', e.target.value)}
+                                    className="h-7 text-xs text-right font-mono"
+                                    placeholder="0"
+                                    step="0.01"
+                                    disabled={isReadOnly}
+                                />
+                            );
+                        case 'discount_amount':
+                            return (
+                                <Input
+                                    key={col.id}
+                                    type="number"
+                                    value={item.discount_amount || ''}
+                                    onChange={(e) => handleNumberChange('discount_amount', e.target.value)}
+                                    className="h-7 text-xs text-right font-mono"
+                                    placeholder="0.00"
+                                    step="0.01"
+                                    disabled={isReadOnly}
+                                />
                             );
                         case 'tax_rate':
                             return (

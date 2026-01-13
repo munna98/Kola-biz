@@ -32,6 +32,8 @@ const AVAILABLE_COLUMNS = [
     { id: 'deduction', label: 'Deduction', defaultVisible: true },
     { id: 'final_qty', label: 'Final Qty', defaultVisible: true },
     { id: 'amount', label: 'Amount', defaultVisible: true },
+    { id: 'discount_percent', label: 'Disc %', defaultVisible: false },
+    { id: 'discount_amount', label: 'Disc', defaultVisible: false },
     { id: 'tax_rate', label: 'Tax %', defaultVisible: false },
     { id: 'total', label: 'Total', defaultVisible: true },
 ];

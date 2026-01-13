@@ -296,6 +296,16 @@ pub async fn init_db(
     .execute(&pool)
     .await?;
 
+    // Migration: Add discount_percent to voucher_items if not exists
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN discount_percent REAL DEFAULT 0")
+        .execute(&pool)
+        .await;
+
+    // Migration: Add discount_amount to voucher_items if not exists
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN discount_amount REAL DEFAULT 0")
+        .execute(&pool)
+        .await;
+
     // Journal Entries (Ledger Postings)
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS journal_entries (

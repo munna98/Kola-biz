@@ -141,6 +141,8 @@ export default function PurchaseReturnPage() {
                 deduction_per_unit: 1.5, // Default deduction for Purchase Return (same as Pi?) - User asked for Pi=1.5, assuming Pr=1.5 too?
                 rate: 0,
                 tax_rate: 0,
+                discount_percent: 0,
+                discount_amount: 0,
             })
         );
     };
@@ -187,8 +189,24 @@ export default function PurchaseReturnPage() {
         }
 
         const updatedItems = [...purchaseReturnState.items];
-        updatedItems[index] = { ...updatedItems[index], [field]: finalValue };
-        dispatch(updatePurchaseReturnItem({ index, data: { [field]: finalValue } }));
+        let item = { ...updatedItems[index], [field]: finalValue };
+
+        // Discount Logic Sync
+        if (field === 'discount_percent') {
+            const grossAmount = (item.initial_quantity - item.count * item.deduction_per_unit) * item.rate;
+            item.discount_amount = parseFloat(((grossAmount * (finalValue as number)) / 100).toFixed(2));
+        } else if (field === 'discount_amount') {
+            const grossAmount = (item.initial_quantity - item.count * item.deduction_per_unit) * item.rate;
+            item.discount_percent = grossAmount > 0 ? parseFloat(((finalValue as number / grossAmount) * 100).toFixed(2)) : 0;
+        } else if (field === 'rate' || field === 'initial_quantity' || field === 'count' || field === 'deduction_per_unit') {
+            const grossAmount = (item.initial_quantity - item.count * item.deduction_per_unit) * item.rate;
+            if (item.discount_percent > 0) {
+                item.discount_amount = parseFloat(((grossAmount * item.discount_percent) / 100).toFixed(2));
+            }
+        }
+
+        updatedItems[index] = item;
+        dispatch(updatePurchaseReturnItem({ index, data: item }));
         updateTotalsWithItems(updatedItems);
         dispatch(setPurchaseReturnHasUnsavedChanges(true));
     };
@@ -200,8 +218,12 @@ export default function PurchaseReturnPage() {
         items.forEach((item) => {
             const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
             const amount = finalQty * item.rate;
-            const taxAmount = amount * (item.tax_rate / 100);
-            subtotal += amount;
+
+            const discountAmount = item.discount_amount || 0;
+            const taxableAmount = amount - discountAmount;
+            const taxAmount = taxableAmount * (item.tax_rate / 100);
+
+            subtotal += taxableAmount;
             totalTax += taxAmount;
         });
 
@@ -272,7 +294,9 @@ export default function PurchaseReturnPage() {
                             count: item.count,
                             deduction_per_unit: item.deduction_per_unit,
                             rate: item.rate,
-                            tax_rate: item.tax_rate
+                            tax_rate: item.tax_rate,
+                            discount_percent: item.discount_percent || 0,
+                            discount_amount: item.discount_amount || 0,
                         })),
                     },
                 });
@@ -343,6 +367,8 @@ export default function PurchaseReturnPage() {
                     deduction_per_unit: item.deduction_per_unit,
                     rate: item.rate,
                     tax_rate: item.tax_rate,
+                    discount_percent: item.discount_percent || 0,
+                    discount_amount: item.discount_amount || 0,
                 }));
             });
 
@@ -357,6 +383,8 @@ export default function PurchaseReturnPage() {
                 deduction_per_unit: item.deduction_per_unit,
                 rate: item.rate,
                 tax_rate: item.tax_rate,
+                discount_percent: item.discount_percent || 0,
+                discount_amount: item.discount_amount || 0,
             }));
 
             updateTotalsWithItems(loadedItems, invoice.discount_rate, invoice.discount_amount);

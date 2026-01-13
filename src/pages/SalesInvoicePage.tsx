@@ -208,6 +208,8 @@ export default function SalesInvoicePage() {
         deduction_per_unit: parseNum(getDesc('deduction') as string | number),
         rate: parseNum(getDesc('rate') as string | number),
         tax_rate: parseNum(getDesc('tax_rate') as string | number),
+        discount_percent: 0,
+        discount_amount: 0,
       })
     );
   };
@@ -254,8 +256,25 @@ export default function SalesInvoicePage() {
     }
 
     const updatedItems = [...salesState.items];
-    updatedItems[index] = { ...updatedItems[index], [field]: finalValue };
-    dispatch(updateSalesItem({ index, data: { [field]: finalValue } }));
+    let item = { ...updatedItems[index], [field]: finalValue };
+
+    // Discount Logic Sync
+    if (field === 'discount_percent') {
+      const grossAmount = (item.initial_quantity - item.count * item.deduction_per_unit) * item.rate;
+      item.discount_amount = parseFloat(((grossAmount * (finalValue as number)) / 100).toFixed(2));
+    } else if (field === 'discount_amount') {
+      const grossAmount = (item.initial_quantity - item.count * item.deduction_per_unit) * item.rate;
+      item.discount_percent = grossAmount > 0 ? parseFloat(((finalValue as number / grossAmount) * 100).toFixed(2)) : 0;
+    } else if (field === 'rate' || field === 'initial_quantity' || field === 'count' || field === 'deduction_per_unit') {
+      // Re-calc discount amount if relying on percent? Usually we keep percent constant.
+      const grossAmount = (item.initial_quantity - item.count * item.deduction_per_unit) * item.rate;
+      if (item.discount_percent > 0) {
+        item.discount_amount = parseFloat(((grossAmount * item.discount_percent) / 100).toFixed(2));
+      }
+    }
+
+    updatedItems[index] = item;
+    dispatch(updateSalesItem({ index, data: item }));
     updateTotalsWithItems(updatedItems);
     dispatch(setSalesHasUnsavedChanges(true));
   };
@@ -267,8 +286,15 @@ export default function SalesInvoicePage() {
     items.forEach((item) => {
       const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
       const amount = finalQty * item.rate;
-      const taxAmount = amount * (item.tax_rate / 100);
-      subtotal += amount;
+
+      const discountAmount = item.discount_amount || 0;
+      const taxableAmount = amount - discountAmount;
+      const taxAmount = taxableAmount * (item.tax_rate / 100);
+
+      subtotal += taxableAmount; // Should subtotal be Gross or Net? 
+      // Backend uses subtotal = Gross - ItemDisc. So taxableAmount sum.
+      // Wait, backend subtotal += amount - discount_amount. Yes.
+
       totalTax += taxAmount;
     });
 
@@ -504,6 +530,8 @@ export default function SalesInvoicePage() {
           deduction_per_unit: item.deduction_per_unit,
           rate: item.rate,
           tax_rate: item.tax_rate,
+          discount_percent: item.discount_percent || 0,
+          discount_amount: item.discount_amount || 0,
         }));
       });
 
@@ -520,6 +548,8 @@ export default function SalesInvoicePage() {
         deduction_per_unit: item.deduction_per_unit,
         rate: item.rate,
         tax_rate: item.tax_rate,
+        discount_percent: item.discount_percent || 0,
+        discount_amount: item.discount_amount || 0,
       }));
 
       updateTotalsWithItems(loadedItems, invoice.discount_rate, invoice.discount_amount);

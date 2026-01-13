@@ -137,6 +137,8 @@ export interface PurchaseInvoiceItem {
   deduction_per_unit: number;
   rate: number;
   tax_rate: number;
+  discount_percent: number;
+  discount_amount: number;
 }
 
 export interface PurchaseInvoiceState extends VoucherNavigationState {
@@ -863,6 +865,8 @@ export interface SalesInvoiceItem {
   deduction_per_unit: number;
   rate: number;
   tax_rate: number;
+  discount_percent: number;
+  discount_amount: number;
 }
 
 export interface SalesInvoiceState extends VoucherNavigationState {
@@ -1111,6 +1115,8 @@ export interface PurchaseReturnItem {
   deduction_per_unit: number;
   rate: number;
   tax_rate: number;
+  discount_percent: number;
+  discount_amount: number;
 }
 
 export interface PurchaseReturnState extends VoucherNavigationState {
@@ -1267,6 +1273,8 @@ export interface SalesReturnItem {
   deduction_per_unit: number;
   rate: number;
   tax_rate: number;
+  discount_percent: number;
+  discount_amount: number;
 }
 
 export interface SalesReturnState extends VoucherNavigationState {
