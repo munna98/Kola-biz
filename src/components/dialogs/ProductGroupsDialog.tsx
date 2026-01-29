@@ -18,7 +18,7 @@ interface ProductGroupsDialogProps {
 export default function ProductGroupsDialog({ open, onOpenChange, onGroupsChange }: ProductGroupsDialogProps) {
   const [groups, setGroups] = useState<ProductGroup[]>([]);
   const [groupForm, setGroupForm] = useState<CreateProductGroup>({ name: '', description: '' });
-  const [editingGroup, setEditingGroup] = useState<number | null>(null);
+  const [editingGroup, setEditingGroup] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const orderedFields = ['name', 'description'];
@@ -75,7 +75,7 @@ export default function ProductGroupsDialog({ open, onOpenChange, onGroupsChange
     setTimeout(() => refs.current['name']?.focus(), 100);
   };
 
-  const handleDeleteGroup = async (id: number) => {
+  const handleDeleteGroup = async (id: string) => {
     if (confirm('Delete this product group?')) {
       try {
         await api.productGroups.delete(id);

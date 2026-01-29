@@ -4,10 +4,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { IconCheck, IconX } from '@tabler/icons-react';
+import { IconCheck, IconX, IconPlus } from '@tabler/icons-react';
 import { api, Product, CreateProduct, Unit, ProductGroup } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { useDialog } from '@/hooks/use-dialog';
+import UnitsDialog from './UnitsDialog';
+import ProductGroupsDialog from './ProductGroupsDialog';
 
 interface ProductDialogProps {
   open: boolean;
@@ -29,12 +31,14 @@ export default function ProductDialog({
   const [form, setForm] = useState<CreateProduct>({
     code: '',
     name: '',
-    unit_id: units.length > 0 ? units[0].id : 1,
+    unit_id: units.length > 0 ? units[0].id : '',
     purchase_rate: 0,
     sales_rate: 0,
     mrp: 0
   });
   const [loading, setLoading] = useState(false);
+  const [unitsOpen, setUnitsOpen] = useState(false);
+  const [groupsOpen, setGroupsOpen] = useState(false);
 
   // Define field order for navigation
   const orderedFields = ['code', 'name', 'group', 'unit', 'purchase', 'sales', 'mrp'];
@@ -63,7 +67,7 @@ export default function ProductDialog({
           code: '',
           name: '',
           group_id: undefined,
-          unit_id: units.length > 0 ? units[0].id : 1,
+          unit_id: units.length > 0 ? units[0].id : '',
           purchase_rate: 0,
           sales_rate: 0,
           mrp: 0
@@ -85,7 +89,7 @@ export default function ProductDialog({
       code: '',
       name: '',
       group_id: undefined,
-      unit_id: units.length > 0 ? units[0].id : 1,
+      unit_id: units.length > 0 ? units[0].id : '',
       purchase_rate: 0,
       sales_rate: 0,
       mrp: 0
@@ -168,48 +172,70 @@ export default function ProductDialog({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label className="text-xs font-medium mb-1 block">Product Group</Label>
-              <Select
-                value={form.group_id?.toString() || 'none'}
-                onValueChange={v => setForm({ ...form, group_id: v === 'none' ? undefined : +v })}
-              >
-                <SelectTrigger
-                  ref={register('group') as any}
-                  className="h-8 text-sm"
-                  onKeyDown={(e) => handleSelectKeyDown(e, 'group')}
+              <div className="flex gap-2">
+                <Select
+                  value={form.group_id || 'none'}
+                  onValueChange={v => setForm({ ...form, group_id: v === 'none' ? undefined : v })}
                 >
-                  <SelectValue placeholder="Select a group" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No Group</SelectItem>
-                  {groups.map(g => (
-                    <SelectItem key={g.id} value={g.id.toString()}>
-                      {g.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <SelectTrigger
+                    ref={register('group') as any}
+                    className="h-8 text-sm"
+                    onKeyDown={(e) => handleSelectKeyDown(e, 'group')}
+                  >
+                    <SelectValue placeholder="Select a group" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Group</SelectItem>
+                    {groups.map(g => (
+                      <SelectItem key={g.id} value={g.id}>
+                        {g.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-8 p-0 shrink-0"
+                  onClick={() => setGroupsOpen(true)}
+                >
+                  <IconPlus size={14} />
+                </Button>
+              </div>
             </div>
             <div>
               <Label className="text-xs font-medium mb-1 block">Unit</Label>
-              <Select
-                value={form.unit_id.toString()}
-                onValueChange={v => setForm({ ...form, unit_id: +v })}
-              >
-                <SelectTrigger
-                  ref={register('unit') as any}
-                  className="h-8 text-sm"
-                  onKeyDown={(e) => handleSelectKeyDown(e, 'unit')}
+              <div className="flex gap-2">
+                <Select
+                  value={form.unit_id}
+                  onValueChange={v => setForm({ ...form, unit_id: v })}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {units.map(u => (
-                    <SelectItem key={u.id} value={u.id.toString()}>
-                      {u.name} ({u.symbol})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                  <SelectTrigger
+                    ref={register('unit') as any}
+                    className="h-8 text-sm"
+                    onKeyDown={(e) => handleSelectKeyDown(e, 'unit')}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {units.map(u => (
+                      <SelectItem key={u.id} value={u.id}>
+                        {u.name} ({u.symbol})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-8 p-0 shrink-0"
+                  onClick={() => setUnitsOpen(true)}
+                >
+                  <IconPlus size={14} />
+                </Button>
+              </div>
             </div>
           </div>
 
@@ -281,6 +307,17 @@ export default function ProductDialog({
           </div>
         </form>
       </DialogContent>
+
+      <UnitsDialog
+        open={unitsOpen}
+        onOpenChange={setUnitsOpen}
+        onUnitsChange={onSuccess}
+      />
+      <ProductGroupsDialog
+        open={groupsOpen}
+        onOpenChange={setGroupsOpen}
+        onGroupsChange={onSuccess}
+      />
     </Dialog>
   );
 }

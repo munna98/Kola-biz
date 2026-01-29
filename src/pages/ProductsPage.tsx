@@ -57,7 +57,7 @@ export default function ProductsPage() {
     setOpen(true);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Move this product to Recycle Bin?')) {
       try {
         await api.products.delete(id, currentUser);
@@ -70,7 +70,7 @@ export default function ProductsPage() {
     }
   };
 
-  const handleRestore = async (id: number) => {
+  const handleRestore = async (id: string) => {
     try {
       await api.products.restore(id);
       toast.success('Product restored successfully');
@@ -81,7 +81,7 @@ export default function ProductsPage() {
     }
   };
 
-  const handleHardDelete = async (id: number) => {
+  const handleHardDelete = async (id: string) => {
     if (confirm('PERMANENTLY delete this product? This action cannot be undone.')) {
       try {
         await api.products.hardDelete(id);
@@ -157,7 +157,7 @@ export default function ProductsPage() {
                       <IconCategory size={16} />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Manage  Groups</TooltipContent>
+                  <TooltipContent>Manage Product Groups</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -165,7 +165,7 @@ export default function ProductsPage() {
                       <IconRuler size={16} />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Manage Units</TooltipContent>
+                  <TooltipContent>Manage Units of Measurement</TooltipContent>
                 </Tooltip>
                 <Button onClick={handleOpenDialog}>
                   <IconPlus size={16} /> Add Product

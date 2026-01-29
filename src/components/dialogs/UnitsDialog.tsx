@@ -18,7 +18,7 @@ interface UnitsDialogProps {
 export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: UnitsDialogProps) {
   const [units, setUnits] = useState<Unit[]>([]);
   const [unitForm, setUnitForm] = useState<CreateUnit>({ name: '', symbol: '' });
-  const [editingUnit, setEditingUnit] = useState<number | null>(null);
+  const [editingUnit, setEditingUnit] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const orderedFields = ['name', 'symbol'];
@@ -75,7 +75,7 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
     setTimeout(() => refs.current['name']?.focus(), 100);
   };
 
-  const handleDeleteUnit = async (id: number) => {
+  const handleDeleteUnit = async (id: string) => {
     if (confirm('Delete this unit? Products using this unit will be affected.')) {
       try {
         await api.units.delete(id);
