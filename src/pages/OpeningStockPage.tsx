@@ -24,13 +24,14 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
-import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
+import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
+import ProductDialog from '@/components/dialogs/ProductDialog';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
-import { IconCheck, IconX } from '@tabler/icons-react';
-import { Product, Unit } from '@/lib/tauri';
+import { IconX, IconCheck } from '@tabler/icons-react';
+import { Product, Unit, ProductGroup } from '@/lib/tauri';
 
 export default function OpeningStockPage() {
     const dispatch = useDispatch();
@@ -44,6 +45,12 @@ export default function OpeningStockPage() {
     const [showListView, setShowListView] = useState(false);
     const [showPrintPreview, setShowPrintPreview] = useState(false);
 
+    // Create Product State
+    const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
+    const [showCreateProduct, setShowCreateProduct] = useState(false);
+    const [newProductName, setNewProductName] = useState('');
+    const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
+
     const formRef = useRef<HTMLFormElement>(null);
 
     // Derived state
@@ -53,12 +60,14 @@ export default function OpeningStockPage() {
     useEffect(() => {
         const loadDependencies = async () => {
             try {
-                const [productsData, unitsData] = await Promise.all([
+                const [productsData, unitsData, groupsData] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
+                    invoke<ProductGroup[]>('get_product_groups'),
                 ]);
                 setProducts(productsData);
                 setUnits(unitsData);
+                setProductGroups(groupsData);
             } catch (error) {
                 console.error('Failed to load dependencies:', error);
                 toast.error('Failed to load products or units');
@@ -99,7 +108,8 @@ export default function OpeningStockPage() {
                     product_id: item.product_id,
                     product_name: item.product_name,
                     description: item.description || '',
-                    quantity: item.quantity,
+                    initial_quantity: item.quantity,  // Map quantity to initial_quantity for form
+                    quantity: item.quantity,          // Keep quantity for calculations
                     rate: item.rate,
                     amount: item.amount,
                 }));
@@ -233,8 +243,10 @@ export default function OpeningStockPage() {
     const handleAddItem = () => {
         dispatch(addOpeningStockItem({
             product_id: '',
+            product_name: '',
             description: '',
-            quantity: 1,
+            initial_quantity: 0,  // For form display
+            quantity: 0,           // For calculations
             rate: 0,
             amount: 0
         }));
@@ -251,6 +263,39 @@ export default function OpeningStockPage() {
         showShortcuts
     });
 
+    const handleProductCreate = (name: string, rowIndex: number) => {
+        setNewProductName(name);
+        setCreatingProductRowIndex(rowIndex);
+        setShowCreateProduct(true);
+    };
+
+    const handleCreateProductSave = async () => {
+        try {
+            // Refresh products
+            const productsData = await invoke<Product[]>('get_products');
+            setProducts(productsData);
+
+            // If we have a pending row index and a name, try to find and select the new product
+            if (creatingProductRowIndex !== null && newProductName) {
+                const createdProduct = productsData.find(p => p.name.toLowerCase() === newProductName.toLowerCase());
+                if (createdProduct) {
+                    dispatch(updateOpeningStockItem({
+                        index: creatingProductRowIndex,
+                        data: {
+                            product_id: createdProduct.id,
+                            product_name: createdProduct.name,
+                            rate: createdProduct.purchase_rate,
+                            amount: openingStockState.items[creatingProductRowIndex].quantity * (createdProduct.purchase_rate || 0)
+                        }
+                    }));
+                }
+            }
+        } catch (e) {
+            console.error("Failed to refresh products", e);
+        }
+        setShowCreateProduct(false);
+        setCreatingProductRowIndex(null);
+    };
 
     // Columns for VoucherItemsSection
     const columns: ColumnSettings[] = [
@@ -303,6 +348,14 @@ export default function OpeningStockPage() {
                 title={openingStockState.currentVoucherNo ? `Print Opening Stock - ${openingStockState.currentVoucherNo}` : 'Print Opening Stock'}
             />
 
+            <ProductDialog
+                open={showCreateProduct}
+                onOpenChange={setShowCreateProduct}
+                units={units}
+                groups={productGroups}
+                onSuccess={handleCreateProductSave}
+            />
+
             <div className="flex-1 overflow-hidden">
                 <form ref={formRef} onSubmit={handleSave} className="h-full p-5 max-w-7xl mx-auto flex flex-col gap-4">
                     {/* Master Section */}
@@ -344,6 +397,7 @@ export default function OpeningStockPage() {
                         units={units}
                         isReadOnly={isReadOnly}
                         settings={{ columns }}
+                        onProductCreate={handleProductCreate}
                         onAddItem={handleAddItem}
                         onRemoveItem={(index) => {
                             dispatch(removeOpeningStockItem(index));
@@ -352,10 +406,18 @@ export default function OpeningStockPage() {
                         onUpdateItem={(index, field, value) => {
                             dispatch(updateOpeningStockItem({ index, data: { [field]: value } }));
 
-                            // Auto-calculate amount if quantity or rate changes
+                            // Sync initial_quantity and quantity fields
                             const item = openingStockState.items[index];
-                            if (field === 'quantity' || field === 'rate') {
-                                const qty = field === 'quantity' ? Number(value) : item.quantity;
+                            if (field === 'initial_quantity') {
+                                dispatch(updateOpeningStockItem({
+                                    index,
+                                    data: { quantity: Number(value) }
+                                }));
+                            }
+
+                            // Auto-calculate amount if quantity or rate changes
+                            if (field === 'initial_quantity' || field === 'quantity' || field === 'rate') {
+                                const qty = (field === 'initial_quantity' || field === 'quantity') ? Number(value) : item.quantity;
                                 const rate = field === 'rate' ? Number(value) : item.rate;
                                 dispatch(updateOpeningStockItem({
                                     index,

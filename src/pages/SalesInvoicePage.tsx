@@ -43,7 +43,7 @@ import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet'
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
-import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
+import { VoucherItemsSection, ColumnSettings, VoucherItemsSectionRef } from '@/components/voucher/VoucherItemsSection';
 
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
@@ -109,6 +109,7 @@ export default function SalesInvoicePage() {
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
   const customerRef = useRef<HTMLDivElement>(null);
+  const voucherItemsRef = useRef<VoucherItemsSectionRef>(null);
 
   // Load initial data
   useEffect(() => {
@@ -846,6 +847,11 @@ export default function SalesInvoicePage() {
                       invoke<number>('get_account_balance', { accountId: party.id })
                         .then(bal => setPartyBalance(bal))
                         .catch(console.error);
+
+                      // Auto-focus first product after party selection
+                      setTimeout(() => {
+                        voucherItemsRef.current?.focusFirstProduct();
+                      }, 100);
                     }
                   }}
                   placeholder="Select party"
@@ -916,6 +922,7 @@ export default function SalesInvoicePage() {
           {/* Items Section */}
           {/* Items Section */}
           <VoucherItemsSection
+            ref={voucherItemsRef}
             items={salesState.items}
             products={products}
             units={units}

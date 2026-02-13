@@ -41,7 +41,7 @@ import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet'
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
-import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
+import { VoucherItemsSection, ColumnSettings, VoucherItemsSectionRef } from '@/components/voucher/VoucherItemsSection';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
 import SupplierDialog from '@/components/dialogs/SupplierDialog';
@@ -95,6 +95,7 @@ export default function PurchaseInvoicePage() {
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
   const supplierRef = useRef<HTMLDivElement>(null);
+  const voucherItemsRef = useRef<VoucherItemsSectionRef>(null);
 
   // Ref to track if auto-print is pending after payment dialog
   const autoPrintPending = useRef(false);
@@ -788,6 +789,11 @@ export default function PurchaseInvoicePage() {
                       invoke<number>('get_account_balance', { accountId: party.id })
                         .then(bal => setPartyBalance(bal))
                         .catch(console.error);
+
+                      // Auto-focus first product after party selection
+                      setTimeout(() => {
+                        voucherItemsRef.current?.focusFirstProduct();
+                      }, 100);
                     }
                   }}
                   placeholder="Select party"
@@ -832,6 +838,7 @@ export default function PurchaseInvoicePage() {
 
           {/* Items Section */}
           <VoucherItemsSection
+            ref={voucherItemsRef}
             items={purchaseState.items}
             products={products}
             units={units}

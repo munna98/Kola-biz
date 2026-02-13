@@ -1426,7 +1426,8 @@ export interface OpeningStockItem {
   product_id: string;
   product_name?: string;
   description: string;
-  quantity: number;
+  initial_quantity: number;  // Quantity shown in form
+  quantity: number;           // Quantity for calculations
   rate: number;
   amount: number;
 }

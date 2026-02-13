@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef, useImperativeHandle } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
@@ -55,6 +55,10 @@ export interface VoucherItemsSectionProps {
     onProductCreate?: (name: string, rowIndex: number) => void;
 }
 
+export interface VoucherItemsSectionRef {
+    focusFirstProduct: () => void;
+}
+
 const DEFAULT_COLUMNS: ColumnSettings[] = [
     { id: 'product', label: 'Product', visible: true, order: 0 },
     { id: 'quantity', label: 'Qty', visible: true, order: 1 },
@@ -69,7 +73,7 @@ const DEFAULT_COLUMNS: ColumnSettings[] = [
     { id: 'total', label: 'Total', visible: true, order: 10 },
 ];
 
-export function VoucherItemsSection({
+export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, VoucherItemsSectionProps>(({
     items,
     products,
     units,
@@ -84,7 +88,21 @@ export function VoucherItemsSection({
     settings,
     footerRightContent,
     onProductCreate
-}: VoucherItemsSectionProps) {
+}, ref) => {
+    // Ref to the first product combobox
+    const firstProductRef = useRef<HTMLButtonElement>(null);
+
+    // Refs for quantity inputs (one per row)
+    const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
+
+    // Expose methods to parent component
+    useImperativeHandle(ref, () => ({
+        focusFirstProduct: () => {
+            if (firstProductRef.current) {
+                firstProductRef.current.focus();
+            }
+        }
+    }));
 
     // Internal row navigation handling
     const { handleRowKeyDown } = useVoucherRowNavigation({
@@ -151,9 +169,18 @@ export function VoucherItemsSection({
                             return (
                                 <Combobox
                                     key={col.id}
+                                    ref={idx === 0 ? firstProductRef : undefined}
                                     options={products.map(p => ({ value: p.id, label: `${p.code} - ${p.name}` }))}
                                     value={item.product_id}
-                                    onChange={(value) => onUpdateItem(idx, 'product_id', value)}
+                                    onChange={(value) => {
+                                        onUpdateItem(idx, 'product_id', value);
+
+                                        // Auto-focus quantity input after product selection
+                                        setTimeout(() => {
+                                            quantityRefs.current[idx]?.focus();
+                                            quantityRefs.current[idx]?.select();
+                                        }, 100);
+                                    }}
                                     placeholder="Select product"
                                     searchPlaceholder="Search products..."
                                     disabled={isReadOnly}
@@ -165,6 +192,7 @@ export function VoucherItemsSection({
                             return (
                                 <Input
                                     key={col.id}
+                                    ref={el => { quantityRefs.current[idx] = el; }}
                                     type="number"
                                     value={item.initial_quantity || ''}
                                     onChange={(e) => handleNumberChange('initial_quantity', e.target.value)}
@@ -309,6 +337,6 @@ export function VoucherItemsSection({
             })}
         </VoucherItemsTable>
     );
-}
+});
 
-
+VoucherItemsSection.displayName = 'VoucherItemsSection';
