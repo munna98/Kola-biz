@@ -52,10 +52,10 @@ import ProductDialog from '@/components/dialogs/ProductDialog';
 import { ProductGroup, Unit, Employee } from '@/lib/tauri';
 
 interface Product {
-  id: number;
+  id: string;
   code: string;
   name: string;
-  unit_id: number;
+  unit_id: string;
   sales_rate: number;
 }
 

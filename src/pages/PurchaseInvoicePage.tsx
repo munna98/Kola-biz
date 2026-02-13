@@ -48,10 +48,10 @@ import SupplierDialog from '@/components/dialogs/SupplierDialog';
 import ProductDialog from '@/components/dialogs/ProductDialog';
 import { ProductGroup, Unit } from '@/lib/tauri';
 interface Product {
-  id: number;
+  id: string;
   code: string;
   name: string;
-  unit_id: number;
+  unit_id: string;
   purchase_rate: number;
 }
 

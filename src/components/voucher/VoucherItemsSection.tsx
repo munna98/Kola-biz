@@ -8,16 +8,16 @@ import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { cn } from '@/lib/utils';
 
 interface Product {
-    id: number;
+    id: string;
     code: string;
     name: string;
-    unit_id: number;
+    unit_id: string;
     purchase_rate?: number;
     sales_rate?: number;
 }
 
 interface Unit {
-    id: number;
+    id: string;
     name: string;
     symbol: string;
 }

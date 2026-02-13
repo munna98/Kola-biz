@@ -157,7 +157,7 @@ export default function ProductsPage() {
                       <IconCategory size={16} />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Manage Product Groups</TooltipContent>
+                  <TooltipContent>Manage  Groups</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -165,7 +165,7 @@ export default function ProductsPage() {
                       <IconRuler size={16} />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Manage Units of Measurement</TooltipContent>
+                  <TooltipContent>Manage Units</TooltipContent>
                 </Tooltip>
                 <Button onClick={handleOpenDialog}>
                   <IconPlus size={16} /> Add Product

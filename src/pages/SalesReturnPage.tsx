@@ -44,15 +44,15 @@ import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection } from '@/components/voucher/VoucherItemsSection';
 
 interface Product {
-    id: number;
+    id: string;
     code: string;
     name: string;
-    unit_id: number;
+    unit_id: string;
     sales_rate: number;
 }
 
 interface Unit {
-    id: number;
+    id: string;
     name: string;
     symbol: string;
 }
