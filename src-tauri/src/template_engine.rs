@@ -1,4 +1,5 @@
-use crate::commands::{CompanyProfile, InvoiceTemplate};
+use crate::commands::company::CompanyProfile;
+use crate::commands::templates::InvoiceTemplate;
 use handlebars::Handlebars;
 use serde_json::json;
 
@@ -162,7 +163,7 @@ impl TemplateEngine {
     }
 
     fn format_company_address(&self, company: &CompanyProfile) -> String {
-        let mut parts = Vec::new();
+        let mut parts: Vec<String> = Vec::new();
         if let Some(a1) = &company.address_line1 {
             parts.push(a1.clone());
         }

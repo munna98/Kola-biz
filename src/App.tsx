@@ -19,6 +19,7 @@ import Topbar from './components/layout/Topbar';
 import './App.css';
 import JournalEntryPage from './pages/JournalEntryPage';
 import OpeningBalancePage from './pages/OpeningBalancePage';
+import OpeningStockPage from './pages/OpeningStockPage';
 import SalesInvoicePage from './pages/SalesInvoicePage';
 import SalesReturnPage from './pages/SalesReturnPage';
 import TrialBalancePage from './pages/reports/TrialBalancePage';
@@ -162,6 +163,7 @@ function AppContent() {
       case 'receipts': return <ReceiptPage />;
       case 'journal': return <JournalEntryPage />;
       case 'opening': return <OpeningBalancePage />;
+      case 'opening_stock': return <OpeningStockPage />;
       case 'trial': return <TrialBalancePage />;
       case 'ledger': return <LedgerReportPage />;
       case 'balance_sheet': return <BalanceSheetPage />;

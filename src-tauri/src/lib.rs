@@ -212,6 +212,13 @@ pub fn run() {
             print_silently,
             get_voucher_settings,
             save_voucher_settings,
+            // Opening Stock
+            commands::opening_stock::get_opening_stocks,
+            commands::opening_stock::get_opening_stock,
+            commands::opening_stock::get_opening_stock_items,
+            commands::opening_stock::create_opening_stock,
+            commands::opening_stock::update_opening_stock,
+            commands::opening_stock::delete_opening_stock,
         ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())

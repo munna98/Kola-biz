@@ -453,7 +453,8 @@ pub async fn init_db(
         ('vs_' || hex(randomblob(16)), 'payment', 'PAY'),
         ('vs_' || hex(randomblob(16)), 'receipt', 'RCP'),
         ('vs_' || hex(randomblob(16)), 'journal', 'JV'),
-        ('vs_' || hex(randomblob(16)), 'opening_balance', 'OB')",
+        ('vs_' || hex(randomblob(16)), 'opening_balance', 'OB'),
+        ('vs_' || hex(randomblob(16)), 'opening_stock', 'OS')",
     )
     .execute(&pool)
     .await?;

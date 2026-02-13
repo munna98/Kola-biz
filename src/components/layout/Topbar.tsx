@@ -62,6 +62,10 @@ export default function Topbar() {
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('sales_return')}>
                                     Sales Return
                                 </NavigationMenuLink>
+                                <div className="border-t my-1"></div>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('opening_stock')}>
+                                    Opening Stock
+                                </NavigationMenuLink>
                             </ul>
                         </NavigationMenuContent>
                     </NavigationMenuItem>

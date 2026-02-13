@@ -1537,7 +1537,7 @@ pub async fn list_vouchers(
             v.id,
             v.voucher_no,
             v.voucher_date,
-            COALESCE(coa.account_name, CASE WHEN v.voucher_type = 'journal' THEN 'Journal Entry' WHEN v.voucher_type = 'opening_balance' THEN 'Opening Balance' ELSE 'N/A' END) as party_name,
+            COALESCE(coa.account_name, CASE WHEN v.voucher_type = 'journal' THEN 'Journal Entry' WHEN v.voucher_type = 'opening_balance' THEN 'Opening Balance' WHEN v.voucher_type = 'opening_stock' THEN 'Opening Stock' ELSE 'N/A' END) as party_name,
             COALESCE(v.total_amount, 0.0) as total_amount,
             v.status,
             v.voucher_type

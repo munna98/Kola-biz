@@ -1420,6 +1420,119 @@ export const {
   setSalesReturnLoading,
 } = salesReturnSlice.actions;
 
+// ========== OPENING STOCK SLICE ==========
+export interface OpeningStockItem {
+  id?: string;
+  product_id: string;
+  product_name?: string;
+  description: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+}
+
+export interface OpeningStockState extends VoucherNavigationState {
+  currentVoucherNo?: string;
+  created_by_name?: string;
+  form: {
+    voucher_date: string;
+    narration: string;
+  };
+  items: OpeningStockItem[];
+  loading: boolean;
+  savedStocks: any[];
+  totalAmount: number;
+}
+
+const openingStockInitialState: OpeningStockState = {
+  ...initialNavigationState,
+  currentVoucherNo: undefined,
+  created_by_name: undefined,
+  form: {
+    voucher_date: new Date().toISOString().split('T')[0],
+    narration: '',
+  },
+  items: [],
+  loading: false,
+  savedStocks: [],
+  totalAmount: 0,
+};
+
+const openingStockSlice = createSlice({
+  name: 'openingStock',
+  initialState: openingStockInitialState,
+  reducers: {
+    setOpeningStockMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
+      state.mode = action.payload;
+    },
+    setOpeningStockCurrentVoucherId: (state, action: PayloadAction<string | null>) => {
+      state.currentVoucherId = action.payload;
+    },
+    setOpeningStockCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
+      state.currentVoucherNo = action.payload;
+    },
+    setOpeningStockCreatedByName: (state, action: PayloadAction<string | undefined>) => {
+      state.created_by_name = action.payload;
+    },
+    setOpeningStockHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setOpeningStockNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
+      state.navigationData = action.payload;
+    },
+    setOpeningStockDate: (state, action: PayloadAction<string>) => {
+      state.form.voucher_date = action.payload;
+    },
+    setOpeningStockNarration: (state, action: PayloadAction<string>) => {
+      state.form.narration = action.payload;
+    },
+    addOpeningStockItem: (state, action: PayloadAction<OpeningStockItem>) => {
+      state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
+    },
+    updateOpeningStockItem: (state, action: PayloadAction<{ index: number; data: Partial<OpeningStockItem> }>) => {
+      state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
+    },
+    removeOpeningStockItem: (state, action: PayloadAction<number>) => {
+      state.items.splice(action.payload, 1);
+    },
+    setOpeningStockTotal: (state, action: PayloadAction<number>) => {
+      state.totalAmount = action.payload;
+    },
+    resetOpeningStockForm: (state) => {
+      state.form = {
+        voucher_date: new Date().toISOString().split('T')[0],
+        narration: '',
+      };
+      state.items = [];
+      state.totalAmount = 0;
+    },
+    setSavedOpeningStocks: (state, action: PayloadAction<any[]>) => {
+      state.savedStocks = action.payload;
+    },
+    setOpeningStockLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+  },
+});
+
+export const {
+  setOpeningStockMode,
+  setOpeningStockCurrentVoucherId,
+  setOpeningStockCurrentVoucherNo,
+  setOpeningStockCreatedByName,
+  setOpeningStockHasUnsavedChanges,
+  setOpeningStockNavigationData,
+  setOpeningStockDate,
+  setOpeningStockNarration,
+  addOpeningStockItem,
+  updateOpeningStockItem,
+  removeOpeningStockItem,
+  setOpeningStockTotal,
+  resetOpeningStockForm,
+  setSavedOpeningStocks,
+  setOpeningStockLoading,
+} = openingStockSlice.actions;
+
 
 export const store = configureStore({
   reducer: {
@@ -1433,6 +1546,7 @@ export const store = configureStore({
     receipt: receiptSlice.reducer,
     journalEntry: journalEntrySlice.reducer,
     openingBalance: openingBalanceSlice.reducer,
+    openingStock: openingStockSlice.reducer,
     companyProfile: companyProfileSlice.reducer,
   },
 });
