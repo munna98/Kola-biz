@@ -31,6 +31,7 @@ interface ComboboxProps {
   className?: string
   onKeyDown?: (e: React.KeyboardEvent) => void
   openOnFocus?: boolean
+  onEmptyEnter?: () => void
   onActionClick?: () => void
 }
 
@@ -46,6 +47,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   onKeyDown,
   openOnFocus = true,
   onActionClick,
+  onEmptyEnter,
 }, ref) => {
   const [open, setOpen] = React.useState(false)
   const [hasOpenedOnFocus, setHasOpenedOnFocus] = React.useState(false)
@@ -148,6 +150,20 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
               )}
             </CommandEmpty>
             <CommandGroup>
+              {/* Hidden item for 'Enter to Skip' behavior */}
+              {onEmptyEnter && !inputValue && (
+                <CommandItem
+                  value=":::SKIP:::"
+                  className="h-0 p-0 min-h-0 overflow-hidden opacity-0 data-[selected='true']:bg-transparent"
+                  onSelect={() => {
+                    setOpen(false);
+                    onEmptyEnter();
+                  }}
+                >
+                  <span className="hidden">Skip</span>
+                </CommandItem>
+              )}
+
               {options.map((option) => (
                 <CommandItem
                   key={option.value}

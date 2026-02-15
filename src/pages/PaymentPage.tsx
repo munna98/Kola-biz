@@ -535,7 +535,11 @@ export default function PaymentPage() {
                             setCreatingForIndex(index);
                             setShowCreateAccount(true);
                         }}
-
+                        onSectionExit={() => {
+                            setTimeout(() => {
+                                document.getElementById('voucher-save-btn')?.focus();
+                            }, 50);
+                        }}
                         onFocusRow={setFocusedRowIndex}
                         footerRightContent={
                             focusedRowIndex !== null && rowBalances[focusedRowIndex] !== undefined ? (
@@ -572,6 +576,7 @@ export default function PaymentPage() {
                             Clear Form
                         </Button>
                         <Button
+                            id="voucher-save-btn"
                             type="submit"
                             disabled={paymentState.loading}
                             className="h-9"

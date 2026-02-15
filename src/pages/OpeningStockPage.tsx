@@ -448,6 +448,12 @@ export default function OpeningStockPage() {
                             taxAmount: 0,
                             total: item.amount
                         })}
+                        onSectionExit={() => {
+                            // Focus save button logic since there is no discount
+                            setTimeout(() => {
+                                document.getElementById('voucher-save-btn')?.focus();
+                            }, 50);
+                        }}
                     />
 
                     {/* Totals Card */}
@@ -476,7 +482,13 @@ export default function OpeningStockPage() {
                                 <IconX size={16} />
                                 Cancel
                             </Button>
-                            <Button type="submit" disabled={openingStockState.loading} className="h-9" title="Save (Ctrl+S)">
+                            <Button
+                                id="voucher-save-btn"
+                                type="submit"
+                                disabled={openingStockState.loading}
+                                className="h-9"
+                                title="Save (Ctrl+S)"
+                            >
                                 <IconCheck size={16} />
                                 {openingStockState.loading ? 'Saving...' : (openingStockState.mode === 'editing' ? 'Update' : 'Save')}
                             </Button>

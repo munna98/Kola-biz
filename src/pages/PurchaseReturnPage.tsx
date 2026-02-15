@@ -41,7 +41,7 @@ import { usePrint } from '@/hooks/usePrint';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
-import { VoucherItemsSection } from '@/components/voucher/VoucherItemsSection';
+import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
 
 interface Product {
     id: string;
@@ -73,6 +73,7 @@ export default function PurchaseReturnPage() {
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
+    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean } | undefined>(undefined);
     const { print } = usePrint();
 
     // Refs for focus management
@@ -83,14 +84,16 @@ export default function PurchaseReturnPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [productsData, unitsData, accountsData] = await Promise.all([
+                const [productsData, unitsData, accountsData, settingsData] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
                     // Fetch both Suppliers (Accounts Payable) and Customers (Accounts Receivable) for flexibility
                     invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Payable', 'Accounts Receivable'] }),
+                    invoke<any>('get_voucher_settings', { voucherType: 'purchase_return' }),
                 ]);
                 setProducts(productsData);
                 setUnits(unitsData);
+                if (settingsData) setVoucherSettings(settingsData);
 
                 const combinedParties = accountsData.map(acc => ({
                     id: acc.id,
@@ -302,7 +305,7 @@ export default function PurchaseReturnPage() {
                 });
                 toast.success('Purchase return updated successfully');
             } else {
-                await invoke<string>('create_purchase_return', {
+                const newId = await invoke<string>('create_purchase_return', {
                     invoice: {
                         supplier_id: purchaseReturnState.form.supplier_id,
                         party_type: purchaseReturnState.form.party_type,
@@ -318,11 +321,21 @@ export default function PurchaseReturnPage() {
                             count: item.count,
                             deduction_per_unit: item.deduction_per_unit,
                             rate: item.rate,
-                            tax_rate: item.tax_rate
+                            tax_rate: item.tax_rate,
+                            discount_percent: item.discount_percent || 0,
+                            discount_amount: item.discount_amount || 0,
                         })),
                     },
                 });
                 toast.success('Purchase return created successfully');
+
+                if (voucherSettings?.autoPrint) {
+                    print({ voucherId: newId, voucherType: 'purchase_return' });
+                }
+            }
+
+            if (purchaseReturnState.mode === 'editing' && voucherSettings?.autoPrint && purchaseReturnState.currentVoucherId) {
+                print({ voucherId: purchaseReturnState.currentVoucherId, voucherType: 'purchase_return' });
             }
 
             dispatch(setPurchaseReturnHasUnsavedChanges(false));
@@ -587,6 +600,13 @@ export default function PurchaseReturnPage() {
                         getItemAmount={getItemAmount}
                         addItemLabel="Add Return Item (Ctrl+N)"
                         disableAdd={isReadOnly}
+                        settings={voucherSettings}
+                        onSectionExit={() => {
+                            // Focus discount amount input
+                            setTimeout(() => {
+                                document.getElementById('voucher-discount-amount')?.focus();
+                            }, 50);
+                        }}
                     />
 
                     {/* Totals and Notes */}
@@ -633,12 +653,19 @@ export default function PurchaseReturnPage() {
                                         <div className="flex-1">
                                             <Label className="text-xs font-medium mb-1 block">Discount ₹</Label>
                                             <Input
+                                                id="voucher-discount-amount"
                                                 type="number"
                                                 value={purchaseReturnState.form.discount_amount || ''}
                                                 onChange={(e) => {
                                                     const amount = parseFloat(e.target.value) || 0;
                                                     dispatch(setPurchaseReturnHasUnsavedChanges(true));
                                                     updateTotalsWithItems(purchaseReturnState.items, undefined, amount);
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        document.getElementById('voucher-save-btn')?.focus();
+                                                    }
                                                 }}
                                                 placeholder="0.00"
                                                 className="h-6.5 font-mono text-xs"
@@ -669,7 +696,13 @@ export default function PurchaseReturnPage() {
                                 <IconX size={16} />
                                 Cancel
                             </Button>
-                            <Button type="submit" disabled={purchaseReturnState.loading} className="h-9" title="Save (Ctrl+S)">
+                            <Button
+                                id="voucher-save-btn"
+                                type="submit"
+                                disabled={purchaseReturnState.loading}
+                                className="h-9"
+                                title="Save (Ctrl+S)"
+                            >
                                 <IconCheck size={16} />
                                 {purchaseReturnState.loading ? 'Saving...' : (purchaseReturnState.mode === 'editing' ? 'Update Return' : 'Save Return')}
                             </Button>

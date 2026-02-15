@@ -52,6 +52,7 @@ export default function BarcodeLabelDialog({
     const [copies, setCopies] = useState(1);
     const [loading] = useState(false);
     const printRef = useRef<HTMLDivElement>(null);
+    const dims = LABEL_DIMENSIONS[settings.labelSize] || LABEL_DIMENSIONS['50x25'];
 
     useEffect(() => {
         if (open) {
@@ -216,7 +217,8 @@ export default function BarcodeLabelDialog({
                 <div className="flex-1 overflow-auto bg-muted/30 p-4 rounded-md">
                     <div
                         ref={printRef}
-                        className="flex flex-wrap gap-2 justify-center"
+                        className="grid gap-2 justify-center"
+                        style={{ gridTemplateColumns: `repeat(auto-fit, ${dims.width * 3}px)` }}
                     >
                         {generateLabels()}
                     </div>

@@ -935,6 +935,12 @@ export default function SalesInvoicePage() {
             disableAdd={isReadOnly}
             settings={voucherSettings}
             onProductCreate={handleProductCreate}
+            onSectionExit={() => {
+              // Focus discount amount input
+              setTimeout(() => {
+                document.getElementById('voucher-discount-amount')?.focus();
+              }, 50);
+            }}
             footerRightContent={
               partyBalance !== null ? (
                 <div className={`text-xs font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -985,13 +991,20 @@ export default function SalesInvoicePage() {
                       value={salesState.form.discount_amount || ''}
                       onChange={(e) => {
                         const amount = parseFloat(e.target.value) || 0;
-                        dispatch(setSalesHasUnsavedChanges(true));
                         updateTotalsWithItems(salesState.items, undefined, amount);
+                        dispatch(setSalesHasUnsavedChanges(true));
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          document.getElementById('voucher-save-btn')?.focus();
+                        }
                       }}
                       placeholder="0.00"
                       className="h-7 w-28 font-mono text-xs"
                       step="0.01"
                       disabled={isReadOnly}
+                      id="voucher-discount-amount"
                     />
                   </div>
                 </div>
@@ -1016,7 +1029,13 @@ export default function SalesInvoicePage() {
                 <IconX size={16} />
                 Cancel
               </Button>
-              <Button type="submit" disabled={salesState.loading} className="h-9" title="Save (Ctrl+S)">
+              <Button
+                type="submit"
+                disabled={salesState.loading}
+                className="h-9"
+                title="Save (Ctrl+S)"
+                id="voucher-save-btn"
+              >
                 <IconCheck size={16} />
                 {salesState.loading ? 'Saving...' : (salesState.mode === 'editing' ? 'Update Invoice' : 'Save Invoice')}
               </Button>

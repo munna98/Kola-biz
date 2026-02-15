@@ -851,6 +851,12 @@ export default function PurchaseInvoicePage() {
             disableAdd={isReadOnly}
             settings={voucherSettings}
             onProductCreate={handleProductCreate}
+            onSectionExit={() => {
+              // Focus discount amount input
+              setTimeout(() => {
+                document.getElementById('voucher-discount-amount')?.focus();
+              }, 50);
+            }}
             footerRightContent={
               partyBalance !== null ? (
                 <div className={`text-xs font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -904,10 +910,17 @@ export default function PurchaseInvoicePage() {
                         updateTotalsWithItems(purchaseState.items, undefined, amount);
                         markUnsaved();
                       }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          document.getElementById('voucher-save-btn')?.focus();
+                        }
+                      }}
                       placeholder="0.00"
                       className="h-7 w-28 font-mono text-xs"
                       step="0.01"
                       disabled={isReadOnly}
+                      id="voucher-discount-amount"
                     />
                   </div>
                 </div>
@@ -932,7 +945,13 @@ export default function PurchaseInvoicePage() {
                 <IconX size={16} />
                 Cancel
               </Button>
-              <Button type="submit" disabled={purchaseState.loading} className="h-9" title="Save (Ctrl+S)">
+              <Button
+                type="submit"
+                disabled={purchaseState.loading}
+                className="h-9"
+                title="Save (Ctrl+S)"
+                id="voucher-save-btn"
+              >
                 <IconCheck size={16} />
                 {purchaseState.loading ? 'Saving...' : (purchaseState.mode === 'editing' ? 'Update Invoice' : 'Save Invoice')}
               </Button>

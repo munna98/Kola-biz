@@ -42,7 +42,8 @@ const AVAILABLE_COLUMNS = [
 const VOUCHER_TYPES = [
     { value: 'sales_invoice', label: 'Sales Invoice' },
     { value: 'purchase_invoice', label: 'Purchase Invoice' },
-    // Add others as needed
+    { value: 'sales_return', label: 'Sales Return' },
+    { value: 'purchase_return', label: 'Purchase Return' },
 ];
 
 export default function VoucherSettingsPage() {

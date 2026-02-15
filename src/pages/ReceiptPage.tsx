@@ -520,6 +520,11 @@ export default function ReceiptPage() {
                             setCreatingForIndex(index);
                             setShowCreateAccount(true);
                         }}
+                        onSectionExit={() => {
+                            setTimeout(() => {
+                                document.getElementById('voucher-save-btn')?.focus();
+                            }, 50);
+                        }}
                         onFocusRow={setFocusedRowIndex}
                         header={
                             <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground items-center">
@@ -544,7 +549,7 @@ export default function ReceiptPage() {
                     <div className="bg-card border rounded-lg p-3 shrink-0">
                         <div className="flex justify-between items-end">
                             <div>
-
+                                {/* Optional: Add more details here if needed */}
                             </div>
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Receipt</div>
@@ -568,6 +573,7 @@ export default function ReceiptPage() {
                             Clear Form
                         </Button>
                         <Button
+                            id="voucher-save-btn"
                             type="submit"
                             disabled={receiptState.loading}
                             className="h-9"

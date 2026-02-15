@@ -23,6 +23,7 @@ export interface VoucherJournalSectionProps {
     addItemLabel?: string;
     disableAdd?: boolean;
     onFocusRow?: (index: number) => void;
+    onSectionExit?: () => void;
 }
 
 export function VoucherJournalSection({
@@ -35,7 +36,8 @@ export function VoucherJournalSection({
     header,
     addItemLabel,
     disableAdd,
-    onFocusRow
+    onFocusRow,
+    onSectionExit
 }: VoucherJournalSectionProps) {
 
     // Internal row navigation handling
@@ -80,6 +82,13 @@ export function VoucherJournalSection({
                             placeholder="Select Account"
                             searchPlaceholder="Search accounts..."
                             disabled={isReadOnly}
+                            onEmptyEnter={() => {
+                                // If it's not the first row, remove it and exit section
+                                if (index > 0) {
+                                    onRemoveLine(index);
+                                    onSectionExit?.();
+                                }
+                            }}
                         />
                     </div>
 

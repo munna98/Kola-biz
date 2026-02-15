@@ -26,6 +26,7 @@ export interface VoucherLedgerSectionProps {
     onFocusRow?: (index: number) => void;
     footerRightContent?: React.ReactNode;
     onCreateLedger?: (name: string, index: number) => void;
+    onSectionExit?: () => void;
 }
 
 export function VoucherLedgerSection({
@@ -42,6 +43,7 @@ export function VoucherLedgerSection({
     onFocusRow,
     footerRightContent,
     onCreateLedger,
+    onSectionExit
 }: VoucherLedgerSectionProps) {
 
     // Internal row navigation handling
@@ -88,6 +90,13 @@ export function VoucherLedgerSection({
                             onCreate={onCreateLedger ? (val) => onCreateLedger(val, index) : undefined}
                             onActionClick={onCreateLedger ? () => onCreateLedger('', index) : undefined}
                             className="flex-1"
+                            onEmptyEnter={() => {
+                                // If it's not the first row, remove it and exit section
+                                if (index > 0) {
+                                    onRemoveItem(index);
+                                    onSectionExit?.();
+                                }
+                            }}
                         />
                     </div>
 

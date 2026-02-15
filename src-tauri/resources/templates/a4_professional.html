@@ -142,8 +142,9 @@
 </div>
 
 <!-- Account Summary -->
-<div class="account-summary" style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 3px; font-size: 11px;">
-    <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+<div class="account-summary"
+    style="margin: 15px 0; padding: 10px; border: 1px solid #ddd; border-radius: 3px; font-size: 11px;">
+    <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;">
         <div>
             <span style="display: block; color: #666; font-size: 9px; font-weight: 600;">Old Balance</span>
             <span style="font-weight: bold;">₹{{abs_format_number old_balance 2}}</span>
@@ -151,6 +152,10 @@
         <div>
             <span style="display: block; color: #666; font-size: 9px; font-weight: 600;">Bill Amount</span>
             <span style="font-weight: bold;">₹{{format_number grand_total 2}}</span>
+        </div>
+        <div>
+            <span style="display: block; color: #666; font-size: 9px; font-weight: 600;">Total Balance</span>
+            <span style="font-weight: bold;">₹{{abs_format_number total_balance 2}}</span>
         </div>
         <div>
             <span style="display: block; color: #666; font-size: 9px; font-weight: 600;">Paid Amount</span>

@@ -53,6 +53,7 @@ export interface VoucherItemsSectionProps {
     settings?: { columns: ColumnSettings[] };
     footerRightContent?: React.ReactNode;
     onProductCreate?: (name: string, rowIndex: number) => void;
+    onSectionExit?: () => void;
 }
 
 export interface VoucherItemsSectionRef {
@@ -87,7 +88,8 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     disableAdd,
     settings,
     footerRightContent,
-    onProductCreate
+    onProductCreate,
+    onSectionExit
 }, ref) => {
     // Ref to the first product combobox
     const firstProductRef = useRef<HTMLButtonElement>(null);
@@ -186,6 +188,13 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     disabled={isReadOnly}
                                     onActionClick={() => onProductCreate?.('', idx)}
                                     onCreate={(name) => onProductCreate?.(name, idx)}
+                                    onEmptyEnter={() => {
+                                        // If it's not the first row, remove it and exit section
+                                        if (idx > 0) {
+                                            onRemoveItem(idx);
+                                            onSectionExit?.();
+                                        }
+                                    }}
                                 />
                             );
                         case 'quantity':

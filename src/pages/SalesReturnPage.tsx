@@ -41,7 +41,7 @@ import { usePrint } from '@/hooks/usePrint';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
-import { VoucherItemsSection } from '@/components/voucher/VoucherItemsSection';
+import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
 
 interface Product {
     id: string;
@@ -72,6 +72,7 @@ export default function SalesReturnPage() {
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
+    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean } | undefined>(undefined);
     const { print } = usePrint();
 
     // Refs for focus management
@@ -82,13 +83,15 @@ export default function SalesReturnPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [productsData, unitsData, accountsData] = await Promise.all([
+                const [productsData, unitsData, accountsData, settingsData] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
                     invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable'] }),
+                    invoke<any>('get_voucher_settings', { voucherType: 'sales_return' }),
                 ]);
                 setProducts(productsData);
                 setUnits(unitsData);
+                if (settingsData) setVoucherSettings(settingsData);
 
                 const combinedParties = accountsData.map(acc => ({
                     id: acc.id,
@@ -300,7 +303,7 @@ export default function SalesReturnPage() {
                 });
                 toast.success('Sales return updated successfully');
             } else {
-                await invoke<string>('create_sales_return', {
+                const newId = await invoke<string>('create_sales_return', {
                     invoice: {
                         customer_id: salesReturnState.form.customer_id,
                         party_type: salesReturnState.form.party_type,
@@ -323,6 +326,14 @@ export default function SalesReturnPage() {
                     },
                 });
                 toast.success('Sales return created successfully');
+
+                if (voucherSettings?.autoPrint) {
+                    print({ voucherId: newId, voucherType: 'sales_return' });
+                }
+            }
+
+            if (salesReturnState.mode === 'editing' && voucherSettings?.autoPrint && salesReturnState.currentVoucherId) {
+                print({ voucherId: salesReturnState.currentVoucherId, voucherType: 'sales_return' });
             }
 
             dispatch(setSalesReturnHasUnsavedChanges(false));
@@ -587,6 +598,13 @@ export default function SalesReturnPage() {
                         getItemAmount={getItemAmount}
                         addItemLabel="Add Return Item (Ctrl+N)"
                         disableAdd={isReadOnly}
+                        settings={voucherSettings}
+                        onSectionExit={() => {
+                            // Focus discount amount input
+                            setTimeout(() => {
+                                document.getElementById('voucher-discount-amount')?.focus();
+                            }, 50);
+                        }}
                     />
 
                     {/* Totals and Notes */}
@@ -633,12 +651,19 @@ export default function SalesReturnPage() {
                                         <div className="flex-1">
                                             <Label className="text-xs font-medium mb-1 block">Discount ₹</Label>
                                             <Input
+                                                id="voucher-discount-amount"
                                                 type="number"
                                                 value={salesReturnState.form.discount_amount || ''}
                                                 onChange={(e) => {
                                                     const amount = parseFloat(e.target.value) || 0;
                                                     dispatch(setSalesReturnHasUnsavedChanges(true));
                                                     updateTotalsWithItems(salesReturnState.items, undefined, amount);
+                                                }}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === 'Enter') {
+                                                        e.preventDefault();
+                                                        document.getElementById('voucher-save-btn')?.focus();
+                                                    }
                                                 }}
                                                 placeholder="0.00"
                                                 className="h-6.5 font-mono text-xs"
@@ -669,7 +694,13 @@ export default function SalesReturnPage() {
                                 <IconX size={16} />
                                 Cancel
                             </Button>
-                            <Button type="submit" disabled={salesReturnState.loading} className="h-9" title="Save (Ctrl+S)">
+                            <Button
+                                id="voucher-save-btn"
+                                type="submit"
+                                disabled={salesReturnState.loading}
+                                className="h-9"
+                                title="Save (Ctrl+S)"
+                            >
                                 <IconCheck size={16} />
                                 {salesReturnState.loading ? 'Saving...' : (salesReturnState.mode === 'editing' ? 'Update Return' : 'Save Return')}
                             </Button>

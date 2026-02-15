@@ -388,6 +388,12 @@ async fn get_purchase_invoice_data(
 
             obj.insert("old_balance".to_string(), json!(old_balance));
             obj.insert("paid_amount".to_string(), json!(paid_amount));
+
+            // Total Balance for Purchase (Negative Credit)
+            // Old Balance is Credit (negative). Bill adds Credit (negative impact).
+            let total_balance = old_balance - invoice.grand_total;
+            obj.insert("total_balance".to_string(), json!(total_balance));
+
             obj.insert("balance_due".to_string(), json!(balance_due));
         }
         Ok(invoice_val)
@@ -512,9 +518,14 @@ async fn get_sales_invoice_data(
             // Add Balance Details
             obj.insert("old_balance".to_string(), json!(old_balance));
             obj.insert("paid_amount".to_string(), json!(paid_amount));
+
             // Balance Due = Old Balance + Current Bill - Paid Amount
             let balance_due = old_balance + invoice.grand_total - paid_amount;
             obj.insert("balance_due".to_string(), json!(balance_due));
+
+            // Total Balance = Old Balance + Bill Amount (Grand Total)
+            let total_balance = old_balance + invoice.grand_total;
+            obj.insert("total_balance".to_string(), json!(total_balance));
         }
         Ok(invoice_val)
     } else {

@@ -395,6 +395,11 @@ export default function OpeningBalancePage() {
                         onRemoveLine={handleRemoveLine}
                         onUpdateLine={handleUpdateLine}
                         addItemLabel="Add Line (Ctrl+N)"
+                        onSectionExit={() => {
+                            setTimeout(() => {
+                                document.getElementById('voucher-save-btn')?.focus();
+                            }, 50);
+                        }}
                     />
 
                     {/* Totals */}
@@ -428,6 +433,7 @@ export default function OpeningBalancePage() {
                             Clear Form
                         </Button>
                         <Button
+                            id="voucher-save-btn"
                             type="submit"
                             disabled={openingBalanceState.loading}
                             className="h-9"
