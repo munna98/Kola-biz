@@ -134,16 +134,31 @@ export default function PurchaseReturnPage() {
     }, [purchaseReturnState.mode, products.length]);
 
     const handleAddItem = () => {
+        // Get defaults from settings
+        const getDesc = (id: string) => {
+            const col = voucherSettings?.columns.find(c => c.id === id);
+            if (col && col.defaultValue !== undefined && col.defaultValue !== "") {
+                return col.defaultValue;
+            }
+            // Hardcoded defaults if not in settings or empty
+            if (id === 'count') return 1;
+            if (id === 'deduction') return 1.5;
+            return 0;
+        };
+
+        // Helper to safely parse
+        const parseNum = (val: string | number) => typeof val === 'string' ? parseFloat(val) || 0 : val;
+
         dispatch(
             addPurchaseReturnItem({
                 product_id: 0,
                 product_name: '',
                 description: '',
-                initial_quantity: 0,
-                count: 1,
-                deduction_per_unit: 1.5, // Default deduction for Purchase Return (same as Pi?) - User asked for Pi=1.5, assuming Pr=1.5 too?
-                rate: 0,
-                tax_rate: 0,
+                initial_quantity: parseNum(getDesc('quantity') as string | number),
+                count: parseNum(getDesc('count') as string | number) || 1,
+                deduction_per_unit: parseNum(getDesc('deduction') as string | number),
+                rate: parseNum(getDesc('rate') as string | number),
+                tax_rate: parseNum(getDesc('tax_rate') as string | number),
                 discount_percent: 0,
                 discount_amount: 0,
             })
