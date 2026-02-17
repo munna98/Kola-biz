@@ -218,7 +218,7 @@ export default function BarcodeLabelDialog({
                     <div
                         ref={printRef}
                         className="grid gap-2 justify-center"
-                        style={{ gridTemplateColumns: `repeat(auto-fit, ${dims.width * 3}px)` }}
+                        style={{ gridTemplateColumns: `repeat(auto-fill, ${dims.width * 3}px)` }}
                     >
                         {generateLabels()}
                     </div>
@@ -251,7 +251,7 @@ function BarcodeLabel({ product, settings }: { product: Product; settings: Barco
 
     return (
         <div
-            className="label bg-white border rounded shadow-sm flex flex-col items-center justify-center p-2"
+            className="label bg-white border rounded shadow-sm flex flex-col items-center justify-center p-2 text-black"
             style={{
                 width: `${dims.width * 3}px`,
                 height: `${dims.height * 3}px`,
