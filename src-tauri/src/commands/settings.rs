@@ -279,3 +279,126 @@ pub async fn save_voucher_settings(
 
     Ok(())
 }
+
+/// Reset database data based on selected options
+#[tauri::command]
+pub async fn reset_database_data(
+    pool: State<'_, SqlitePool>,
+    mode: String,
+    voucher_types: Vec<String>,
+    master_tables: Vec<String>,
+    reset_sequences: bool,
+) -> Result<String, String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // Enable foreign keys explicitly to ensure data integrity or cascading
+    sqlx::query("PRAGMA foreign_keys = ON")
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 1. Delete selected Voucher Types first (Child tables)
+    // This allows deleting master data later if referenced vouchers are removed
+    for v_type in &voucher_types {
+        // Delete vouchers of this type
+        // Note: voucher_items, journal_entries, etc. are ON DELETE CASCADE in schema
+        sqlx::query("DELETE FROM vouchers WHERE voucher_type = ?")
+            .bind(v_type)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("Failed to delete vouchers of type {}: {}", v_type, e))?;
+
+        // Reset sequence if requested
+        if reset_sequences {
+            sqlx::query("UPDATE voucher_sequences SET next_number = 1 WHERE voucher_type = ?")
+                .bind(v_type)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("Failed to reset sequence for {}: {}", v_type, e))?;
+        }
+    }
+
+    // 2. Delete Master Tables (if mode is full)
+    // We execute these in a specific dependency order to avoid FK violations
+    if mode == "full" {
+        // Defined order: Children first, then Parents
+        let deletion_order = [
+            "opening_balances", // Refers accounts
+            "stock_movements", // Refers vouchers/products (should be gone via vouchers cascade, but just in case)
+            "products",        // Refers groups/units
+            "product_groups",
+            "employees",         // Refers accounts
+            "customers",         // Legacy table
+            "suppliers",         // Legacy table
+            "chart_of_accounts", // Refers nothing (internal self-ref)
+        ];
+
+        for table_key in deletion_order.iter() {
+            // Check if user selected this table to be reset
+            let should_delete = master_tables.contains(&table_key.to_string());
+
+            if should_delete {
+                match *table_key {
+                    "opening_balances" => {
+                        sqlx::query("DELETE FROM opening_balances")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    "products" => {
+                        sqlx::query("DELETE FROM products")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    "product_groups" => {
+                        sqlx::query("DELETE FROM product_groups")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    "employees" => {
+                        sqlx::query("DELETE FROM employees")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    "customers" => {
+                        // Delete from legacy table and Chart of Accounts (party_type='Customer')
+                        sqlx::query("DELETE FROM customers")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        sqlx::query("DELETE FROM chart_of_accounts WHERE party_type = 'Customer'")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    "suppliers" => {
+                        // Delete from legacy table and Chart of Accounts (party_type='Supplier')
+                        sqlx::query("DELETE FROM suppliers")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        sqlx::query("DELETE FROM chart_of_accounts WHERE party_type = 'Supplier'")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    "chart_of_accounts" => {
+                        // Delete all non-system accounts (excluding those we might have just deleted via customers/suppliers)
+                        // This wipes the remaining ledger accounts
+                        sqlx::query("DELETE FROM chart_of_accounts WHERE is_system = 0")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok("Database reset completed successfully".to_string())
+}

@@ -40,6 +40,7 @@ import UsersPage from './pages/UsersPage';
 import CompanyProfilePage from './pages/settings/CompanyProfilePage';
 import { InvoiceTemplatesPage } from './pages/settings/InvoiceTemplatesPage';
 import BarcodeSettingsPage from './pages/settings/BarcodeSettingsPage';
+import DbSettingsPage from './pages/settings/DbSettingsPage';
 import DashboardPage from './pages/DashboardPage';
 import { LicenseProvider } from './components/providers/LicenseProvider';
 import { LicenseGuard } from './components/LicenseGuard';
@@ -179,6 +180,7 @@ function AppContent() {
       case 'license': return <LicensePage />;
       case 'users': return <UsersPage />;
       case 'barcode_settings': return <BarcodeSettingsPage />;
+      case 'db_settings': return <DbSettingsPage />;
 
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }

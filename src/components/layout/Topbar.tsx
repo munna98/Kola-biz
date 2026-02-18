@@ -120,6 +120,8 @@ export default function Topbar() {
                                 <div className="border-t my-1"></div>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('users')}>Users</NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('license')}>License</NavigationMenuLink>
+                                <div className="border-t my-1"></div>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('db_settings')}>DB Settings</NavigationMenuLink>
                             </ul>
                         </NavigationMenuContent>
                     </NavigationMenuItem>
