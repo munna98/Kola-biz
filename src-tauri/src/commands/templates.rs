@@ -221,6 +221,223 @@ pub async fn render_invoice(
     engine.render_invoice(&template, &company, voucher_data)
 }
 
+// ============= DESIGNER COMMANDS =============
+
+#[derive(Debug, Serialize)]
+pub struct DesignerTemplateData {
+    pub name: String,
+    pub layout_config: Option<String>,
+    pub voucher_type: String,
+    pub template_format: String,
+    pub show_logo: bool,
+    pub show_company_address: bool,
+    pub show_party_address: bool,
+    pub show_gstin: bool,
+    pub show_item_hsn: bool,
+    pub show_bank_details: bool,
+    pub show_signature: bool,
+    pub show_terms: bool,
+    pub show_less_column: bool,
+}
+
+#[tauri::command]
+pub async fn get_designer_template(
+    pool: State<'_, SqlitePool>,
+    template_id: String,
+) -> Result<DesignerTemplateData, String> {
+    let row = sqlx::query_as::<
+        _,
+        (
+            String,
+            Option<String>,
+            String,
+            String,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+            Option<i64>,
+        ),
+    >(
+        "SELECT name, layout_config, voucher_type, template_format, 
+         show_logo, show_company_address, show_party_address, show_gstin,
+         show_item_hsn, show_bank_details, show_signature, show_terms, show_less_column
+         FROM invoice_templates WHERE id = ?",
+    )
+    .bind(&template_id)
+    .fetch_one(pool.inner())
+    .await
+    .map_err(|e| format!("Template not found: {}", e))?;
+
+    Ok(DesignerTemplateData {
+        name: row.0,
+        layout_config: row.1,
+        voucher_type: row.2,
+        template_format: row.3,
+        show_logo: row.4.unwrap_or(1) == 1,
+        show_company_address: row.5.unwrap_or(1) == 1,
+        show_party_address: row.6.unwrap_or(1) == 1,
+        show_gstin: row.7.unwrap_or(1) == 1,
+        show_item_hsn: row.8.unwrap_or(1) == 1,
+        show_bank_details: row.9.unwrap_or(0) == 1,
+        show_signature: row.10.unwrap_or(0) == 1,
+        show_terms: row.11.unwrap_or(0) == 1,
+        show_less_column: row.12.unwrap_or(0) == 1,
+    })
+}
+
+#[tauri::command]
+pub async fn save_designer_template(
+    pool: State<'_, SqlitePool>,
+    template_id: Option<String>,
+    name: String,
+    voucher_type: String,
+    layout_config: String,
+    header_html: String,
+    body_html: String,
+    footer_html: String,
+    styles_css: String,
+) -> Result<String, String> {
+    if let Some(tid) = template_id {
+        // Update existing template — designer is the source of truth
+        sqlx::query(
+            "UPDATE invoice_templates SET 
+                name = ?, layout_config = ?, design_mode = 'designer',
+                header_html = ?, body_html = ?, footer_html = ?, styles_css = ?,
+                updated_at = datetime('now')
+            WHERE id = ?",
+        )
+        .bind(&name)
+        .bind(&layout_config)
+        .bind(&header_html)
+        .bind(&body_html)
+        .bind(&footer_html)
+        .bind(&styles_css)
+        .bind(&tid)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(tid)
+    } else {
+        // Create new template
+        let new_id = uuid::Uuid::now_v7().to_string();
+        let template_number = format!("TPL-CUSTOM-{}", &new_id[..8]);
+
+        sqlx::query(
+            "INSERT INTO invoice_templates (
+                id, template_number, name, description, voucher_type, template_format,
+                design_mode, layout_config, header_html, body_html, footer_html, styles_css,
+                is_default, is_active
+            ) VALUES (?, ?, ?, ?, ?, 'a4_portrait', 'designer', ?, ?, ?, ?, ?, 0, 1)",
+        )
+        .bind(&new_id)
+        .bind(&template_number)
+        .bind(&name)
+        .bind("Custom designed template")
+        .bind(&voucher_type)
+        .bind(&layout_config)
+        .bind(&header_html)
+        .bind(&body_html)
+        .bind(&footer_html)
+        .bind(&styles_css)
+        .execute(pool.inner())
+        .await
+        .map_err(|e| e.to_string())?;
+
+        Ok(new_id)
+    }
+}
+
+#[tauri::command]
+pub async fn reset_template_to_default(
+    pool: State<'_, SqlitePool>,
+    template_id: String,
+) -> Result<(), String> {
+    // Reset design_mode and layout_config so the seed can restore original HTML on next restart
+    // Also re-apply the seed HTML immediately based on template_number
+    let row: Option<(String, String)> = sqlx::query_as(
+        "SELECT template_number, template_format FROM invoice_templates WHERE id = ?",
+    )
+    .bind(&template_id)
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let (template_number, template_format) = row.ok_or("Template not found")?;
+
+    // Determine original design_mode based on template_format
+    let original_mode = if template_format.contains("thermal") {
+        "compact"
+    } else {
+        "standard"
+    };
+
+    // Reset design_mode and clear layout_config
+    sqlx::query(
+        "UPDATE invoice_templates SET design_mode = ?, layout_config = NULL, updated_at = datetime('now') WHERE id = ?"
+    )
+    .bind(original_mode)
+    .bind(&template_id)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Also immediately restore the original HTML from embedded resources
+    // by re-running the seed for this specific template
+    let (html, css) = match template_number.as_str() {
+        "TPL-SI-001" | "TPL-PI-001" => {
+            let html = include_str!("../../resources/templates/a4_professional.html");
+            let css = include_str!("../../resources/templates/a4_professional.css");
+            (html, css)
+        }
+        "TPL-SI-002" | "TPL-PI-002" => {
+            let html = include_str!("../../resources/templates/thermal_80mm.html");
+            let css = include_str!("../../resources/templates/thermal_80mm.css");
+            (html, css)
+        }
+        "TPL-SI-003" => {
+            let html = include_str!("../../resources/templates/minimal_clean.html");
+            let css = include_str!("../../resources/templates/minimal_clean.css");
+            (html, css)
+        }
+        _ => return Ok(()), // Custom templates can't be reset to seed
+    };
+
+    // Parse sections
+    let sections: Vec<&str> = html.split("<!-- [").collect();
+    let mut header = String::new();
+    let mut body = String::new();
+    let mut footer = String::new();
+    for section in sections {
+        if section.starts_with("HEADER] -->") {
+            header = section.replacen("HEADER] -->", "", 1).trim().to_string();
+        } else if section.starts_with("BODY] -->") {
+            body = section.replacen("BODY] -->", "", 1).trim().to_string();
+        } else if section.starts_with("FOOTER] -->") {
+            footer = section.replacen("FOOTER] -->", "", 1).trim().to_string();
+        }
+    }
+
+    sqlx::query(
+        "UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ? WHERE id = ?"
+    )
+    .bind(&header)
+    .bind(&body)
+    .bind(&footer)
+    .bind(css)
+    .bind(&template_id)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 async fn get_template_by_voucher_type(
     pool: State<'_, SqlitePool>,
     voucher_type: String,

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useDispatch } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import {
     Card,
@@ -18,6 +19,9 @@ import {
     IconCheck,
     IconStar,
     IconPrinter,
+    IconEdit,
+    IconPlus,
+    IconRefresh,
 } from '@tabler/icons-react';
 import {
     Select,
@@ -35,6 +39,7 @@ interface InvoiceTemplate {
     description: string;
     voucher_type: string;
     template_format: string;
+    design_mode: string | null;
     is_default: number;
     // Features
     show_logo: number;
@@ -65,6 +70,7 @@ const FEATURE_LABELS: Record<string, string> = {
 };
 
 export function InvoiceTemplatesPage() {
+    const dispatch = useDispatch();
     const [templates, setTemplates] = useState<InvoiceTemplate[]>([]);
     const [loading, setLoading] = useState(false);
     const { print } = usePrint();
@@ -124,7 +130,6 @@ export function InvoiceTemplatesPage() {
     const handleSetDefault = async (templateId: number, voucherType: string) => {
         try {
             await invoke('set_default_template', { templateId, voucherType });
-            // Update local state
             setTemplates((prev) =>
                 prev.map((t) =>
                     t.voucher_type === voucherType
@@ -135,6 +140,17 @@ export function InvoiceTemplatesPage() {
             toast.success('Default template updated');
         } catch (error) {
             toast.error('Failed to set default template');
+        }
+    };
+
+    const handleResetToDefault = async (templateId: number) => {
+        try {
+            await invoke('reset_template_to_default', { templateId: templateId.toString() });
+            await loadTemplates();
+            toast.success('Template reset to original design');
+        } catch (error) {
+            toast.error('Failed to reset template');
+            console.error(error);
         }
     };
 
@@ -183,11 +199,17 @@ export function InvoiceTemplatesPage() {
 
     return (
         <div className="p-6 max-w-6xl mx-auto">
-            <div className="mb-6">
-                <h1 className="text-3xl font-bold">Invoice Settings</h1>
-                <p className="text-muted-foreground mt-1">
-                    Manage your invoice templates and printing preferences
-                </p>
+            <div className="mb-6 flex items-center justify-between">
+                <div>
+                    <h1 className="text-3xl font-bold">Invoice Settings</h1>
+                    <p className="text-muted-foreground mt-1">
+                        Manage your invoice templates and printing preferences
+                    </p>
+                </div>
+                <Button onClick={() => dispatch({ type: 'app/setActiveSectionWithParams', payload: { section: 'invoice_designer' } })}>
+                    <IconPlus size={16} className="mr-2" />
+                    Create Custom Template
+                </Button>
             </div>
 
             <div className="grid gap-6">
@@ -295,6 +317,15 @@ export function InvoiceTemplatesPage() {
                                                     <IconEye size={12} className="mr-1.5" />
                                                     Preview
                                                 </Button>
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="flex-1 h-7 text-xs"
+                                                    onClick={() => dispatch({ type: 'app/setActiveSectionWithParams', payload: { section: 'invoice_designer', params: { templateId: template.id.toString(), voucherType: template.voucher_type } } })}
+                                                >
+                                                    <IconEdit size={12} className="mr-1.5" />
+                                                    Design
+                                                </Button>
                                                 {template.is_default === 0 && (
                                                     <Button
                                                         variant="secondary"
@@ -304,6 +335,17 @@ export function InvoiceTemplatesPage() {
                                                     >
                                                         <IconCheck size={12} className="mr-1.5" />
                                                         Set Default
+                                                    </Button>
+                                                )}
+                                                {template.design_mode === 'designer' && (
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        className="h-7 text-xs text-muted-foreground"
+                                                        onClick={() => handleResetToDefault(template.id)}
+                                                    >
+                                                        <IconRefresh size={12} className="mr-1" />
+                                                        Reset
                                                     </Button>
                                                 )}
                                             </div>

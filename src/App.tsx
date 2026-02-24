@@ -42,6 +42,7 @@ import { InvoiceTemplatesPage } from './pages/settings/InvoiceTemplatesPage';
 import BarcodeSettingsPage from './pages/settings/BarcodeSettingsPage';
 import DbSettingsPage from './pages/settings/DbSettingsPage';
 import DashboardPage from './pages/DashboardPage';
+import InvoiceDesigner from './components/settings/invoice-designer/InvoiceDesigner';
 import { LicenseProvider } from './components/providers/LicenseProvider';
 import { LicenseGuard } from './components/LicenseGuard';
 import LicensePage from './pages/LicensePage';
@@ -50,7 +51,7 @@ import LicensePage from './pages/LicensePage';
 
 function AppContent() {
   const dispatch = useDispatch();
-  const { activeSection } = useSelector((state: RootState) => state.app);
+  const { activeSection, activeSectionParams } = useSelector((state: RootState) => state.app);
   const { isAuthenticated, isLoading, needsCompanySetup, token } = useSelector((state: RootState) => state.auth);
 
   // Reload data when switching to products page
@@ -181,6 +182,7 @@ function AppContent() {
       case 'users': return <UsersPage />;
       case 'barcode_settings': return <BarcodeSettingsPage />;
       case 'db_settings': return <DbSettingsPage />;
+      case 'invoice_designer': return <InvoiceDesigner templateId={activeSectionParams?.templateId} voucherType={activeSectionParams?.voucherType} onBack={() => dispatch({ type: 'app/setActiveSection', payload: 'invoice_settings' })} />;
 
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }

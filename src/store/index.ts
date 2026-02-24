@@ -3,6 +3,7 @@ import { configureStore, createSlice, PayloadAction } from '@reduxjs/toolkit';
 interface AppState {
   sidebarCollapsed: boolean;
   activeSection: string;
+  activeSectionParams?: Record<string, any>;
   currentUser: string;
 }
 
@@ -33,6 +34,7 @@ const initialNavigationState: VoucherNavigationState = {
 const initialState: AppState = {
   sidebarCollapsed: false,
   activeSection: 'dashboard',
+  activeSectionParams: undefined,
   currentUser: 'Admin',
 };
 
@@ -122,6 +124,11 @@ const appSlice = createSlice({
     },
     setActiveSection: (state, action: PayloadAction<string>) => {
       state.activeSection = action.payload;
+      state.activeSectionParams = undefined;
+    },
+    setActiveSectionWithParams: (state, action: PayloadAction<{ section: string; params?: Record<string, any> }>) => {
+      state.activeSection = action.payload.section;
+      state.activeSectionParams = action.payload.params;
     },
   },
 });
@@ -600,7 +607,7 @@ export const {
   setReceiptLoading,
 } = receiptSlice.actions;
 
-export const { toggleSidebar, setActiveSection } = appSlice.actions;
+export const { toggleSidebar, setActiveSection, setActiveSectionWithParams } = appSlice.actions;
 
 // ========== JOURNAL ENTRY SLICE ==========
 export interface JournalEntryLine {

@@ -154,33 +154,37 @@ pub async fn seed_handlebars_templates(
     .execute(pool)
     .await?;
 
-    // Update default templates with latest content
-    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ? WHERE template_number = 'TPL-SI-001' AND design_mode = 'standard'")
+    // Update default templates with latest content — but ONLY if user hasn't customized them via designer
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SI-001' AND design_mode != 'designer'")
         .bind(&a4_h)
         .bind(&a4_b)
         .bind(&a4_f)
+        .bind(A4_CSS)
         .execute(pool)
         .await?;
 
-    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ? WHERE template_number = 'TPL-SI-002'")
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SI-002' AND design_mode != 'designer'")
         .bind(&t80_h)
         .bind(&t80_b)
         .bind(&t80_f)
+        .bind(THERMAL_80MM_CSS)
         .execute(pool)
         .await?;
 
     // Update Purchase Invoice Templates
-    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ? WHERE template_number = 'TPL-PI-001'")
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-PI-001' AND design_mode != 'designer'")
         .bind(&a4_h)
         .bind(&a4_b)
         .bind(&a4_f)
+        .bind(A4_CSS)
         .execute(pool)
         .await?;
 
-    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ? WHERE template_number = 'TPL-PI-002'")
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-PI-002' AND design_mode != 'designer'")
         .bind(&t80_h)
         .bind(&t80_b)
         .bind(&t80_f)
+        .bind(THERMAL_80MM_CSS)
         .execute(pool)
         .await?;
 

@@ -173,6 +173,9 @@ pub fn run() {
             get_invoice_templates,
             set_default_template,
             update_template_settings,
+            get_designer_template,
+            save_designer_template,
+            reset_template_to_default,
             // Allocations
             get_outstanding_invoices,
             create_allocation,
