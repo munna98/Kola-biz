@@ -451,7 +451,15 @@ export default function PropertiesPanel({
                                                         }}
                                                     >▼</button>
                                                 </div>
-                                                <span className="w-16 truncate font-medium">{col.label}</span>
+                                                <Input
+                                                    value={col.label}
+                                                    onChange={e => {
+                                                        const newCols = [...el.tableConfig!.columns];
+                                                        newCols[index] = { ...newCols[index], label: e.target.value };
+                                                        onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, columns: newCols } });
+                                                    }}
+                                                    className="h-6 text-[10px] w-20 flex-1 px-1"
+                                                />
                                                 <Input
                                                     type="number"
                                                     value={col.width}
