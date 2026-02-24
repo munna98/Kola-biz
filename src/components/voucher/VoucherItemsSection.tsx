@@ -94,8 +94,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     // Ref to the first product combobox
     const firstProductRef = useRef<HTMLButtonElement>(null);
 
-    // Refs for quantity inputs (one per row)
-    const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
+
 
     // Expose methods to parent component
     useImperativeHandle(ref, () => ({
@@ -177,10 +176,22 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     onChange={(value) => {
                                         onUpdateItem(idx, 'product_id', value);
 
-                                        // Auto-focus quantity input after product selection
+                                        // Auto-focus next input after product selection
                                         setTimeout(() => {
-                                            quantityRefs.current[idx]?.focus();
-                                            quantityRefs.current[idx]?.select();
+                                            const row = document.querySelector(`[data-row-index="${idx}"]`);
+                                            if (row) {
+                                                const inputs = Array.from(row.querySelectorAll('input:not([disabled]), button:not([disabled])')) as HTMLElement[];
+                                                const comboIndex = inputs.findIndex(el => el.getAttribute('role') === 'combobox');
+                                                const nextIndex = comboIndex >= 0 ? comboIndex + 1 : 1;
+
+                                                if (nextIndex < inputs.length) {
+                                                    const nextInput = inputs[nextIndex];
+                                                    nextInput?.focus();
+                                                    if (nextInput instanceof HTMLInputElement) {
+                                                        nextInput.select();
+                                                    }
+                                                }
+                                            }
                                         }, 100);
                                     }}
                                     placeholder="Select product"
@@ -201,7 +212,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             return (
                                 <Input
                                     key={col.id}
-                                    ref={el => { quantityRefs.current[idx] = el; }}
+
                                     type="number"
                                     value={item.initial_quantity || ''}
                                     onChange={(e) => handleNumberChange('initial_quantity', e.target.value)}
