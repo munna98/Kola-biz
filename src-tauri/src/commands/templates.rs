@@ -202,6 +202,30 @@ pub async fn render_invoice(
             .ok_or_else(|| "No template found for voucher type".to_string())?
     };
 
+    // Normalize legacy quantity-related number formatting in saved templates
+    // so qty/less/final qty/deduction are not rounded to whole numbers in print.
+    let mut template = template;
+    for field in [
+        "initial_quantity",
+        "less_quantity",
+        "final_quantity",
+        "deduction_per_unit",
+    ] {
+        let zero_dec_pattern = format!(r"\{{\{{\s*format_number\s+{}\s+0\s*\}}\}}", field);
+        if let Ok(regex) = regex::Regex::new(&zero_dec_pattern) {
+            let replacement = format!("{{{{format_number {} 2}}}}", field);
+            template.header_html = regex
+                .replace_all(&template.header_html, replacement.as_str())
+                .into_owned();
+            template.body_html = regex
+                .replace_all(&template.body_html, replacement.as_str())
+                .into_owned();
+            template.footer_html = regex
+                .replace_all(&template.footer_html, replacement.as_str())
+                .into_owned();
+        }
+    }
+
     // 2. Get company profile
     let company = get_company_profile(pool.clone())
         .await

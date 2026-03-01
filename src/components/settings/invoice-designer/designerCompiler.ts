@@ -164,7 +164,7 @@ function renderThermalTable(el: DesignerElement): string {
         } else if (col.format === 'currency') {
             cellContent = `{{format_number ${col.key} 2}}`;
         } else if (col.format === 'number') {
-            cellContent = `{{format_number ${col.key} 0}}`;
+            cellContent = `{{format_number ${col.key} 2}}`;
         } else if (col.format === 'date') {
             cellContent = `{{format_date ${col.key}}}`;
         } else {
