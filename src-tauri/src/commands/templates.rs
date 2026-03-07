@@ -240,7 +240,32 @@ pub async fn render_invoice(
         _ => return Err("Unsupported voucher type".to_string()),
     };
 
-    // 4. Render using Handlebars
+    // 5. Dynamically inject {{#unless is_cash}} around Account Summary
+    //    in case the database template hasn't been updated with the conditional yet.
+    if !template.body_html.contains("unless is_cash") {
+        if let Some(pos) = template.body_html.find("<!-- Account Summary -->") {
+            template.body_html.insert_str(pos, "{{#unless is_cash}}\n");
+            template.body_html.push_str("\n{{/unless}}");
+        } else if let Some(pos) = template.body_html.find("account-summary") {
+            // Find the start of the <div that contains account-summary
+            if let Some(div_start) = template.body_html[..pos].rfind('<') {
+                template
+                    .body_html
+                    .insert_str(div_start, "{{#unless is_cash}}\n");
+                template.body_html.push_str("\n{{/unless}}");
+            }
+        } else if let Some(pos) = template.body_html.find("old_balance") {
+            // Fallback: find the div containing old_balance
+            if let Some(div_start) = template.body_html[..pos].rfind("<div") {
+                template
+                    .body_html
+                    .insert_str(div_start, "{{#unless is_cash}}\n");
+                template.body_html.push_str("\n{{/unless}}");
+            }
+        }
+    }
+
+    // 6. Render using Handlebars
     let mut engine = TEMPLATE_ENGINE.lock().map_err(|e| e.to_string())?;
     engine.render_invoice(&template, &company, voucher_data)
 }
@@ -595,36 +620,11 @@ async fn get_purchase_invoice_data(
             obj.insert("subtotal".to_string(), json!(subtotal));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
 
-            // Add Balance Details
-            // Note: For suppliers, credit balance is normal (we owe them).
-            // old_balance is Dr - Cr. If we owe 1000, old_balance is -1000.
-            // invoice increases what we owe (Credit). invoice amount is positive.
-            // To get "Balance Due" (what we still owe):
-            // We want positive number if we owe money?
-            // Sales logic: bal_due = old (Dr-Cr) + invoice - paid.
-            // Purchase logic:
-            // old_balance (Dr-Cr).
-            // invoice creates Cr.
-            // paid creates Dr.
-            // Net Balance = Old (Dr-Cr) - Invoice (Cr) + Paid (Dr)  <-- This is new balance Dr-Cr.
-            // BUT for template display "Balance Due", we usually want the magnitude.
-            // Let's pass the raw Dr-Cr values and let the template decide or helper format it?
-            // Actually sales template just displays {{balance_due}} directly.
-            // Let's calculate proper Net Balance (Dr-Cr)
-            // Current Invoice Effect: It's a Purchase, so it CREDITS the supplier.
-            // So we subtract grand_total from Net Balance (Dr-Cr).
-            // Payment: It's a Payment, so it DEBITS the supplier.
-            // So we add paid_amount to Net Balance (Dr-Cr).
-            // Wait, payment_allocations logic?
-            // If I pay 100 against this invoice, I Debit supplier 100.
-            // So changes are:
-            // Balance Due = Old Balance (Dr-Cr) - Invoice Grand Total + Paid Amount.
-            // Example: Start 0. Buy 1000. Old=0. Invoice=1000(Cr). Paid=0. New = -1000. (Cr 1000). Correct.
-            // Pay 200. Paid=200. New = -1000 + 200 = -800. (Cr 800). Correct.
+            // Detect cash purchase (no meaningful balance to show)
+            let is_cash = invoice.supplier_name == "Cash Purchase";
+            obj.insert("is_cash".to_string(), json!(is_cash));
 
-            // The template likely expects "how much is pending for this bill" or "total party balance"?
-            // Usually "Balance Due" on an invoice means the total party closing balance.
-            // Let's stick to the Net Balance logic.
+            // Add Balance Details
             let balance_due = old_balance - invoice.grand_total + paid_amount;
 
             obj.insert("old_balance".to_string(), json!(old_balance));
@@ -755,6 +755,10 @@ async fn get_sales_invoice_data(
                 invoice.grand_total - invoice.tax_amount + invoice.discount_amount.unwrap_or(0.0);
             obj.insert("subtotal".to_string(), json!(subtotal));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
+
+            // Detect cash sale (no meaningful balance to show)
+            let is_cash = invoice.customer_name == "Cash Sale";
+            obj.insert("is_cash".to_string(), json!(is_cash));
 
             // Add Balance Details
             obj.insert("old_balance".to_string(), json!(old_balance));

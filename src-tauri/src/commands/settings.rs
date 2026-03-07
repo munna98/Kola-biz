@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sqlx::sqlite::SqlitePool;
+use sqlx::{Column, Row};
 use tauri::{Manager, State};
 
 #[cfg(target_os = "windows")]
@@ -401,4 +402,99 @@ pub async fn reset_database_data(
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok("Database reset completed successfully".to_string())
+}
+
+#[derive(Debug, Serialize)]
+pub struct QueryResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<serde_json::Value>>,
+    pub rows_affected: u64,
+    pub is_select: bool,
+}
+
+/// Execute a raw SQL query against the database
+#[tauri::command]
+pub async fn execute_raw_query(
+    pool: State<'_, SqlitePool>,
+    query: String,
+) -> Result<QueryResult, String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Err("Query cannot be empty".to_string());
+    }
+
+    // Determine if this is a SELECT-like query
+    let upper = trimmed.to_uppercase();
+    let is_select = upper.starts_with("SELECT")
+        || upper.starts_with("PRAGMA")
+        || upper.starts_with("EXPLAIN")
+        || upper.starts_with("WITH");
+
+    if is_select {
+        // Execute as a query that returns rows
+        let rows = sqlx::query(trimmed)
+            .fetch_all(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+        if rows.is_empty() {
+            return Ok(QueryResult {
+                columns: vec![],
+                rows: vec![],
+                rows_affected: 0,
+                is_select: true,
+            });
+        }
+
+        // Extract column names from the first row
+        let columns: Vec<String> = rows[0]
+            .columns()
+            .iter()
+            .map(|c| c.name().to_string())
+            .collect();
+
+        // Convert each row to a Vec of JSON values
+        let mut result_rows: Vec<Vec<serde_json::Value>> = Vec::new();
+        for row in &rows {
+            let mut row_values: Vec<serde_json::Value> = Vec::new();
+            for (i, _col) in columns.iter().enumerate() {
+                // Try to get the value as different types
+                let value: serde_json::Value = if let Ok(v) = row.try_get::<String, _>(i) {
+                    serde_json::Value::String(v)
+                } else if let Ok(v) = row.try_get::<i64, _>(i) {
+                    serde_json::json!(v)
+                } else if let Ok(v) = row.try_get::<f64, _>(i) {
+                    serde_json::json!(v)
+                } else if let Ok(v) = row.try_get::<bool, _>(i) {
+                    serde_json::json!(v)
+                } else if let Ok(true) = row.try_get::<Option<String>, _>(i).map(|v| v.is_none()) {
+                    serde_json::Value::Null
+                } else {
+                    serde_json::Value::String("(binary)".to_string())
+                };
+                row_values.push(value);
+            }
+            result_rows.push(row_values);
+        }
+
+        Ok(QueryResult {
+            columns,
+            rows: result_rows,
+            rows_affected: 0,
+            is_select: true,
+        })
+    } else {
+        // Execute as a statement (INSERT, UPDATE, DELETE, etc.)
+        let result = sqlx::query(trimmed)
+            .execute(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+        Ok(QueryResult {
+            columns: vec![],
+            rows: vec![],
+            rows_affected: result.rows_affected(),
+            is_select: false,
+        })
+    }
 }

@@ -7,6 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 
 import { useConfirm } from '@/hooks/useConfirm';
 import ConfirmPasswordDialog from '@/components/dialogs/ConfirmPasswordDialog';
@@ -14,6 +15,13 @@ import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 
 type ResetMode = 'partial' | 'full';
+
+interface QueryResult {
+  columns: string[];
+  rows: (string | number | boolean | null)[][];
+  rows_affected: number;
+  is_select: boolean;
+}
 
 const VOUCHER_TYPES = [
   { id: 'sales_invoice', label: 'Sales Invoice' },
@@ -47,6 +55,14 @@ export default function DbSettingsPage() {
   const [loading, setLoading] = useState(false);
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
   const [verifyingPassword, setVerifyingPassword] = useState(false);
+
+  // Query Executor state
+  const [sqlQuery, setSqlQuery] = useState('');
+  const [queryLoading, setQueryLoading] = useState(false);
+  const [queryResult, setQueryResult] = useState<QueryResult | null>(null);
+  const [queryError, setQueryError] = useState<string | null>(null);
+  const [queryPasswordDialogOpen, setQueryPasswordDialogOpen] = useState(false);
+  const [queryVerifyingPassword, setQueryVerifyingPassword] = useState(false);
 
   // Get current user from Redux store
   const { user } = useSelector((state: RootState) => state.auth);
@@ -161,6 +177,66 @@ export default function DbSettingsPage() {
     }
   };
 
+  // ── Query Executor handlers ──────────────────────────────────
+
+  const handleExecuteQueryClick = () => {
+    if (!sqlQuery.trim() || queryLoading) return;
+    setQueryPasswordDialogOpen(true);
+  };
+
+  const handleQueryPasswordConfirm = async (password: string) => {
+    if (!user?.username) {
+      toast.error('User information not found');
+      return;
+    }
+
+    setQueryVerifyingPassword(true);
+    try {
+      const loginResponse: any = await invoke('login', {
+        username: user.username,
+        password: password,
+      });
+
+      if (!loginResponse.success) {
+        toast.error('Invalid password');
+        setQueryVerifyingPassword(false);
+        return;
+      }
+
+      setQueryPasswordDialogOpen(false);
+      executeQuery();
+    } catch (error) {
+      console.error('Password verification error:', error);
+      toast.error('Failed to verify password');
+    } finally {
+      setQueryVerifyingPassword(false);
+    }
+  };
+
+  const executeQuery = async () => {
+    setQueryLoading(true);
+    setQueryResult(null);
+    setQueryError(null);
+
+    try {
+      const result = await invoke<QueryResult>('execute_raw_query', {
+        query: sqlQuery,
+      });
+      setQueryResult(result);
+    } catch (error) {
+      console.error('Query execution error:', error);
+      setQueryError(typeof error === 'string' ? error : 'Failed to execute query');
+    } finally {
+      setQueryLoading(false);
+    }
+  };
+
+  const formatCellValue = (value: unknown): string => {
+    if (value === null || value === undefined) return 'NULL';
+    if (typeof value === 'boolean') return value ? 'true' : 'false';
+    return String(value);
+  };
+
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
@@ -267,6 +343,89 @@ export default function DbSettingsPage() {
           {loading ? 'Resetting…' : 'Run DB Reset'}
         </Button>
       </div>
+
+      {/* ── Query Executor ─────────────────────────────────────── */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Query Executor</CardTitle>
+          <CardDescription>Run raw SQL queries against the database. Use with caution — queries are executed directly.</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <Textarea
+            id="sql-query-input"
+            value={sqlQuery}
+            onChange={(e) => setSqlQuery(e.target.value)}
+            placeholder="SELECT * FROM app_settings LIMIT 10;"
+            rows={6}
+            className="font-mono text-sm"
+          />
+          <div className="flex justify-end">
+            <Button
+              onClick={handleExecuteQueryClick}
+              disabled={!sqlQuery.trim() || queryLoading}
+            >
+              {queryLoading ? 'Executing…' : 'Execute Query'}
+            </Button>
+          </div>
+
+          {/* Error display */}
+          {queryError && (
+            <div className="rounded-md border border-destructive/50 bg-destructive/10 p-4">
+              <p className="text-sm font-medium text-destructive">Error</p>
+              <p className="text-sm text-destructive/90 mt-1 font-mono whitespace-pre-wrap">{queryError}</p>
+            </div>
+          )}
+
+          {/* Results display */}
+          {queryResult && (
+            <div className="space-y-2">
+              {queryResult.is_select ? (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    {queryResult.rows.length} row{queryResult.rows.length !== 1 ? 's' : ''} returned
+                    {queryResult.columns.length > 0 && ` · ${queryResult.columns.length} column${queryResult.columns.length !== 1 ? 's' : ''}`}
+                  </p>
+                  {queryResult.columns.length > 0 ? (
+                    <div className="rounded-md border overflow-auto max-h-[400px]">
+                      <table className="w-full text-sm">
+                        <thead className="bg-muted/50 sticky top-0">
+                          <tr>
+                            {queryResult.columns.map((col, i) => (
+                              <th key={i} className="text-left px-3 py-2 font-medium border-b whitespace-nowrap">
+                                {col}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="font-mono">
+                          {queryResult.rows.map((row, ri) => (
+                            <tr key={ri} className="border-b last:border-b-0 hover:bg-muted/30">
+                              {row.map((cell, ci) => (
+                                <td key={ci} className={`px-3 py-1.5 whitespace-nowrap ${cell === null ? 'text-muted-foreground italic' : ''}`}>
+                                  {formatCellValue(cell)}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground italic">No rows returned.</p>
+                  )}
+                </>
+              ) : (
+                <div className="rounded-md border bg-muted/30 p-4">
+                  <p className="text-sm">
+                    Query executed successfully. <strong>{queryResult.rows_affected}</strong> row{queryResult.rows_affected !== 1 ? 's' : ''} affected.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       <ConfirmPasswordDialog
         open={passwordDialogOpen}
         onOpenChange={setPasswordDialogOpen}
@@ -274,6 +433,14 @@ export default function DbSettingsPage() {
         loading={verifyingPassword}
         title="Admin Authorization Required"
         description="This is a destructive action. Please enter your password to confirm."
+      />
+      <ConfirmPasswordDialog
+        open={queryPasswordDialogOpen}
+        onOpenChange={setQueryPasswordDialogOpen}
+        onConfirm={handleQueryPasswordConfirm}
+        loading={queryVerifyingPassword}
+        title="Admin Authorization Required"
+        description="You are about to execute a raw SQL query. Please enter your password to confirm."
       />
     </div>
   );

@@ -216,6 +216,7 @@ pub fn run() {
             get_voucher_settings,
             save_voucher_settings,
             reset_database_data,
+            execute_raw_query,
             // Opening Stock
             commands::opening_stock::get_opening_stocks,
             commands::opening_stock::get_opening_stock,

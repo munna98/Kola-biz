@@ -100,6 +100,7 @@
     </div>
 </div>
 
+{{#unless is_cash}}
 <!-- Account Summary -->
 <div style="border-top: 1px dashed #000; margin: 10px 0; padding: 5px 0; font-size: 11px;">
     <div style="display: flex; justify-content: space-between;">
@@ -120,6 +121,7 @@
         <span>{{abs_format_number balance_due 2}}</span>
     </div>
 </div>
+{{/unless}}
 
 <!-- [FOOTER] -->
 <div class="separator"></div>
