@@ -304,15 +304,17 @@ export default function PurchaseInvoicePage() {
     let finalValue = value;
 
     if (field === 'product_id') {
-      const product = products.find((p) => p.id === value);
+      const product = products.find((p) => String(p.id) === String(value));
       if (product) {
+        const productId = String(product.id);
+        const productConversions = productUnitsByProduct[productId];
         const defaultUnitId = getDefaultProductUnitId(
-          productUnitsByProduct[value],
+          productConversions,
           'purchase',
           product.unit_id
         );
         const rate = getProductUnitRate(
-          productUnitsByProduct[value],
+          productConversions,
           defaultUnitId,
           'purchase',
           product.purchase_rate || 0
@@ -346,7 +348,7 @@ export default function PurchaseInvoicePage() {
     if (field === 'unit_id') {
       const currentItem = purchaseState.items[index];
       const productId = String(currentItem.product_id);
-      const product = products.find((p) => p.id === productId);
+      const product = products.find((p) => String(p.id) === productId);
       const rate = getProductUnitRate(
         productUnitsByProduct[productId],
         value,
@@ -891,6 +893,7 @@ export default function PurchaseInvoicePage() {
                 document.getElementById('voucher-discount-amount')?.focus();
               }, 50);
             }}
+            defaultUnitKind="purchase"
             footerRightContent={
               partyBalance !== null ? (
                 <div className={`text-xs font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>

@@ -60,9 +60,25 @@ pub async fn init_db(
             id TEXT PRIMARY KEY,
             name TEXT UNIQUE NOT NULL,
             symbol TEXT NOT NULL,
+            is_default INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
+    )
+    .execute(&pool)
+    .await?;
+
+    let _ = sqlx::query("ALTER TABLE units ADD COLUMN is_default INTEGER DEFAULT 0")
+        .execute(&pool)
+        .await;
+
+    sqlx::query(
+        "UPDATE units
+         SET is_default = CASE
+             WHEN id = (SELECT id FROM units ORDER BY is_default DESC, name ASC LIMIT 1) THEN 1
+             ELSE 0
+         END
+         WHERE EXISTS (SELECT 1 FROM units)",
     )
     .execute(&pool)
     .await?;

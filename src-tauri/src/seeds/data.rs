@@ -213,13 +213,14 @@ pub async fn seed_initial_data(pool: &SqlitePool) -> Result<(), Box<dyn std::err
     }
 
     // Insert default units
-    let units = [("Piece", "Pcs"), ("Kilogram", "Kg"), ("Liter", "L")];
+    let units = [("Piece", "Pcs", 1), ("Kilogram", "Kg", 0), ("Liter", "L", 0)];
 
-    for (name, symbol) in units {
-        sqlx::query("INSERT OR IGNORE INTO units (id, name, symbol) VALUES (?, ?, ?)")
+    for (name, symbol, is_default) in units {
+        sqlx::query("INSERT OR IGNORE INTO units (id, name, symbol, is_default) VALUES (?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string())
             .bind(name)
             .bind(symbol)
+            .bind(is_default)
             .execute(pool)
             .await?;
     }

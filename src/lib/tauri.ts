@@ -4,12 +4,14 @@ export interface Unit {
   id: string;
   name: string;
   symbol: string;
+  is_default: number;
   created_at: string;
 }
 
 export interface CreateUnit {
   name: string;
   symbol: string;
+  is_default?: boolean;
 }
 
 export interface ProductGroup {

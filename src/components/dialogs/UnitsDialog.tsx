@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IconEdit, IconTrash } from '@tabler/icons-react';
 import { api, Unit, CreateUnit } from '@/lib/tauri';
 import { toast } from 'sonner';
-import { formatDate } from '@/lib/utils';
 import { useDialog } from '@/hooks/use-dialog';
 
 interface UnitsDialogProps {
@@ -17,7 +17,7 @@ interface UnitsDialogProps {
 
 export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: UnitsDialogProps) {
   const [units, setUnits] = useState<Unit[]>([]);
-  const [unitForm, setUnitForm] = useState<CreateUnit>({ name: '', symbol: '' });
+  const [unitForm, setUnitForm] = useState<CreateUnit>({ name: '', symbol: '', is_default: false });
   const [editingUnit, setEditingUnit] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
@@ -55,7 +55,7 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
         await api.units.create(unitForm);
         toast.success('Unit created successfully');
       }
-      setUnitForm({ name: '', symbol: '' });
+      setUnitForm({ name: '', symbol: '', is_default: false });
       setEditingUnit(null);
       loadUnits();
       onUnitsChange?.();
@@ -70,7 +70,7 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
   };
 
   const handleEditUnit = (u: Unit) => {
-    setUnitForm({ name: u.name, symbol: u.symbol });
+    setUnitForm({ name: u.name, symbol: u.symbol, is_default: u.is_default === 1 });
     setEditingUnit(u.id);
     setTimeout(() => refs.current['name']?.focus(), 100);
   };
@@ -90,7 +90,7 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
   };
 
   const handleCancelEdit = () => {
-    setUnitForm({ name: '', symbol: '' });
+    setUnitForm({ name: '', symbol: '', is_default: false });
     setEditingUnit(null);
     setTimeout(() => refs.current['name']?.focus(), 100);
   };
@@ -132,6 +132,15 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
                 required
               />
             </div>
+            <div className="col-span-12 md:col-span-10">
+              <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
+                <Checkbox
+                  checked={unitForm.is_default === true}
+                  onCheckedChange={(checked) => setUnitForm({ ...unitForm, is_default: checked === true })}
+                />
+                <span>Set as default unit for product creation</span>
+              </label>
+            </div>
             <div className="col-span-12 md:col-span-2 flex gap-2">
               <Button type="submit" size="sm">
                 {editingUnit ? 'Update' : 'Add'}
@@ -154,25 +163,30 @@ export default function UnitsDialog({ open, onOpenChange, onUnitsChange }: Units
                   <tr className="text-left text-sm">
                     <th className="p-3">Name</th>
                     <th className="p-3">Symbol</th>
-                    <th className="p-3">Created</th>
                     <th className="p-3">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {units.length === 0 ? (
                     <tr>
-                      <td colSpan={4} className="p-6 text-center text-muted-foreground">
+                      <td colSpan={3} className="p-6 text-center text-muted-foreground">
                         No units found. Add your first unit above.
                       </td>
                     </tr>
                   ) : (
                     units.map(u => (
                       <tr key={u.id} className="border-b hover:bg-muted/30">
-                        <td className="p-3 font-medium">{u.name}</td>
-                        <td className="p-3 font-mono text-sm">{u.symbol}</td>
-                        <td className="p-3 text-sm text-muted-foreground">
-                          {formatDate(u.created_at)}
+                        <td className="p-3 font-medium">
+                          <div className="flex items-center gap-2">
+                            <span>{u.name}</span>
+                            {u.is_default === 1 && (
+                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                                Default
+                              </span>
+                            )}
+                          </div>
                         </td>
+                        <td className="p-3 font-mono text-sm">{u.symbol}</td>
                         <td className="p-3 flex gap-2">
                           <Button size="sm" variant="ghost" onClick={() => handleEditUnit(u)}>
                             <IconEdit size={16} />

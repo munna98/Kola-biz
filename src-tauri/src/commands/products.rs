@@ -119,6 +119,7 @@ pub struct Unit {
     pub id: String,
     pub name: String,
     pub symbol: String,
+    pub is_default: i64,
     pub created_at: String,
 }
 
@@ -126,11 +127,13 @@ pub struct Unit {
 pub struct CreateUnit {
     pub name: String,
     pub symbol: String,
+    #[serde(default)]
+    pub is_default: bool,
 }
 
 #[tauri::command]
 pub async fn get_units(pool: State<'_, SqlitePool>) -> Result<Vec<Unit>, String> {
-    sqlx::query_as::<_, Unit>("SELECT * FROM units ORDER BY name ASC")
+    sqlx::query_as::<_, Unit>("SELECT * FROM units ORDER BY is_default DESC, name ASC")
         .fetch_all(pool.inner())
         .await
         .map_err(|e| e.to_string())
@@ -139,13 +142,24 @@ pub async fn get_units(pool: State<'_, SqlitePool>) -> Result<Vec<Unit>, String>
 #[tauri::command]
 pub async fn create_unit(pool: State<'_, SqlitePool>, unit: CreateUnit) -> Result<Unit, String> {
     let id = Uuid::now_v7().to_string();
-    sqlx::query("INSERT INTO units (id, name, symbol) VALUES (?, ?, ?)")
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    let has_units = has_any_units(&mut tx).await?;
+    let should_be_default = unit.is_default || !has_units;
+
+    if should_be_default {
+        clear_default_unit(&mut tx).await?;
+    }
+
+    sqlx::query("INSERT INTO units (id, name, symbol, is_default) VALUES (?, ?, ?, ?)")
         .bind(&id)
         .bind(&unit.name)
         .bind(&unit.symbol)
-        .execute(pool.inner())
+        .bind(if should_be_default { 1 } else { 0 })
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     sqlx::query_as::<_, Unit>("SELECT * FROM units WHERE id = ?")
         .bind(id)
@@ -160,26 +174,79 @@ pub async fn update_unit(
     id: String,
     unit: CreateUnit,
 ) -> Result<(), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    if unit.is_default {
+        clear_default_unit(&mut tx).await?;
+    }
+
     sqlx::query(
-        "UPDATE units SET name = ?, symbol = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        "UPDATE units SET name = ?, symbol = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     )
     .bind(&unit.name)
     .bind(&unit.symbol)
-    .bind(id)
-    .execute(pool.inner())
+    .bind(if unit.is_default { 1 } else { 0 })
+    .bind(&id)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
+
+    ensure_default_unit(&mut tx).await?;
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
 
 #[tauri::command]
 pub async fn delete_unit(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
     sqlx::query("DELETE FROM units WHERE id = ?")
         .bind(id)
-        .execute(pool.inner())
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+    ensure_default_unit(&mut tx).await?;
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+async fn has_any_units(tx: &mut Transaction<'_, Sqlite>) -> Result<bool, String> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM units")
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(count > 0)
+}
+
+async fn clear_default_unit(tx: &mut Transaction<'_, Sqlite>) -> Result<(), String> {
+    sqlx::query("UPDATE units SET is_default = 0")
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+async fn ensure_default_unit(tx: &mut Transaction<'_, Sqlite>) -> Result<(), String> {
+    let default_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM units WHERE is_default = 1")
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if default_count == 0 {
+        sqlx::query(
+            "UPDATE units
+             SET is_default = 1
+             WHERE id = (SELECT id FROM units ORDER BY name ASC LIMIT 1)",
+        )
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
 
     Ok(())
 }

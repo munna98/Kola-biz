@@ -7,6 +7,7 @@ import { IconTrash } from '@tabler/icons-react';
 import { VoucherItemsTable } from '@/components/voucher/VoucherItemsTable';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { cn } from '@/lib/utils';
+import { getDefaultProductUnitId, type ProductUnitDefaultKind } from '@/lib/product-units';
 
 interface Product {
     id: string;
@@ -56,6 +57,7 @@ export interface VoucherItemsSectionProps {
     footerRightContent?: React.ReactNode;
     onProductCreate?: (name: string, rowIndex: number) => void;
     onSectionExit?: () => void;
+    defaultUnitKind?: ProductUnitDefaultKind;
 }
 
 export interface VoucherItemsSectionRef {
@@ -92,7 +94,8 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     settings,
     footerRightContent,
     onProductCreate,
-    onSectionExit
+    onSectionExit,
+    defaultUnitKind = 'sale'
 }, ref) => {
     // Ref to the first product combobox
     const firstProductRef = useRef<HTMLButtonElement>(null);
@@ -163,6 +166,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                 const calc = getItemAmount(item);
                 const product = products.find(p => String(p.id) === String(item.product_id));
                 const productUnits = product ? (productUnitsByProduct?.[product.id] ?? []) : [];
+                const resolvedUnitId = item.unit_id
+                    ? String(item.unit_id)
+                    : (product
+                        ? getDefaultProductUnitId(productUnits, defaultUnitKind, product.unit_id)
+                        : undefined) ?? '';
 
                 // Handle number input changes safely
                 const handleNumberChange = (field: string, val: string) => {
@@ -221,7 +229,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             return (
                                 <Select
                                     key={col.id}
-                                    value={item.unit_id ? String(item.unit_id) : (product?.unit_id ? String(product.unit_id) : '')}
+                                    value={resolvedUnitId}
                                     onValueChange={(value) => {
                                         onUpdateItem(idx, 'unit_id', value);
                                         // Auto-focus next visible input after unit selection
@@ -271,12 +279,12 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                             const unit = units.find(u => u.id === conversion.unit_id);
                                             return (
                                                 <SelectItem key={conversion.id} value={String(conversion.unit_id)}>
-                                                    {unit ? `${unit.name} (${unit.symbol})` : conversion.unit_symbol}
+                                                    {unit ? unit.symbol : conversion.unit_symbol}
                                                 </SelectItem>
                                             );
                                         }) : (
                                             <SelectItem value={product?.unit_id ? String(product.unit_id) : 'none'} disabled>
-                                                {units.find(u => u.id === (item.unit_id || product?.unit_id))?.symbol || '-'}
+                                                {units.find(u => u.id === resolvedUnitId)?.symbol || '-'}
                                             </SelectItem>
                                         )}
                                     </SelectContent>

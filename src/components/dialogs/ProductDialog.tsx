@@ -24,6 +24,8 @@ interface ConversionRow extends CreateProductUnitConversion {
   is_base: boolean;
 }
 
+const getDefaultUnitId = (units: Unit[]) => units.find((unit) => unit.is_default === 1)?.id || units[0]?.id || '';
+
 const createBaseRow = (unitId: string, purchaseRate = 0, salesRate = 0): ConversionRow => ({
   key: `base-${unitId || 'empty'}`,
   unit_id: unitId,
@@ -95,16 +97,17 @@ export default function ProductDialog({
   product,
   onSuccess
 }: ProductDialogProps) {
+  const defaultUnitId = getDefaultUnitId(units);
   const [form, setForm] = useState<CreateProduct>({
     code: '',
     name: '',
-    unit_id: units.length > 0 ? units[0].id : '',
+    unit_id: defaultUnitId,
     purchase_rate: 0,
     sales_rate: 0,
     mrp: 0,
-    conversions: units.length > 0 ? [createBaseRow(units[0].id)] : []
+    conversions: defaultUnitId ? [createBaseRow(defaultUnitId)] : []
   });
-  const [conversionRows, setConversionRows] = useState<ConversionRow[]>(units.length > 0 ? [createBaseRow(units[0].id)] : []);
+  const [conversionRows, setConversionRows] = useState<ConversionRow[]>(defaultUnitId ? [createBaseRow(defaultUnitId)] : []);
   const [loading, setLoading] = useState(false);
   const [showUnitSection, setShowUnitSection] = useState(false);
   const unitLocked = Boolean(product?.has_transactions);
@@ -120,7 +123,7 @@ export default function ProductDialog({
   useEffect(() => {
     if (!open) return;
 
-    const initialUnitId = product?.unit_id || units[0]?.id || '';
+    const initialUnitId = product?.unit_id || getDefaultUnitId(units);
     const initialPurchaseRate = product?.purchase_rate || 0;
     const initialSalesRate = product?.sales_rate || 0;
     setShowUnitSection(false);
@@ -194,7 +197,7 @@ export default function ProductDialog({
   }, [form.unit_id, form.purchase_rate, form.sales_rate, open]);
 
   const resetForm = () => {
-    const unitId = units[0]?.id || '';
+    const unitId = getDefaultUnitId(units);
     setForm({
       code: '',
       name: '',
@@ -367,7 +370,7 @@ export default function ProductDialog({
                   <SelectContent>
                     {units.map(u => (
                       <SelectItem key={u.id} value={u.id}>
-                        {u.name} ({u.symbol})
+                        {u.symbol}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -485,7 +488,7 @@ export default function ProductDialog({
                             type="number"
                             step="0.0001"
                             min="0"
-                            value={row.factor_to_base}
+                            value={formatNumber(row.factor_to_base)}
                             onChange={(e) => updateConversionRow(index, {
                               factor_to_base: row.is_base ? 1 : Math.max(parseNumber(e.target.value), 0)
                             })}
@@ -500,7 +503,7 @@ export default function ProductDialog({
                             type="number"
                             step="0.01"
                             min="0"
-                            value={row.purchase_rate}
+                            value={formatNumber(row.purchase_rate)}
                             onChange={(e) => updateConversionRow(index, { purchase_rate: Math.max(parseNumber(e.target.value), 0) })}
                             disabled={row.is_base}
                             className="h-8 text-sm text-right font-mono"
@@ -513,7 +516,7 @@ export default function ProductDialog({
                             type="number"
                             step="0.01"
                             min="0"
-                            value={row.sales_rate}
+                            value={formatNumber(row.sales_rate)}
                             onChange={(e) => updateConversionRow(index, { sales_rate: Math.max(parseNumber(e.target.value), 0) })}
                             disabled={row.is_base}
                             className="h-8 text-sm text-right font-mono"
