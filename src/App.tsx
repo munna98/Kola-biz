@@ -20,6 +20,7 @@ import './App.css';
 import JournalEntryPage from './pages/JournalEntryPage';
 import OpeningBalancePage from './pages/OpeningBalancePage';
 import OpeningStockPage from './pages/OpeningStockPage';
+import StockJournalPage from './pages/StockJournalPage';
 import SalesInvoicePage from './pages/SalesInvoicePage';
 import SalesReturnPage from './pages/SalesReturnPage';
 import TrialBalancePage from './pages/reports/TrialBalancePage';
@@ -166,6 +167,7 @@ function AppContent() {
       case 'journal': return <JournalEntryPage />;
       case 'opening': return <OpeningBalancePage />;
       case 'opening_stock': return <OpeningStockPage />;
+      case 'stock_journal': return <StockJournalPage />;
       case 'trial': return <TrialBalancePage />;
       case 'ledger': return <LedgerReportPage />;
       case 'balance_sheet': return <BalanceSheetPage />;

@@ -21,6 +21,7 @@ const voucherTypeLabels: Record<string, { label: string; color: string }> = {
     payment: { label: 'Payment', color: 'text-red-600 dark:text-red-400' },
     receipt: { label: 'Receipt', color: 'text-purple-600 dark:text-purple-400' },
     journal: { label: 'Journal', color: 'text-gray-600 dark:text-gray-400' },
+    stock_journal: { label: 'Stock Journal', color: 'text-indigo-600 dark:text-indigo-400' },
 };
 
 export default function RecentActivity({ data, loading }: RecentActivityProps) {

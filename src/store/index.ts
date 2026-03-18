@@ -1551,6 +1551,151 @@ export const {
   setOpeningStockLoading,
 } = openingStockSlice.actions;
 
+// ========== STOCK JOURNAL SLICE ==========
+export interface StockJournalItem {
+  id?: string;
+  product_id: string;
+  product_name?: string;
+  unit_id?: string;
+  base_quantity?: number;
+  description: string;
+  initial_quantity: number;
+  quantity: number;
+  rate: number;
+  amount: number;
+}
+
+export interface StockJournalState extends VoucherNavigationState {
+  currentVoucherNo?: string;
+  created_by_name?: string;
+  form: {
+    voucher_date: string;
+    narration: string;
+  };
+  sourceItems: StockJournalItem[];
+  destinationItems: StockJournalItem[];
+  loading: boolean;
+  totals: {
+    sourceAmount: number;
+    destinationAmount: number;
+    difference: number;
+  };
+}
+
+const stockJournalInitialState: StockJournalState = {
+  ...initialNavigationState,
+  currentVoucherNo: undefined,
+  created_by_name: undefined,
+  form: {
+    voucher_date: new Date().toISOString().split('T')[0],
+    narration: '',
+  },
+  sourceItems: [],
+  destinationItems: [],
+  loading: false,
+  totals: {
+    sourceAmount: 0,
+    destinationAmount: 0,
+    difference: 0,
+  },
+};
+
+const stockJournalSlice = createSlice({
+  name: 'stockJournal',
+  initialState: stockJournalInitialState,
+  reducers: {
+    setStockJournalMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
+      state.mode = action.payload;
+    },
+    setStockJournalCurrentVoucherId: (state, action: PayloadAction<string | null>) => {
+      state.currentVoucherId = action.payload;
+    },
+    setStockJournalCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
+      state.currentVoucherNo = action.payload;
+    },
+    setStockJournalCreatedByName: (state, action: PayloadAction<string | undefined>) => {
+      state.created_by_name = action.payload;
+    },
+    setStockJournalHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setStockJournalNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
+      state.navigationData = action.payload;
+    },
+    setStockJournalDate: (state, action: PayloadAction<string>) => {
+      state.form.voucher_date = action.payload;
+    },
+    setStockJournalNarration: (state, action: PayloadAction<string>) => {
+      state.form.narration = action.payload;
+    },
+    addStockJournalSourceItem: (state, action: PayloadAction<StockJournalItem>) => {
+      state.sourceItems.push({ ...action.payload, id: `temp-${Date.now()}` });
+    },
+    updateStockJournalSourceItem: (state, action: PayloadAction<{ index: number; data: Partial<StockJournalItem> }>) => {
+      state.sourceItems[action.payload.index] = { ...state.sourceItems[action.payload.index], ...action.payload.data };
+    },
+    removeStockJournalSourceItem: (state, action: PayloadAction<number>) => {
+      state.sourceItems.splice(action.payload, 1);
+    },
+    setStockJournalSourceItems: (state, action: PayloadAction<StockJournalItem[]>) => {
+      state.sourceItems = action.payload.map(item => ({ ...item, id: item.id || `temp-${Date.now()}-${Math.random()}` }));
+    },
+    addStockJournalDestinationItem: (state, action: PayloadAction<StockJournalItem>) => {
+      state.destinationItems.push({ ...action.payload, id: `temp-${Date.now()}` });
+    },
+    updateStockJournalDestinationItem: (state, action: PayloadAction<{ index: number; data: Partial<StockJournalItem> }>) => {
+      state.destinationItems[action.payload.index] = { ...state.destinationItems[action.payload.index], ...action.payload.data };
+    },
+    removeStockJournalDestinationItem: (state, action: PayloadAction<number>) => {
+      state.destinationItems.splice(action.payload, 1);
+    },
+    setStockJournalDestinationItems: (state, action: PayloadAction<StockJournalItem[]>) => {
+      state.destinationItems = action.payload.map(item => ({ ...item, id: item.id || `temp-${Date.now()}-${Math.random()}` }));
+    },
+    setStockJournalTotals: (state, action: PayloadAction<{ sourceAmount: number; destinationAmount: number; difference: number }>) => {
+      state.totals = action.payload;
+    },
+    resetStockJournalForm: (state) => {
+      state.form = {
+        voucher_date: new Date().toISOString().split('T')[0],
+        narration: '',
+      };
+      state.sourceItems = [];
+      state.destinationItems = [];
+      state.totals = {
+        sourceAmount: 0,
+        destinationAmount: 0,
+        difference: 0,
+      };
+    },
+    setStockJournalLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+  },
+});
+
+export const {
+  setStockJournalMode,
+  setStockJournalCurrentVoucherId,
+  setStockJournalCurrentVoucherNo,
+  setStockJournalCreatedByName,
+  setStockJournalHasUnsavedChanges,
+  setStockJournalNavigationData,
+  setStockJournalDate,
+  setStockJournalNarration,
+  addStockJournalSourceItem,
+  updateStockJournalSourceItem,
+  removeStockJournalSourceItem,
+  setStockJournalSourceItems,
+  addStockJournalDestinationItem,
+  updateStockJournalDestinationItem,
+  removeStockJournalDestinationItem,
+  setStockJournalDestinationItems,
+  setStockJournalTotals,
+  resetStockJournalForm,
+  setStockJournalLoading,
+} = stockJournalSlice.actions;
+
 
 export const store = configureStore({
   reducer: {
@@ -1565,6 +1710,7 @@ export const store = configureStore({
     journalEntry: journalEntrySlice.reducer,
     openingBalance: openingBalanceSlice.reducer,
     openingStock: openingStockSlice.reducer,
+    stockJournal: stockJournalSlice.reducer,
     companyProfile: companyProfileSlice.reducer,
   },
 });

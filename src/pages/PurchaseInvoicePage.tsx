@@ -46,6 +46,7 @@ import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialo
 import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
 import SupplierDialog from '@/components/dialogs/SupplierDialog';
 import ProductDialog from '@/components/dialogs/ProductDialog';
+import BarcodeLabelDialog from '@/components/dialogs/BarcodeLabelDialog';
 import { Product, ProductGroup, ProductUnitConversion, Unit } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 
@@ -74,7 +75,7 @@ export default function PurchaseInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
 
   const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
@@ -88,6 +89,10 @@ export default function PurchaseInvoicePage() {
   // Create Supplier Shortcut State
   const [showCreateSupplier, setShowCreateSupplier] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
+
+  // Barcode dialog state
+  const [showBarcodeDialog, setShowBarcodeDialog] = useState(false);
+  const [barcodeProducts, setBarcodeProducts] = useState<{ code: string; name: string; salesRate: number; quantity: number }[]>([]);
   const productUnitsByProduct = useMemo(
     () => buildProductUnitMap(productUnitConversions),
     [productUnitConversions]
@@ -100,6 +105,8 @@ export default function PurchaseInvoicePage() {
 
   // Ref to track if auto-print is pending after payment dialog
   const autoPrintPending = useRef(false);
+  // Ref to track if barcode dialog should open after print preview / payment
+  const barcodePending = useRef(false);
 
   // Load initial data
   useEffect(() => {
@@ -494,11 +501,27 @@ export default function PurchaseInvoicePage() {
         const isCashBankParty = supplier?.group === 'Cash' || supplier?.group === 'Bank Account';
         setSavedIsCashBankParty(isCashBankParty);
 
-        // Always show payment dialog (for Cash parties: allows split; for regular: normal payment)
-        if (voucherSettings?.autoPrint) {
-          autoPrintPending.current = true;
+        // Show payment dialog if enabled
+        const shouldShowPaymentModal = voucherSettings?.showPaymentModal !== false;
+        if (shouldShowPaymentModal) {
+          if (voucherSettings?.autoPrint) {
+            autoPrintPending.current = true;
+          }
+          if (voucherSettings?.enableBarcodePrinting) {
+            barcodePending.current = true;
+          }
+          setShowQuickPayment(true);
+        } else {
+          // Payment modal disabled: skip to print/barcode
+          if (voucherSettings?.autoPrint) {
+            if (voucherSettings?.enableBarcodePrinting) {
+              barcodePending.current = true;
+            }
+            setShowPrintPreview(true);
+          } else if (voucherSettings?.enableBarcodePrinting) {
+            setShowBarcodeDialog(true);
+          }
         }
-        setShowQuickPayment(true);
       } else {
         const newInvoiceId = await invoke<string>('create_purchase_invoice', {
           invoice: {
@@ -542,11 +565,27 @@ export default function PurchaseInvoicePage() {
         setSavedIsCashBankParty(isCashBankParty);
 
         if (isCashBankParty) {
-          // Cash/Bank party: always show payment modal for split opportunity
-          if (voucherSettings?.autoPrint) {
-            autoPrintPending.current = true;
+          const shouldShowPaymentModal = voucherSettings?.showPaymentModal !== false;
+          if (shouldShowPaymentModal) {
+            // Cash/Bank party: show payment modal for split opportunity
+            if (voucherSettings?.autoPrint) {
+              autoPrintPending.current = true;
+            }
+            if (voucherSettings?.enableBarcodePrinting) {
+              barcodePending.current = true;
+            }
+            setShowQuickPayment(true);
+          } else {
+            // Payment modal disabled: skip to print/barcode
+            if (voucherSettings?.autoPrint) {
+              if (voucherSettings?.enableBarcodePrinting) {
+                barcodePending.current = true;
+              }
+              setShowPrintPreview(true);
+            } else if (voucherSettings?.enableBarcodePrinting) {
+              setShowBarcodeDialog(true);
+            }
           }
-          setShowQuickPayment(true);
         } else {
           // Regular party: check payment modal setting
           const shouldShowPaymentModal = voucherSettings?.showPaymentModal !== false;
@@ -555,14 +594,37 @@ export default function PurchaseInvoicePage() {
             if (voucherSettings?.autoPrint) {
               autoPrintPending.current = true;
             }
+            if (voucherSettings?.enableBarcodePrinting) {
+              barcodePending.current = true;
+            }
             setShowQuickPayment(true);
           } else {
             // Payment modal disabled for non-cash parties: invoice remains unpaid
             if (voucherSettings?.autoPrint) {
               setShowPrintPreview(true);
+            } else if (voucherSettings?.enableBarcodePrinting) {
+              // No print preview, but barcode is enabled — open barcode dialog directly
+              barcodePending.current = false;
+              setShowBarcodeDialog(true);
             }
           }
         }
+      }
+
+      // Capture products for barcode dialog before form resets
+      if (voucherSettings?.enableBarcodePrinting) {
+        const barcodeItems = purchaseState.items
+          .filter(item => item.product_id)
+          .map(item => {
+            const product = products.find(p => String(p.id) === String(item.product_id));
+            return {
+              code: product?.code || '',
+              name: product?.name || item.product_name || '',
+              salesRate: product?.sales_rate || item.rate || 0,
+              quantity: item.initial_quantity - item.count * item.deduction_per_unit,
+            };
+          });
+        setBarcodeProducts(barcodeItems);
       }
 
       dispatch(setPurchaseHasUnsavedChanges(false));
@@ -755,6 +817,11 @@ export default function PurchaseInvoicePage() {
             setTimeout(() => {
               setShowPrintPreview(true);
             }, 100);
+          } else if (!open && barcodePending.current) {
+            barcodePending.current = false;
+            setTimeout(() => {
+              setShowBarcodeDialog(true);
+            }, 100);
           }
         }}
         invoiceId={savedInvoiceId || purchaseState.currentVoucherId || undefined}
@@ -778,10 +845,24 @@ export default function PurchaseInvoicePage() {
 
       <PrintPreviewDialog
         open={showPrintPreview}
-        onOpenChange={setShowPrintPreview}
+        onOpenChange={(open) => {
+          setShowPrintPreview(open);
+          if (!open && barcodePending.current) {
+            barcodePending.current = false;
+            setTimeout(() => {
+              setShowBarcodeDialog(true);
+            }, 100);
+          }
+        }}
         voucherId={savedInvoiceId || purchaseState.currentVoucherId || undefined}
         voucherType="purchase_invoice"
         title={savedInvoiceNo || purchaseState.currentVoucherNo ? `Print Invoice - ${savedInvoiceNo || purchaseState.currentVoucherNo}` : 'Print Invoice'}
+      />
+
+      <BarcodeLabelDialog
+        open={showBarcodeDialog}
+        onOpenChange={setShowBarcodeDialog}
+        products={barcodeProducts}
       />
 
       <SupplierDialog

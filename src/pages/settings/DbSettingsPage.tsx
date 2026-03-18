@@ -33,6 +33,7 @@ const VOUCHER_TYPES = [
   { id: 'journal', label: 'Journal Entry' },
   { id: 'opening_balance', label: 'Opening Balance' },
   { id: 'opening_stock', label: 'Opening Stock' },
+  { id: 'stock_journal', label: 'Stock Journal' },
 ];
 
 const MASTER_TABLES = [

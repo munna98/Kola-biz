@@ -139,6 +139,30 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
         alignItems: 'center'
     };
 
+    const focusNextFieldFromUnit = (rowIndex: number, currentElement?: HTMLElement | null) => {
+        const row = document.querySelector(`[data-row-index="${rowIndex}"]`);
+        if (!row) return;
+
+        const focusables = Array.from(
+            row.querySelectorAll('[data-unit-trigger="true"], input:not([disabled]), button:not([disabled])')
+        ) as HTMLElement[];
+
+        const currentIndex = currentElement
+            ? focusables.findIndex(el => el === currentElement)
+            : focusables.findIndex(el => el.getAttribute('data-unit-trigger') === 'true');
+
+        if (currentIndex >= 0 && currentIndex + 1 < focusables.length) {
+            const nextField = focusables[currentIndex + 1];
+            nextField?.focus();
+            if (nextField instanceof HTMLInputElement) {
+                nextField.select();
+            }
+            return;
+        }
+
+        onSectionExit?.();
+    };
+
     const defaultHeader = (
         <div style={gridStyle} className="px-3 py-2 text-xs font-medium text-muted-foreground border-b bg-muted/20">
             {columns.map(col => (
@@ -232,20 +256,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     value={resolvedUnitId}
                                     onValueChange={(value) => {
                                         onUpdateItem(idx, 'unit_id', value);
-                                        // Auto-focus next visible input after unit selection
                                         setTimeout(() => {
-                                            const row = document.querySelector(`[data-row-index="${idx}"]`);
-                                            if (row) {
-                                                const inputs = Array.from(row.querySelectorAll('input:not([disabled]), button:not([disabled])')) as HTMLElement[];
-                                                const unitTriggerIndex = inputs.findIndex(el => el.getAttribute('data-unit-trigger') === 'true');
-                                                if (unitTriggerIndex >= 0 && unitTriggerIndex + 1 < inputs.length) {
-                                                    const nextInput = inputs[unitTriggerIndex + 1];
-                                                    nextInput?.focus();
-                                                    if (nextInput instanceof HTMLInputElement) {
-                                                        nextInput.select();
-                                                    }
-                                                }
-                                            }
+                                            focusNextFieldFromUnit(
+                                                idx,
+                                                document.querySelector(`[data-row-index="${idx}"] [data-unit-trigger="true"]`) as HTMLElement | null
+                                            );
                                         }, 10);
                                     }}
                                     disabled={isReadOnly || !product || productUnits.length === 0}
@@ -256,19 +271,8 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
                                                 e.preventDefault();
-                                                e.stopPropagation(); // Stop row-level navigation jumping
-                                                const row = document.querySelector(`[data-row-index="${idx}"]`);
-                                                if (row) {
-                                                    const inputs = Array.from(row.querySelectorAll('input:not([disabled]), button:not([disabled])')) as HTMLElement[];
-                                                    const unitTriggerIndex = inputs.findIndex(el => el === e.currentTarget);
-                                                    if (unitTriggerIndex >= 0 && unitTriggerIndex + 1 < inputs.length) {
-                                                        const nextInput = inputs[unitTriggerIndex + 1];
-                                                        nextInput?.focus();
-                                                        if (nextInput instanceof HTMLInputElement) {
-                                                            nextInput.select();
-                                                        }
-                                                    }
-                                                }
+                                                e.stopPropagation();
+                                                focusNextFieldFromUnit(idx, e.currentTarget as HTMLElement);
                                             }
                                         }}
                                     >

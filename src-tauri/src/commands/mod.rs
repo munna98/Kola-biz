@@ -15,6 +15,7 @@ pub mod purchase_returns;
 pub mod reports;
 pub mod sales_returns;
 pub mod settings;
+pub mod stock_journal;
 pub mod templates;
 pub mod voucher_units;
 
@@ -35,5 +36,6 @@ pub use purchase_returns::*;
 pub use reports::*;
 pub use sales_returns::*;
 pub use settings::*;
+pub use stock_journal::*;
 pub use templates::*;
 pub use voucher_units::*;

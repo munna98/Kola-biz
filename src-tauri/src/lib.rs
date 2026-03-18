@@ -229,6 +229,12 @@ pub fn run() {
             commands::opening_stock::create_opening_stock,
             commands::opening_stock::update_opening_stock,
             commands::opening_stock::delete_opening_stock,
+            // Stock Journal
+            commands::stock_journal::get_stock_journal,
+            commands::stock_journal::get_stock_journal_items,
+            commands::stock_journal::create_stock_journal,
+            commands::stock_journal::update_stock_journal,
+            commands::stock_journal::delete_stock_journal,
         ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())

@@ -78,10 +78,7 @@ export default function BarcodeLabelDialog({
         const printContent = printRef.current.innerHTML;
         const dims = LABEL_DIMENSIONS[settings.labelSize] || LABEL_DIMENSIONS['50x25'];
 
-        const printWindow = window.open('', '_blank');
-        if (!printWindow) return;
-
-        printWindow.document.write(`
+        const htmlContent = `
             <!DOCTYPE html>
             <html>
             <head>
@@ -153,15 +150,38 @@ export default function BarcodeLabelDialog({
                 ${printContent}
             </body>
             </html>
-        `);
+        `;
 
-        printWindow.document.close();
-        printWindow.focus();
+        // Use hidden iframe for printing (window.open doesn't work in Tauri WebView)
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'fixed';
+        iframe.style.right = '0';
+        iframe.style.bottom = '0';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        iframe.style.visibility = 'hidden';
+        document.body.appendChild(iframe);
+
+        const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
+        if (!iframeDoc) return;
+
+        iframeDoc.open();
+        iframeDoc.write(htmlContent);
+        iframeDoc.close();
 
         setTimeout(() => {
-            printWindow.print();
-            printWindow.close();
-        }, 250);
+            try {
+                iframe.contentWindow?.focus();
+                iframe.contentWindow?.print();
+            } catch (e) {
+                console.error('Barcode print failed:', e);
+            }
+            // Clean up iframe after printing
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+            }, 1000);
+        }, 500);
     };
 
     // Generate labels for preview

@@ -15,6 +15,7 @@ export interface BarcodeSettings {
     customText: string;
     barcodeFormat: 'CODE128' | 'EAN13' | 'QR';
     labelSize: '50x25' | '40x25' | '40x20' | '30x15';
+    barcodePrinter?: string;
 }
 
 const DEFAULT_SETTINGS: BarcodeSettings = {
@@ -42,10 +43,21 @@ const LABEL_SIZES = [
 export default function BarcodeSettingsPage() {
     const [settings, setSettings] = useState<BarcodeSettings>(DEFAULT_SETTINGS);
     const [loading, setLoading] = useState(false);
+    const [printers, setPrinters] = useState<string[]>([]);
 
     useEffect(() => {
         loadSettings();
+        loadPrinters();
     }, []);
+
+    const loadPrinters = async () => {
+        try {
+            const printerList = await invoke<string[]>('get_system_printers');
+            setPrinters(printerList);
+        } catch (error) {
+            console.error('Failed to load printers:', error);
+        }
+    };
 
     const loadSettings = async () => {
         setLoading(true);
@@ -209,6 +221,30 @@ export default function BarcodeSettingsPage() {
                                     ))}
                                 </SelectContent>
                             </Select>
+                        </div>
+
+                        {/* Barcode Printer */}
+                        <div className="space-y-2">
+                            <Label>Barcode Printer</Label>
+                            <Select
+                                value={settings.barcodePrinter || ''}
+                                onValueChange={(value) => updateSetting('barcodePrinter', value)}
+                                disabled={!printers.length}
+                            >
+                                <SelectTrigger className="w-[280px]">
+                                    <SelectValue placeholder={printers.length ? "Select a barcode printer" : "No printers found"} />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {printers.map((printer) => (
+                                        <SelectItem key={printer} value={printer}>
+                                            {printer}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                            <p className="text-sm text-muted-foreground">
+                                Select the printer to use for barcode labels
+                            </p>
                         </div>
                     </div>
                 </div>
