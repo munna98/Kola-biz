@@ -317,6 +317,17 @@ pub async fn create_purchase_invoice(
         .await
         .map_err(|e| format!("Party account not found: {}", e))?;
 
+    // Check party's account group for narration and payment status
+    let party_group: Option<String> = sqlx::query_scalar(
+        "SELECT account_group FROM chart_of_accounts WHERE id = ?"
+    )
+    .bind(&party_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+    let is_cash_bank = matches!(party_group.as_deref(), Some("Cash") | Some("Bank Account"));
+    let party_narration = if is_cash_bank { "Cash purchase" } else { "Amount payable to supplier" };
+
     // Debit: Purchases Account (with subtotal, before discount)
     let je_id_1 = Uuid::now_v7().to_string();
     sqlx::query(
@@ -347,18 +358,19 @@ pub async fn create_purchase_invoice(
         .map_err(|e| e.to_string())?;
     }
 
-    // Credit: Accounts Payable (Supplier)
+    // Credit: Accounts Payable (Supplier) or Cash
     // Amount owed = subtotal - discount + tax
     let amount_payable = subtotal - discount_amount + total_tax;
     let je_id_3 = Uuid::now_v7().to_string();
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, 0, ?, 'Amount payable to supplier')",
+         VALUES (?, ?, ?, 0, ?, ?)",
     )
     .bind(&je_id_3)
     .bind(&voucher_id)
     .bind(&party_account)
     .bind(amount_payable)
+    .bind(party_narration)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -408,6 +420,15 @@ pub async fn create_purchase_invoice(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+    }
+
+    // Auto-mark as paid if party is a Cash or Bank account (no separate payment needed)
+    if is_cash_bank {
+        sqlx::query("UPDATE vouchers SET payment_status = 'paid' WHERE id = ?")
+            .bind(&voucher_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
@@ -693,6 +714,18 @@ pub async fn update_purchase_invoice(
         .await
         .map_err(|e| format!("Party account not found: {}", e))?;
 
+    // Check party's account group for narration and payment status
+    let is_cash_bank: bool = sqlx::query_scalar::<_, String>(
+        "SELECT account_group FROM chart_of_accounts WHERE id = ?"
+    )
+    .bind(&party_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?
+    .map(|g| g == "Cash" || g == "Bank Account")
+    .unwrap_or(false);
+    let party_narration = if is_cash_bank { "Cash purchase" } else { "Amount payable to supplier" };
+
     // Debit: Purchases Account (with subtotal, before discount)
     let je_id_1 = Uuid::now_v7().to_string();
     sqlx::query(
@@ -723,18 +756,19 @@ pub async fn update_purchase_invoice(
         .map_err(|e| e.to_string())?;
     }
 
-    // Credit: Accounts Payable (Party)
+    // Credit: Accounts Payable (Party) or Cash
     // Amount owed = subtotal - discount + tax
     let amount_payable = subtotal - discount_amount + total_tax;
     let je_id_3 = Uuid::now_v7().to_string();
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, 0, ?, 'Amount payable to/receivable from party')",
+         VALUES (?, ?, ?, 0, ?, ?)",
     )
     .bind(&je_id_3)
     .bind(&id)
     .bind(&party_account)
     .bind(amount_payable)
+    .bind(party_narration)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -781,6 +815,23 @@ pub async fn update_purchase_invoice(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+    }
+
+    // Auto-mark as paid if party is a Cash or Bank account
+    if is_cash_bank {
+        sqlx::query("UPDATE vouchers SET payment_status = 'paid' WHERE id = ?")
+            .bind(&id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    } else {
+        // If party changed from Cash/Bank to a regular party, reset status
+        sqlx::query("UPDATE vouchers SET payment_status = 'unpaid' WHERE id = ? AND payment_status = 'paid' AND NOT EXISTS (SELECT 1 FROM payment_allocations WHERE invoice_voucher_id = ?)")
+            .bind(&id)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
@@ -1074,18 +1125,31 @@ pub async fn create_sales_invoice(
         .await
         .map_err(|e| format!("Party account not found: {}", e))?;
 
-    // Debit: Accounts Receivable/Payable (Party)
+    // Check party's account group for narration and payment status
+    let is_cash_bank = matches!(
+        sqlx::query_scalar::<_, String>("SELECT account_group FROM chart_of_accounts WHERE id = ?")
+            .bind(&party_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+            .as_deref(),
+        Some("Cash") | Some("Bank Account")
+    );
+    let party_narration = if is_cash_bank { "Cash sale" } else { "Amount receivable from customer" };
+
+    // Debit: Accounts Receivable (Party) or Cash
     // Amount due = subtotal - discount + tax
     let amount_receivable = subtotal - discount_amount + total_tax;
     let je_id_1 = Uuid::now_v7().to_string();
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, ?, 0, 'Amount receivable from/payable to party')",
+         VALUES (?, ?, ?, ?, 0, ?)",
     )
     .bind(&je_id_1)
     .bind(&voucher_id)
     .bind(&party_account)
     .bind(amount_receivable)
+    .bind(party_narration)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -1167,6 +1231,15 @@ pub async fn create_sales_invoice(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+    }
+
+    // Auto-mark as paid if party is a Cash or Bank account
+    if is_cash_bank {
+        sqlx::query("UPDATE vouchers SET payment_status = 'paid' WHERE id = ?")
+            .bind(&voucher_id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
@@ -1418,17 +1491,30 @@ pub async fn update_sales_invoice(
         .await
         .map_err(|e| format!("Party account not found: {}", e))?;
 
-    // Debit: Accounts Receivable (Party)
+    // Check party's account group for narration and payment status
+    let is_cash_bank: bool = sqlx::query_scalar::<_, String>(
+        "SELECT account_group FROM chart_of_accounts WHERE id = ?"
+    )
+    .bind(&party_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?
+    .map(|g| g == "Cash" || g == "Bank Account")
+    .unwrap_or(false);
+    let party_narration = if is_cash_bank { "Cash sale" } else { "Amount receivable from customer" };
+
+    // Debit: Accounts Receivable (Party) or Cash
     let amount_receivable = subtotal - discount_amount + total_tax;
     let je_id_1 = Uuid::now_v7().to_string();
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, ?, 0, 'Amount receivable from/payable to party')",
+         VALUES (?, ?, ?, ?, 0, ?)",
     )
     .bind(&je_id_1)
     .bind(&id)
     .bind(&party_account)
     .bind(amount_receivable)
+    .bind(party_narration)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -1505,6 +1591,23 @@ pub async fn update_sales_invoice(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+    }
+
+    // Auto-mark as paid if party is a Cash or Bank account
+    if is_cash_bank {
+        sqlx::query("UPDATE vouchers SET payment_status = 'paid' WHERE id = ?")
+            .bind(&id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    } else {
+        // If party changed from Cash/Bank to a regular party, reset status
+        sqlx::query("UPDATE vouchers SET payment_status = 'unpaid' WHERE id = ? AND payment_status = 'paid' AND NOT EXISTS (SELECT 1 FROM payment_allocations WHERE invoice_voucher_id = ?)")
+            .bind(&id)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;

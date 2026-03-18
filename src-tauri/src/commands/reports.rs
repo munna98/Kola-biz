@@ -596,7 +596,7 @@ pub async fn get_cash_flow(
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
         WHERE coa.account_type = 'Asset' 
-        AND coa.account_name NOT IN ('Cash', 'Accounts Receivable', 'Cash Sale', 'Bank Account')
+        AND coa.account_name NOT IN ('Cash', 'Accounts Receivable', 'Bank Account')
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
@@ -623,7 +623,7 @@ pub async fn get_cash_flow(
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
         WHERE coa.account_type IN ('Liability', 'Equity')
-        AND coa.account_name NOT IN ('Accounts Payable', 'Accounts Receivable', 'Cash Sale', 'Cash Purchase')
+        AND coa.account_name NOT IN ('Accounts Payable', 'Accounts Receivable')
         AND v.voucher_type NOT IN ('sales_invoice', 'purchase_invoice', 'receipt', 'payment')
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";

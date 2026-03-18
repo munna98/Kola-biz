@@ -86,7 +86,7 @@ export default function SalesReturnPage() {
                 const [productsData, unitsData, accountsData, settingsData] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
-                    invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable'] }),
+                    invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable', 'Cash', 'Bank Account'] }),
                     invoke<any>('get_voucher_settings', { voucherType: 'sales_return' }),
                 ]);
                 setProducts(productsData);
@@ -102,7 +102,7 @@ export default function SalesReturnPage() {
 
                 // Default to "Cash Sale" account if available, otherwise first party
                 if (salesReturnState.form.customer_id === 0 && salesReturnState.mode === 'new') {
-                    const cashSaleAccount = combinedParties.find(p => p.name === 'Cash Sale');
+                    const cashSaleAccount = combinedParties.find(p => p.name === 'Cash');
                     const defaultParty = cashSaleAccount || combinedParties[0];
 
                     if (defaultParty) {

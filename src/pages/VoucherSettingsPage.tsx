@@ -235,7 +235,7 @@ export default function VoucherSettingsPage() {
                                     Show Payment Modal on Save
                                 </label>
                                 <p className="text-sm text-muted-foreground">
-                                    When disabled, Cash Sale invoices are auto-paid and other party invoices remain unpaid.
+                                    When disabled, Cash invoices are auto-paid and other party invoices remain unpaid.
                                 </p>
                             </div>
                         </div>

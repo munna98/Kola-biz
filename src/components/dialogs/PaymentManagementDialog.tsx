@@ -28,6 +28,7 @@ interface PaymentManagementDialogProps {
     invoiceDate?: string;
     partyName?: string;
     readOnly?: boolean;
+    isCashBankParty?: boolean;
 }
 
 interface Allocation {
@@ -66,6 +67,7 @@ export default function PaymentManagementDialog({
     invoiceDate = new Date().toISOString().split('T')[0],
     partyName = '',
     readOnly = false,
+    isCashBankParty = false,
 }: PaymentManagementDialogProps) {
     // Data states
     const [allocations, setAllocations] = useState<Allocation[]>([]);
@@ -98,7 +100,11 @@ export default function PaymentManagementDialog({
             hasInitialized.current = false; // Reset init state on open
             loadCashBankAccounts();
             if (invoiceId) {
-                loadAllocations();
+                if (isCashBankParty) {
+                    loadCashSplits();
+                } else {
+                    loadAllocations();
+                }
             }
             // Auto-focus save button for quick keyboard workflow
             setTimeout(() => {
@@ -161,6 +167,31 @@ export default function PaymentManagementDialog({
         }
     };
 
+    // Load existing cash/bank splits from invoice journal entries (for cash party invoices)
+    const loadCashSplits = async () => {
+        try {
+            setLoadingAllocations(true);
+            const splits = await invoke<{ id: string; account_id: number; amount: number; method: string }[]>(
+                'get_cash_invoice_splits', { invoiceId: invoiceId }
+            );
+            if (splits.length > 0) {
+                const lines: PaymentLine[] = splits.map(s => ({
+                    id: s.id,
+                    account_id: s.account_id,
+                    amount: s.amount,
+                    method: s.method,
+                }));
+                setPaymentLines(lines);
+                hasInitialized.current = true;
+            }
+            // If no splits found, the default line effect will handle it
+        } catch (error) {
+            console.error('Failed to load cash splits:', error);
+        } finally {
+            setLoadingAllocations(false);
+        }
+    };
+
     // Effect to add default line if everything loaded and empty
     // Only run this ONCE after loading is done and we have no lines
     useEffect(() => {
@@ -216,6 +247,10 @@ export default function PaymentManagementDialog({
 
     const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        if (isCashBankParty) {
+            return handleSaveCashSplits();
+        }
 
         const validLines = paymentLines.filter(line => line.amount > 0);
 
@@ -283,6 +318,44 @@ export default function PaymentManagementDialog({
         } catch (error) {
             console.error('Failed to save payments:', error);
             toast.error(typeof error === 'string' ? error : 'Failed to save payments');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Save handler for Cash/Bank party invoices — adjusts journal entries directly
+    const handleSaveCashSplits = async () => {
+        const validLines = paymentLines.filter(line => line.amount > 0);
+
+        if (validLines.length === 0) {
+            toast.error('At least one payment line is required');
+            return;
+        }
+
+        // Total must match invoice amount
+        const totalSplit = validLines.reduce((sum, l) => sum + l.amount, 0);
+        if (Math.abs(totalSplit - invoiceAmount) > 0.01) {
+            toast.error(`Split total (${totalSplit.toFixed(2)}) must equal invoice amount (${invoiceAmount.toFixed(2)})`);
+            return;
+        }
+
+        try {
+            setLoading(true);
+            await invoke('adjust_cash_invoice_splits', {
+                invoiceId: invoiceId,
+                splits: validLines.map(l => ({
+                    id: l.id,
+                    account_id: l.account_id,
+                    amount: l.amount,
+                    method: l.method,
+                })),
+            });
+            toast.success('Payment split saved');
+            if (onSuccess) onSuccess();
+            handleClose();
+        } catch (error) {
+            console.error('Failed to save cash splits:', error);
+            toast.error(typeof error === 'string' ? error : 'Failed to save payment split');
         } finally {
             setLoading(false);
         }

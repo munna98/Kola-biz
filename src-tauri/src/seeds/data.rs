@@ -47,13 +47,6 @@ pub async fn seed_initial_data(pool: &SqlitePool) -> Result<(), Box<dyn std::err
             "Bank deposits and accounts",
         ),
         (
-            "1003",
-            "Cash Sale",
-            "Asset",
-            "Accounts Receivable",
-            "Default account for cash sales without specific customer",
-        ),
-        (
             "1004",
             "Inventory",
             "Asset",
@@ -80,13 +73,6 @@ pub async fn seed_initial_data(pool: &SqlitePool) -> Result<(), Box<dyn std::err
             "Asset",
             "Current Assets",
             "Cash receipts not yet deposited",
-        ),
-        (
-            "2001",
-            "Cash Purchase",
-            "Liability",
-            "Accounts Payable",
-            "Default account for cash purchases without specific supplier",
         ),
         (
             "2002",

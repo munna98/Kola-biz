@@ -65,6 +65,7 @@ interface Party {
   id: number;
   name: string;
   type: 'customer' | 'supplier';
+  group: string;
 }
 
 export default function SalesInvoicePage() {
@@ -95,6 +96,7 @@ export default function SalesInvoicePage() {
   const [savedInvoiceNo, setSavedInvoiceNo] = useState<string | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
+  const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
 
@@ -118,7 +120,7 @@ export default function SalesInvoicePage() {
         const [productsData, unitsData, accountsData, settingsData, groupsData, employeesData] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
-          invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable'] }),
+          invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable', 'Cash', 'Bank Account'] }),
           invoke<any>('get_voucher_settings', { voucherType: 'sales_invoice' }),
           invoke<ProductGroup[]>('get_product_groups'),
           invoke<Employee[]>('get_employees'),
@@ -134,7 +136,8 @@ export default function SalesInvoicePage() {
         const combinedParties = accountsData.map(acc => ({
           id: acc.id,
           name: acc.account_name,
-          type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const
+          type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const,
+          group: acc.account_group as string
         }));
         setParties(combinedParties);
       } catch (error) {
@@ -160,7 +163,7 @@ export default function SalesInvoicePage() {
   useEffect(() => {
     if (salesState.mode === 'new' && salesState.form.customer_id === 0 && parties.length > 0) {
       // Default to "Cash Sale" account if available, otherwise first party
-      const cashSaleAccount = parties.find(p => p.name === 'Cash Sale');
+      const cashSaleAccount = parties.find(p => p.name === 'Cash');
       const defaultParty = cashSaleAccount || parties[0];
 
       if (defaultParty) {
@@ -385,15 +388,17 @@ export default function SalesInvoicePage() {
         setSavedInvoiceNo(salesState.currentVoucherNo);
         setSavedInvoiceAmount(salesState.totals.grandTotal);
         const customer = parties.find(p => p.id === salesState.form.customer_id);
-        setSavedPartyName(customer?.name || 'Cash Sale');
+        setSavedPartyName(customer?.name || 'Cash');
         setSavedPartyId(customer?.id);
 
-        // Auto Print Check - Defer until after payment dialog
+        // Check if party is a Cash or Bank account
+        const isCashBankParty = customer?.group === 'Cash' || customer?.group === 'Bank Account';
+        setSavedIsCashBankParty(isCashBankParty);
+
+        // Always show payment dialog (for Cash parties: allows split; for regular: normal payment)
         if (voucherSettings?.autoPrint) {
           autoPrintPending.current = true;
         }
-
-        // Show Payment Dialog
         setShowQuickPayment(true);
       } else {
         const newInvoiceId = await invoke<string>('create_sales_invoice', {
@@ -429,54 +434,35 @@ export default function SalesInvoicePage() {
         setSavedInvoiceNo(newInvoice.voucher_no);
 
         const customer = parties.find(p => p.id === salesState.form.customer_id);
-        const partyName = customer?.name || 'Cash Sale';
+        const partyName = customer?.name || 'Cash';
         setSavedPartyName(partyName);
         setSavedPartyId(customer?.id);
 
-        // Check payment modal setting (default true if undefined)
-        const shouldShowPaymentModal = voucherSettings?.showPaymentModal !== false;
+        // Check if party is a Cash or Bank account
+        const isCashBankParty = customer?.group === 'Cash' || customer?.group === 'Bank Account';
+        setSavedIsCashBankParty(isCashBankParty);
 
-        if (!shouldShowPaymentModal) {
-          // Payment modal disabled - handle conditionally
-          const isCashSale = partyName === 'Cash Sale';
-
-          if (isCashSale && salesState.totals.grandTotal > 0) {
-            // Auto-record payment for Cash Sale
-            try {
-              const cashBankAccounts = await invoke<{ id: number; name: string }[]>('get_cash_bank_accounts');
-              const defaultCashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];
-
-              if (defaultCashAccount) {
-                await invoke('create_quick_payment', {
-                  payment: {
-                    invoice_id: newInvoiceId,
-                    amount: salesState.totals.grandTotal,
-                    payment_account_id: defaultCashAccount.id,
-                    payment_date: salesState.form.voucher_date,
-                    payment_method: 'cash',
-                    reference: null,
-                    remarks: `Auto payment for ${newInvoice.voucher_no}`,
-                  },
-                });
-                toast.success('Payment recorded automatically');
-              }
-            } catch (paymentError) {
-              console.error('Failed to auto-record payment:', paymentError);
-              toast.error('Invoice saved but payment recording failed');
-            }
-          }
-          // For non-Cash Sale parties: skip payment modal (invoice remains unpaid)
-
-          // Auto Print if enabled
-          if (voucherSettings?.autoPrint) {
-            setShowPrintPreview(true);
-          }
-        } else {
-          // Show payment modal as usual
+        if (isCashBankParty) {
+          // Cash/Bank party: always show payment modal for split opportunity
           if (voucherSettings?.autoPrint) {
             autoPrintPending.current = true;
           }
           setShowQuickPayment(true);
+        } else {
+          // Regular party: check payment modal setting
+          const shouldShowPaymentModal = voucherSettings?.showPaymentModal !== false;
+
+          if (shouldShowPaymentModal) {
+            if (voucherSettings?.autoPrint) {
+              autoPrintPending.current = true;
+            }
+            setShowQuickPayment(true);
+          } else {
+            // Payment modal disabled for non-cash parties: invoice remains unpaid
+            if (voucherSettings?.autoPrint) {
+              setShowPrintPreview(true);
+            }
+          }
         }
       }
 
@@ -645,11 +631,12 @@ export default function SalesInvoicePage() {
   const handleCreateCustomerSave = async (newCustomer?: any) => {
     // Refresh parties list
     try {
-      const accountsData = await invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable'] });
+      const accountsData = await invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable', 'Cash', 'Bank Account'] });
       const combinedParties = accountsData.map(acc => ({
         id: acc.id,
         name: acc.account_name,
-        type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const
+        type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const,
+        group: acc.account_group as string
       }));
       setParties(combinedParties);
 
@@ -793,6 +780,7 @@ export default function SalesInvoicePage() {
         invoiceDate={salesState.form.voucher_date}
         partyName={savedPartyName}
         readOnly={salesState.mode === 'viewing'}
+        isCashBankParty={savedIsCashBankParty}
         onSuccess={() => {
           toast.success('Payment saved!');
         }}

@@ -185,6 +185,9 @@ pub fn run() {
             delete_allocation,
             create_quick_payment,
             update_quick_payment,
+            // Cash/Bank Invoice Splits
+            get_cash_invoice_splits,
+            adjust_cash_invoice_splits,
             // Allocations
             commands::entries::get_account_balance,
             commands::entries::get_pending_invoices,

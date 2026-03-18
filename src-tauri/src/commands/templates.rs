@@ -621,7 +621,7 @@ async fn get_purchase_invoice_data(
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
 
             // Detect cash purchase (no meaningful balance to show)
-            let is_cash = invoice.supplier_name == "Cash Purchase";
+            let is_cash = invoice.supplier_name == "Cash";
             obj.insert("is_cash".to_string(), json!(is_cash));
 
             // Add Balance Details
@@ -757,7 +757,7 @@ async fn get_sales_invoice_data(
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
 
             // Detect cash sale (no meaningful balance to show)
-            let is_cash = invoice.customer_name == "Cash Sale";
+            let is_cash = invoice.customer_name == "Cash";
             obj.insert("is_cash".to_string(), json!(is_cash));
 
             // Add Balance Details

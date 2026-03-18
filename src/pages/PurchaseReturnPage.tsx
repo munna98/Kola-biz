@@ -88,7 +88,7 @@ export default function PurchaseReturnPage() {
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
                     // Fetch both Suppliers (Accounts Payable) and Customers (Accounts Receivable) for flexibility
-                    invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Payable', 'Accounts Receivable'] }),
+                    invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Payable', 'Accounts Receivable', 'Cash', 'Bank Account'] }),
                     invoke<any>('get_voucher_settings', { voucherType: 'purchase_return' }),
                 ]);
                 setProducts(productsData);
@@ -104,7 +104,7 @@ export default function PurchaseReturnPage() {
 
                 // Default to "Cash Purchase" account if available, otherwise first party
                 if (purchaseReturnState.form.supplier_id === 0 && purchaseReturnState.mode === 'new') {
-                    const cashPurchaseAccount = combinedParties.find(p => p.name === 'Cash Purchase');
+                    const cashPurchaseAccount = combinedParties.find(p => p.name === 'Cash');
                     const defaultParty = cashPurchaseAccount || combinedParties[0];
 
                     if (defaultParty) {
