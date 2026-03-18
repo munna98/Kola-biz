@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
@@ -31,7 +31,8 @@ import ProductDialog from '@/components/dialogs/ProductDialog';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { IconX, IconCheck } from '@tabler/icons-react';
-import { Product, Unit, ProductGroup } from '@/lib/tauri';
+import { Product, Unit, ProductGroup, ProductUnitConversion } from '@/lib/tauri';
+import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 
 export default function OpeningStockPage() {
     const dispatch = useDispatch();
@@ -40,6 +41,7 @@ export default function OpeningStockPage() {
 
     // Local state for dependencies
     const [products, setProducts] = useState<Product[]>([]);
+    const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
@@ -52,6 +54,10 @@ export default function OpeningStockPage() {
     const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
 
     const formRef = useRef<HTMLFormElement>(null);
+    const productUnitsByProduct = useMemo(
+        () => buildProductUnitMap(productUnitConversions),
+        [productUnitConversions]
+    );
 
     // Derived state
     const isReadOnly = openingStockState.mode === 'viewing';
@@ -60,13 +66,15 @@ export default function OpeningStockPage() {
     useEffect(() => {
         const loadDependencies = async () => {
             try {
-                const [productsData, unitsData, groupsData] = await Promise.all([
+                const [productsData, unitsData, productUnitConversionsData, groupsData] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
+                    invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
                     invoke<ProductGroup[]>('get_product_groups'),
                 ]);
                 setProducts(productsData);
                 setUnits(unitsData);
+                setProductUnitConversions(productUnitConversionsData);
                 setProductGroups(groupsData);
             } catch (error) {
                 console.error('Failed to load dependencies:', error);
@@ -107,6 +115,8 @@ export default function OpeningStockPage() {
                     id: item.id,
                     product_id: item.product_id,
                     product_name: item.product_name,
+                    unit_id: item.unit_id,
+                    base_quantity: item.base_quantity,
                     description: item.description || '',
                     initial_quantity: item.quantity,  // Map quantity to initial_quantity for form
                     quantity: item.quantity,          // Keep quantity for calculations
@@ -169,6 +179,7 @@ export default function OpeningStockPage() {
                 narration: openingStockState.form.narration,
                 items: openingStockState.items.map(item => ({
                     product_id: item.product_id,
+                    unit_id: item.unit_id || null,
                     description: item.description,
                     quantity: item.quantity,
                     rate: item.rate,
@@ -272,8 +283,12 @@ export default function OpeningStockPage() {
     const handleCreateProductSave = async () => {
         try {
             // Refresh products
-            const productsData = await invoke<Product[]>('get_products');
+            const [productsData, productUnitConversionsData] = await Promise.all([
+                invoke<Product[]>('get_products'),
+                invoke<ProductUnitConversion[]>('get_all_product_unit_conversions')
+            ]);
             setProducts(productsData);
+            setProductUnitConversions(productUnitConversionsData);
 
             // If we have a pending row index and a name, try to find and select the new product
             if (creatingProductRowIndex !== null && newProductName) {
@@ -284,8 +299,31 @@ export default function OpeningStockPage() {
                         data: {
                             product_id: createdProduct.id,
                             product_name: createdProduct.name,
-                            rate: createdProduct.purchase_rate,
-                            amount: openingStockState.items[creatingProductRowIndex].quantity * (createdProduct.purchase_rate || 0)
+                            unit_id: getDefaultProductUnitId(
+                                productUnitsByProduct[createdProduct.id],
+                                'report',
+                                createdProduct.unit_id
+                            ),
+                            rate: getProductUnitRate(
+                                productUnitsByProduct[createdProduct.id],
+                                getDefaultProductUnitId(
+                                    productUnitsByProduct[createdProduct.id],
+                                    'report',
+                                    createdProduct.unit_id
+                                ),
+                                'purchase',
+                                createdProduct.purchase_rate
+                            ),
+                            amount: openingStockState.items[creatingProductRowIndex].quantity * getProductUnitRate(
+                                productUnitsByProduct[createdProduct.id],
+                                getDefaultProductUnitId(
+                                    productUnitsByProduct[createdProduct.id],
+                                    'report',
+                                    createdProduct.unit_id
+                                ),
+                                'purchase',
+                                createdProduct.purchase_rate
+                            )
                         }
                     }));
                 }
@@ -395,6 +433,7 @@ export default function OpeningStockPage() {
                         items={openingStockState.items}
                         products={products}
                         units={units}
+                        productUnitsByProduct={productUnitsByProduct}
                         isReadOnly={isReadOnly}
                         settings={{ columns }}
                         onProductCreate={handleProductCreate}
@@ -429,12 +468,43 @@ export default function OpeningStockPage() {
                             if (field === 'product_id') {
                                 const product = products.find(p => p.id === value);
                                 if (product) {
+                                    const unitId = getDefaultProductUnitId(
+                                        productUnitsByProduct[product.id],
+                                        'report',
+                                        product.unit_id
+                                    );
+                                    const rate = getProductUnitRate(
+                                        productUnitsByProduct[product.id],
+                                        unitId,
+                                        'purchase',
+                                        product.purchase_rate
+                                    );
                                     dispatch(updateOpeningStockItem({
                                         index,
                                         data: {
-                                            rate: product.purchase_rate,
-                                            amount: item.quantity * (product.purchase_rate || 0),
-                                            product_name: product.name
+                                            rate,
+                                            amount: item.quantity * rate,
+                                            product_name: product.name,
+                                            unit_id: unitId
+                                        }
+                                    }));
+                                }
+                            }
+
+                            if (field === 'unit_id') {
+                                const product = products.find(p => p.id === item.product_id);
+                                if (product) {
+                                    const rate = getProductUnitRate(
+                                        productUnitsByProduct[product.id],
+                                        value,
+                                        'purchase',
+                                        product.purchase_rate
+                                    );
+                                    dispatch(updateOpeningStockItem({
+                                        index,
+                                        data: {
+                                            rate,
+                                            amount: item.quantity * rate
                                         }
                                     }));
                                 }

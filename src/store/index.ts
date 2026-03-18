@@ -138,6 +138,8 @@ export interface PurchaseInvoiceItem {
   id?: string;
   product_id: number;
   product_name?: string;
+  unit_id?: string;
+  base_quantity?: number;
   description: string;
   initial_quantity: number;
   count: number;
@@ -866,6 +868,8 @@ export interface SalesInvoiceItem {
   id?: string;
   product_id: number;
   product_name?: string;
+  unit_id?: string;
+  base_quantity?: number;
   description: string;
   initial_quantity: number;
   count: number;
@@ -1116,6 +1120,8 @@ export interface PurchaseReturnItem {
   id?: string;
   product_id: number;
   product_name?: string;
+  unit_id?: string;
+  base_quantity?: number;
   description: string;
   initial_quantity: number;
   count: number;
@@ -1274,6 +1280,8 @@ export interface SalesReturnItem {
   id?: string;
   product_id: number;
   product_name?: string;
+  unit_id?: string;
+  base_quantity?: number;
   description: string;
   initial_quantity: number;
   count: number;
@@ -1432,6 +1440,8 @@ export interface OpeningStockItem {
   id?: string;
   product_id: string;
   product_name?: string;
+  unit_id?: string;
+  base_quantity?: number;
   description: string;
   initial_quantity: number;  // Quantity shown in form
   quantity: number;           // Quantity for calculations

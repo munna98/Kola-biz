@@ -3,6 +3,8 @@ use sqlx::SqlitePool;
 use tauri::State;
 use uuid::Uuid;
 
+use super::resolve_voucher_line_unit;
+
 // ============= SALES RETURN =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct SalesReturn {
@@ -35,6 +37,8 @@ pub struct SalesReturnItem {
     pub count: i64,
     pub deduction_per_unit: f64,
     pub final_quantity: f64,
+    pub unit_id: Option<String>,
+    pub base_quantity: f64,
     pub rate: f64,
     pub amount: f64,
     pub tax_rate: f64,
@@ -47,6 +51,7 @@ pub struct SalesReturnItem {
 #[derive(Deserialize)]
 pub struct CreateSalesReturnItem {
     pub product_id: String,
+    pub unit_id: Option<String>,
     pub description: Option<String>,
     pub initial_quantity: f64,
     pub count: i64,
@@ -236,6 +241,14 @@ pub async fn create_sales_return(
     // Insert items
     for item in &invoice.items {
         let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
+        let unit_snapshot = resolve_voucher_line_unit(
+            &mut tx,
+            &item.product_id,
+            item.unit_id.as_deref(),
+            "sale",
+            final_qty,
+        )
+        .await?;
         let amount = final_qty * item.rate;
         let discount_percent = item.discount_percent.unwrap_or(0.0);
         let discount_amount = if discount_percent > 0.0 {
@@ -248,8 +261,8 @@ pub async fn create_sales_return(
         let item_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item_id)
         .bind(&voucher_id)
@@ -259,6 +272,8 @@ pub async fn create_sales_return(
         .bind(item.count)
         .bind(item.deduction_per_unit)
         .bind(final_qty)
+        .bind(&unit_snapshot.unit_id)
+        .bind(unit_snapshot.base_quantity)
         .bind(item.rate)
         .bind(amount)
         .bind(item.tax_rate)
@@ -376,7 +391,7 @@ pub async fn create_sales_return(
 
     // ============= UPDATE STOCK (IN) =============
     let items_for_stock: Vec<(String, f64, i64, f64, f64)> = sqlx::query_as(
-        "SELECT product_id, initial_quantity, count, rate, amount FROM voucher_items WHERE voucher_id = ?",
+        "SELECT product_id, base_quantity, count, rate, amount FROM voucher_items WHERE voucher_id = ?",
     )
     .bind(&voucher_id)
     .fetch_all(&mut *tx)
@@ -473,6 +488,14 @@ pub async fn update_sales_return(
     // Re-insert Items
     for item in &invoice.items {
         let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
+        let unit_snapshot = resolve_voucher_line_unit(
+            &mut tx,
+            &item.product_id,
+            item.unit_id.as_deref(),
+            "sale",
+            final_qty,
+        )
+        .await?;
         let amount = final_qty * item.rate;
         let discount_percent = item.discount_percent.unwrap_or(0.0);
         let discount_amount = if discount_percent > 0.0 {
@@ -485,8 +508,8 @@ pub async fn update_sales_return(
         let item_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item_id)
         .bind(&id)
@@ -496,6 +519,8 @@ pub async fn update_sales_return(
         .bind(item.count)
         .bind(item.deduction_per_unit)
         .bind(final_qty)
+        .bind(&unit_snapshot.unit_id)
+        .bind(unit_snapshot.base_quantity)
         .bind(item.rate)
         .bind(amount)
         .bind(item.tax_rate)
@@ -600,6 +625,14 @@ pub async fn update_sales_return(
     // Re-create Stock Movements (IN)
     for item in &invoice.items {
         let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
+        let unit_snapshot = resolve_voucher_line_unit(
+            &mut tx,
+            &item.product_id,
+            item.unit_id.as_deref(),
+            "sale",
+            final_qty,
+        )
+        .await?;
         let amount = final_qty * item.rate;
         let sm_id = Uuid::now_v7().to_string();
 
@@ -610,7 +643,7 @@ pub async fn update_sales_return(
         .bind(&sm_id)
         .bind(&id)
         .bind(item.product_id.clone())
-        .bind(item.initial_quantity)
+        .bind(unit_snapshot.base_quantity)
         .bind(item.count)
         .bind(item.rate)
         .bind(amount)

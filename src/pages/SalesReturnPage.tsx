@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
@@ -42,20 +42,8 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
-
-interface Product {
-    id: string;
-    code: string;
-    name: string;
-    unit_id: string;
-    sales_rate: number;
-}
-
-interface Unit {
-    id: string;
-    name: string;
-    symbol: string;
-}
+import { Product, ProductUnitConversion, Unit } from '@/lib/tauri';
+import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 
 interface Party {
     id: number;
@@ -67,6 +55,7 @@ export default function SalesReturnPage() {
     const dispatch = useDispatch<AppDispatch>();
     const salesReturnState = useSelector((state: RootState) => state.salesReturn);
     const [products, setProducts] = useState<Product[]>([]);
+    const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
     const [parties, setParties] = useState<Party[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
@@ -74,6 +63,10 @@ export default function SalesReturnPage() {
     const [showListView, setShowListView] = useState(false);
     const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean } | undefined>(undefined);
     const { print } = usePrint();
+    const productUnitsByProduct = useMemo(
+        () => buildProductUnitMap(productUnitConversions),
+        [productUnitConversions]
+    );
 
     // Refs for focus management
     const formRef = useRef<HTMLFormElement>(null);
@@ -83,14 +76,16 @@ export default function SalesReturnPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [productsData, unitsData, accountsData, settingsData] = await Promise.all([
+                const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
+                    invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
                     invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable', 'Cash', 'Bank Account'] }),
                     invoke<any>('get_voucher_settings', { voucherType: 'sales_return' }),
                 ]);
                 setProducts(productsData);
                 setUnits(unitsData);
+                setProductUnitConversions(productUnitConversionsData);
                 if (settingsData) setVoucherSettings(settingsData);
 
                 const combinedParties = accountsData.map(acc => ({
@@ -180,21 +175,34 @@ export default function SalesReturnPage() {
         if (field === 'product_id') {
             const product = products.find((p) => p.id === value);
             if (product) {
+                const defaultUnitId = getDefaultProductUnitId(
+                    productUnitsByProduct[value],
+                    'sale',
+                    product.unit_id
+                );
+                const rate = getProductUnitRate(
+                    productUnitsByProduct[value],
+                    defaultUnitId,
+                    'sale',
+                    product.sales_rate || 0
+                );
                 finalValue = value;
                 const updatedItems = [...salesReturnState.items];
                 updatedItems[index] = {
                     ...updatedItems[index],
-                    product_id: value,
-                    product_name: product.name,
-                    rate: product.sales_rate || 0,
-                };
+                            product_id: value,
+                            product_name: product.name,
+                            unit_id: defaultUnitId,
+                            rate,
+                        };
                 dispatch(
                     updateSalesReturnItem({
                         index,
                         data: {
                             product_id: value,
                             product_name: product.name,
-                            rate: product.sales_rate || 0,
+                            unit_id: defaultUnitId,
+                            rate,
                         },
                     })
                 );
@@ -202,6 +210,29 @@ export default function SalesReturnPage() {
                 dispatch(setSalesReturnHasUnsavedChanges(true));
                 return;
             }
+        }
+
+        if (field === 'unit_id') {
+            const currentItem = salesReturnState.items[index];
+            const productId = String(currentItem.product_id);
+            const product = products.find((p) => p.id === productId);
+            const rate = getProductUnitRate(
+                productUnitsByProduct[productId],
+                value,
+                'sale',
+                product?.sales_rate || currentItem.rate || 0
+            );
+            finalValue = value;
+            const updatedItems = [...salesReturnState.items];
+            updatedItems[index] = {
+                ...updatedItems[index],
+                unit_id: value,
+                rate
+            };
+            dispatch(updateSalesReturnItem({ index, data: { unit_id: value, rate } }));
+            updateTotalsWithItems(updatedItems);
+            dispatch(setSalesReturnHasUnsavedChanges(true));
+            return;
         }
 
         const updatedItems = [...salesReturnState.items];
@@ -305,6 +336,7 @@ export default function SalesReturnPage() {
                         discount_amount: salesReturnState.form.discount_amount || null,
                         items: salesReturnState.items.map(item => ({
                             product_id: item.product_id,
+                            unit_id: item.unit_id || null,
                             description: item.description,
                             initial_quantity: item.initial_quantity,
                             count: item.count,
@@ -329,6 +361,7 @@ export default function SalesReturnPage() {
                         discount_amount: salesReturnState.form.discount_amount || null,
                         items: salesReturnState.items.map(item => ({
                             product_id: item.product_id,
+                            unit_id: item.unit_id || null,
                             description: item.description,
                             initial_quantity: item.initial_quantity,
                             count: item.count,
@@ -385,8 +418,10 @@ export default function SalesReturnPage() {
             // Populate Items
             items.forEach(item => {
                 dispatch(addSalesReturnItem({
-                    product_id: item.product_id || 0,
-                    product_name: item.description, // Fallback
+                product_id: item.product_id || 0,
+                product_name: item.description, // Fallback
+                unit_id: item.unit_id,
+                    base_quantity: item.base_quantity,
                     description: item.description,
                     initial_quantity: item.initial_quantity,
                     count: item.count,
@@ -403,6 +438,7 @@ export default function SalesReturnPage() {
                 id: `loaded-${item.id}`,
                 product_id: item.product_id || 0,
                 product_name: item.description,
+                unit_id: item.unit_id,
                 description: item.description,
                 initial_quantity: item.initial_quantity,
                 count: item.count,
@@ -606,6 +642,7 @@ export default function SalesReturnPage() {
                         items={salesReturnState.items}
                         products={products}
                         units={units}
+                        productUnitsByProduct={productUnitsByProduct}
                         isReadOnly={isReadOnly}
                         onAddItem={handleAddItem}
                         onRemoveItem={handleRemoveItem}

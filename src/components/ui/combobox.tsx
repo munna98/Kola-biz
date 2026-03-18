@@ -53,6 +53,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   const [hasOpenedOnFocus, setHasOpenedOnFocus] = React.useState(false)
   const [inputValue, setInputValue] = React.useState("")
   const skipOpen = React.useRef(false)
+  const itemSelected = React.useRef(false)
   const isPointerDown = React.useRef(false)
 
   const handleFocus = React.useCallback(() => {
@@ -117,6 +118,12 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
         onOpenAutoFocus={() => {
           // Allow auto-focusing the input
         }}
+        onCloseAutoFocus={(e) => {
+          if (itemSelected.current) {
+            e.preventDefault();
+            itemSelected.current = false;
+          }
+        }}
       >
         <Command>
           <CommandInput
@@ -133,6 +140,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
                     size="sm"
                     className="w-full justify-start text-left font-normal"
                     onClick={() => {
+                      itemSelected.current = true;
                       onCreate(inputValue);
                       setOpen(false);
                       skipOpen.current = true;
@@ -171,6 +179,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
                   // It should ideally be the label string.
                   value={String(option.label)}
                   onSelect={() => {
+                    itemSelected.current = true;
                     onChange(option.value)
                     setOpen(false)
                     skipOpen.current = true

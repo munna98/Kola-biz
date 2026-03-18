@@ -272,6 +272,8 @@ pub async fn init_db(
             count INTEGER NOT NULL,
             deduction_per_unit REAL DEFAULT 0,
             final_quantity REAL,
+            unit_id TEXT,
+            base_quantity REAL,
             rate REAL NOT NULL,
             amount REAL NOT NULL,
             tax_rate REAL DEFAULT 0,
@@ -284,6 +286,52 @@ pub async fn init_db(
     )
     .execute(&pool)
     .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS product_unit_conversions (
+            id TEXT PRIMARY KEY,
+            product_id TEXT NOT NULL,
+            unit_id TEXT NOT NULL,
+            factor_to_base REAL NOT NULL,
+            purchase_rate REAL NOT NULL DEFAULT 0,
+            sales_rate REAL NOT NULL DEFAULT 0,
+            is_default_sale INTEGER DEFAULT 0,
+            is_default_purchase INTEGER DEFAULT 0,
+            is_default_report INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(product_id, unit_id),
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+            FOREIGN KEY (unit_id) REFERENCES units(id)
+        )",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_product_unit_conversions_product
+         ON product_unit_conversions(product_id)",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_product_unit_conversions_unit
+         ON product_unit_conversions(unit_id)",
+    )
+    .execute(&pool)
+    .await?;
+    let _ = sqlx::query("ALTER TABLE product_unit_conversions ADD COLUMN purchase_rate REAL NOT NULL DEFAULT 0")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE product_unit_conversions ADD COLUMN sales_rate REAL NOT NULL DEFAULT 0")
+        .execute(&pool)
+        .await;
+
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN unit_id TEXT")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN base_quantity REAL")
+        .execute(&pool)
+        .await;
 
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_voucher_items_voucher ON voucher_items(voucher_id)",

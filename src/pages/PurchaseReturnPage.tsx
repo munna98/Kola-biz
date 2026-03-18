@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
@@ -42,21 +42,8 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
-
-interface Product {
-    id: string;
-    code: string;
-    name: string;
-    unit_id: string;
-    sales_rate: number;
-    purchase_rate: number;
-}
-
-interface Unit {
-    id: string;
-    name: string;
-    symbol: string;
-}
+import { Product, ProductUnitConversion, Unit } from '@/lib/tauri';
+import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 
 interface Party {
     id: number;
@@ -68,6 +55,7 @@ export default function PurchaseReturnPage() {
     const dispatch = useDispatch<AppDispatch>();
     const purchaseReturnState = useSelector((state: RootState) => state.purchaseReturn);
     const [products, setProducts] = useState<Product[]>([]);
+    const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
     const [parties, setParties] = useState<Party[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
@@ -75,6 +63,10 @@ export default function PurchaseReturnPage() {
     const [showListView, setShowListView] = useState(false);
     const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean } | undefined>(undefined);
     const { print } = usePrint();
+    const productUnitsByProduct = useMemo(
+        () => buildProductUnitMap(productUnitConversions),
+        [productUnitConversions]
+    );
 
     // Refs for focus management
     const formRef = useRef<HTMLFormElement>(null);
@@ -84,15 +76,17 @@ export default function PurchaseReturnPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [productsData, unitsData, accountsData, settingsData] = await Promise.all([
+                const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
+                    invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
                     // Fetch both Suppliers (Accounts Payable) and Customers (Accounts Receivable) for flexibility
                     invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Payable', 'Accounts Receivable', 'Cash', 'Bank Account'] }),
                     invoke<any>('get_voucher_settings', { voucherType: 'purchase_return' }),
                 ]);
                 setProducts(productsData);
                 setUnits(unitsData);
+                setProductUnitConversions(productUnitConversionsData);
                 if (settingsData) setVoucherSettings(settingsData);
 
                 const combinedParties = accountsData.map(acc => ({
@@ -182,21 +176,34 @@ export default function PurchaseReturnPage() {
         if (field === 'product_id') {
             const product = products.find((p) => p.id === value);
             if (product) {
+                const defaultUnitId = getDefaultProductUnitId(
+                    productUnitsByProduct[value],
+                    'purchase',
+                    product.unit_id
+                );
+                const rate = getProductUnitRate(
+                    productUnitsByProduct[value],
+                    defaultUnitId,
+                    'purchase',
+                    product.purchase_rate || 0
+                );
                 finalValue = value;
                 const updatedItems = [...purchaseReturnState.items];
                 updatedItems[index] = {
                     ...updatedItems[index],
-                    product_id: value,
-                    product_name: product.name,
-                    rate: product.purchase_rate || 0, // Use purchase rate
-                };
+                            product_id: value,
+                            product_name: product.name,
+                            unit_id: defaultUnitId,
+                            rate,
+                        };
                 dispatch(
                     updatePurchaseReturnItem({
                         index,
                         data: {
                             product_id: value,
                             product_name: product.name,
-                            rate: product.purchase_rate || 0,
+                            unit_id: defaultUnitId,
+                            rate,
                         },
                     })
                 );
@@ -204,6 +211,29 @@ export default function PurchaseReturnPage() {
                 dispatch(setPurchaseReturnHasUnsavedChanges(true));
                 return;
             }
+        }
+
+        if (field === 'unit_id') {
+            const currentItem = purchaseReturnState.items[index];
+            const productId = String(currentItem.product_id);
+            const product = products.find((p) => p.id === productId);
+            const rate = getProductUnitRate(
+                productUnitsByProduct[productId],
+                value,
+                'purchase',
+                product?.purchase_rate || currentItem.rate || 0
+            );
+            finalValue = value;
+            const updatedItems = [...purchaseReturnState.items];
+            updatedItems[index] = {
+                ...updatedItems[index],
+                unit_id: value,
+                rate
+            };
+            dispatch(updatePurchaseReturnItem({ index, data: { unit_id: value, rate } }));
+            updateTotalsWithItems(updatedItems);
+            dispatch(setPurchaseReturnHasUnsavedChanges(true));
+            return;
         }
 
         const updatedItems = [...purchaseReturnState.items];
@@ -307,6 +337,7 @@ export default function PurchaseReturnPage() {
                         discount_amount: purchaseReturnState.form.discount_amount || null,
                         items: purchaseReturnState.items.map(item => ({
                             product_id: item.product_id,
+                            unit_id: item.unit_id || null,
                             description: item.description,
                             initial_quantity: item.initial_quantity,
                             count: item.count,
@@ -331,6 +362,7 @@ export default function PurchaseReturnPage() {
                         discount_amount: purchaseReturnState.form.discount_amount || null,
                         items: purchaseReturnState.items.map(item => ({
                             product_id: item.product_id,
+                            unit_id: item.unit_id || null,
                             description: item.description,
                             initial_quantity: item.initial_quantity,
                             count: item.count,
@@ -389,6 +421,8 @@ export default function PurchaseReturnPage() {
                 dispatch(addPurchaseReturnItem({
                     product_id: item.product_id || 0,
                     product_name: item.description, // Fallback
+                    unit_id: item.unit_id,
+                    base_quantity: item.base_quantity,
                     description: item.description,
                     initial_quantity: item.initial_quantity,
                     count: item.count,
@@ -403,9 +437,10 @@ export default function PurchaseReturnPage() {
             // Calculate totals
             const loadedItems = items.map(item => ({
                 id: `loaded-${item.id}`,
-                product_id: item.product_id || 0,
-                product_name: item.description,
-                description: item.description,
+                    product_id: item.product_id || 0,
+                    product_name: item.description,
+                    unit_id: item.unit_id,
+                    description: item.description,
                 initial_quantity: item.initial_quantity,
                 count: item.count,
                 deduction_per_unit: item.deduction_per_unit,
@@ -608,6 +643,7 @@ export default function PurchaseReturnPage() {
                         items={purchaseReturnState.items}
                         products={products}
                         units={units}
+                        productUnitsByProduct={productUnitsByProduct}
                         isReadOnly={isReadOnly}
                         onAddItem={handleAddItem}
                         onRemoveItem={handleRemoveItem}

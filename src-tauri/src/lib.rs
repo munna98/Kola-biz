@@ -34,6 +34,8 @@ pub fn run() {
             delete_product_group,
             // Products
             get_products,
+            get_all_product_unit_conversions,
+            get_product_unit_conversions,
             create_product,
             update_product,
             delete_product,

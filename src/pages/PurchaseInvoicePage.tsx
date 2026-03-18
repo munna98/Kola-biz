@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
@@ -46,14 +46,8 @@ import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialo
 import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
 import SupplierDialog from '@/components/dialogs/SupplierDialog';
 import ProductDialog from '@/components/dialogs/ProductDialog';
-import { ProductGroup, Unit } from '@/lib/tauri';
-interface Product {
-  id: string;
-  code: string;
-  name: string;
-  unit_id: string;
-  purchase_rate: number;
-}
+import { Product, ProductGroup, ProductUnitConversion, Unit } from '@/lib/tauri';
+import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 
 interface Party {
   id: number;
@@ -67,6 +61,7 @@ export default function PurchaseInvoicePage() {
   const purchaseState = useSelector((state: RootState) => state.purchaseInvoice);
   const user = useSelector((state: RootState) => state.auth.user);
   const [products, setProducts] = useState<Product[]>([]);
+  const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
@@ -93,6 +88,10 @@ export default function PurchaseInvoicePage() {
   // Create Supplier Shortcut State
   const [showCreateSupplier, setShowCreateSupplier] = useState(false);
   const [newSupplierName, setNewSupplierName] = useState('');
+  const productUnitsByProduct = useMemo(
+    () => buildProductUnitMap(productUnitConversions),
+    [productUnitConversions]
+  );
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -106,15 +105,17 @@ export default function PurchaseInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, accountsData, settingsData, groupsData] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
+          invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
           invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable', 'Cash', 'Bank Account'] }),
           invoke<any>('get_voucher_settings', { voucherType: 'purchase_invoice' }),
           invoke<ProductGroup[]>('get_product_groups'),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
+        setProductUnitConversions(productUnitConversionsData);
         if (settingsData) {
           setVoucherSettings(settingsData);
         }
@@ -212,6 +213,8 @@ export default function PurchaseInvoicePage() {
       const mappedItems = items.map(item => ({
         product_id: item.product_id,
         product_name: item.product_name,
+        unit_id: item.unit_id,
+        base_quantity: item.base_quantity,
         description: item.description || '',
         initial_quantity: item.initial_quantity,
         count: item.count,
@@ -303,21 +306,34 @@ export default function PurchaseInvoicePage() {
     if (field === 'product_id') {
       const product = products.find((p) => p.id === value);
       if (product) {
+        const defaultUnitId = getDefaultProductUnitId(
+          productUnitsByProduct[value],
+          'purchase',
+          product.unit_id
+        );
+        const rate = getProductUnitRate(
+          productUnitsByProduct[value],
+          defaultUnitId,
+          'purchase',
+          product.purchase_rate || 0
+        );
         finalValue = value;
         const updatedItems = [...purchaseState.items];
         updatedItems[index] = {
           ...updatedItems[index],
-          product_id: value,
-          product_name: product.name,
-          rate: product.purchase_rate || 0,
-        };
+            product_id: value,
+            product_name: product.name,
+            unit_id: defaultUnitId,
+            rate,
+          };
         dispatch(
           updateItem({
             index,
             data: {
               product_id: value,
               product_name: product.name,
-              rate: product.purchase_rate || 0,
+              unit_id: defaultUnitId,
+              rate,
             },
           })
         );
@@ -325,6 +341,29 @@ export default function PurchaseInvoicePage() {
         markUnsaved();
         return;
       }
+    }
+
+    if (field === 'unit_id') {
+      const currentItem = purchaseState.items[index];
+      const productId = String(currentItem.product_id);
+      const product = products.find((p) => p.id === productId);
+      const rate = getProductUnitRate(
+        productUnitsByProduct[productId],
+        value,
+        'purchase',
+        product?.purchase_rate || currentItem.rate || 0
+      );
+      finalValue = value;
+      const updatedItems = [...purchaseState.items];
+      updatedItems[index] = {
+        ...updatedItems[index],
+        unit_id: value,
+        rate
+      };
+      dispatch(updateItem({ index, data: { unit_id: value, rate } }));
+      updateTotalsWithItems(updatedItems);
+      markUnsaved();
+      return;
     }
 
     const updatedItems = [...purchaseState.items];
@@ -428,6 +467,7 @@ export default function PurchaseInvoicePage() {
             discount_amount: purchaseState.form.discount_amount || null,
             items: purchaseState.items.map(item => ({
               product_id: item.product_id,
+              unit_id: item.unit_id || null,
               description: item.description,
               initial_quantity: item.initial_quantity,
               count: item.count,
@@ -469,6 +509,7 @@ export default function PurchaseInvoicePage() {
             discount_amount: purchaseState.form.discount_amount || null,
             items: purchaseState.items.map(item => ({
               product_id: item.product_id,
+              unit_id: item.unit_id || null,
               description: item.description,
               initial_quantity: item.initial_quantity,
               count: item.count,
@@ -629,8 +670,12 @@ export default function PurchaseInvoicePage() {
   const handleCreateProductSave = async () => {
     try {
       // Refresh products
-      const productsData = await invoke<Product[]>('get_products');
+      const [productsData, productUnitConversionsData] = await Promise.all([
+        invoke<Product[]>('get_products'),
+        invoke<ProductUnitConversion[]>('get_all_product_unit_conversions')
+      ]);
       setProducts(productsData);
+      setProductUnitConversions(productUnitConversionsData);
 
       // If we have a pending row index and a name, try to find and select the new product
       if (creatingProductRowIndex !== null && newProductName) {
@@ -830,6 +875,7 @@ export default function PurchaseInvoicePage() {
             items={purchaseState.items}
             products={products}
             units={units}
+            productUnitsByProduct={productUnitsByProduct}
             isReadOnly={isReadOnly}
             onAddItem={handleAddItem}
             onRemoveItem={handleRemoveItem}

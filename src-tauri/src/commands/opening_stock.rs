@@ -3,6 +3,8 @@ use sqlx::SqlitePool;
 use tauri::State;
 use uuid::Uuid;
 
+use super::resolve_voucher_line_unit;
+
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct OpeningStock {
     pub id: String,
@@ -23,6 +25,7 @@ pub struct OpeningStockItem {
     pub product_name: String,
     pub description: Option<String>,
     pub quantity: f64, // Stored in initial_quantity
+    pub unit_id: Option<String>,
     pub rate: f64,
     pub amount: f64,
 }
@@ -30,6 +33,7 @@ pub struct OpeningStockItem {
 #[derive(Deserialize)]
 pub struct CreateOpeningStockItem {
     pub product_id: String,
+    pub unit_id: Option<String>,
     pub description: Option<String>,
     pub quantity: f64,
     pub rate: f64,
@@ -134,6 +138,7 @@ pub async fn get_opening_stock_items(
             p.name as product_name,
             vi.description,
             vi.initial_quantity as quantity,
+            vi.unit_id,
             vi.rate,
             vi.amount
          FROM voucher_items vi
@@ -182,17 +187,27 @@ pub async fn create_opening_stock(
     // Insert items and stock movements
     for item in &data.items {
         let item_id = Uuid::now_v7().to_string();
+        let unit_snapshot = resolve_voucher_line_unit(
+            &mut tx,
+            &item.product_id,
+            item.unit_id.as_deref(),
+            "report",
+            item.quantity,
+        )
+        .await?;
 
         // Insert voucher item
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, rate, amount)
-             VALUES (?, ?, ?, ?, ?, 0, ?, ?)" // count is 0 because we just use initial_quantity
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, unit_id, base_quantity, rate, amount)
+             VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)" // count is 0 because we just use initial_quantity
         )
         .bind(&item_id)
         .bind(&voucher_id)
         .bind(&item.product_id)
         .bind(&item.description)
-        .bind(item.quantity)
+        .bind(unit_snapshot.base_quantity)
+        .bind(&unit_snapshot.unit_id)
+        .bind(unit_snapshot.base_quantity)
         .bind(item.rate)
         .bind(item.amount)
         .execute(&mut *tx)
@@ -318,17 +333,27 @@ pub async fn update_opening_stock(
     // Re-insert items and stock movements
     for item in &data.items {
         let item_id = Uuid::now_v7().to_string();
+        let unit_snapshot = resolve_voucher_line_unit(
+            &mut tx,
+            &item.product_id,
+            item.unit_id.as_deref(),
+            "report",
+            item.quantity,
+        )
+        .await?;
 
         // Insert voucher item
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, rate, amount)
-             VALUES (?, ?, ?, ?, ?, 0, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, unit_id, base_quantity, rate, amount)
+             VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)"
         )
         .bind(&item_id)
         .bind(&id)
         .bind(&item.product_id)
         .bind(&item.description)
-        .bind(item.quantity)
+        .bind(unit_snapshot.base_quantity)
+        .bind(&unit_snapshot.unit_id)
+        .bind(unit_snapshot.base_quantity)
         .bind(item.rate)
         .bind(item.amount)
         .execute(&mut *tx)

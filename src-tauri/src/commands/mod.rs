@@ -16,6 +16,7 @@ pub mod reports;
 pub mod sales_returns;
 pub mod settings;
 pub mod templates;
+pub mod voucher_units;
 
 pub use accounts::*;
 pub use allocations::*;
@@ -35,3 +36,4 @@ pub use reports::*;
 pub use sales_returns::*;
 pub use settings::*;
 pub use templates::*;
+pub use voucher_units::*;

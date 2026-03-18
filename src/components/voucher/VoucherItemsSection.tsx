@@ -2,6 +2,7 @@ import React, { useMemo, useRef, useImperativeHandle } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { IconTrash } from '@tabler/icons-react';
 import { VoucherItemsTable } from '@/components/voucher/VoucherItemsTable';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
@@ -41,6 +42,7 @@ export interface ColumnSettings {
 export interface VoucherItemsSectionProps {
     items: any[];
     products: Product[];
+    productUnitsByProduct?: Record<string, any[]>;
     units: Unit[];
     isReadOnly: boolean;
     onAddItem: () => void;
@@ -77,6 +79,7 @@ const DEFAULT_COLUMNS: ColumnSettings[] = [
 export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, VoucherItemsSectionProps>(({
     items,
     products,
+    productUnitsByProduct,
     units,
     isReadOnly,
     onAddItem,
@@ -94,7 +97,8 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     // Ref to the first product combobox
     const firstProductRef = useRef<HTMLButtonElement>(null);
 
-
+    // Refs for quantity inputs (one per row)
+    const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
 
     // Expose methods to parent component
     useImperativeHandle(ref, () => ({
@@ -157,7 +161,8 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
         >
             {items.map((item, idx) => {
                 const calc = getItemAmount(item);
-                const product = products.find(p => p.id === item.product_id);
+                const product = products.find(p => String(p.id) === String(item.product_id));
+                const productUnits = product ? (productUnitsByProduct?.[product.id] ?? []) : [];
 
                 // Handle number input changes safely
                 const handleNumberChange = (field: string, val: string) => {
@@ -176,21 +181,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     onChange={(value) => {
                                         onUpdateItem(idx, 'product_id', value);
 
-                                        // Auto-focus next input after product selection
+                                        // Auto-focus quantity input after product selection
                                         setTimeout(() => {
-                                            const row = document.querySelector(`[data-row-index="${idx}"]`);
-                                            if (row) {
-                                                const inputs = Array.from(row.querySelectorAll('input:not([disabled]), button:not([disabled])')) as HTMLElement[];
-                                                const comboIndex = inputs.findIndex(el => el.getAttribute('role') === 'combobox');
-                                                const nextIndex = comboIndex >= 0 ? comboIndex + 1 : 1;
-
-                                                if (nextIndex < inputs.length) {
-                                                    const nextInput = inputs[nextIndex];
-                                                    nextInput?.focus();
-                                                    if (nextInput instanceof HTMLInputElement) {
-                                                        nextInput.select();
-                                                    }
-                                                }
+                                            if (quantityRefs.current[idx]) {
+                                                quantityRefs.current[idx]?.focus();
+                                                quantityRefs.current[idx]?.select();
                                             }
                                         }, 100);
                                     }}
@@ -212,7 +207,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             return (
                                 <Input
                                     key={col.id}
-
+                                    ref={el => { quantityRefs.current[idx] = el; }}
                                     type="number"
                                     value={item.initial_quantity || ''}
                                     onChange={(e) => handleNumberChange('initial_quantity', e.target.value)}
@@ -224,14 +219,74 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             );
                         case 'unit':
                             return (
-                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-medium text-muted-foreground">
-                                    {units.find(u => u.id === product?.unit_id)?.symbol || '-'}
-                                </div>
+                                <Select
+                                    key={col.id}
+                                    value={item.unit_id ? String(item.unit_id) : (product?.unit_id ? String(product.unit_id) : '')}
+                                    onValueChange={(value) => {
+                                        onUpdateItem(idx, 'unit_id', value);
+                                        // Auto-focus next visible input after unit selection
+                                        setTimeout(() => {
+                                            const row = document.querySelector(`[data-row-index="${idx}"]`);
+                                            if (row) {
+                                                const inputs = Array.from(row.querySelectorAll('input:not([disabled]), button:not([disabled])')) as HTMLElement[];
+                                                const unitTriggerIndex = inputs.findIndex(el => el.getAttribute('data-unit-trigger') === 'true');
+                                                if (unitTriggerIndex >= 0 && unitTriggerIndex + 1 < inputs.length) {
+                                                    const nextInput = inputs[unitTriggerIndex + 1];
+                                                    nextInput?.focus();
+                                                    if (nextInput instanceof HTMLInputElement) {
+                                                        nextInput.select();
+                                                    }
+                                                }
+                                            }
+                                        }, 10);
+                                    }}
+                                    disabled={isReadOnly || !product || productUnits.length === 0}
+                                >
+                                    <SelectTrigger
+                                        className="h-7 w-full text-xs font-medium"
+                                        data-unit-trigger="true"
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault();
+                                                e.stopPropagation(); // Stop row-level navigation jumping
+                                                const row = document.querySelector(`[data-row-index="${idx}"]`);
+                                                if (row) {
+                                                    const inputs = Array.from(row.querySelectorAll('input:not([disabled]), button:not([disabled])')) as HTMLElement[];
+                                                    const unitTriggerIndex = inputs.findIndex(el => el === e.currentTarget);
+                                                    if (unitTriggerIndex >= 0 && unitTriggerIndex + 1 < inputs.length) {
+                                                        const nextInput = inputs[unitTriggerIndex + 1];
+                                                        nextInput?.focus();
+                                                        if (nextInput instanceof HTMLInputElement) {
+                                                            nextInput.select();
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }}
+                                    >
+                                        <SelectValue placeholder="Unit" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {productUnits.length > 0 ? productUnits.map((conversion) => {
+                                            const unit = units.find(u => u.id === conversion.unit_id);
+                                            return (
+                                                <SelectItem key={conversion.id} value={String(conversion.unit_id)}>
+                                                    {unit ? `${unit.name} (${unit.symbol})` : conversion.unit_symbol}
+                                                </SelectItem>
+                                            );
+                                        }) : (
+                                            <SelectItem value={product?.unit_id ? String(product.unit_id) : 'none'} disabled>
+                                                {units.find(u => u.id === (item.unit_id || product?.unit_id))?.symbol || '-'}
+                                            </SelectItem>
+                                        )}
+                                    </SelectContent>
+                                </Select>
                             );
                         case 'rate':
                             return (
                                 <Input
                                     key={col.id}
+                                    data-field="rate"
                                     type="number"
                                     value={item.rate || ''}
                                     onChange={(e) => handleNumberChange('rate', e.target.value)}

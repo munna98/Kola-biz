@@ -36,6 +36,31 @@ export interface Product {
   mrp: number;
   is_active: number;
   created_at: string;
+  has_transactions: boolean;
+}
+
+export interface ProductUnitConversion {
+  id: string;
+  product_id: string;
+  unit_id: string;
+  factor_to_base: number;
+  purchase_rate: number;
+  sales_rate: number;
+  is_default_sale: number;
+  is_default_purchase: number;
+  is_default_report: number;
+  unit_name: string;
+  unit_symbol: string;
+}
+
+export interface CreateProductUnitConversion {
+  unit_id: string;
+  factor_to_base: number;
+  purchase_rate: number;
+  sales_rate: number;
+  is_default_sale: boolean;
+  is_default_purchase: boolean;
+  is_default_report: boolean;
 }
 
 export interface CreateProduct {
@@ -46,6 +71,7 @@ export interface CreateProduct {
   purchase_rate: number;
   sales_rate: number;
   mrp: number;
+  conversions?: CreateProductUnitConversion[];
 }
 
 export interface Customer {
@@ -185,6 +211,8 @@ export const api = {
   },
   products: {
     list: () => invoke<Product[]>('get_products'),
+    listUnitConversions: (productId: string) => invoke<ProductUnitConversion[]>('get_product_unit_conversions', { productId }),
+    listAllUnitConversions: () => invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
     listDeleted: () => invoke<Product[]>('get_deleted_products'),
     create: (data: CreateProduct) => invoke<Product>('create_product', { product: data }),
     update: (id: string, data: CreateProduct) => invoke<void>('update_product', { id, product: data }),

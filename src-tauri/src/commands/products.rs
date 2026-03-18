@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::{Sqlite, SqlitePool, Transaction};
 
 use tauri::State;
 use uuid::Uuid;
@@ -197,6 +197,38 @@ pub struct Product {
     pub mrp: f64,
     pub is_active: i64,
     pub created_at: String,
+    pub has_transactions: bool,
+}
+
+#[derive(Serialize, Deserialize, sqlx::FromRow, Clone)]
+pub struct ProductUnitConversion {
+    pub id: String,
+    pub product_id: String,
+    pub unit_id: String,
+    pub factor_to_base: f64,
+    pub purchase_rate: f64,
+    pub sales_rate: f64,
+    pub is_default_sale: i64,
+    pub is_default_purchase: i64,
+    pub is_default_report: i64,
+    pub unit_name: String,
+    pub unit_symbol: String,
+}
+
+#[derive(Deserialize, Clone)]
+pub struct ProductUnitConversionInput {
+    pub unit_id: String,
+    pub factor_to_base: f64,
+    #[serde(default)]
+    pub purchase_rate: f64,
+    #[serde(default)]
+    pub sales_rate: f64,
+    #[serde(default)]
+    pub is_default_sale: bool,
+    #[serde(default)]
+    pub is_default_purchase: bool,
+    #[serde(default)]
+    pub is_default_report: bool,
 }
 
 #[derive(Deserialize)]
@@ -208,12 +240,202 @@ pub struct CreateProduct {
     pub purchase_rate: f64,
     pub sales_rate: f64,
     pub mrp: f64,
+    #[serde(default)]
+    pub conversions: Vec<ProductUnitConversionInput>,
+}
+
+fn normalize_product_unit_conversions(
+    base_unit_id: &str,
+    base_purchase_rate: f64,
+    base_sales_rate: f64,
+    conversions: &[ProductUnitConversionInput],
+) -> Vec<ProductUnitConversionInput> {
+    let mut normalized = Vec::<ProductUnitConversionInput>::new();
+
+    for conversion in conversions {
+        if conversion.unit_id.trim().is_empty() {
+            continue;
+        }
+
+        if let Some(existing) = normalized.iter_mut().find(|item| item.unit_id == conversion.unit_id) {
+            *existing = conversion.clone();
+        } else {
+            normalized.push(conversion.clone());
+        }
+    }
+
+    if let Some(base_row) = normalized.iter_mut().find(|item| item.unit_id == base_unit_id) {
+        base_row.factor_to_base = 1.0;
+        base_row.purchase_rate = base_purchase_rate;
+        base_row.sales_rate = base_sales_rate;
+    } else {
+        normalized.push(ProductUnitConversionInput {
+            unit_id: base_unit_id.to_string(),
+            factor_to_base: 1.0,
+            purchase_rate: base_purchase_rate,
+            sales_rate: base_sales_rate,
+            is_default_sale: normalized.is_empty(),
+            is_default_purchase: normalized.is_empty(),
+            is_default_report: normalized.is_empty(),
+        });
+    }
+
+    if normalized.len() == 1 {
+        normalized[0].is_default_sale = true;
+        normalized[0].is_default_purchase = true;
+        normalized[0].is_default_report = true;
+    }
+
+    if !normalized.iter().any(|item| item.is_default_sale) {
+        if let Some(base_row) = normalized.iter_mut().find(|item| item.unit_id == base_unit_id) {
+            base_row.is_default_sale = true;
+        }
+    }
+    if !normalized.iter().any(|item| item.is_default_purchase) {
+        if let Some(base_row) = normalized.iter_mut().find(|item| item.unit_id == base_unit_id) {
+            base_row.is_default_purchase = true;
+        }
+    }
+    if !normalized.iter().any(|item| item.is_default_report) {
+        if let Some(base_row) = normalized.iter_mut().find(|item| item.unit_id == base_unit_id) {
+            base_row.is_default_report = true;
+        }
+    }
+
+    let mut sale_taken = false;
+    let mut purchase_taken = false;
+    let mut report_taken = false;
+    for conversion in &mut normalized {
+        if conversion.is_default_sale {
+            if sale_taken {
+                conversion.is_default_sale = false;
+            } else {
+                sale_taken = true;
+            }
+        }
+        if conversion.is_default_purchase {
+            if purchase_taken {
+                conversion.is_default_purchase = false;
+            } else {
+                purchase_taken = true;
+            }
+        }
+        if conversion.is_default_report {
+            if report_taken {
+                conversion.is_default_report = false;
+            } else {
+                report_taken = true;
+            }
+        }
+    }
+
+    normalized
+}
+
+async fn replace_product_unit_conversions(
+    tx: &mut Transaction<'_, Sqlite>,
+    product_id: &str,
+    base_unit_id: &str,
+    base_purchase_rate: f64,
+    base_sales_rate: f64,
+    conversions: &[ProductUnitConversionInput],
+) -> Result<(), String> {
+    let normalized = normalize_product_unit_conversions(
+        base_unit_id,
+        base_purchase_rate,
+        base_sales_rate,
+        conversions,
+    );
+
+    sqlx::query("DELETE FROM product_unit_conversions WHERE product_id = ?")
+        .bind(product_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    for conversion in normalized {
+        sqlx::query(
+            "INSERT INTO product_unit_conversions (
+                id, product_id, unit_id, factor_to_base, purchase_rate, sales_rate, is_default_sale, is_default_purchase, is_default_report
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(product_id)
+        .bind(&conversion.unit_id)
+        .bind(conversion.factor_to_base)
+        .bind(conversion.purchase_rate)
+        .bind(conversion.sales_rate)
+        .bind(if conversion.is_default_sale { 1 } else { 0 })
+        .bind(if conversion.is_default_purchase { 1 } else { 0 })
+        .bind(if conversion.is_default_report { 1 } else { 0 })
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_all_product_unit_conversions(
+    pool: State<'_, SqlitePool>,
+) -> Result<Vec<ProductUnitConversion>, String> {
+    sqlx::query_as::<_, ProductUnitConversion>(
+        "SELECT
+            puc.id,
+            puc.product_id,
+            puc.unit_id,
+            puc.factor_to_base,
+            puc.purchase_rate,
+            puc.sales_rate,
+            puc.is_default_sale,
+            puc.is_default_purchase,
+            puc.is_default_report,
+            u.name as unit_name,
+            u.symbol as unit_symbol
+         FROM product_unit_conversions puc
+         JOIN units u ON puc.unit_id = u.id
+         ORDER BY puc.product_id, puc.factor_to_base ASC, u.name ASC",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_product_unit_conversions(
+    pool: State<'_, SqlitePool>,
+    product_id: String,
+) -> Result<Vec<ProductUnitConversion>, String> {
+    sqlx::query_as::<_, ProductUnitConversion>(
+        "SELECT
+            puc.id,
+            puc.product_id,
+            puc.unit_id,
+            puc.factor_to_base,
+            puc.purchase_rate,
+            puc.sales_rate,
+            puc.is_default_sale,
+            puc.is_default_purchase,
+            puc.is_default_report,
+            u.name as unit_name,
+            u.symbol as unit_symbol
+         FROM product_unit_conversions puc
+         JOIN units u ON puc.unit_id = u.id
+         WHERE puc.product_id = ?
+         ORDER BY puc.factor_to_base ASC, u.name ASC",
+    )
+    .bind(product_id)
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn get_products(pool: State<'_, SqlitePool>) -> Result<Vec<Product>, String> {
     sqlx::query_as::<_, Product>(
-        "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, is_active, created_at 
+        "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, is_active, created_at,
+                EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions
          FROM products
          WHERE deleted_at IS NULL 
          ORDER BY created_at DESC",
@@ -229,6 +451,7 @@ pub async fn create_product(
     product: CreateProduct,
 ) -> Result<Product, String> {
     let id = Uuid::now_v7().to_string();
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     sqlx::query(
         "INSERT INTO products (id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp) 
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -240,17 +463,30 @@ pub async fn create_product(
         product.code
     })
     .bind(&product.name)
-    .bind(product.group_id)
-    .bind(product.unit_id)
+    .bind(product.group_id.clone())
+    .bind(&product.unit_id)
     .bind(product.purchase_rate)
     .bind(product.sales_rate)
     .bind(product.mrp)
-    .execute(pool.inner())
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
+    replace_product_unit_conversions(
+        &mut tx,
+        &id,
+        &product.unit_id,
+        product.purchase_rate,
+        product.sales_rate,
+        &product.conversions,
+    )
+    .await?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
     sqlx::query_as::<_, Product>(
-        "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, is_active, created_at 
+        "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, is_active, created_at,
+                EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions
          FROM products WHERE id = ?",
     )
     .bind(id)
@@ -265,6 +501,32 @@ pub async fn update_product(
     id: String,
     product: CreateProduct,
 ) -> Result<(), String> {
+    let existing_unit_id: Option<String> =
+        sqlx::query_scalar("SELECT unit_id FROM products WHERE id = ?")
+            .bind(&id)
+            .fetch_optional(pool.inner())
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if let Some(current_unit_id) = existing_unit_id {
+        if current_unit_id != product.unit_id {
+            let ref_count: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM voucher_items WHERE product_id = ?")
+                    .bind(&id)
+                    .fetch_one(pool.inner())
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+            if ref_count > 0 {
+                return Err(
+                    "Cannot change the product unit after transactions exist for this product."
+                        .to_string(),
+                );
+            }
+        }
+    }
+
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     sqlx::query(
         "UPDATE products 
          SET code = ?, name = ?, group_id = ?, unit_id = ?, purchase_rate = ?, sales_rate = ?, mrp = ?, updated_at = CURRENT_TIMESTAMP 
@@ -273,14 +535,26 @@ pub async fn update_product(
     .bind(&product.code)
     .bind(&product.name)
     .bind(product.group_id)
-    .bind(product.unit_id)
+    .bind(&product.unit_id)
     .bind(product.purchase_rate)
     .bind(product.sales_rate)
     .bind(product.mrp)
-    .bind(id)
-    .execute(pool.inner())
+    .bind(&id)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
+
+    replace_product_unit_conversions(
+        &mut tx,
+        &id,
+        &product.unit_id,
+        product.purchase_rate,
+        product.sales_rate,
+        &product.conversions,
+    )
+    .await?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -332,7 +606,8 @@ pub async fn delete_product(
 #[tauri::command]
 pub async fn get_deleted_products(pool: State<'_, SqlitePool>) -> Result<Vec<Product>, String> {
     sqlx::query_as::<_, Product>(
-        "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, is_active, created_at 
+        "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, is_active, created_at,
+                EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions
          FROM products
          WHERE deleted_at IS NOT NULL 
          ORDER BY deleted_at DESC",
