@@ -4,6 +4,7 @@ pub mod license;
 mod seeds;
 pub mod template_engine; // Public so commands can use it
 pub mod utils;
+pub mod voucher_seq; // Shared voucher number generation
 
 use commands::*;
 use tauri::Manager;
@@ -222,6 +223,10 @@ pub fn run() {
             save_voucher_settings,
             reset_database_data,
             execute_raw_query,
+            // Voucher Sequence Management
+            list_voucher_sequences,
+            update_voucher_sequence,
+            preview_voucher_number,
             // Opening Stock
             commands::opening_stock::get_opening_stocks,
             commands::opening_stock::get_opening_stock,

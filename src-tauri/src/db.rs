@@ -493,18 +493,180 @@ pub async fn init_db(
             .execute(&pool)
             .await;
 
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_voucher_items_voucher ON voucher_items(voucher_id)",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_voucher_items_product ON voucher_items(product_id)",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Migration: Add discount_percent to voucher_items if not exists
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN discount_percent REAL DEFAULT 0")
+        .execute(&pool)
+        .await;
+
+    // Migration: Add discount_amount to voucher_items if not exists
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN discount_amount REAL DEFAULT 0")
+        .execute(&pool)
+        .await;
+
+    // Journal Entries (Ledger Postings)
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS journal_entries (
+            id TEXT PRIMARY KEY,
+            voucher_id TEXT NOT NULL,
+            account_id TEXT NOT NULL,
+            debit REAL DEFAULT 0,
+            credit REAL DEFAULT 0,
+            is_manual INTEGER DEFAULT 0,
+            narration TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+            FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_voucher ON journal_entries(voucher_id)")
+        .execute(&pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_account ON journal_entries(account_id)")
+        .execute(&pool)
+        .await?;
+
+    // Stock Movements
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS stock_movements (
+            id TEXT PRIMARY KEY,
+            voucher_id TEXT NOT NULL,
+            product_id TEXT NOT NULL,
+            movement_type TEXT NOT NULL,
+            quantity REAL NOT NULL,
+            count INTEGER DEFAULT 0,
+            rate REAL NOT NULL,
+            amount REAL NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_stock_movements_voucher ON stock_movements(voucher_id)",
+    )
+    .execute(&pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id)",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Payment/Receipt Allocations
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS payment_allocations (
+            id TEXT PRIMARY KEY,
+            payment_voucher_id TEXT NOT NULL,
+            invoice_voucher_id TEXT NOT NULL,
+            allocated_amount REAL NOT NULL,
+            allocation_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            remarks TEXT,
+            party_id TEXT,
+            party_type TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (payment_voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+            FOREIGN KEY (invoice_voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_payment ON payment_allocations(payment_voucher_id)").execute(&pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_invoice ON payment_allocations(invoice_voucher_id)").execute(&pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_party ON payment_allocations(party_id, party_type)").execute(&pool).await?;
+
+    // ==================== SETTINGS & CONFIG ====================
+
+    // Invoice Templates
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS invoice_templates (
+            id TEXT PRIMARY KEY,
+            template_number TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            description TEXT,
+            voucher_type TEXT NOT NULL,
+            template_format TEXT NOT NULL,
+            design_mode TEXT NOT NULL,
+            layout_config TEXT,
+            header_html TEXT,
+            body_html TEXT,
+            footer_html TEXT,
+            styles_css TEXT,
+            show_logo INTEGER DEFAULT 1,
+            show_company_address INTEGER DEFAULT 1,
+            show_party_address INTEGER DEFAULT 1,
+            show_bank_details INTEGER DEFAULT 1,
+            show_gstin INTEGER DEFAULT 1,
+            show_item_images INTEGER DEFAULT 0,
+            show_item_hsn INTEGER DEFAULT 0,
+            show_qr_code INTEGER DEFAULT 0,
+            show_signature INTEGER DEFAULT 1,
+            show_terms INTEGER DEFAULT 1,
+            show_less_column INTEGER DEFAULT 1,
+            auto_print INTEGER DEFAULT 0,
+            copies INTEGER DEFAULT 1,
+            is_default INTEGER DEFAULT 0,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Migration: Add show_less_column if not exists
+    let _ =
+        sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_less_column INTEGER DEFAULT 1")
+            .execute(&pool)
+            .await;
+
     // Voucher Sequences
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS voucher_sequences (
             id TEXT PRIMARY KEY,
             voucher_type TEXT UNIQUE NOT NULL,
-            prefix TEXT NOT NULL,
+            prefix TEXT NOT NULL DEFAULT '',
+            suffix TEXT NOT NULL DEFAULT '',
+            separator TEXT NOT NULL DEFAULT '-',
             next_number INTEGER DEFAULT 1,
-            padding INTEGER DEFAULT 4
+            padding INTEGER DEFAULT 4,
+            include_financial_year INTEGER DEFAULT 0,
+            reset_yearly INTEGER DEFAULT 0
         )",
     )
     .execute(&pool)
     .await?;
+
+    // Migrations: add new columns to voucher_sequences if not exists
+    let _ = sqlx::query("ALTER TABLE voucher_sequences ADD COLUMN suffix TEXT NOT NULL DEFAULT ''")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE voucher_sequences ADD COLUMN separator TEXT NOT NULL DEFAULT '-'")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE voucher_sequences ADD COLUMN include_financial_year INTEGER DEFAULT 0")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE voucher_sequences ADD COLUMN reset_yearly INTEGER DEFAULT 0")
+        .execute(&pool)
+        .await;
 
     sqlx::query(
         "INSERT OR IGNORE INTO voucher_sequences (id, voucher_type, prefix) VALUES

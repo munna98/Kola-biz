@@ -36,6 +36,7 @@ import LoginPage from './pages/LoginPage';
 // import InitialSetupPage from './pages/InitialSetupPage'; // Removed
 import CompanySetupPage from './pages/CompanySetupPage';
 import VoucherSettingsPage from './pages/VoucherSettingsPage';
+import VoucherSequencesPage from './pages/settings/VoucherSequencesPage';
 import UsersPage from './pages/UsersPage';
 
 import CompanyProfilePage from './pages/settings/CompanyProfilePage';
@@ -180,6 +181,7 @@ function AppContent() {
       case 'company_profile': return <CompanyProfilePage />;
       case 'invoice_settings': return <InvoiceTemplatesPage />;
       case 'voucher_settings': return <VoucherSettingsPage />;
+      case 'voucher_sequences': return <VoucherSequencesPage />;
       case 'license': return <LicensePage />;
       case 'users': return <UsersPage />;
       case 'barcode_settings': return <BarcodeSettingsPage />;

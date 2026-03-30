@@ -119,6 +119,7 @@ export default function Topbar() {
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('company_profile')}>Company Profile</NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('invoice_settings')}>Invoice Settings</NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('voucher_settings')}>Voucher Settings</NavigationMenuLink>
+                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('voucher_sequences')}>Voucher Numbering</NavigationMenuLink>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('barcode_settings')}>Barcode Settings</NavigationMenuLink>
                                 <div className="border-t my-1"></div>
                                 <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('users')}>Users</NavigationMenuLink>

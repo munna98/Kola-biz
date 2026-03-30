@@ -1,9 +1,10 @@
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::State;
 use uuid::Uuid;
 
 use super::resolve_voucher_line_unit;
+use crate::voucher_seq::get_next_voucher_number;
 
 // ============= PURCHASE RETURN =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -75,31 +76,6 @@ pub struct CreatePurchaseReturn {
     pub items: Vec<CreatePurchaseReturnItem>,
 }
 
-async fn get_next_voucher_number(pool: &SqlitePool, voucher_type: &str) -> Result<String, String> {
-    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-
-    let seq = sqlx::query_as::<_, (String, i64)>(
-        "SELECT prefix, next_number FROM voucher_sequences WHERE voucher_type = ?",
-    )
-    .bind(voucher_type)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let voucher_no = format!("{}-{:04}", seq.0, seq.1);
-
-    sqlx::query(
-        "UPDATE voucher_sequences SET next_number = next_number + 1 WHERE voucher_type = ?",
-    )
-    .bind(voucher_type)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    tx.commit().await.map_err(|e| e.to_string())?;
-
-    Ok(voucher_no)
-}
 
 #[tauri::command]
 pub async fn get_purchase_returns(

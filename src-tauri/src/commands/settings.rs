@@ -498,3 +498,91 @@ pub async fn execute_raw_query(
         })
     }
 }
+
+// ============= VOUCHER SEQUENCES =============
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct VoucherSequence {
+    pub id: String,
+    pub voucher_type: String,
+    pub prefix: String,
+    pub next_number: i64,
+    pub padding: i64,
+    pub suffix: Option<String>,
+    pub separator: String,
+    pub include_financial_year: bool,
+    pub reset_yearly: bool,
+}
+
+#[tauri::command]
+pub async fn list_voucher_sequences(
+    pool: State<'_, SqlitePool>,
+) -> Result<Vec<VoucherSequence>, String> {
+    sqlx::query_as::<_, VoucherSequence>(
+        "SELECT * FROM voucher_sequences ORDER BY voucher_type ASC",
+    )
+    .fetch_all(pool.inner())
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[derive(Deserialize)]
+pub struct UpdateVoucherSequence {
+    pub prefix: String,
+    pub next_number: i64,
+    pub padding: i64,
+    pub suffix: Option<String>,
+    pub separator: String,
+    pub include_financial_year: bool,
+    pub reset_yearly: bool,
+}
+
+#[tauri::command]
+pub async fn update_voucher_sequence(
+    pool: State<'_, SqlitePool>,
+    id: String,
+    data: UpdateVoucherSequence,
+) -> Result<(), String> {
+    sqlx::query(
+        "UPDATE voucher_sequences 
+         SET prefix = ?, next_number = ?, padding = ?, suffix = ?, separator = ?, include_financial_year = ?, reset_yearly = ?
+         WHERE id = ?",
+    )
+    .bind(&data.prefix)
+    .bind(data.next_number)
+    .bind(data.padding)
+    .bind(&data.suffix)
+    .bind(&data.separator)
+    .bind(data.include_financial_year)
+    .bind(data.reset_yearly)
+    .bind(&id)
+    .execute(pool.inner())
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn preview_voucher_number(
+    _pool: State<'_, SqlitePool>,
+    data: UpdateVoucherSequence,
+) -> Result<String, String> {
+    let mut prefix_part = data.prefix.clone();
+    if data.include_financial_year {
+        prefix_part.push_str(&data.separator);
+        prefix_part.push_str(&crate::voucher_seq::current_financial_year());
+    }
+
+    let padded_num = format!("{:0width$}", data.next_number, width = data.padding as usize);
+    let mut result = format!("{}{}{}", prefix_part, data.separator, padded_num);
+    
+    if let Some(s) = &data.suffix {
+        if !s.is_empty() {
+            result.push_str(&data.separator);
+            result.push_str(s);
+        }
+    }
+
+    Ok(result)
+}
