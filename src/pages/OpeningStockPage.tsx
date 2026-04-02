@@ -112,7 +112,6 @@ export default function OpeningStockPage() {
 
             items.forEach(item => {
                 dispatch(addOpeningStockItem({
-        insertAt,
                     id: item.id,
                     product_id: item.product_id,
                     product_name: item.product_name,
@@ -254,6 +253,7 @@ export default function OpeningStockPage() {
 
     const handleAddItem = (insertAt?: number) => {
         dispatch(addOpeningStockItem({
+            insertAt,
             product_id: '',
             product_name: '',
             description: '',
