@@ -126,7 +126,7 @@ export default function SalesReturnPage() {
         }
     }, [salesReturnState.mode, products.length]);
 
-    const handleAddItem = () => {
+    const handleAddItem = (insertAt?: number) => {
         // Get defaults from settings
         const getDesc = (id: string) => {
             const col = voucherSettings?.columns.find(c => c.id === id);
@@ -144,6 +144,7 @@ export default function SalesReturnPage() {
 
         dispatch(
             addSalesReturnItem({
+        insertAt,
                 product_id: 0,
                 product_name: '',
                 description: '',

@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
-import { IconTrash } from '@tabler/icons-react';
+import { IconTrash, IconPlus } from '@tabler/icons-react';
 import { VoucherItemsTable } from '@/components/voucher/VoucherItemsTable';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 
@@ -16,7 +16,7 @@ export interface VoucherJournalSectionProps {
     lines: any[];
     accounts: LedgerAccount[];
     isReadOnly: boolean;
-    onAddLine: () => void;
+    onAddLine: (index?: number) => void;
     onRemoveLine: (index: number) => void;
     onUpdateLine: (index: number, field: string, value: any) => void;
     header?: React.ReactNode;
@@ -52,7 +52,7 @@ export function VoucherJournalSection({
             <div className="col-span-2 text-right">Debit (Dr)</div>
             <div className="col-span-2 text-right">Credit (Cr)</div>
             <div className="col-span-3">Line Narration</div>
-            <div className="w-8"></div>
+            <div className="w-16"></div>
         </div>
     );
 
@@ -67,7 +67,7 @@ export function VoucherJournalSection({
                 <div
                     key={line.id || index}
                     data-row-index={index}
-                    className="grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50"
+                    className="group grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50"
                     onKeyDown={(e) => handleRowKeyDown(e, index)}
                 >
                     {/* Account */}
@@ -132,7 +132,18 @@ export function VoucherJournalSection({
                     </div>
 
                     {/* Delete */}
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onAddLine(index + 1)}
+                            className="h-6 w-6 p-0"
+                            title="Insert Line Below"
+                            disabled={isReadOnly}
+                        >
+                            <IconPlus size={14} />
+                        </Button>
                         <Button
                             type="button"
                             variant="ghost"

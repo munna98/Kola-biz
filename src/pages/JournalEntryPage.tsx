@@ -227,9 +227,10 @@ export default function JournalEntryPage() {
         dispatch(setJournalTotals(calculateTotals(updatedLines)));
     };
 
-    const handleAddLine = () => {
+    const handleAddLine = (insertAt?: number) => {
 
         dispatch(addJournalLine({
+        insertAt,
             account_id: 0,
             account_name: '',
             debit: 0,

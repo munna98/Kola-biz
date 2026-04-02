@@ -194,9 +194,10 @@ export default function OpeningBalancePage() {
         dispatch(setOpeningBalanceTotals(calculateTotals(updatedLines)));
     };
 
-    const handleAddLine = () => {
+    const handleAddLine = (insertAt?: number) => {
 
         dispatch(addOpeningBalanceLine({
+        insertAt,
             account_id: 0,
             account_name: '',
             debit: 0,

@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { IconTrash } from '@tabler/icons-react';
+import { IconTrash, IconPlus } from '@tabler/icons-react';
 import { VoucherItemsTable } from '@/components/voucher/VoucherItemsTable';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { cn } from '@/lib/utils';
@@ -46,7 +46,7 @@ export interface VoucherItemsSectionProps {
     productUnitsByProduct?: Record<string, any[]>;
     units: Unit[];
     isReadOnly: boolean;
-    onAddItem: () => void;
+    onAddItem: (index?: number) => void;
     onRemoveItem: (index: number) => void;
     onUpdateItem: (index: number, field: string, value: any) => void;
     getItemAmount: (item: any) => ItemAmount;
@@ -129,7 +129,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
             if (col.id === 'product') return '3fr';
             if (['deduction', 'amount', 'discount_percent', 'discount_amount', 'tax_rate'].includes(col.id)) return '0.6fr';
             return '1fr';
-        }).join(' ') + ' 32px'; // w-8 equivalent for delete button
+        }).join(' ') + ' 64px'; // w-16 equivalent for 2 action buttons
     };
 
     const gridStyle = {
@@ -174,7 +174,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                     {col.label}
                 </div>
             ))}
-            <div className="w-8"></div>
+            <div className="w-16"></div>
         </div>
     );
 
@@ -401,12 +401,23 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                         key={item.id || idx}
                         data-row-index={idx}
                         style={gridStyle}
-                        className="px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50 border-b last:border-0"
+                        className="group px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50 border-b last:border-0"
                         onKeyDown={(e) => handleRowKeyDown(e, idx)}
                     >
                         {columns.map(col => renderCell(col))}
 
-                        <div className="flex justify-end">
+                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
+                            <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => onAddItem(idx + 1)}
+                                className="h-6 w-6 p-0"
+                                title="Insert Item Below"
+                                disabled={isReadOnly}
+                            >
+                                <IconPlus size={14} />
+                            </Button>
                             <Button
                                 type="button"
                                 variant="ghost"

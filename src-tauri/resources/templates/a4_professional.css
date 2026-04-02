@@ -237,6 +237,7 @@ body {
 @media print {
     body { margin: 0; padding: 10mm; }
     .header { page-break-after: avoid; }
-    .items-table { page-break-inside: avoid; }
-    .totals-section { page-break-before: avoid; }
+    .items-table { page-break-after: auto; }
+    .items-table tr { page-break-inside: avoid; page-break-after: auto; }
+    .totals-section { page-break-inside: avoid; }
 }

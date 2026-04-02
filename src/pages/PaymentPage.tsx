@@ -149,8 +149,9 @@ export default function PaymentPage() {
         }
     };
 
-    const handleAddItem = () => {
-        dispatch(addPaymentItem({ description: '', amount: 0, tax_rate: 0 }));
+    const handleAddItem = (insertAt?: number) => {
+        dispatch(addPaymentItem({
+        insertAt, description: '', amount: 0, tax_rate: 0 }));
     };
 
     const handleRemoveItem = (index: number) => {

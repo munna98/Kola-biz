@@ -282,10 +282,15 @@ body {
     }
 
     .items-table {
+        page-break-after: auto;
+    }
+
+    .items-table tr {
         page-break-inside: avoid;
+        page-break-after: auto;
     }
 
     .totals-section {
-        page-break-before: avoid;
+        page-break-inside: avoid;
     }
 }

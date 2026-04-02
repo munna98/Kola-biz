@@ -149,8 +149,9 @@ export default function ReceiptPage() {
         }
     };
 
-    const handleAddItem = () => {
-        dispatch(addReceiptItem({ description: '', amount: 0, tax_rate: 0 }));
+    const handleAddItem = (insertAt?: number) => {
+        dispatch(addReceiptItem({
+        insertAt, description: '', amount: 0, tax_rate: 0 }));
     };
 
     const handleRemoveItem = (index: number) => {

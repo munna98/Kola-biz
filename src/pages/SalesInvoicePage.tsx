@@ -186,7 +186,7 @@ export default function SalesInvoicePage() {
     }
   }, [salesState.mode, products.length, salesState.items.length]);
 
-  const handleAddItem = () => {
+  const handleAddItem = (insertAt?: number) => {
     // Get defaults from settings
     const getDesc = (id: string) => {
       const col = voucherSettings?.columns.find(c => c.id === id);
@@ -204,6 +204,7 @@ export default function SalesInvoicePage() {
 
     dispatch(
       addSalesItem({
+        insertAt,
         product_id: 0,
         product_name: '',
         description: '',

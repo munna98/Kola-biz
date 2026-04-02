@@ -345,8 +345,8 @@ export default function StockJournalPage() {
         setShowPrintPreview(true);
     };
 
-    const handleAddItem = (section: JournalSection) => {
-        const payload: StockJournalItemRow = {
+    const handleAddItem = (section: JournalSection, insertAt?: number) => {
+        const payload: any = {
             product_id: '',
             product_name: '',
             description: '',
@@ -354,6 +354,7 @@ export default function StockJournalPage() {
             quantity: 0,
             rate: 0,
             amount: 0,
+            insertAt,
         };
 
         if (section === 'source') {
@@ -559,7 +560,7 @@ export default function StockJournalPage() {
                     defaultUnitKind="report"
                     addItemLabel={section === 'source' ? 'Add Source Item' : 'Add Destination Item'}
                     onProductCreate={(name, rowIndex) => handleProductCreate(section, name, rowIndex)}
-                    onAddItem={() => handleAddItem(section)}
+                    onAddItem={(idx?: number) => handleAddItem(section, idx)}
                     onRemoveItem={(index) => {
                         dispatch(removeAction(index));
                         dispatch(setStockJournalHasUnsavedChanges(true));

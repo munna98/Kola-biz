@@ -242,8 +242,13 @@ const purchaseInvoiceSlice = createSlice({
     setDiscountAmount: (state, action: PayloadAction<number>) => {
       state.form.discount_amount = action.payload;
     },
-    addItem: (state, action: PayloadAction<PurchaseInvoiceItem>) => {
-      state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
+    addItem: (state, action: PayloadAction<PurchaseInvoiceItem & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      if (insertAt !== undefined) {
+        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+      } else {
+        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+      }
     },
     updateItem: (state, action: PayloadAction<{ index: number; data: Partial<PurchaseInvoiceItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
@@ -400,8 +405,13 @@ const paymentSlice = createSlice({
     setPaymentCreatedFromInvoiceId: (state, action: PayloadAction<string | null>) => {
       state.form.created_from_invoice_id = action.payload;
     },
-    addPaymentItem: (state, action: PayloadAction<PaymentItem>) => {
-      state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
+    addPaymentItem: (state, action: PayloadAction<PaymentItem & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      if (insertAt !== undefined) {
+        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+      } else {
+        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+      }
     },
     updatePaymentItem: (state, action: PayloadAction<{ index: number; data: Partial<PaymentItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
@@ -531,8 +541,13 @@ const receiptSlice = createSlice({
     setReceiptCreatedFromInvoiceId: (state, action: PayloadAction<string | null>) => {
       state.form.created_from_invoice_id = action.payload;
     },
-    addReceiptItem: (state, action: PayloadAction<ReceiptItem>) => {
-      state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
+    addReceiptItem: (state, action: PayloadAction<ReceiptItem & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      if (insertAt !== undefined) {
+        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+      } else {
+        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+      }
     },
     updateReceiptItem: (state, action: PayloadAction<{ index: number; data: Partial<ReceiptItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
@@ -692,8 +707,13 @@ const journalEntrySlice = createSlice({
     setJournalLines: (state, action: PayloadAction<JournalEntryLine[]>) => {
       state.lines = action.payload.map(line => ({ ...line, id: line.id || `temp-${Date.now()}-${Math.random()}` }));
     },
-    addJournalLine: (state, action: PayloadAction<JournalEntryLine>) => {
-      state.lines.push({ ...action.payload, id: `temp-${Date.now()}` });
+    addJournalLine: (state, action: PayloadAction<JournalEntryLine & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      if (insertAt !== undefined) {
+        state.lines.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+      } else {
+        state.lines.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+      }
     },
     updateJournalLine: (state, action: PayloadAction<{ index: number; data: Partial<JournalEntryLine> }>) => {
       state.lines[action.payload.index] = { ...state.lines[action.payload.index], ...action.payload.data };
@@ -815,8 +835,13 @@ const openingBalanceSlice = createSlice({
     setOpeningBalanceNarration: (state, action: PayloadAction<string>) => {
       state.form.narration = action.payload;
     },
-    addOpeningBalanceLine: (state, action: PayloadAction<OpeningBalanceLine>) => {
-      state.lines.push({ ...action.payload, id: `temp-${Date.now()}` });
+    addOpeningBalanceLine: (state, action: PayloadAction<OpeningBalanceLine & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      if (insertAt !== undefined) {
+        state.lines.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+      } else {
+        state.lines.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+      }
     },
     updateOpeningBalanceLine: (state, action: PayloadAction<{ index: number; data: Partial<OpeningBalanceLine> }>) => {
       state.lines[action.payload.index] = { ...state.lines[action.payload.index], ...action.payload.data };
@@ -977,8 +1002,13 @@ const salesInvoiceSlice = createSlice({
     setSalesDiscountAmount: (state, action: PayloadAction<number>) => {
       state.form.discount_amount = action.payload;
     },
-    addSalesItem: (state, action: PayloadAction<SalesInvoiceItem>) => {
-      state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
+    addSalesItem: (state, action: PayloadAction<SalesInvoiceItem & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      if (insertAt !== undefined) {
+        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+      } else {
+        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+      }
     },
     updateSalesItem: (state, action: PayloadAction<{ index: number; data: Partial<SalesInvoiceItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
@@ -1219,8 +1249,13 @@ const purchaseReturnSlice = createSlice({
     setPurchaseReturnDiscountAmount: (state, action: PayloadAction<number>) => {
       state.form.discount_amount = action.payload;
     },
-    addPurchaseReturnItem: (state, action: PayloadAction<PurchaseReturnItem>) => {
-      state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
+    addPurchaseReturnItem: (state, action: PayloadAction<PurchaseReturnItem & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      if (insertAt !== undefined) {
+        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+      } else {
+        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+      }
     },
     updatePurchaseReturnItem: (state, action: PayloadAction<{ index: number; data: Partial<PurchaseReturnItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
@@ -1379,8 +1414,13 @@ const salesReturnSlice = createSlice({
     setSalesReturnDiscountAmount: (state, action: PayloadAction<number>) => {
       state.form.discount_amount = action.payload;
     },
-    addSalesReturnItem: (state, action: PayloadAction<SalesReturnItem>) => {
-      state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
+    addSalesReturnItem: (state, action: PayloadAction<SalesReturnItem & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      if (insertAt !== undefined) {
+        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+      } else {
+        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+      }
     },
     updateSalesReturnItem: (state, action: PayloadAction<{ index: number; data: Partial<SalesReturnItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
@@ -1504,8 +1544,13 @@ const openingStockSlice = createSlice({
     setOpeningStockNarration: (state, action: PayloadAction<string>) => {
       state.form.narration = action.payload;
     },
-    addOpeningStockItem: (state, action: PayloadAction<OpeningStockItem>) => {
-      state.items.push({ ...action.payload, id: `temp-${Date.now()}` });
+    addOpeningStockItem: (state, action: PayloadAction<OpeningStockItem & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      if (insertAt !== undefined) {
+        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+      } else {
+        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+      }
     },
     updateOpeningStockItem: (state, action: PayloadAction<{ index: number; data: Partial<OpeningStockItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
@@ -1628,8 +1673,13 @@ const stockJournalSlice = createSlice({
     setStockJournalNarration: (state, action: PayloadAction<string>) => {
       state.form.narration = action.payload;
     },
-    addStockJournalSourceItem: (state, action: PayloadAction<StockJournalItem>) => {
-      state.sourceItems.push({ ...action.payload, id: `temp-${Date.now()}` });
+    addStockJournalSourceItem: (state, action: PayloadAction<StockJournalItem & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      if (insertAt !== undefined) {
+        state.sourceItems.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+      } else {
+        state.sourceItems.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+      }
     },
     updateStockJournalSourceItem: (state, action: PayloadAction<{ index: number; data: Partial<StockJournalItem> }>) => {
       state.sourceItems[action.payload.index] = { ...state.sourceItems[action.payload.index], ...action.payload.data };
@@ -1640,8 +1690,13 @@ const stockJournalSlice = createSlice({
     setStockJournalSourceItems: (state, action: PayloadAction<StockJournalItem[]>) => {
       state.sourceItems = action.payload.map(item => ({ ...item, id: item.id || `temp-${Date.now()}-${Math.random()}` }));
     },
-    addStockJournalDestinationItem: (state, action: PayloadAction<StockJournalItem>) => {
-      state.destinationItems.push({ ...action.payload, id: `temp-${Date.now()}` });
+    addStockJournalDestinationItem: (state, action: PayloadAction<StockJournalItem & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      if (insertAt !== undefined) {
+        state.destinationItems.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+      } else {
+        state.destinationItems.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+      }
     },
     updateStockJournalDestinationItem: (state, action: PayloadAction<{ index: number; data: Partial<StockJournalItem> }>) => {
       state.destinationItems[action.payload.index] = { ...state.destinationItems[action.payload.index], ...action.payload.data };
