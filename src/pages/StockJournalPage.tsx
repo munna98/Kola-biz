@@ -632,8 +632,8 @@ export default function StockJournalPage() {
                 onSuccess={handleCreateProductSave}
             />
 
-            <div className="flex-1 overflow-hidden">
-                <form ref={formRef} onSubmit={handleSave} className="h-full p-5 max-w-7xl mx-auto flex flex-col gap-4">
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+                <form ref={formRef} onSubmit={handleSave} className="flex-1 min-h-0 p-5 max-w-7xl mx-auto flex flex-col gap-4">
                     <div className="bg-card border rounded-lg p-3 space-y-3 shrink-0">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                             <div className="space-y-1">

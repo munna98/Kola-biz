@@ -68,7 +68,7 @@ export default function CustomersPage() {
   };
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="h-full overflow-auto p-6 space-y-4">
       <div className="flex justify-between items-center">
         <div>
           <h2 className="text-2xl font-bold">{showDeleted ? 'Customers (Deleted)' : 'Customers'}</h2>

@@ -129,7 +129,15 @@
   }
   body {
     @apply bg-background text-foreground;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
   }
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
 }
 
 @layer components {

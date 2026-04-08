@@ -106,7 +106,7 @@ export default function ChartOfAccountsPage() {
   }
 
   return (
-    <div className="p-6 space-y-4">
+    <div className="h-full overflow-auto p-6 space-y-4">
       <div className="flex justify-between items-center gap-4">
         <div>
           <h2 className="text-2xl font-bold">{showDeleted ? 'Recycle Bin - Accounts' : 'Chart of Accounts'}</h2>

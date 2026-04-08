@@ -201,7 +201,7 @@ function AppContent() {
         <Topbar />
 
         {/* Content Area */}
-        <main className="flex-1 overflow-auto">
+        <main className="flex-1 flex flex-col min-h-0 overflow-hidden">
           {renderContent()}
         </main>
       </div>

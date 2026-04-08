@@ -70,7 +70,7 @@ export default function UsersPage() {
     );
 
     return (
-        <div className="p-6 space-y-6">
+        <div className="h-full overflow-auto p-6 space-y-6">
             <div className="flex justify-between items-center">
                 <div>
                     <h2 className="text-2xl font-bold tracking-tight">User Management</h2>
