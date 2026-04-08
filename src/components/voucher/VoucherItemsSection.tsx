@@ -9,6 +9,57 @@ import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { cn } from '@/lib/utils';
 import { getDefaultProductUnitId, type ProductUnitDefaultKind } from '@/lib/product-units';
 
+const QuantityInput = React.forwardRef<HTMLInputElement, React.ComponentProps<typeof Input>>(({ value, onChange, onKeyDown, onBlur, onFocus, ...props }, ref) => {
+    const [isFocused, setIsFocused] = React.useState(false);
+    const [localValue, setLocalValue] = React.useState(
+        value ? Number(value).toFixed(3) : ''
+    );
+
+    React.useEffect(() => {
+        if (!isFocused) {
+            setLocalValue(value ? Number(value).toFixed(3) : '');
+        }
+    }, [value, isFocused]);
+
+    const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+        setIsFocused(true);
+        setLocalValue(value !== undefined && value !== null ? String(value) : '');
+        onFocus?.(e);
+    };
+
+    const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+        setIsFocused(false);
+        setLocalValue(e.target.value ? Number(e.target.value).toFixed(3) : '');
+        onBlur?.(e);
+    };
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        setLocalValue(e.target.value);
+        onChange?.(e);
+    };
+
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        onKeyDown?.(e);
+        if (e.key === 'Enter' && !e.isDefaultPrevented()) {
+             setLocalValue(e.currentTarget.value ? Number(e.currentTarget.value).toFixed(3) : '');
+        }
+    };
+
+    return (
+        <Input
+            ref={ref}
+            type="number"
+            value={localValue}
+            onFocus={handleFocus}
+            onBlur={handleBlur}
+            onChange={handleChange}
+            onKeyDown={handleKeyDown}
+            {...props}
+        />
+    );
+});
+QuantityInput.displayName = 'QuantityInput';
+
 interface Product {
     id: string;
     code: string;
@@ -65,6 +116,7 @@ export interface VoucherItemsSectionRef {
 }
 
 const DEFAULT_COLUMNS: ColumnSettings[] = [
+    { id: 'sl_no', label: '#', visible: true, order: -1 },
     { id: 'product', label: 'Product', visible: true, order: 0 },
     { id: 'quantity', label: 'Qty', visible: true, order: 1 },
     { id: 'unit', label: 'Unit', visible: true, order: 2 },
@@ -119,13 +171,16 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     });
 
     const columns = useMemo(() => {
-        if (!settings?.columns) return DEFAULT_COLUMNS;
-        return [...settings.columns].sort((a, b) => a.order - b.order).filter(c => c.visible);
+        let cols = settings?.columns ? [...settings.columns] : DEFAULT_COLUMNS.filter(c => c.id !== 'sl_no');
+        cols = cols.sort((a, b) => a.order - b.order).filter(c => c.visible && c.id !== 'sl_no');
+        return [{ id: 'sl_no', label: '#', visible: true, order: -1 } as ColumnSettings, ...cols];
     }, [settings]);
 
     // Replicate grid-cols-12 behavior dynamically
     const getGridTemplate = () => {
         return columns.map(col => {
+            if (col.id === 'sl_no') return '24px';
+            if (col.width) return col.width;
             if (col.id === 'product') return '3fr';
             if (['deduction', 'amount', 'discount_percent', 'discount_amount', 'tax_rate'].includes(col.id)) return '0.6fr';
             return '1fr';
@@ -164,11 +219,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     };
 
     const defaultHeader = (
-        <div style={gridStyle} className="px-3 py-2 text-xs font-medium text-muted-foreground border-b bg-muted/20">
+        <div style={gridStyle} className="px-3 py-0.5 text-xs font-medium text-muted-foreground border-b bg-muted/20">
             {columns.map(col => (
                 <div key={col.id} className={cn(
                     col.id === 'amount' || col.id === 'total' ? 'text-right' : '',
-                    col.id === 'final_qty' ? 'text-center' : '',
+                    col.id === 'final_qty' || col.id === 'sl_no' ? 'text-center' : '',
                     col.id === 'deduction' ? 'text-left' : ''
                 )}>
                     {col.label}
@@ -203,6 +258,12 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
 
                 const renderCell = (col: ColumnSettings) => {
                     switch (col.id) {
+                        case 'sl_no':
+                            return (
+                                <div key={col.id} className="h-7 text-xs w-full flex items-center justify-center font-medium text-muted-foreground/70 cursor-default select-none pr-1">
+                                    {idx + 1}
+                                </div>
+                            );
                         case 'product':
                             return (
                                 <Combobox
@@ -237,15 +298,23 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             );
                         case 'quantity':
                             return (
-                                <Input
+                                <QuantityInput
                                     key={col.id}
                                     ref={el => { quantityRefs.current[idx] = el; }}
-                                    type="number"
                                     value={item.initial_quantity || ''}
                                     onChange={(e) => handleNumberChange('initial_quantity', e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                            const val = e.currentTarget.value;
+                                            if (!val || parseFloat(val) <= 0) {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                            }
+                                        }
+                                    }}
                                     className="h-7 text-xs text-right font-mono"
-                                    placeholder="0.00"
-                                    step="0.01"
+                                    placeholder="0.000"
+                                    step="0.001"
                                     disabled={isReadOnly}
                                 />
                             );
@@ -337,7 +406,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                         case 'final_qty':
                             return (
                                 <div key={col.id} className="h-7 text-xs flex items-center justify-center bg-muted/50 border border-input rounded-md font-medium font-mono">
-                                    {calc.finalQty.toFixed(2)}
+                                    {calc.finalQty.toFixed(3)}
                                 </div>
                             );
                         case 'amount':
@@ -401,7 +470,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                         key={item.id || idx}
                         data-row-index={idx}
                         style={gridStyle}
-                        className="group px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50 border-b last:border-0"
+                        className="group px-3 py-0.5 items-center hover:bg-muted/30 focus-within:bg-muted/50 border-b last:border-0"
                         onKeyDown={(e) => handleRowKeyDown(e, idx)}
                     >
                         {columns.map(col => renderCell(col))}

@@ -318,18 +318,24 @@ pub async fn create_quick_payment(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details
-    let invoice: (String, String, String) =
-        sqlx::query_as("SELECT party_id, party_type, voucher_no FROM vouchers WHERE id = ?")
+    let invoice: (String, String, String, String) =
+        sqlx::query_as("SELECT party_id, party_type, voucher_no, voucher_type FROM vouchers WHERE id = ?")
             .bind(&payment.invoice_id)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
 
     // Generate voucher number
-    let voucher_type = if invoice.1 == "supplier" {
+    let voucher_type = if invoice.3 == "purchase_invoice" {
         "payment"
-    } else {
+    } else if invoice.3 == "sales_invoice" {
         "receipt"
+    } else {
+        if invoice.1 == "supplier" {
+            "payment"
+        } else {
+            "receipt"
+        }
     };
     let seq = sqlx::query_as::<_, (String, i64)>(
         "SELECT prefix, next_number FROM voucher_sequences WHERE voucher_type = ?",
@@ -415,7 +421,7 @@ pub async fn create_quick_payment(
         // Debit: Party account
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, 'Payment to supplier')",
+             VALUES (?, ?, ?, ?, 0, 'Payment to party')",
         )
         .bind(&je_id_2)
         .bind(&payment_id)
@@ -441,7 +447,7 @@ pub async fn create_quick_payment(
         // Credit: Party account
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, ?, 'Receipt from customer')",
+             VALUES (?, ?, ?, 0, ?, 'Receipt from party')",
         )
         .bind(&je_id_2)
         .bind(&payment_id)
@@ -532,17 +538,23 @@ pub async fn update_quick_payment(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details for party info
-    let invoice: (String, String, String) =
-        sqlx::query_as("SELECT party_id, party_type, voucher_no FROM vouchers WHERE id = ?")
+    let invoice: (String, String, String, String) =
+        sqlx::query_as("SELECT party_id, party_type, voucher_no, voucher_type FROM vouchers WHERE id = ?")
             .bind(&payment.invoice_id)
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
 
-    let voucher_type = if invoice.1 == "supplier" {
+    let voucher_type = if invoice.3 == "purchase_invoice" {
         "payment"
-    } else {
+    } else if invoice.3 == "sales_invoice" {
         "receipt"
+    } else {
+        if invoice.1 == "supplier" {
+            "payment"
+        } else {
+            "receipt"
+        }
     };
 
     // Update payment/receipt voucher
@@ -627,7 +639,7 @@ pub async fn update_quick_payment(
         // Debit: Party account
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, 'Payment to supplier updated')",
+             VALUES (?, ?, ?, ?, 0, 'Payment to party updated')",
         )
         .bind(&je_id_2)
         .bind(&payment.payment_voucher_id)
@@ -653,7 +665,7 @@ pub async fn update_quick_payment(
         // Credit: Party account
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, ?, 'Receipt from customer updated')",
+             VALUES (?, ?, ?, 0, ?, 'Receipt from party updated')",
         )
         .bind(&je_id_2)
         .bind(&payment.payment_voucher_id)

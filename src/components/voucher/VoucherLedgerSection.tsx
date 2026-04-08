@@ -52,14 +52,22 @@ export function VoucherLedgerSection({
         onAddItem
     });
 
+    const gridStyle = {
+        gridTemplateColumns: '24px 5fr 2fr 4fr 32px',
+        display: 'grid',
+        gap: '0.5rem',
+        alignItems: 'center'
+    };
+
     const defaultHeader = (
-        <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground items-center">
-            <div className="col-span-5 flex justify-between items-center">
+        <div style={gridStyle} className="px-3 py-0.5 text-xs font-medium text-muted-foreground border-b bg-muted/20">
+            <div className="text-center">#</div>
+            <div className="flex justify-between items-center px-1">
                 <span>Account/Ledger</span>
             </div>
-            <div className="col-span-2 text-right">Amount</div>
-            <div className="col-span-4">Remarks</div>
-            <div className="col-span-1"></div>
+            <div className="text-right px-1">Amount</div>
+            <div className="px-1">Remarks</div>
+            <div className="w-8"></div>
         </div>
     );
 
@@ -75,11 +83,17 @@ export function VoucherLedgerSection({
                 <div
                     key={item.id || index}
                     data-row-index={index}
-                    className="grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50"
+                    style={gridStyle}
+                    className="group px-3 py-0.5 items-center hover:bg-muted/30 focus-within:bg-muted/50 border-b last:border-0"
                     onKeyDown={(e) => handleRowKeyDown(e, index)}
                 >
+                    {/* Serial Number */}
+                    <div className="h-7 text-xs w-full flex items-center justify-center font-medium text-muted-foreground/70 cursor-default select-none pr-1">
+                        {index + 1}
+                    </div>
+
                     {/* Ledger Selection */}
-                    <div className="col-span-5 flex gap-1 items-center" onFocus={() => onFocusRow?.(index)}>
+                    <div className="flex gap-1 items-center" onFocus={() => onFocusRow?.(index)}>
                         <Combobox
                             value={item.description}
                             options={ledgers.map(l => ({ value: l.account_name, label: l.account_name }))}
@@ -101,7 +115,7 @@ export function VoucherLedgerSection({
                     </div>
 
                     {/* Amount */}
-                    <div className="col-span-2 flex items-start gap-1">
+                    <div className="flex items-start gap-1">
                         <Input
                             type="number"
                             value={item.amount || ''}
@@ -128,7 +142,7 @@ export function VoucherLedgerSection({
                     </div>
 
                     {/* Remarks */}
-                    <div className="col-span-4">
+                    <div>
                         <Input
                             value={item.remarks || ''}
                             onChange={(e) => onUpdateItem(index, 'remarks', e.target.value)}
@@ -139,7 +153,7 @@ export function VoucherLedgerSection({
                     </div>
 
                     {/* Delete */}
-                    <div className="flex justify-end">
+                    <div className="flex justify-end opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity">
                         <Button
                             type="button"
                             variant="ghost"

@@ -317,7 +317,7 @@ pub async fn create_purchase_invoice(
     .await
     .map_err(|e| e.to_string())?;
     let is_cash_bank = matches!(party_group.as_deref(), Some("Cash") | Some("Bank Account"));
-    let party_narration = if is_cash_bank { "Cash purchase" } else { "Amount payable to supplier" };
+    let party_narration = if is_cash_bank { "Cash purchase" } else { "Amount payable" };
 
     // Debit: Purchases Account (with subtotal, before discount)
     let je_id_1 = Uuid::now_v7().to_string();
@@ -725,7 +725,7 @@ pub async fn update_purchase_invoice(
     .map_err(|e| e.to_string())?
     .map(|g| g == "Cash" || g == "Bank Account")
     .unwrap_or(false);
-    let party_narration = if is_cash_bank { "Cash purchase" } else { "Amount payable to supplier" };
+    let party_narration = if is_cash_bank { "Cash purchase" } else { "Amount payable" };
 
     // Debit: Purchases Account (with subtotal, before discount)
     let je_id_1 = Uuid::now_v7().to_string();
@@ -1157,7 +1157,7 @@ pub async fn create_sales_invoice(
             .as_deref(),
         Some("Cash") | Some("Bank Account")
     );
-    let party_narration = if is_cash_bank { "Cash sale" } else { "Amount receivable from customer" };
+    let party_narration = if is_cash_bank { "Cash sale" } else { "Amount receivable" };
 
     // Debit: Accounts Receivable (Party) or Cash
     // Amount due = subtotal - discount + tax
@@ -1533,7 +1533,7 @@ pub async fn update_sales_invoice(
     .map_err(|e| e.to_string())?
     .map(|g| g == "Cash" || g == "Bank Account")
     .unwrap_or(false);
-    let party_narration = if is_cash_bank { "Cash sale" } else { "Amount receivable from customer" };
+    let party_narration = if is_cash_bank { "Cash sale" } else { "Amount receivable" };
 
     // Debit: Accounts Receivable (Party) or Cash
     let amount_receivable = subtotal - discount_amount + total_tax;

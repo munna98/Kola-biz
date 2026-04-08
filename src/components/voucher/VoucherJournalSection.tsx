@@ -46,12 +46,20 @@ export function VoucherJournalSection({
         onAddItem: onAddLine
     });
 
+    const gridStyle = {
+        gridTemplateColumns: '24px 4fr 1.5fr 1.5fr 4fr 64px',
+        display: 'grid',
+        gap: '0.5rem',
+        alignItems: 'center'
+    };
+
     const defaultHeader = (
-        <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground">
-            <div className="col-span-4">Account</div>
-            <div className="col-span-2 text-right">Debit (Dr)</div>
-            <div className="col-span-2 text-right">Credit (Cr)</div>
-            <div className="col-span-3">Line Narration</div>
+        <div style={gridStyle} className="px-3 py-0.5 text-xs font-medium text-muted-foreground border-b bg-muted/20">
+            <div className="text-center">#</div>
+            <div className="px-1">Account</div>
+            <div className="text-right px-1">Debit (Dr)</div>
+            <div className="text-right px-1">Credit (Cr)</div>
+            <div className="px-1">Line Narration</div>
             <div className="w-16"></div>
         </div>
     );
@@ -67,11 +75,17 @@ export function VoucherJournalSection({
                 <div
                     key={line.id || index}
                     data-row-index={index}
-                    className="group grid grid-cols-12 gap-2 px-3 py-2 items-center hover:bg-muted/30 focus-within:bg-muted/50"
+                    style={gridStyle}
+                    className="group px-3 py-0.5 items-center hover:bg-muted/30 focus-within:bg-muted/50 border-b last:border-0"
                     onKeyDown={(e) => handleRowKeyDown(e, index)}
                 >
+                    {/* Serial Number */}
+                    <div className="h-7 text-xs w-full flex items-center justify-center font-medium text-muted-foreground/70 cursor-default select-none pr-1">
+                        {index + 1}
+                    </div>
+
                     {/* Account */}
-                    <div className="col-span-4" onFocus={() => onFocusRow?.(index)}>
+                    <div onFocus={() => onFocusRow?.(index)}>
                         <Combobox
                             value={line.account_id}
                             options={accounts.map(a => ({
@@ -93,7 +107,7 @@ export function VoucherJournalSection({
                     </div>
 
                     {/* Debit */}
-                    <div className="col-span-2" onFocus={() => onFocusRow?.(index)}>
+                    <div onFocus={() => onFocusRow?.(index)}>
                         <Input
                             type="number"
                             value={line.debit || ''}
@@ -107,7 +121,7 @@ export function VoucherJournalSection({
                     </div>
 
                     {/* Credit */}
-                    <div className="col-span-2" onFocus={() => onFocusRow?.(index)}>
+                    <div onFocus={() => onFocusRow?.(index)}>
                         <Input
                             type="number"
                             value={line.credit || ''}
@@ -121,7 +135,7 @@ export function VoucherJournalSection({
                     </div>
 
                     {/* Narration */}
-                    <div className="col-span-3">
+                    <div>
                         <Input
                             value={line.narration || ''}
                             onChange={(e) => onUpdateLine(index, 'narration', e.target.value)}
