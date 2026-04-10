@@ -22,6 +22,7 @@ interface VoucherSettings {
     autoPrint?: boolean;
     showPaymentModal?: boolean; // Default true - when false, Cash Sale auto-pays, others stay unpaid
     enableBarcodePrinting?: boolean; // Show barcode print button in print preview
+    skipToNextRowAfterQty?: boolean; // Skip to next row on enter after quantity
 }
 
 const AVAILABLE_COLUMNS = [
@@ -52,6 +53,7 @@ export default function VoucherSettingsPage() {
     const [autoPrint, setAutoPrint] = useState(false);
     const [showPaymentModal, setShowPaymentModal] = useState(true);
     const [enableBarcodePrinting, setEnableBarcodePrinting] = useState(false);
+    const [skipToNextRowAfterQty, setSkipToNextRowAfterQty] = useState(false);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -70,6 +72,7 @@ export default function VoucherSettingsPage() {
                 setAutoPrint(savedSettings.autoPrint || false);
                 setShowPaymentModal(savedSettings.showPaymentModal !== false); // Default true
                 setEnableBarcodePrinting(savedSettings.enableBarcodePrinting || false);
+                setSkipToNextRowAfterQty(savedSettings.skipToNextRowAfterQty || false);
 
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
@@ -95,10 +98,10 @@ export default function VoucherSettingsPage() {
                 });
 
             } else {
-                // No saved settings, use defaults
                 setAutoPrint(voucherType === 'sales_invoice');
                 setShowPaymentModal(true);
                 setEnableBarcodePrinting(false);
+                setSkipToNextRowAfterQty(false);
                 initialColumns = AVAILABLE_COLUMNS.map((col, index) => ({
                     id: col.id,
                     label: col.label,
@@ -123,7 +126,8 @@ export default function VoucherSettingsPage() {
                 columns: columns,
                 autoPrint: autoPrint,
                 showPaymentModal: showPaymentModal,
-                enableBarcodePrinting: enableBarcodePrinting
+                enableBarcodePrinting: enableBarcodePrinting,
+                skipToNextRowAfterQty: skipToNextRowAfterQty
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -260,6 +264,25 @@ export default function VoucherSettingsPage() {
                                 </div>
                             </div>
                         )}
+
+                        <div className="flex items-center gap-4 mb-6">
+                            <Checkbox
+                                id="skip-next-row"
+                                checked={skipToNextRowAfterQty}
+                                onCheckedChange={(checked) => setSkipToNextRowAfterQty(checked as boolean)}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                                <label
+                                    htmlFor="skip-next-row"
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                    Skip to Next Row After Quantity
+                                </label>
+                                <p className="text-sm text-muted-foreground">
+                                    Pressing Enter on the Quantity field will immediately add/jump to the next row.
+                                </p>
+                            </div>
+                        </div>
 
                         <h3 className="text-lg font-medium mb-4">Column Configuration</h3>
                         <div className="space-y-2">

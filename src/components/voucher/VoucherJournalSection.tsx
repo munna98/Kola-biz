@@ -166,6 +166,7 @@ export function VoucherJournalSection({
                             className="h-6 w-6 p-0"
                             title="Delete (Ctrl+D)"
                             disabled={isReadOnly}
+                            data-exclude-nav="true"
                         >
                             <IconTrash size={14} />
                         </Button>

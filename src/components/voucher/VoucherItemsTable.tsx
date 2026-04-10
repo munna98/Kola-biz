@@ -50,7 +50,7 @@ export function VoucherItemsTable({
                         type="button"
                         variant="ghost"
                         size="sm"
-                        onClick={onAddItem}
+                        onClick={() => onAddItem()}
                         className="text-xs h-7"
                     >
                         <IconPlus size={14} />

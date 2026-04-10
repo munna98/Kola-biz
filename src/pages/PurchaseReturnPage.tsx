@@ -61,7 +61,7 @@ export default function PurchaseReturnPage() {
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
-    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean } | undefined>(undefined);
+    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, skipToNextRowAfterQty?: boolean } | undefined>(undefined);
     const { print } = usePrint();
     const productUnitsByProduct = useMemo(
         () => buildProductUnitMap(productUnitConversions),

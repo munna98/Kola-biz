@@ -11,7 +11,7 @@ export function useVoucherRowNavigation({
 }: UseVoucherRowNavigationProps) {
     const handleRowKeyDown = (e: React.KeyboardEvent, rowIndex: number) => {
         const currentRow = e.currentTarget;
-        const inputs = Array.from(currentRow.querySelectorAll('input:not([disabled]), button:not([disabled])')) as HTMLElement[];
+        const inputs = Array.from(currentRow.querySelectorAll('input:not([disabled]):not([data-exclude-nav="true"]), button:not([disabled]):not([data-exclude-nav="true"])')) as HTMLElement[];
         const currentIndex = inputs.indexOf(document.activeElement as HTMLElement);
 
         // Ctrl/Cmd + D: Delete current row
@@ -71,7 +71,7 @@ export function useVoucherRowNavigation({
                 e.preventDefault();
                 const prevRow = currentRow.previousElementSibling;
                 if (prevRow) {
-                    const prevInputs = Array.from(prevRow.querySelectorAll('input:not([disabled]), button:not([disabled])')) as HTMLElement[];
+                    const prevInputs = Array.from(prevRow.querySelectorAll('input:not([disabled]):not([data-exclude-nav="true"]), button:not([disabled]):not([data-exclude-nav="true"])')) as HTMLElement[];
                     const lastInput = prevInputs[prevInputs.length - 1];
                     lastInput?.focus();
                     if (lastInput instanceof HTMLInputElement) {
@@ -94,7 +94,7 @@ export function useVoucherRowNavigation({
             e.preventDefault();
             const nextRow = currentRow.nextElementSibling;
             if (nextRow) {
-                const nextInputs = Array.from(nextRow.querySelectorAll('input:not([disabled]), button:not([disabled])')) as HTMLElement[];
+                const nextInputs = Array.from(nextRow.querySelectorAll('input:not([disabled]):not([data-exclude-nav="true"]), button:not([disabled]):not([data-exclude-nav="true"])')) as HTMLElement[];
                 const targetInput = nextInputs[currentIndex];
                 if (targetInput) {
                     targetInput.focus();
@@ -112,7 +112,7 @@ export function useVoucherRowNavigation({
             e.preventDefault();
             const prevRow = currentRow.previousElementSibling;
             if (prevRow) {
-                const prevInputs = Array.from(prevRow.querySelectorAll('input:not([disabled]), button:not([disabled])')) as HTMLElement[];
+                const prevInputs = Array.from(prevRow.querySelectorAll('input:not([disabled]):not([data-exclude-nav="true"]), button:not([disabled]):not([data-exclude-nav="true"])')) as HTMLElement[];
                 const targetInput = prevInputs[currentIndex];
                 if (targetInput) {
                     targetInput.focus();

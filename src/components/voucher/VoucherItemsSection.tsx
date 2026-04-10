@@ -104,7 +104,7 @@ export interface VoucherItemsSectionProps {
     header?: React.ReactNode;
     addItemLabel?: string;
     disableAdd?: boolean;
-    settings?: { columns: ColumnSettings[] };
+    settings?: { columns: ColumnSettings[], skipToNextRowAfterQty?: boolean };
     footerRightContent?: React.ReactNode;
     onProductCreate?: (name: string, rowIndex: number) => void;
     onSectionExit?: () => void;
@@ -309,6 +309,35 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                             if (!val || parseFloat(val) <= 0) {
                                                 e.preventDefault();
                                                 e.stopPropagation();
+                                            } else if (settings?.skipToNextRowAfterQty) {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                
+                                                const currentRow = e.currentTarget.closest('[data-row-index]');
+                                                if (currentRow) {
+                                                    const nextRow = currentRow.nextElementSibling;
+                                                    if (nextRow) {
+                                                        const firstInput = nextRow.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
+                                                        if (firstInput) {
+                                                            firstInput.focus();
+                                                            if (firstInput instanceof HTMLButtonElement) {
+                                                                firstInput.click();
+                                                            }
+                                                        }
+                                                    } else {
+                                                        onAddItem();
+                                                        setTimeout(() => {
+                                                            const newRow = currentRow.parentElement?.lastElementChild;
+                                                            const firstInput = newRow?.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
+                                                            if (firstInput) {
+                                                                firstInput.focus();
+                                                                if (firstInput instanceof HTMLButtonElement) {
+                                                                    firstInput.click();
+                                                                }
+                                                            }
+                                                        }, 50);
+                                                    }
+                                                }
                                             }
                                         }
                                     }}
@@ -495,6 +524,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 className="h-6 w-6 p-0"
                                 title="Delete (Ctrl+D)"
                                 disabled={isReadOnly}
+                                data-exclude-nav="true"
                             >
                                 <IconTrash size={14} />
                             </Button>
