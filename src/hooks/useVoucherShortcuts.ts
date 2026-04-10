@@ -8,6 +8,10 @@ interface UseVoucherShortcutsProps {
     onCloseShortcuts: () => void;
     showShortcuts: boolean;
     onQuickEntry?: () => void; // Optional: Ctrl+Q for quick payment/receipt dialog
+    onNewTab?: () => void; // Alt+T
+    onCloseTab?: () => void; // Alt+W
+    onNextTab?: () => void; // Alt+PageDown
+    onPrevTab?: () => void; // Alt+PageUp
 }
 
 export function useVoucherShortcuts({
@@ -18,6 +22,10 @@ export function useVoucherShortcuts({
     onCloseShortcuts,
     showShortcuts,
     onQuickEntry,
+    onNewTab,
+    onCloseTab,
+    onNextTab,
+    onPrevTab,
 }: UseVoucherShortcutsProps) {
     const handlersRef = useRef({
         onSave,
@@ -27,6 +35,10 @@ export function useVoucherShortcuts({
         onCloseShortcuts,
         showShortcuts,
         onQuickEntry,
+        onNewTab,
+        onCloseTab,
+        onNextTab,
+        onPrevTab,
     });
 
     // Update refs when props change (without recreating the listener)
@@ -39,8 +51,12 @@ export function useVoucherShortcuts({
             onCloseShortcuts,
             showShortcuts,
             onQuickEntry,
+            onNewTab,
+            onCloseTab,
+            onNextTab,
+            onPrevTab,
         };
-    }, [onSave, onNewItem, onClear, onToggleShortcuts, onCloseShortcuts, showShortcuts, onQuickEntry]);
+    }, [onSave, onNewItem, onClear, onToggleShortcuts, onCloseShortcuts, showShortcuts, onQuickEntry, onNewTab, onCloseTab, onNextTab, onPrevTab]);
 
     useEffect(() => {
         const handleKeyDown = (e: KeyboardEvent) => {
@@ -82,6 +98,27 @@ export function useVoucherShortcuts({
             // Escape: Close shortcuts panel
             if (e.code === 'Escape' && handlers.showShortcuts) {
                 handlers.onCloseShortcuts();
+            }
+
+            // Tab Management
+            if (e.altKey && (e.code === 'KeyT' || e.key.toLowerCase() === 't') && handlers.onNewTab) {
+                e.preventDefault();
+                handlers.onNewTab();
+            }
+
+            if (e.altKey && (e.code === 'KeyW' || e.key.toLowerCase() === 'w') && handlers.onCloseTab) {
+                e.preventDefault();
+                handlers.onCloseTab();
+            }
+
+            if (e.altKey && e.code === 'PageDown' && handlers.onNextTab) {
+                e.preventDefault();
+                handlers.onNextTab();
+            }
+
+            if (e.altKey && e.code === 'PageUp' && handlers.onPrevTab) {
+                e.preventDefault();
+                handlers.onPrevTab();
             }
         };
 

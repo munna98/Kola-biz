@@ -42,6 +42,7 @@ interface VoucherPageHeaderProps {
     loading?: boolean;
     editDisabled?: boolean; // New prop
     deleteDisabled?: boolean; // New prop
+    customActionsPrefix?: React.ReactNode;
 }
 
 export function VoucherPageHeader({
@@ -68,7 +69,8 @@ export function VoucherPageHeader({
     onManagePayments,
     loading,
     editDisabled,
-    deleteDisabled
+    deleteDisabled,
+    customActionsPrefix
 }: VoucherPageHeaderProps) {
     return (
         <div className="border-b bg-card/50 px-5 py-3 backdrop-blur-sm shrink-0 h-[65px] flex items-center z-0">
@@ -145,6 +147,8 @@ export function VoucherPageHeader({
 
                 {/* Right Section - Actions */}
                 <div className="flex items-center gap-2">
+                    {customActionsPrefix}
+
                     {mode === 'new' && (
                         <>
                             {onListView && (

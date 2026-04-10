@@ -43,7 +43,19 @@ export function VoucherShortcutPanel({ show }: VoucherShortcutPanelProps) {
                 <div className="space-y-1">
                     <div className="flex items-center gap-2">
                         <kbd className="px-2 py-1 bg-background border rounded font-mono">Ctrl+↑/↓</kbd>
-                        <span>Navigate rows (same column)</span>
+                        <span>Navigate rows</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <kbd className="px-2 py-1 bg-background border rounded font-mono">Alt+T</kbd>
+                        <span>New tab</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <kbd className="px-2 py-1 bg-background border rounded font-mono">Alt+W</kbd>
+                        <span>Close tab</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <kbd className="px-2 py-1 bg-background border rounded font-mono">Alt+PgUp/PgDn</kbd>
+                        <span>Switch tabs</span>
                     </div>
                     <div className="flex items-center gap-2">
                         <kbd className="px-2 py-1 bg-background border rounded font-mono">/</kbd>

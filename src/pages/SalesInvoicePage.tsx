@@ -22,6 +22,9 @@ import {
   setSalesSalespersonId,
   setSalesHasUnsavedChanges,
   setSalesCreatedByName,
+  createNewSalesTab,
+  switchSalesTab,
+  closeSalesTab,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -32,6 +35,7 @@ import { Combobox } from '@/components/ui/combobox';
 import {
   IconCheck,
   IconX,
+  IconPlus,
 } from '@tabler/icons-react';
 
 
@@ -653,6 +657,32 @@ export default function SalesInvoicePage() {
     onClear: handleNew,
     onToggleShortcuts: () => setShowShortcuts(prev => !prev),
     onCloseShortcuts: () => setShowShortcuts(false),
+    onNewTab: () => dispatch(createNewSalesTab()),
+    onCloseTab: () => dispatch(closeSalesTab(salesState.activeTabId)),
+    onNextTab: () => {
+      const allTabs = [
+        ...(salesState.inactiveTabs || []).map(t => ({...t, isActive: false})),
+        { id: salesState.activeTabId || 'tab-1', isActive: true }
+      ].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+      const activeIndex = allTabs.findIndex(t => t.isActive);
+      if (activeIndex !== -1 && activeIndex < allTabs.length - 1) {
+        dispatch(switchSalesTab(allTabs[activeIndex + 1].id));
+      } else if (allTabs.length > 1) {
+        dispatch(switchSalesTab(allTabs[0].id));
+      }
+    },
+    onPrevTab: () => {
+      const allTabs = [
+        ...(salesState.inactiveTabs || []).map(t => ({...t, isActive: false})),
+        { id: salesState.activeTabId || 'tab-1', isActive: true }
+      ].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+      const activeIndex = allTabs.findIndex(t => t.isActive);
+      if (activeIndex > 0) {
+        dispatch(switchSalesTab(allTabs[activeIndex - 1].id));
+      } else if (allTabs.length > 1) {
+        dispatch(switchSalesTab(allTabs[allTabs.length - 1].id));
+      }
+    },
 
     showShortcuts
   });
@@ -796,6 +826,55 @@ export default function SalesInvoicePage() {
         onListView={() => setShowListView(true)}
         onManagePayments={salesState.mode !== 'new' ? () => setShowQuickPayment(true) : undefined}
         loading={salesState.loading}
+        customActionsPrefix={
+          <div className="flex items-center gap-1 overflow-x-auto max-w-[40vw] pr-2 border-r mr-1">
+            {(()=>{
+              const allTabs = [
+                ...(salesState.inactiveTabs || []).map(t => ({...t, isActive: false})),
+                {
+                  id: salesState.activeTabId || 'tab-1',
+                  title: salesState.form?.customer_name || salesState.currentVoucherNo || "New Invoice",
+                  isActive: true
+                }
+              ].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+
+              return allTabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => !tab.isActive && dispatch(switchSalesTab(tab.id))}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    tab.isActive
+                      ? 'bg-primary text-primary-foreground shadow-sm'
+                      : 'text-muted-foreground hover:bg-muted-foreground/10 bg-transparent'
+                  }`}
+                >
+                  <span className="truncate max-w-[120px]">{tab.title}</span>
+                  <div
+                    role="button"
+                    tabIndex={0}
+                    className={`p-0.5 rounded-full cursor-pointer transition-colors ${tab.isActive ? 'hover:bg-primary-foreground/20' : 'hover:bg-muted-foreground/20 text-muted-foreground/70 hover:text-foreground'}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      dispatch(closeSalesTab(tab.id));
+                    }}
+                  >
+                    <IconX size={12} stroke={2.5} />
+                  </div>
+                </button>
+              ));
+            })()}
+            <button
+              type="button"
+              onClick={() => dispatch(createNewSalesTab())}
+              className="p-1 px-2 text-muted-foreground hover:bg-muted-foreground/10 hover:text-foreground rounded-md transition-colors flex-shrink-0 mx-1 border border-dashed border-muted-foreground/30"
+              title="New Tab"
+            >
+              <IconPlus size={14} />
+            </button>
+          </div>
+        }
       />
 
       <VoucherShortcutPanel
@@ -858,9 +937,6 @@ export default function SalesInvoicePage() {
         onSuccess={handleCreateProductSave}
         product={undefined} // Always new
       />
-
-
-
       {/* Form Content */}
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <form ref={formRef} onSubmit={handleSubmit} className="flex-1 min-h-0 p-5 max-w-7xl mx-auto flex flex-col gap-4">

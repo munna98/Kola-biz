@@ -928,6 +928,12 @@ export interface SalesInvoiceState extends VoucherNavigationState {
     tax: number;
     grandTotal: number;
   };
+  activeTabId: string;
+  inactiveTabs: {
+    id: string;
+    title: string;
+    state: Omit<SalesInvoiceState, 'activeTabId' | 'inactiveTabs'>;
+  }[];
 }
 
 const salesInitialState: SalesInvoiceState = {
@@ -954,6 +960,8 @@ const salesInitialState: SalesInvoiceState = {
     tax: 0,
     grandTotal: 0,
   },
+  activeTabId: `tab-1`,
+  inactiveTabs: [],
 };
 
 const salesInvoiceSlice = createSlice({
@@ -1040,6 +1048,101 @@ const salesInvoiceSlice = createSlice({
     setSalesLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
     },
+    createNewSalesTab: (state) => {
+      const currentTabState = {
+         mode: state.mode,
+         currentVoucherId: state.currentVoucherId,
+         hasUnsavedChanges: state.hasUnsavedChanges,
+         navigationData: state.navigationData,
+         currentVoucherNo: state.currentVoucherNo,
+         created_by_name: state.created_by_name,
+         form: state.form,
+         items: state.items,
+         loading: state.loading,
+         savedInvoices: state.savedInvoices,
+         totals: state.totals,
+      };
+      
+      let title = "New Invoice";
+      if (state.form.customer_name) {
+        title = state.form.customer_name;
+      }
+      if (state.currentVoucherNo) {
+        title = state.currentVoucherNo;
+      }
+      
+      state.inactiveTabs.push({
+        id: state.activeTabId,
+        title,
+        state: currentTabState as any
+      });
+      
+      const newActiveId = `tab-${Date.now()}`;
+      Object.assign(state, {
+        ...salesInitialState,
+        activeTabId: newActiveId,
+        inactiveTabs: state.inactiveTabs
+      });
+    },
+    switchSalesTab: (state, action: PayloadAction<string>) => {
+      const targetTabId = action.payload;
+      if (targetTabId === state.activeTabId) return;
+      
+      const targetIndex = state.inactiveTabs.findIndex(t => t.id === targetTabId);
+      if (targetIndex === -1) return;
+      
+      const currentTabState = {
+         mode: state.mode,
+         currentVoucherId: state.currentVoucherId,
+         hasUnsavedChanges: state.hasUnsavedChanges,
+         navigationData: state.navigationData,
+         currentVoucherNo: state.currentVoucherNo,
+         created_by_name: state.created_by_name,
+         form: state.form,
+         items: state.items,
+         loading: state.loading,
+         savedInvoices: state.savedInvoices,
+         totals: state.totals,
+      };
+      
+      let title = "New Invoice";
+      if (state.form.customer_name) {
+        title = state.form.customer_name;
+      }
+      if (state.currentVoucherNo) {
+        title = state.currentVoucherNo;
+      }
+      
+      const targetTab = state.inactiveTabs[targetIndex];
+      state.inactiveTabs.splice(targetIndex, 1);
+      
+      state.inactiveTabs.push({
+        id: state.activeTabId,
+        title,
+        state: currentTabState as any
+      });
+      
+      // We apply the target tab state without altering activeTabId and inactiveTabs directly yet
+      Object.assign(state, targetTab.state);
+      state.activeTabId = targetTab.id;
+    },
+    closeSalesTab: (state, action: PayloadAction<string>) => {
+      const tabId = action.payload;
+      if (tabId === state.activeTabId) {
+        if (state.inactiveTabs.length > 0) {
+          const prevTab = state.inactiveTabs.pop()!;
+          Object.assign(state, prevTab.state);
+          state.activeTabId = prevTab.id;
+        } else {
+          const newActiveId = `tab-${Date.now()}`;
+          Object.assign(state, salesInitialState);
+          state.activeTabId = newActiveId;
+          state.inactiveTabs = [];
+        }
+      } else {
+        state.inactiveTabs = state.inactiveTabs.filter(t => t.id !== tabId);
+      }
+    },
   },
 });
 
@@ -1064,6 +1167,9 @@ export const {
   resetSalesForm,
   setSavedSalesInvoices,
   setSalesLoading,
+  createNewSalesTab,
+  switchSalesTab,
+  closeSalesTab,
 } = salesInvoiceSlice.actions;
 
 // ========== COMPANY PROFILE SLICE ==========
