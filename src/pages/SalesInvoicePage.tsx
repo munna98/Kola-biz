@@ -802,6 +802,12 @@ export default function SalesInvoicePage() {
   // Determine if form should be disabled (viewing mode)
   const isReadOnly = salesState.mode === 'viewing';
 
+  // Compute isCashBankParty dynamically so 'Manage Payments' in view mode also routes correctly.
+  // savedIsCashBankParty is only set right after a save; currentPartyIsCashBank covers the view-mode case.
+  const currentCustomerParty = parties.find(p => p.id === salesState.form.customer_id);
+  const currentPartyIsCashBank = currentCustomerParty?.group === 'Cash' || currentCustomerParty?.group === 'Bank Account';
+  const effectiveIsCashBankParty = savedIsCashBankParty || currentPartyIsCashBank;
+
   return (
     <div className="h-full flex flex-col bg-background">
       <VoucherPageHeader
@@ -907,7 +913,7 @@ export default function SalesInvoicePage() {
         invoiceDate={salesState.form.voucher_date}
         partyName={savedPartyName}
         readOnly={salesState.mode === 'viewing'}
-        isCashBankParty={savedIsCashBankParty}
+        isCashBankParty={effectiveIsCashBankParty}
         onSuccess={() => {
           toast.success('Payment saved!');
         }}

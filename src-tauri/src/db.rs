@@ -342,6 +342,34 @@ pub async fn init_db(
         .execute(&pool)
         .await;
 
+    // Migration: ensure every product has at least a base unit conversion
+    let unmapped_products: Result<Vec<(String, String, f64, f64)>, _> = sqlx::query_as(
+        "SELECT p.id, p.unit_id, p.purchase_rate, p.sales_rate 
+         FROM products p
+         LEFT JOIN product_unit_conversions puc ON p.id = puc.product_id
+         WHERE puc.id IS NULL"
+    )
+    .fetch_all(&pool)
+    .await;
+
+    if let Ok(products) = unmapped_products {
+        for (product_id, unit_id, purchase_rate, sales_rate) in products {
+            let puc_id = uuid::Uuid::now_v7().to_string();
+            let _ = sqlx::query(
+                "INSERT INTO product_unit_conversions 
+                (id, product_id, unit_id, factor_to_base, purchase_rate, sales_rate, is_default_sale, is_default_purchase, is_default_report)
+                VALUES (?, ?, ?, 1.0, ?, ?, 1, 1, 1)"
+            )
+            .bind(puc_id)
+            .bind(product_id)
+            .bind(unit_id)
+            .bind(purchase_rate)
+            .bind(sales_rate)
+            .execute(&pool)
+            .await;
+        }
+    }
+
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN unit_id TEXT")
         .execute(&pool)
         .await;

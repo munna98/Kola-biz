@@ -6,7 +6,7 @@ use uuid::Uuid;
 #[derive(Serialize, Deserialize)]
 pub struct PaymentLine {
     pub id: String,
-    pub account_id: i64,
+    pub account_id: String, // UUID string matching chart_of_accounts.id
     pub amount: f64,
     pub method: String,
 }
@@ -14,7 +14,7 @@ pub struct PaymentLine {
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 struct JournalEntryRow {
     pub id: String,
-    pub account_id: String, // from DB, stringified i64
+    pub account_id: String, // UUID from DB
     pub debit: f64,
     pub credit: f64,
     pub account_group: String,
@@ -55,10 +55,14 @@ pub async fn get_cash_invoice_splits(
         let amount = if entry.debit > 0.0 { entry.debit } else { entry.credit };
         if amount > 0.0 {
             splits.push(PaymentLine {
-                id: entry.id, // using JE id as line id
-                account_id: entry.account_id.parse().unwrap_or(0),
+                id: entry.id,
+                account_id: entry.account_id, // pass UUID as-is
                 amount,
-                method: if entry.account_group == "Cash" { "cash".to_string() } else { "bank_transfer".to_string() },
+                method: if entry.account_group == "Cash" {
+                    "cash".to_string()
+                } else {
+                    "bank_transfer".to_string()
+                },
             });
         }
     }
@@ -84,7 +88,7 @@ pub async fn adjust_cash_invoice_splits(
     .await
     .map_err(|e| e.to_string())?;
 
-    let voucher_type = match voucher_type {
+    let _voucher_type = match voucher_type {
         Some(t) => t,
         None => return Err("Invoice not found".to_string()),
     };
@@ -116,7 +120,7 @@ pub async fn adjust_cash_invoice_splits(
     // Determine if we need to Credit (Purchase) or Debit (Sales) the cash accounts
     // We can infer this from the existing entries
     let is_debit = existing_entries[0].debit > 0.0;
-    
+
     // Also grab the narration to keep it consistent (e.g. "Cash sale")
     let shared_narration: String = sqlx::query_scalar(
         "SELECT narration FROM journal_entries WHERE id = ?"
@@ -127,12 +131,28 @@ pub async fn adjust_cash_invoice_splits(
     .map_err(|e| e.to_string())?;
 
     let total_existing: f64 = existing_entries.iter().map(|e| if is_debit { e.debit } else { e.credit }).sum();
-    
+
     let total_new: f64 = splits.iter().map(|s| s.amount).sum();
 
     // The sums must match exactly. We use an epsilon for f64 comparison.
     if (total_existing - total_new).abs() > 0.01 {
-        return Err(format!("Split total ({}) must equal invoice amount ({})", total_new, total_existing));
+        return Err(format!("Split total ({:.2}) must equal invoice amount ({:.2})", total_new, total_existing));
+    }
+
+    // Validate that all account_ids in the new splits actually exist in chart_of_accounts
+    for split in &splits {
+        if split.amount <= 0.0 { continue; }
+        let exists: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE id = ? AND (account_group = 'Cash' OR account_group = 'Bank Account')"
+        )
+        .bind(&split.account_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if exists.is_none() {
+            return Err(format!("Account '{}' is not a valid Cash or Bank account", split.account_id));
+        }
     }
 
     // 1. Delete all existing Cash/Bank entries for this voucher
@@ -159,7 +179,7 @@ pub async fn adjust_cash_invoice_splits(
         )
         .bind(&je_id)
         .bind(&invoice_id)
-        .bind(&split.account_id)
+        .bind(&split.account_id) // UUID string — correct FK
         .bind(debit)
         .bind(credit)
         .bind(&shared_narration)

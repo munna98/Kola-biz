@@ -89,7 +89,7 @@ export function VoucherListViewSheet({
                     </div>
                 </SheetHeader>
 
-                <ScrollArea className="flex-1">
+                <ScrollArea className="flex-1 min-h-0">
                     <div className="flex flex-col p-2 gap-1">
                         {loading ? (
                             <div className="p-4 text-center text-sm text-muted-foreground">Loading...</div>

@@ -152,8 +152,32 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     // Ref to the first product combobox
     const firstProductRef = useRef<HTMLButtonElement>(null);
 
-    // Refs for quantity inputs (one per row)
-    const quantityRefs = useRef<(HTMLInputElement | null)[]>([]);
+    // FOCUSABLE_FIELDS: the column ids (in order) that can receive keyboard focus after product selection.
+    // 'product' itself is excluded; 'final_qty', 'amount', 'total' are read-only display cells.
+    const FOCUSABLE_FIELD_IDS = ['quantity', 'unit', 'rate', 'count', 'deduction', 'discount_percent', 'discount_amount', 'tax_rate'];
+
+    /**
+     * Focus the first editable field after 'product' in the current column order.
+     * Uses data-field attributes on each rendered cell.
+     */
+    const focusFirstEditableAfterProduct = (rowIndex: number) => {
+        // columns is sorted by order and already filtered to visible ones
+        const orderedEditableIds = columns
+            .filter(c => c.id !== 'sl_no' && c.id !== 'product' && FOCUSABLE_FIELD_IDS.includes(c.id))
+            .map(c => c.id);
+
+        const row = document.querySelector(`[data-row-index="${rowIndex}"]`);
+        if (!row) return;
+
+        for (const fieldId of orderedEditableIds) {
+            const el = row.querySelector(`[data-field="${fieldId}"]`) as HTMLElement | null;
+            if (el) {
+                el.focus();
+                if (el instanceof HTMLInputElement) el.select();
+                return;
+            }
+        }
+    };
 
     // Expose methods to parent component
     useImperativeHandle(ref, () => ({
@@ -274,12 +298,10 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     onChange={(value) => {
                                         onUpdateItem(idx, 'product_id', value);
 
-                                        // Auto-focus quantity input after product selection
+                                        // Auto-focus the first editable field after 'product'
+                                        // in the order defined by settings (not always quantity)
                                         setTimeout(() => {
-                                            if (quantityRefs.current[idx]) {
-                                                quantityRefs.current[idx]?.focus();
-                                                quantityRefs.current[idx]?.select();
-                                            }
+                                            focusFirstEditableAfterProduct(idx);
                                         }, 100);
                                     }}
                                     placeholder="Select product"
@@ -300,7 +322,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             return (
                                 <QuantityInput
                                     key={col.id}
-                                    ref={el => { quantityRefs.current[idx] = el; }}
+                                    data-field="quantity"
                                     value={item.initial_quantity || ''}
                                     onChange={(e) => handleNumberChange('initial_quantity', e.target.value)}
                                     onKeyDown={(e) => {
@@ -365,6 +387,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 >
                                     <SelectTrigger
                                         className="h-7 w-full text-xs font-medium"
+                                        data-field="unit"
                                         data-unit-trigger="true"
                                         onKeyDown={(e) => {
                                             if (e.key === 'Enter') {
@@ -410,6 +433,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             return (
                                 <Input
                                     key={col.id}
+                                    data-field="count"
                                     type="number"
                                     value={item.count || ''}
                                     onChange={(e) => handleNumberChange('count', e.target.value)}
@@ -423,6 +447,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             return (
                                 <Input
                                     key={col.id}
+                                    data-field="deduction"
                                     type="number"
                                     value={item.deduction_per_unit || ''}
                                     onChange={(e) => handleNumberChange('deduction_per_unit', e.target.value)}
@@ -448,6 +473,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             return (
                                 <Input
                                     key={col.id}
+                                    data-field="discount_percent"
                                     type="number"
                                     value={item.discount_percent || ''}
                                     onChange={(e) => handleNumberChange('discount_percent', e.target.value)}
@@ -461,6 +487,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             return (
                                 <Input
                                     key={col.id}
+                                    data-field="discount_amount"
                                     type="number"
                                     value={item.discount_amount || ''}
                                     onChange={(e) => handleNumberChange('discount_amount', e.target.value)}
@@ -474,6 +501,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             return (
                                 <Input
                                     key={col.id}
+                                    data-field="tax_rate"
                                     type="number"
                                     value={item.tax_rate || ''}
                                     onChange={(e) => handleNumberChange('tax_rate', e.target.value)}

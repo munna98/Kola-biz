@@ -40,18 +40,18 @@ interface Allocation {
     allocation_date: string;
     remarks: string | null;
     payment_method: string | null;
-    payment_account_id: number;
+    payment_account_id: string | null; // UUID from chart_of_accounts
 }
 
 interface CashBankAccount {
-    id: number;
+    id: string; // UUID from chart_of_accounts
     name: string;
 }
 
 interface PaymentLine {
     id: string;
     payment_voucher_id?: string; // Exists for existing payments
-    account_id: number;
+    account_id: string; // UUID matching chart_of_accounts.id
     amount: number;
     method: string;
 }
@@ -139,7 +139,7 @@ export default function PaymentManagementDialog({
             const existingLines: PaymentLine[] = data.map(alloc => ({
                 id: `existing-${alloc.id}`,
                 payment_voucher_id: alloc.payment_voucher_id,
-                account_id: alloc.payment_account_id || 0, // Fallback if missing, though backend should provide
+                account_id: alloc.payment_account_id || '', // UUID string
                 amount: alloc.allocated_amount,
                 method: alloc.payment_method || 'cash'
             }));
@@ -171,7 +171,7 @@ export default function PaymentManagementDialog({
     const loadCashSplits = async () => {
         try {
             setLoadingAllocations(true);
-            const splits = await invoke<{ id: string; account_id: number; amount: number; method: string }[]>(
+            const splits = await invoke<{ id: string; account_id: string; amount: number; method: string }[]>(
                 'get_cash_invoice_splits', { invoiceId: invoiceId }
             );
             if (splits.length > 0) {
@@ -218,7 +218,7 @@ export default function PaymentManagementDialog({
         const cashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];
         const newLine: PaymentLine = {
             id: `line-${Date.now()}-${Math.random()}`,
-            account_id: cashAccount?.id || 0,
+            account_id: cashAccount?.id || '',
             amount: 0,
             method: 'cash',
         };
@@ -290,7 +290,7 @@ export default function PaymentManagementDialog({
                             payment_voucher_id: line.payment_voucher_id,
                             invoice_id: invoiceId,
                             amount: line.amount,
-                            payment_account_id: line.account_id,
+                            payment_account_id: line.account_id, // Already a UUID string
                             payment_date: invoiceDate,
                             payment_method: line.method,
                             remarks: autoRemarks,
@@ -302,7 +302,7 @@ export default function PaymentManagementDialog({
                         payment: {
                             invoice_id: invoiceId,
                             amount: line.amount,
-                            payment_account_id: line.account_id,
+                            payment_account_id: line.account_id, // Already a UUID string
                             payment_date: invoiceDate,
                             payment_method: line.method,
                             reference: null,

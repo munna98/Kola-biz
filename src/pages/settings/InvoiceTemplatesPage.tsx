@@ -198,11 +198,11 @@ export function InvoiceTemplatesPage() {
     }
 
     return (
-        <div className="p-6 max-w-6xl mx-auto">
-            <div className="mb-6 flex items-center justify-between">
+        <div className="h-full flex flex-col bg-background">
+            <div className="flex justify-between items-center p-6 border-b shrink-0">
                 <div>
-                    <h1 className="text-3xl font-bold">Invoice Settings</h1>
-                    <p className="text-muted-foreground mt-1">
+                    <h1 className="text-2xl font-bold text-foreground">Invoice Settings</h1>
+                    <p className="text-sm text-muted-foreground mt-1">
                         Manage your invoice templates and printing preferences
                     </p>
                 </div>
@@ -212,8 +212,10 @@ export function InvoiceTemplatesPage() {
                 </Button>
             </div>
 
-            <div className="grid gap-6">
-                {/* Global Print Settings */}
+            <div className="flex-1 overflow-auto p-6">
+                <div className="max-w-6xl mx-auto space-y-6">
+                    <div className="grid gap-6">
+                        {/* Global Print Settings */}
                 <Card>
                     <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
@@ -390,6 +392,8 @@ export function InvoiceTemplatesPage() {
                 ))}
 
 
+                    </div>
+                </div>
             </div>
         </div>
     );

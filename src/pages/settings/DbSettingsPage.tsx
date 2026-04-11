@@ -239,11 +239,19 @@ export default function DbSettingsPage() {
   };
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold">DB Settings</h1>
-        <p className="text-muted-foreground mt-1">Manage destructive database cleanup actions with selective reset options.</p>
+    <div className="h-full flex flex-col bg-background">
+      <div className="flex justify-between items-center p-6 border-b shrink-0">
+        <div>
+          <h1 className="text-2xl font-bold text-foreground">DB Settings</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Manage destructive database cleanup actions with selective reset options.
+          </p>
+        </div>
       </div>
+
+      <div className="flex-1 overflow-auto p-6">
+        <div className="max-w-5xl mx-auto space-y-6">
+
 
       <Card>
         <CardHeader>
@@ -443,6 +451,8 @@ export default function DbSettingsPage() {
         title="Admin Authorization Required"
         description="You are about to execute a raw SQL query. Please enter your password to confirm."
       />
+        </div>
+      </div>
     </div>
   );
 }
