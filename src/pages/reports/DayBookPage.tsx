@@ -22,11 +22,7 @@ interface DayBookEntry {
 export default function DayBookPage() {
   const [entries, setEntries] = useState<DayBookEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [fromDate, setFromDate] = useState(() => {
-    const date = new Date();
-    date.setMonth(date.getMonth() - 1);
-    return date.toISOString().split('T')[0];
-  });
+  const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0]);
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
 
   const loadDayBook = async () => {
