@@ -3,13 +3,13 @@ import { useTheme } from '../theme-provider';
 import { useDispatch, useSelector } from 'react-redux';
 import { setActiveSection, RootState } from '../../store';
 import {
-    NavigationMenu,
-    NavigationMenuContent,
-    NavigationMenuItem,
-    NavigationMenuLink,
-    NavigationMenuList,
-    NavigationMenuTrigger,
-} from '@/components/ui/navigation-menu';
+    Menubar,
+    MenubarContent,
+    MenubarItem,
+    MenubarMenu,
+    MenubarSeparator,
+    MenubarTrigger,
+} from '@/components/ui/menubar';
 
 function ThemeToggle() {
     const { theme, setTheme } = useTheme();
@@ -30,108 +30,93 @@ export default function Topbar() {
     const { user } = useSelector((state: RootState) => state.auth);
     const handleNavigation = (section: string) => dispatch(setActiveSection(section));
 
-    const itemStyle = "block select-none rounded-md px-3 py-2 text-sm font-medium no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground cursor-pointer";
-
     // Display user's full name if available, otherwise username
     const displayName = user?.full_name || user?.username || 'User';
 
     return (
         <header className="bg-card border-b h-14 flex items-center px-6 gap-4 relative z-50">
-            {/* FIX: Add viewport={false} here */}
-            <NavigationMenu viewport={false}>
-                <NavigationMenuList>
+            <Menubar className="border-none bg-transparent shadow-none">
+                {/* Inventory */}
+                <MenubarMenu>
+                    <MenubarTrigger>Inventory</MenubarTrigger>
+                    <MenubarContent>
+                        <MenubarItem onClick={() => handleNavigation('products')}>
+                            Products
+                        </MenubarItem>
+                        <MenubarSeparator />
+                        <MenubarItem onClick={() => handleNavigation('purchase')}>
+                            Purchase Invoice
+                        </MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('purchase_return')}>
+                            Purchase Return
+                        </MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('sales')}>
+                            Sales Invoice
+                        </MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('sales_return')}>
+                            Sales Return
+                        </MenubarItem>
+                        <MenubarSeparator />
+                        <MenubarItem onClick={() => handleNavigation('opening_stock')}>
+                            Opening Stock
+                        </MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('stock_journal')}>
+                            Stock Journal
+                        </MenubarItem>
+                    </MenubarContent>
+                </MenubarMenu>
 
-                    {/* Inventory */}
-                    <NavigationMenuItem>
-                        <NavigationMenuTrigger className="h-9">Inventory</NavigationMenuTrigger>
-                        <NavigationMenuContent>
-                            <ul className="flex flex-col w-48">
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('products')}>
-                                    Products
-                                </NavigationMenuLink>
-                                <div className="border-t my-1"></div>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('purchase')}>
-                                    Purchase Invoice
-                                </NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('purchase_return')}>
-                                    Purchase Return
-                                </NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('sales')}>
-                                    Sales Invoice
-                                </NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('sales_return')}>
-                                    Sales Return
-                                </NavigationMenuLink>
-                                <div className="border-t my-1"></div>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('opening_stock')}>
-                                    Opening Stock
-                                </NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('stock_journal')}>
-                                    Stock Journal
-                                </NavigationMenuLink>
-                            </ul>
-                        </NavigationMenuContent>
-                    </NavigationMenuItem>
+                {/* Accounts */}
+                <MenubarMenu>
+                    <MenubarTrigger>Accounts</MenubarTrigger>
+                    <MenubarContent>
+                        <MenubarItem onClick={() => handleNavigation('coa')}>Chart of Accounts</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('customers')}>Customers</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('suppliers')}>Suppliers</MenubarItem>
+                        <MenubarSeparator />
+                        <MenubarItem onClick={() => handleNavigation('payments')}>Payment</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('receipts')}>Receipt</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('journal')}>Journal Entry</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('opening')}>Opening Balance</MenubarItem>
+                    </MenubarContent>
+                </MenubarMenu>
 
-                    {/* Accounts */}
-                    <NavigationMenuItem>
-                        <NavigationMenuTrigger className="h-9">Accounts</NavigationMenuTrigger>
-                        <NavigationMenuContent>
-                            <ul className="flex flex-col w-48">
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('coa')}>Chart of Accounts</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('customers')}>Customers</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('suppliers')}>Suppliers</NavigationMenuLink>
-                                <div className="border-t my-1"></div>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('payments')}>Payment</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('receipts')}>Receipt</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('journal')}>Journal Entry</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('opening')}>Opening Balance</NavigationMenuLink>
-                            </ul>
-                        </NavigationMenuContent>
-                    </NavigationMenuItem>
+                {/* Reports */}
+                <MenubarMenu>
+                    <MenubarTrigger>Reports</MenubarTrigger>
+                    <MenubarContent>
+                        <MenubarItem onClick={() => handleNavigation('stock_report')}>Stock Report</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('day_book')}>Day Book</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('outstanding')}>Party Outstanding</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('ledger')}>Ledger Report</MenubarItem>
+                        <MenubarSeparator />
+                        <MenubarItem onClick={() => handleNavigation('trial')}>Trial Balance</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('balance_sheet')}>Balance Sheet</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('profit_loss')}>Profit & Loss</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('cash_flow')}>Cash Flow</MenubarItem>
+                    </MenubarContent>
+                </MenubarMenu>
 
-                    {/* Reports */}
-                    <NavigationMenuItem>
-                        <NavigationMenuTrigger className="h-9">Reports</NavigationMenuTrigger>
-                        <NavigationMenuContent>
-                            <ul className="flex flex-col w-48">
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('stock_report')}>Stock Report</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('day_book')}>Day Book</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('outstanding')}>Party Outstanding</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('ledger')}>Ledger Report</NavigationMenuLink>
-                                <div className="border-t my-1"></div>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('trial')}>Trial Balance</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('balance_sheet')}>Balance Sheet</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('profit_loss')}>Profit & Loss</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('cash_flow')}>Cash Flow</NavigationMenuLink>
-                            </ul>
-                        </NavigationMenuContent>
-                    </NavigationMenuItem>
-
-                    {/* Settings */}
-                    <NavigationMenuItem>
-                        <NavigationMenuTrigger className="h-9">
-                            <IconSettings size={16} className="mr-2" />
-                            Settings
-                        </NavigationMenuTrigger>
-                        <NavigationMenuContent>
-                            <ul className="flex flex-col w-48">
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('company_profile')}>Company Profile</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('invoice_settings')}>Invoice Settings</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('voucher_settings')}>Voucher Settings</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('voucher_sequences')}>Voucher Numbering</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('barcode_settings')}>Barcode Settings</NavigationMenuLink>
-                                <div className="border-t my-1"></div>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('users')}>Users</NavigationMenuLink>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('license')}>License</NavigationMenuLink>
-                                <div className="border-t my-1"></div>
-                                <NavigationMenuLink className={itemStyle} onClick={() => handleNavigation('db_settings')}>DB Settings</NavigationMenuLink>
-                            </ul>
-                        </NavigationMenuContent>
-                    </NavigationMenuItem>
-
-                </NavigationMenuList>
-            </NavigationMenu>
+                {/* Settings */}
+                <MenubarMenu>
+                    <MenubarTrigger>
+                        <IconSettings size={16} className="mr-2" />
+                        Settings
+                    </MenubarTrigger>
+                    <MenubarContent>
+                        <MenubarItem onClick={() => handleNavigation('company_profile')}>Company Profile</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('invoice_settings')}>Invoice Settings</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('voucher_settings')}>Voucher Settings</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('voucher_sequences')}>Voucher Numbering</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('barcode_settings')}>Barcode Settings</MenubarItem>
+                        <MenubarSeparator />
+                        <MenubarItem onClick={() => handleNavigation('users')}>Users</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('license')}>License</MenubarItem>
+                        <MenubarSeparator />
+                        <MenubarItem onClick={() => handleNavigation('db_settings')}>DB Settings</MenubarItem>
+                    </MenubarContent>
+                </MenubarMenu>
+            </Menubar>
 
             <div className="ml-auto flex items-center gap-3">
                 <ThemeToggle />
