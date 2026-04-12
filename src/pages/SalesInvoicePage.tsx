@@ -832,7 +832,7 @@ export default function SalesInvoicePage() {
         onListView={() => setShowListView(true)}
         onManagePayments={salesState.mode !== 'new' ? () => setShowQuickPayment(true) : undefined}
         loading={salesState.loading}
-        customActionsPrefix={
+        customActionsPrefix={salesState.mode === 'new' ? (
           <div className="flex items-center gap-1 overflow-x-auto max-w-[40vw] pr-2 border-r mr-1">
             {(()=>{
               const allTabs = [
@@ -880,7 +880,7 @@ export default function SalesInvoicePage() {
               <IconPlus size={14} />
             </button>
           </div>
-        }
+        ) : undefined}
       />
 
       <VoucherShortcutPanel
