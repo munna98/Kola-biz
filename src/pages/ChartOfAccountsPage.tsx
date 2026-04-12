@@ -159,12 +159,13 @@ export default function ChartOfAccountsPage() {
           <table className="w-full">
             <thead className="border-b bg-muted/50">
               <tr className="text-left text-sm">
+                <th className="p-3 w-12">S.No</th>
                 <th className="p-3">Code</th>
                 <th className="p-3">Account Name</th>
                 <th className="p-3">Type</th>
                 <th className="p-3">Group</th>
                 <th className="p-3">Description</th>
-                <th className="p-3">Opening Balance</th>
+                <th className="p-3 text-right">Opening Balance</th>
                 <th className="p-3">Active</th>
                 <th className="p-3">Actions</th>
               </tr>
@@ -172,13 +173,14 @@ export default function ChartOfAccountsPage() {
             <tbody>
               {filteredAccounts.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="p-6 text-center text-muted-foreground">
+                  <td colSpan={10} className="p-6 text-center text-muted-foreground">
                     {searchTerm ? 'No accounts match your search.' : 'No accounts found. Add your first account to get started.'}
                   </td>
                 </tr>
               ) : (
-                filteredAccounts.map(account => (
+                filteredAccounts.map((account, index) => (
                   <tr key={account.id} className="border-b hover:bg-muted/30">
+                    <td className="p-3 text-sm text-muted-foreground">{index + 1}</td>
                     <td className="p-3 font-mono text-sm font-medium">{account.account_code}</td>
                     <td className="p-3">{account.account_name}</td>
                     <td className="p-3">

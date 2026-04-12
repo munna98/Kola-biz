@@ -181,6 +181,7 @@ export default function ProductsPage() {
           <table className="w-full">
             <thead className="border-b bg-muted/50">
               <tr className="text-left text-sm">
+                <th className="p-3 w-12">S.No</th>
                 <th className="p-3">Code</th>
                 <th className="p-3">Name</th>
                 <th className="p-3">Group</th>
@@ -193,23 +194,26 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {products.filter(p =>
-                p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (groups.find(g => g.id === p.group_id)?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
-              ).length === 0 ? (
-                <tr>
-                  <td colSpan={9} className="p-4 text-center text-muted-foreground">
-                    {searchTerm ? 'No products match your search.' : 'No products found. Add your first product to get started.'}
-                  </td>
-                </tr>
-              ) : (
-                products.filter(p =>
+              {(() => {
+                const filteredProducts = products.filter(p =>
                   p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   (groups.find(g => g.id === p.group_id)?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
-                ).map(p => (
+                );
+
+                if (filteredProducts.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={10} className="p-4 text-center text-muted-foreground">
+                        {searchTerm ? 'No products match your search.' : 'No products found. Add your first product to get started.'}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return filteredProducts.map((p, index) => (
                   <tr key={p.id} className="border-b hover:bg-muted/30">
+                    <td className="p-3 text-sm text-muted-foreground">{index + 1}</td>
                     <td className="p-3 font-mono text-sm">{p.code}</td>
                     <td className="p-3">{p.name}</td>
                     <td className="p-3 text-sm">{groups.find(g => g.id === p.group_id)?.name || '-'}</td>
@@ -243,7 +247,7 @@ export default function ProductsPage() {
                     </td>
                   </tr>
                 ))
-              )}
+              })()}
             </tbody>
           </table>
         </CardContent>

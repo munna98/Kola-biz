@@ -102,6 +102,7 @@ export default function SuppliersPage() {
           <table className="w-full">
             <thead className="border-b bg-muted/50">
               <tr className="text-left text-sm">
+                <th className="p-3 w-12">S.No</th>
                 <th className="p-3">Name</th>
                 <th className="p-3">Email</th>
                 <th className="p-3">Phone</th>
@@ -110,23 +111,26 @@ export default function SuppliersPage() {
               </tr>
             </thead>
             <tbody>
-              {suppliers.filter(s =>
-                s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (s.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (s.phone || '').includes(searchTerm)
-              ).length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="p-6 text-center text-muted-foreground">
-                    {searchTerm ? 'No suppliers match your search.' : 'No suppliers found. Add your first supplier to get started.'}
-                  </td>
-                </tr>
-              ) : (
-                suppliers.filter(s =>
+              {(() => {
+                const filteredSuppliers = suppliers.filter(s =>
                   s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   (s.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                   (s.phone || '').includes(searchTerm)
-                ).map(s => (
+                );
+
+                if (filteredSuppliers.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                        {searchTerm ? 'No suppliers match your search.' : 'No suppliers found. Add your first supplier to get started.'}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return filteredSuppliers.map((s, index) => (
                   <tr key={s.id} className="border-b hover:bg-muted/30">
+                    <td className="p-3 text-sm text-muted-foreground">{index + 1}</td>
                     <td className="p-3 font-medium">{s.name}</td>
                     <td className="p-3 text-sm text-muted-foreground">{s.email || '-'}</td>
                     <td className="p-3 text-sm">{s.phone || '-'}</td>
@@ -146,7 +150,7 @@ export default function SuppliersPage() {
                     </td>
                   </tr>
                 ))
-              )}
+              })()}
             </tbody>
           </table>
         </CardContent>

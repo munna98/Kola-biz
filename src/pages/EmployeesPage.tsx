@@ -79,6 +79,7 @@ export default function EmployeesPage() {
                     <table className="w-full">
                         <thead className="border-b bg-muted/50">
                             <tr className="text-left text-sm">
+                                <th className="p-3 w-12">S.No</th>
                                 <th className="p-3">Name</th>
                                 <th className="p-3">Code</th>
                                 <th className="p-3">Designation</th>
@@ -90,13 +91,14 @@ export default function EmployeesPage() {
                         <tbody>
                             {filteredEmployees.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                                    <td colSpan={7} className="p-6 text-center text-muted-foreground">
                                         {searchTerm ? 'No employees match your search.' : 'No employees found.'}
                                     </td>
                                 </tr>
                             ) : (
-                                filteredEmployees.map(emp => (
+                                filteredEmployees.map((emp, index) => (
                                     <tr key={emp.id} className="border-b hover:bg-muted/30">
+                                        <td className="p-3 text-sm text-muted-foreground">{index + 1}</td>
                                         <td className="p-3 font-medium">
                                             <div className="flex items-center gap-2">
                                                 <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center text-primary">

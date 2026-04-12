@@ -102,6 +102,7 @@ export default function CustomersPage() {
           <table className="w-full">
             <thead className="border-b bg-muted/50">
               <tr className="text-left text-sm">
+                <th className="p-3 w-12">S.No</th>
                 <th className="p-3">Name</th>
                 <th className="p-3">Email</th>
                 <th className="p-3">Phone</th>
@@ -110,23 +111,26 @@ export default function CustomersPage() {
               </tr>
             </thead>
             <tbody>
-              {customers.filter(c =>
-                c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (c.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (c.phone || '').includes(searchTerm)
-              ).length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="p-6 text-center text-muted-foreground">
-                    {searchTerm ? 'No customers match your search.' : 'No customers found. Add your first customer to get started.'}
-                  </td>
-                </tr>
-              ) : (
-                customers.filter(c =>
+              {(() => {
+                const filteredCustomers = customers.filter(c =>
                   c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   (c.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
                   (c.phone || '').includes(searchTerm)
-                ).map(c => (
+                );
+
+                if (filteredCustomers.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                        {searchTerm ? 'No customers match your search.' : 'No customers found. Add your first customer to get started.'}
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return filteredCustomers.map((c, index) => (
                   <tr key={c.id} className="border-b hover:bg-muted/30">
+                    <td className="p-3 text-sm text-muted-foreground">{index + 1}</td>
                     <td className="p-3 font-medium">{c.name}</td>
                     <td className="p-3 text-sm text-muted-foreground">{c.email || '-'}</td>
                     <td className="p-3 text-sm">{c.phone || '-'}</td>
@@ -146,7 +150,7 @@ export default function CustomersPage() {
                     </td>
                   </tr>
                 ))
-              )}
+              })()}
             </tbody>
           </table>
         </CardContent>
