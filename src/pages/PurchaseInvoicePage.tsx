@@ -72,6 +72,7 @@ export default function PurchaseInvoicePage() {
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
   const [savedInvoiceNo, setSavedInvoiceNo] = useState<string | undefined>(undefined);
+  const [savedInvoiceDate, setSavedInvoiceDate] = useState<string | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
@@ -145,6 +146,14 @@ export default function PurchaseInvoicePage() {
 
     loadData();
   }, [dispatch]);
+
+  useEffect(() => {
+    if (purchaseState.currentVoucherId) {
+      setSavedInvoiceId(undefined);
+      setSavedInvoiceNo(undefined);
+      setSavedInvoiceDate(undefined);
+    }
+  }, [purchaseState.currentVoucherId]);
 
   // Default Party Selection Effect
   useEffect(() => {
@@ -493,6 +502,7 @@ export default function PurchaseInvoicePage() {
         // Prepare state for Payment Dialog & Print (persist before reset)
         setSavedInvoiceId(purchaseState.currentVoucherId);
         setSavedInvoiceNo(purchaseState.currentVoucherNo);
+        setSavedInvoiceDate(purchaseState.form.voucher_date);
         setSavedInvoiceAmount(purchaseState.totals.grandTotal);
         const supplier = parties.find(p => p.id === purchaseState.form.supplier_id);
         setSavedPartyName(supplier?.name || 'Cash');
@@ -551,6 +561,7 @@ export default function PurchaseInvoicePage() {
         // Auto-prompt for payment after creating invoice
         setSavedInvoiceAmount(purchaseState.totals.grandTotal);
         setSavedInvoiceId(newInvoiceId);
+        setSavedInvoiceDate(purchaseState.form.voucher_date);
 
         // Fetch new invoice to get the generated voucher number
         const newInvoice = await invoke<any>('get_purchase_invoice', { id: newInvoiceId });
@@ -777,10 +788,10 @@ export default function PurchaseInvoicePage() {
   const isReadOnly = purchaseState.mode === 'viewing';
 
   // Compute isCashBankParty dynamically so 'Manage Payments' in view mode also routes correctly.
-  // savedIsCashBankParty is only set right after a save; currentPartyIsCashBank covers the view-mode case.
   const currentSupplierParty = parties.find(p => p.id === purchaseState.form.supplier_id);
   const currentPartyIsCashBank = currentSupplierParty?.group === 'Cash' || currentSupplierParty?.group === 'Bank Account';
-  const effectiveIsCashBankParty = savedIsCashBankParty || currentPartyIsCashBank;
+  const isShowingSavedInvoiceContext = !!savedInvoiceId;
+  const effectiveIsCashBankParty = isShowingSavedInvoiceContext ? savedIsCashBankParty : currentPartyIsCashBank;
 
 
   return (
@@ -835,7 +846,7 @@ export default function PurchaseInvoicePage() {
         invoiceId={savedInvoiceId || purchaseState.currentVoucherId || undefined}
         invoiceNo={savedInvoiceNo || purchaseState.currentVoucherNo}
         invoiceAmount={savedInvoiceAmount || purchaseState.totals.grandTotal}
-        invoiceDate={purchaseState.form.voucher_date}
+        invoiceDate={savedInvoiceDate || purchaseState.form.voucher_date}
         partyName={savedPartyName}
         readOnly={purchaseState.mode === 'viewing'}
         isCashBankParty={effectiveIsCashBankParty}

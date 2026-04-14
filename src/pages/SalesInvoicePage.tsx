@@ -92,6 +92,7 @@ export default function SalesInvoicePage() {
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
   const [savedInvoiceNo, setSavedInvoiceNo] = useState<string | undefined>(undefined);
+  const [savedInvoiceDate, setSavedInvoiceDate] = useState<string | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
@@ -160,6 +161,7 @@ export default function SalesInvoicePage() {
     if (salesState.currentVoucherId) {
       setSavedInvoiceId(undefined);
       setSavedInvoiceNo(undefined);
+      setSavedInvoiceDate(undefined);
     }
   }, [salesState.currentVoucherId]);
 
@@ -430,6 +432,7 @@ export default function SalesInvoicePage() {
         // Prepare state for Payment Dialog & Print (persist before reset)
         setSavedInvoiceId(salesState.currentVoucherId);
         setSavedInvoiceNo(salesState.currentVoucherNo);
+        setSavedInvoiceDate(salesState.form.voucher_date);
         setSavedInvoiceAmount(salesState.totals.grandTotal);
         const customer = parties.find(p => p.id === salesState.form.customer_id);
         setSavedPartyName(customer?.name || 'Cash');
@@ -473,6 +476,7 @@ export default function SalesInvoicePage() {
         // Auto-prompt for payment after creating invoice
         setSavedInvoiceAmount(salesState.totals.grandTotal);
         setSavedInvoiceId(newInvoiceId);
+        setSavedInvoiceDate(salesState.form.voucher_date);
 
         // Fetch new invoice to get the generated voucher number
         const newInvoice = await invoke<any>('get_sales_invoice', { id: newInvoiceId });
@@ -803,10 +807,10 @@ export default function SalesInvoicePage() {
   const isReadOnly = salesState.mode === 'viewing';
 
   // Compute isCashBankParty dynamically so 'Manage Payments' in view mode also routes correctly.
-  // savedIsCashBankParty is only set right after a save; currentPartyIsCashBank covers the view-mode case.
   const currentCustomerParty = parties.find(p => p.id === salesState.form.customer_id);
   const currentPartyIsCashBank = currentCustomerParty?.group === 'Cash' || currentCustomerParty?.group === 'Bank Account';
-  const effectiveIsCashBankParty = savedIsCashBankParty || currentPartyIsCashBank;
+  const isShowingSavedInvoiceContext = !!savedInvoiceId;
+  const effectiveIsCashBankParty = isShowingSavedInvoiceContext ? savedIsCashBankParty : currentPartyIsCashBank;
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -910,7 +914,7 @@ export default function SalesInvoicePage() {
         invoiceId={savedInvoiceId || salesState.currentVoucherId || undefined}
         invoiceNo={savedInvoiceNo || salesState.currentVoucherNo}
         invoiceAmount={savedInvoiceAmount || salesState.totals.grandTotal}
-        invoiceDate={salesState.form.voucher_date}
+        invoiceDate={savedInvoiceDate || salesState.form.voucher_date}
         partyName={savedPartyName}
         readOnly={salesState.mode === 'viewing'}
         isCashBankParty={effectiveIsCashBankParty}
