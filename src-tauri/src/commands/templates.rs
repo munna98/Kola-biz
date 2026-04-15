@@ -789,7 +789,7 @@ async fn get_payment_data(
             v.voucher_no,
             v.voucher_date,
             CASE 
-                WHEN v.created_from_invoice_id IS NOT NULL THEN je.account_id
+                WHEN v.created_from_invoice_id IS NOT NULL THEN COALESCE(v.account_id, je.account_id)
                 ELSE v.party_id
             END as account_id,
             CASE 
@@ -808,8 +808,11 @@ async fn get_payment_data(
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
-            SELECT account_id FROM journal_entries 
-            WHERE voucher_id = v.id AND credit > 0 LIMIT 1
+            COALESCE(
+                v.account_id,
+                (SELECT account_id FROM journal_entries 
+                WHERE voucher_id = v.id AND credit > 0 LIMIT 1)
+            )
         )
         LEFT JOIN (
             SELECT voucher_id, account_id 
@@ -848,7 +851,7 @@ async fn get_receipt_data(
             v.voucher_no,
             v.voucher_date,
             CASE 
-                WHEN v.created_from_invoice_id IS NOT NULL THEN je.account_id
+                WHEN v.created_from_invoice_id IS NOT NULL THEN COALESCE(v.account_id, je.account_id)
                 ELSE v.party_id
             END as account_id,
             CASE 
@@ -867,8 +870,11 @@ async fn get_receipt_data(
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
-            SELECT account_id FROM journal_entries 
-            WHERE voucher_id = v.id AND debit > 0 LIMIT 1
+            COALESCE(
+                v.account_id,
+                (SELECT account_id FROM journal_entries 
+                WHERE voucher_id = v.id AND debit > 0 LIMIT 1)
+            )
         )
         LEFT JOIN (
             SELECT voucher_id, account_id 

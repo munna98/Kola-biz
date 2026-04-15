@@ -283,7 +283,7 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
             v.voucher_no,
             v.voucher_date,
             CASE 
-                WHEN v.created_from_invoice_id IS NOT NULL THEN je.account_id
+                WHEN v.created_from_invoice_id IS NOT NULL THEN COALESCE(v.account_id, je.account_id)
                 ELSE v.party_id
             END as account_id,
             CASE 
@@ -304,8 +304,11 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
-            SELECT account_id FROM journal_entries 
-            WHERE voucher_id = v.id AND credit > 0 LIMIT 1
+            COALESCE(
+                v.account_id,
+                (SELECT account_id FROM journal_entries 
+                WHERE voucher_id = v.id AND credit > 0 LIMIT 1)
+            )
         )
         LEFT JOIN (
             SELECT voucher_id, account_id 
@@ -336,7 +339,7 @@ pub async fn get_payment(
             v.voucher_no,
             v.voucher_date,
             CASE 
-                WHEN v.created_from_invoice_id IS NOT NULL THEN je.account_id
+                WHEN v.created_from_invoice_id IS NOT NULL THEN COALESCE(v.account_id, je.account_id)
                 ELSE v.party_id
             END as account_id,
             CASE 
@@ -357,8 +360,11 @@ pub async fn get_payment(
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
-            SELECT account_id FROM journal_entries 
-            WHERE voucher_id = v.id AND credit > 0 LIMIT 1
+            COALESCE(
+                v.account_id,
+                (SELECT account_id FROM journal_entries 
+                WHERE voucher_id = v.id AND credit > 0 LIMIT 1)
+            )
         )
         LEFT JOIN (
             SELECT voucher_id, account_id 
@@ -387,7 +393,7 @@ pub async fn get_payment_items(
         "SELECT 
             vi.id,
             vi.voucher_id,
-            COALESCE(coa.account_name, vi.description) as description,
+            COALESCE(NULLIF(vi.description, ''), coa.account_name) as description,
             vi.amount,
             vi.tax_rate,
             vi.tax_amount,
@@ -1000,7 +1006,7 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
             v.voucher_no,
             v.voucher_date,
             CASE 
-                WHEN v.created_from_invoice_id IS NOT NULL THEN je.account_id
+                WHEN v.created_from_invoice_id IS NOT NULL THEN COALESCE(v.account_id, je.account_id)
                 ELSE v.party_id
             END as account_id,
             CASE 
@@ -1021,8 +1027,11 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
-            SELECT account_id FROM journal_entries 
-            WHERE voucher_id = v.id AND debit > 0 LIMIT 1
+            COALESCE(
+                v.account_id,
+                (SELECT account_id FROM journal_entries 
+                WHERE voucher_id = v.id AND debit > 0 LIMIT 1)
+            )
         )
         LEFT JOIN (
             SELECT voucher_id, account_id 
@@ -1053,7 +1062,7 @@ pub async fn get_receipt(
             v.voucher_no,
             v.voucher_date,
             CASE 
-                WHEN v.created_from_invoice_id IS NOT NULL THEN je.account_id
+                WHEN v.created_from_invoice_id IS NOT NULL THEN COALESCE(v.account_id, je.account_id)
                 ELSE v.party_id
             END as account_id,
             CASE 
@@ -1074,8 +1083,11 @@ pub async fn get_receipt(
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
-            SELECT account_id FROM journal_entries 
-            WHERE voucher_id = v.id AND debit > 0 LIMIT 1
+            COALESCE(
+                v.account_id,
+                (SELECT account_id FROM journal_entries 
+                WHERE voucher_id = v.id AND debit > 0 LIMIT 1)
+            )
         )
         LEFT JOIN (
             SELECT voucher_id, account_id 
@@ -1102,16 +1114,17 @@ pub async fn get_receipt_items(
 ) -> Result<Vec<ReceiptItem>, String> {
     let items = sqlx::query_as::<_, ReceiptItem>(
         "SELECT 
-            id,
-            voucher_id,
-            description,
-            amount,
-            tax_rate,
-            tax_amount,
-            remarks,
-            ledger_id
-        FROM voucher_items
-        WHERE voucher_id = ?",
+            vi.id,
+            vi.voucher_id,
+            COALESCE(NULLIF(vi.description, ''), coa.account_name) as description,
+            vi.amount,
+            vi.tax_rate,
+            vi.tax_amount,
+            vi.remarks,
+            vi.ledger_id
+        FROM voucher_items vi
+        LEFT JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
+        WHERE vi.voucher_id = ?",
     )
     .bind(voucher_id)
     .fetch_all(pool.inner())
