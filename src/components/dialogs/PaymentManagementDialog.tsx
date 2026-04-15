@@ -86,6 +86,7 @@ export default function PaymentManagementDialog({
 
     const saveButtonRef = useRef<HTMLButtonElement>(null);
     const hasInitialized = useRef(false);
+    const newLineAmountInputRef = useRef<HTMLInputElement>(null);
 
     const paymentMethods = [
         { value: 'cash', label: 'Cash' },
@@ -113,6 +114,29 @@ export default function PaymentManagementDialog({
             }, 150);
         }
     }, [open, invoiceId]);
+
+    useEffect(() => {
+        if (!open || readOnly || paymentLines.length === 0) {
+            return;
+        }
+
+        const hasExistingSavedPayments = paymentLines.some(line => line.payment_voucher_id);
+        const hasSingleEmptyNewLine =
+            paymentLines.length === 1 &&
+            !paymentLines[0].payment_voucher_id &&
+            paymentLines[0].amount === 0;
+
+        if (hasExistingSavedPayments || !hasSingleEmptyNewLine) {
+            return;
+        }
+
+        const timeoutId = window.setTimeout(() => {
+            newLineAmountInputRef.current?.focus();
+            newLineAmountInputRef.current?.select();
+        }, 0);
+
+        return () => window.clearTimeout(timeoutId);
+    }, [open, readOnly, paymentLines]);
 
     const loadCashBankAccounts = async () => {
         try {
@@ -442,6 +466,7 @@ export default function PaymentManagementDialog({
                                         </div>
                                         <div className="col-span-4 relative">
                                             <Input
+                                                ref={!readOnly && !line.payment_voucher_id ? newLineAmountInputRef : undefined}
                                                 type="number"
                                                 value={formatNumber(line.amount)}
                                                 onChange={(e) => updatePaymentLine(line.id, 'amount', parseNumber(e.target.value))}
