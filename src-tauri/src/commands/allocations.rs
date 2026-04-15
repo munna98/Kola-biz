@@ -318,8 +318,13 @@ pub async fn create_quick_payment(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details
-    let invoice: (String, String, String, String) =
-        sqlx::query_as("SELECT party_id, party_type, voucher_no, voucher_type FROM vouchers WHERE id = ?")
+    let invoice: (String, String, String, String, String) =
+        sqlx::query_as(
+            "SELECT v.party_id, v.party_type, v.voucher_no, v.voucher_type, coa.account_name
+             FROM vouchers v
+             LEFT JOIN chart_of_accounts coa ON coa.id = v.party_id
+             WHERE v.id = ?",
+        )
             .bind(&payment.invoice_id)
             .fetch_one(&mut *tx)
             .await
@@ -366,8 +371,8 @@ pub async fn create_quick_payment(
     .bind(&voucher_no)
     .bind(voucher_type)
     .bind(&payment.payment_date)
-    .bind(&invoice.0)
-    .bind(&invoice.1)
+        .bind(&invoice.0)
+        .bind(&invoice.1)
     .bind(&payment.reference)
     .bind(payment.amount)
     .bind(&payment.payment_method)
@@ -380,14 +385,15 @@ pub async fn create_quick_payment(
 
     let voucher_item_id = Uuid::now_v7().to_string();
 
-    // Insert voucher item for the payment/receipt
+    // Keep the voucher row pointed at the affected party ledger so it displays correctly
+    // in the payment/receipt item grid when the voucher is loaded later.
     sqlx::query(
         "INSERT INTO voucher_items (id, voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_item_id)
     .bind(&payment_id)
-    .bind(&payment.remarks.clone().unwrap_or_default())
+    .bind(&invoice.4)
     .bind(payment.amount)
     .bind(0.0)
     .bind(0.0)
@@ -395,7 +401,7 @@ pub async fn create_quick_payment(
     .bind(1.0)
     .bind(1.0)
     .bind(payment.amount)
-    .bind(&invoice.0)  // Use party_id (supplier/customer) instead of payment_account_id (cash/bank)
+    .bind(&invoice.0)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -538,8 +544,13 @@ pub async fn update_quick_payment(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details for party info
-    let invoice: (String, String, String, String) =
-        sqlx::query_as("SELECT party_id, party_type, voucher_no, voucher_type FROM vouchers WHERE id = ?")
+    let invoice: (String, String, String, String, String) =
+        sqlx::query_as(
+            "SELECT v.party_id, v.party_type, v.voucher_no, v.voucher_type, coa.account_name
+             FROM vouchers v
+             LEFT JOIN chart_of_accounts coa ON coa.id = v.party_id
+             WHERE v.id = ?",
+        )
             .bind(&payment.invoice_id)
             .fetch_one(&mut *tx)
             .await
@@ -580,16 +591,18 @@ pub async fn update_quick_payment(
     // Update voucher item
     sqlx::query(
         "UPDATE voucher_items 
-         SET amount = ?, 
+         SET description = ?,
+             amount = ?, 
              remarks = ?,
              rate = ?,
              ledger_id = ?
          WHERE voucher_id = ? AND remarks LIKE ?",
     )
+    .bind(&invoice.4)
     .bind(payment.amount)
     .bind(format!("Payment for Invoice {}", invoice.2))
     .bind(payment.amount)
-    .bind(&payment.payment_account_id)
+    .bind(&invoice.0)
     .bind(&payment.payment_voucher_id)
     .bind("Payment for Invoice%")
     .execute(&mut *tx)

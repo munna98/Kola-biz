@@ -393,13 +393,17 @@ pub async fn get_payment_items(
         "SELECT 
             vi.id,
             vi.voucher_id,
-            COALESCE(NULLIF(vi.description, ''), coa.account_name) as description,
+            CASE
+                WHEN v.created_from_invoice_id IS NOT NULL THEN COALESCE(coa.account_name, NULLIF(vi.description, ''))
+                ELSE COALESCE(NULLIF(vi.description, ''), coa.account_name)
+            END as description,
             vi.amount,
             vi.tax_rate,
             vi.tax_amount,
             vi.remarks,
             vi.ledger_id
         FROM voucher_items vi
+        LEFT JOIN vouchers v ON vi.voucher_id = v.id
         LEFT JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
         WHERE vi.voucher_id = ?",
     )
@@ -1116,13 +1120,17 @@ pub async fn get_receipt_items(
         "SELECT 
             vi.id,
             vi.voucher_id,
-            COALESCE(NULLIF(vi.description, ''), coa.account_name) as description,
+            CASE
+                WHEN v.created_from_invoice_id IS NOT NULL THEN COALESCE(coa.account_name, NULLIF(vi.description, ''))
+                ELSE COALESCE(NULLIF(vi.description, ''), coa.account_name)
+            END as description,
             vi.amount,
             vi.tax_rate,
             vi.tax_amount,
             vi.remarks,
             vi.ledger_id
         FROM voucher_items vi
+        LEFT JOIN vouchers v ON vi.voucher_id = v.id
         LEFT JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
         WHERE vi.voucher_id = ?",
     )
