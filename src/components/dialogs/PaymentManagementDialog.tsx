@@ -15,6 +15,7 @@ import {
     IconX,
     IconPlus,
     IconTrash,
+    IconCurrencyRupee,
 } from '@tabler/icons-react';
 
 interface PaymentManagementDialogProps {
@@ -81,7 +82,7 @@ export default function PaymentManagementDialog({
     const [paymentLines, setPaymentLines] = useState<PaymentLine[]>([]);
 
     // Derived state
-    const totalAllocated = allocations.reduce((sum, a) => sum + a.allocated_amount, 0);
+    const currentLinesTotal = paymentLines.reduce((sum, line) => sum + (line.amount || 0), 0);
 
     const saveButtonRef = useRef<HTMLButtonElement>(null);
     const hasInitialized = useRef(false);
@@ -198,21 +199,17 @@ export default function PaymentManagementDialog({
         if (!loadingAllocations && cashBankAccounts.length > 0 && invoiceId && !hasInitialized.current) {
             if (paymentLines.length === 0) {
                 const cashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];
-                // Initial load calc - show remaining balance for new payment
-                const remaining = invoiceAmount - totalAllocated;
-                const prefillAmount = remaining > 0 ? remaining : 0;
-
                 const newLine: PaymentLine = {
                     id: `line-${Date.now()}-${Math.random()}`,
                     account_id: cashAccount.id,
-                    amount: prefillAmount,
+                    amount: 0,
                     method: 'cash',
                 };
                 setPaymentLines([newLine]);
             }
             hasInitialized.current = true;
         }
-    }, [loadingAllocations, cashBankAccounts, invoiceId, invoiceAmount]); // Removed paymentLines.length to prevent re-adding
+    }, [loadingAllocations, cashBankAccounts, invoiceId]); // Removed paymentLines.length to prevent re-adding
 
     const addPaymentLine = () => {
         const cashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];
@@ -234,6 +231,14 @@ export default function PaymentManagementDialog({
         setPaymentLines(paymentLines.map(line =>
             line.id === id ? { ...line, [field]: value } : line
         ));
+    };
+
+    const getSuggestedAmountForLine = (lineId: string) => {
+        const otherLinesTotal = paymentLines
+            .filter(line => line.id !== lineId)
+            .reduce((sum, line) => sum + (line.amount || 0), 0);
+
+        return Math.max(invoiceAmount - otherLinesTotal, 0);
     };
 
     // Number formatting helpers (same as use-dialog hook)
@@ -367,7 +372,7 @@ export default function PaymentManagementDialog({
         onOpenChange(false);
     };
 
-    const remainingAmount = invoiceAmount - totalAllocated;
+    const remainingAmount = Math.max(invoiceAmount - currentLinesTotal, 0);
 
     return (
         <>
@@ -441,21 +446,35 @@ export default function PaymentManagementDialog({
                                                 value={formatNumber(line.amount)}
                                                 onChange={(e) => updatePaymentLine(line.id, 'amount', parseNumber(e.target.value))}
                                                 placeholder="0.00"
-                                                className="h-8 text-sm font-mono pr-8"
+                                                className="h-8 text-sm font-mono pr-16"
                                                 step="0.01"
                                                 readOnly={readOnly}
                                             />
-                                            {!readOnly && line.amount > 0 && (
-                                                <Button
-                                                    type="button"
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => updatePaymentLine(line.id, 'amount', 0)}
-                                                    className="absolute right-0 top-0 h-8 w-8 p-0"
-                                                    title="Clear amount"
-                                                >
-                                                    <IconX size={14} />
-                                                </Button>
+                                            {!readOnly && (
+                                                <>
+                                                    <Button
+                                                        type="button"
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => updatePaymentLine(line.id, 'amount', getSuggestedAmountForLine(line.id))}
+                                                        className="absolute right-8 top-0 h-8 w-8 p-0"
+                                                        title={`Use remaining amount (${getSuggestedAmountForLine(line.id).toFixed(2)})`}
+                                                    >
+                                                        <IconCurrencyRupee size={14} />
+                                                    </Button>
+                                                    {line.amount > 0 && (
+                                                        <Button
+                                                            type="button"
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => updatePaymentLine(line.id, 'amount', 0)}
+                                                            className="absolute right-0 top-0 h-8 w-8 p-0"
+                                                            title="Clear amount"
+                                                        >
+                                                            <IconX size={14} />
+                                                        </Button>
+                                                    )}
+                                                </>
                                             )}
                                         </div>
                                         <div className="col-span-4">
