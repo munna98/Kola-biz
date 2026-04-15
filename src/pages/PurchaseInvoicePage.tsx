@@ -790,6 +790,7 @@ export default function PurchaseInvoicePage() {
   // Compute isCashBankParty dynamically so 'Manage Payments' in view mode also routes correctly.
   const currentSupplierParty = parties.find(p => p.id === purchaseState.form.supplier_id);
   const currentPartyIsCashBank = currentSupplierParty?.group === 'Cash' || currentSupplierParty?.group === 'Bank Account';
+  const shouldShowPartyBalance = currentSupplierParty?.name.trim().toLowerCase() !== 'cash';
   const isShowingSavedInvoiceContext = !!savedInvoiceId;
   const effectiveIsCashBankParty = isShowingSavedInvoiceContext ? savedIsCashBankParty : currentPartyIsCashBank;
 
@@ -995,7 +996,7 @@ export default function PurchaseInvoicePage() {
             }}
             defaultUnitKind="purchase"
             footerRightContent={
-              partyBalance !== null ? (
+              partyBalance !== null && shouldShowPartyBalance ? (
                 <div className={`text-xs font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   Balance: ₹ {Math.abs(partyBalance).toLocaleString()} {partyBalance >= 0 ? 'Dr' : 'Cr'}
                 </div>
