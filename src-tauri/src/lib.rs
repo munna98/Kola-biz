@@ -240,6 +240,15 @@ pub fn run() {
             commands::stock_journal::create_stock_journal,
             commands::stock_journal::update_stock_journal,
             commands::stock_journal::delete_stock_journal,
+            // GST
+            get_gst_tax_slabs,
+            create_gst_tax_slab,
+            update_gst_tax_slab,
+            delete_gst_tax_slab,
+            get_gst_settings,
+            save_gst_settings,
+            get_gstr1_summary,
+            get_gstr3b_summary,
         ])
         .plugin(tauri_plugin_opener::init())
         .run(tauri::generate_context!())

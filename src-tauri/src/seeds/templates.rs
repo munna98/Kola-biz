@@ -11,6 +11,9 @@ const THERMAL_80MM_CSS: &str = include_str!("../../resources/templates/thermal_8
 const MINIMAL_HTML: &str = include_str!("../../resources/templates/minimal_clean.html");
 const MINIMAL_CSS: &str = include_str!("../../resources/templates/minimal_clean.css");
 
+const GST_TAX_INVOICE_HTML: &str = include_str!("../../resources/templates/tax_invoice_gst.html");
+const GST_TAX_INVOICE_CSS: &str = include_str!("../../resources/templates/tax_invoice_gst.css");
+
 fn split_template(html: &str) -> (String, String, String) {
     let sections: Vec<&str> = html.split("<!-- [").collect();
     let mut header = String::new();
@@ -185,6 +188,77 @@ pub async fn seed_handlebars_templates(
         .bind(&t80_b)
         .bind(&t80_f)
         .bind(THERMAL_80MM_CSS)
+        .execute(pool)
+        .await?;
+
+    // ==================== GST TAX INVOICE TEMPLATES ====================
+
+    let (gst_h, gst_b, gst_f) = split_template(GST_TAX_INVOICE_HTML);
+
+    // Sales — GST Tax Invoice
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css,
+            show_gstin, show_item_hsn, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-SI-GST-001")
+    .bind("GST Tax Invoice (Tally Style)")
+    .bind("Tally-compatible Tax Invoice with HSN/SAC, CGST/SGST/IGST breakup, e-Invoice block")
+    .bind("sales_invoice")
+    .bind("a4_portrait")
+    .bind("standard")
+    .bind(&gst_h)
+    .bind(&gst_b)
+    .bind(&gst_f)
+    .bind(GST_TAX_INVOICE_CSS)
+    .bind(1) // show_gstin
+    .bind(1) // show_item_hsn
+    .bind(0) // not default (keep existing default)
+    .execute(pool)
+    .await?;
+
+    // Purchase — GST Tax Invoice
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css,
+            show_gstin, show_item_hsn, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-PI-GST-001")
+    .bind("GST Tax Invoice — Purchase (Tally Style)")
+    .bind("Tally-compatible Tax Invoice for purchase vouchers")
+    .bind("purchase_invoice")
+    .bind("a4_portrait")
+    .bind("standard")
+    .bind(&gst_h)
+    .bind(&gst_b)
+    .bind(&gst_f)
+    .bind(GST_TAX_INVOICE_CSS)
+    .bind(1) // show_gstin
+    .bind(1) // show_item_hsn
+    .bind(0) // not default
+    .execute(pool)
+    .await?;
+
+    // Refresh GST templates on every startup (unless user has customised via designer)
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SI-GST-001' AND design_mode != 'designer'")
+        .bind(&gst_h)
+        .bind(&gst_b)
+        .bind(&gst_f)
+        .bind(GST_TAX_INVOICE_CSS)
+        .execute(pool)
+        .await?;
+
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-PI-GST-001' AND design_mode != 'designer'")
+        .bind(&gst_h)
+        .bind(&gst_b)
+        .bind(&gst_f)
+        .bind(GST_TAX_INVOICE_CSS)
         .execute(pool)
         .await?;
 

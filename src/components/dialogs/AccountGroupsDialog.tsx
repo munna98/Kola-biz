@@ -67,7 +67,7 @@ export default function AccountGroupsDialog({ open, onOpenChange }: AccountGroup
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Delete this account group?')) {
       try {
         await api.accountGroups.delete(id);

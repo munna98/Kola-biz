@@ -30,7 +30,7 @@ export default function SuppliersPage() {
     setOpen(true);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Move this supplier to Recycle Bin?')) {
       try {
         await api.suppliers.delete(id);
@@ -43,7 +43,7 @@ export default function SuppliersPage() {
     }
   };
 
-  const handleRestore = async (id: number) => {
+  const handleRestore = async (id: string) => {
     try {
       await api.suppliers.restore(id);
       toast.success('Supplier restored successfully');
@@ -54,7 +54,7 @@ export default function SuppliersPage() {
     }
   };
 
-  const handleHardDelete = async (id: number) => {
+  const handleHardDelete = async (id: string) => {
     if (confirm('PERMANENTLY delete this supplier? This action cannot be undone.')) {
       try {
         await api.suppliers.hardDelete(id);

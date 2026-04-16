@@ -265,6 +265,8 @@ pub struct Product {
     pub is_active: i64,
     pub created_at: String,
     pub has_transactions: bool,
+    pub hsn_sac_code: Option<String>,
+    pub gst_slab_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow, Clone)]
@@ -309,6 +311,8 @@ pub struct CreateProduct {
     pub mrp: f64,
     #[serde(default)]
     pub conversions: Vec<ProductUnitConversionInput>,
+    pub hsn_sac_code: Option<String>,
+    pub gst_slab_id: Option<String>,
 }
 
 fn normalize_product_unit_conversions(
@@ -502,7 +506,8 @@ pub async fn get_product_unit_conversions(
 pub async fn get_products(pool: State<'_, SqlitePool>) -> Result<Vec<Product>, String> {
     sqlx::query_as::<_, Product>(
         "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, is_active, created_at,
-                EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions
+                EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
+                hsn_sac_code, gst_slab_id
          FROM products
          WHERE deleted_at IS NULL 
          ORDER BY created_at DESC",
@@ -520,8 +525,8 @@ pub async fn create_product(
     let id = Uuid::now_v7().to_string();
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     sqlx::query(
-        "INSERT INTO products (id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO products (id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, hsn_sac_code, gst_slab_id) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(if product.code.is_empty() {
@@ -535,6 +540,8 @@ pub async fn create_product(
     .bind(product.purchase_rate)
     .bind(product.sales_rate)
     .bind(product.mrp)
+    .bind(&product.hsn_sac_code)
+    .bind(&product.gst_slab_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -553,7 +560,8 @@ pub async fn create_product(
 
     sqlx::query_as::<_, Product>(
         "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, is_active, created_at,
-                EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions
+                EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
+                hsn_sac_code, gst_slab_id
          FROM products WHERE id = ?",
     )
     .bind(id)
@@ -596,7 +604,8 @@ pub async fn update_product(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     sqlx::query(
         "UPDATE products 
-         SET code = ?, name = ?, group_id = ?, unit_id = ?, purchase_rate = ?, sales_rate = ?, mrp = ?, updated_at = CURRENT_TIMESTAMP 
+         SET code = ?, name = ?, group_id = ?, unit_id = ?, purchase_rate = ?, sales_rate = ?, mrp = ?,
+             hsn_sac_code = ?, gst_slab_id = ?, updated_at = CURRENT_TIMESTAMP 
          WHERE id = ?",
     )
     .bind(&product.code)
@@ -606,6 +615,8 @@ pub async fn update_product(
     .bind(product.purchase_rate)
     .bind(product.sales_rate)
     .bind(product.mrp)
+    .bind(&product.hsn_sac_code)
+    .bind(&product.gst_slab_id)
     .bind(&id)
     .execute(&mut *tx)
     .await
@@ -674,7 +685,8 @@ pub async fn delete_product(
 pub async fn get_deleted_products(pool: State<'_, SqlitePool>) -> Result<Vec<Product>, String> {
     sqlx::query_as::<_, Product>(
         "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, is_active, created_at,
-                EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions
+                EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
+                hsn_sac_code, gst_slab_id
          FROM products
          WHERE deleted_at IS NOT NULL 
          ORDER BY deleted_at DESC",

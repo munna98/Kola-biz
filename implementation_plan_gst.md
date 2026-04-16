@@ -256,13 +256,6 @@ Update product create/update/read models to keep only:
 - `hsn_sac_code: Option<String>`
 - `gst_slab_id: Option<String>`
 
-Remove product-level fields for:
-
-- `gst_price_based`
-- `gst_price_threshold`
-- `gst_below_threshold_slab_id`
-- `gst_above_threshold_slab_id`
-
 #### [MODIFY] `parties.rs`
 
 - Add these fields to customer/supplier create/update:
@@ -346,7 +339,7 @@ else:
 The product UI becomes simpler.
 
 - Add `HSN/SAC Code` field.
-- Replace product-level GST threshold configuration with a single `GST Category` dropdown.
+- Add a `GST Category` dropdown.
 - Dropdown options come from `gst_tax_slabs`, for example:
   - `GST 0%`
   - `GST 5%`
@@ -536,21 +529,427 @@ Expanded template context should include both the selected slab and the resolved
 }
 ```
 
-#### [NEW] Tax Invoice Template
+#### [NEW] Tax Invoice Template (`TPL-SI-GST-001`)
 
-A dedicated Tax Invoice HTML template will be created once the final layout is provided. It should
-include:
+**Files:** `src-tauri/resources/templates/tax_invoice_gst.html` + `tax_invoice_gst.css`
+**Seed IDs:** `TPL-SI-GST-001` (sales), `TPL-PI-GST-001` (purchase)
 
-- GSTIN in company and party headers
-- Structured party address lines from `address_line_1` to `address_line_4`
-- City, state, postal code, and country
-- `Tax Invoice` title
-- Place of Supply
-- HSN/SAC column
-- Per-item tax columns
-- Tax breakup footer
-- IRN and QR placeholder
-- Visible indication when a dynamic slab resolved to a specific rate
+This template is modeled exactly after the Tally Tax Invoice layout (see reference image). It is
+structured in **four major zones**:
+
+---
+
+##### Zone A — e-Invoice Header Block (Conditional)
+
+Rendered **only when `{{irn}}` is present** (`{{#if irn}}`). Mirrors the red-bordered section of
+the reference image: top-right corner, separated by a border.
+
+```handlebars
+{{#if irn}}
+<div class="einvoice-block">
+  <div class="einvoice-left">
+    <div class="einvoice-label">e-Invoice</div>
+    <table class="einvoice-table">
+      <tr>
+        <td>IRN</td>
+        <td>: <span class="irn-value">{{irn}}</span></td>
+      </tr>
+      <tr>
+        <td>Ack No.</td>
+        <td>: {{ack_no}}</td>
+      </tr>
+      <tr>
+        <td>Ack Date</td>
+        <td>: {{format_date ack_date}}</td>
+      </tr>
+    </table>
+  </div>
+  <div class="einvoice-right">
+    <!-- QR code rendered as base64 img; back-end generates it from IRN -->
+    {{#if qr_code_data}}
+    <img class="einvoice-qr" src="{{qr_code_data}}" alt="e-Invoice QR" />
+    {{/if}}
+  </div>
+</div>
+{{/if}}
+```
+
+> [!NOTE]
+> `ack_no` and `ack_date` are new optional fields stored on `vouchers`. The QR code is a
+> base64-encoded PNG generated server-side from the IRN string. A separate
+> `generate_einvoice_qr(irn)` Rust helper will handle this via the `qrcode` crate.
+
+---
+
+##### Zone B — Company + Party Header (two-column table layout)
+
+Left column: company block (seller), right column: invoice meta fields. Below that, a second row
+with consignee (Ship To) and buyer (Bill To), plus reference fields. Mirrors the Tally layout.
+
+```handlebars
+<!-- Title -->
+<div class="invoice-title">Tax Invoice</div>
+
+<!-- Top header row: Company | Invoice meta -->
+<table class="header-outer">
+  <tr>
+    <!-- Seller / Company block -->
+    <td class="company-cell">
+      <strong>{{company.name}}</strong><br/>
+      {{#if company.address_line1}}{{company.address_line1}}<br/>{{/if}}
+      {{#if company.address_line2}}{{company.address_line2}}<br/>{{/if}}
+      {{#if company.city}}{{company.city}}{{/if}}
+      {{#if company.state}}, {{company.state}}{{/if}}
+      {{#if company.pincode}} - {{company.pincode}}{{/if}}<br/>
+      {{#if company.gstin}}<strong>GSTIN/UIN:</strong> {{company.gstin}}<br/>{{/if}}
+      {{#if company.state}}<strong>State Name:</strong> {{company.state}},
+        <strong>Code:</strong> {{company.state_code}}{{/if}}
+    </td>
+
+    <!-- Invoice meta fields (right side) -->
+    <td class="meta-cell">
+      <table class="meta-table">
+        <tr>
+          <td>Invoice No.</td>
+          <td><strong>{{voucher_no}}</strong></td>
+          <td>Dated</td>
+          <td><strong>{{format_date voucher_date}}</strong></td>
+        </tr>
+        <tr>
+          <td>Delivery Note</td><td>{{delivery_note}}</td>
+          <td>Mode/Terms of Payment</td><td>{{payment_terms}}</td>
+        </tr>
+        <tr>
+          <td>Reference No. &amp; Date.</td><td>{{reference}}</td>
+          <td>Other References</td><td>{{other_references}}</td>
+        </tr>
+        <tr>
+          <td>Buyer's Order No.</td><td>{{buyer_order_no}}</td>
+          <td>Dated</td><td>{{buyer_order_date}}</td>
+        </tr>
+        <tr>
+          <td>Dispatch Doc No.</td><td>{{dispatch_doc_no}}</td>
+          <td>Delivery Note Date</td><td>{{delivery_note_date}}</td>
+        </tr>
+        <tr>
+          <td>Dispatched through</td><td>{{dispatched_through}}</td>
+          <td>Destination</td><td>{{destination}}</td>
+        </tr>
+        <tr>
+          <td colspan="4">Terms of Delivery: {{terms_of_delivery}}</td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+
+  <!-- Second row: Consignee (Ship To) | Buyer (Bill To) -->
+  <tr>
+    <td class="party-cell">
+      <div class="party-label">Consignee (Ship to)</div>
+      <strong>{{ship_to.name}}</strong><br/>
+      {{#if ship_to.address_line_1}}{{ship_to.address_line_1}}<br/>{{/if}}
+      {{#if ship_to.gstin}}<strong>GSTIN/UIN</strong> : {{ship_to.gstin}}<br/>{{/if}}
+      {{#if ship_to.state}}<strong>State Name</strong> : {{ship_to.state}},
+        <strong>Code : </strong>{{ship_to.state_code}}{{/if}}
+    </td>
+    <td class="party-cell">
+      <div class="party-label">Buyer (Bill to)</div>
+      <strong>{{party.name}}</strong><br/>
+      {{#if party.address_line_1}}{{party.address_line_1}}<br/>{{/if}}
+      {{#if party.gstin}}<strong>GSTIN/UIN</strong> : {{party.gstin}}<br/>{{/if}}
+      {{#if party.state}}<strong>State Name</strong> : {{party.state}},
+        <strong>Code : </strong>{{party.state_code}}{{/if}}
+    </td>
+  </tr>
+</table>
+```
+
+> [!NOTE]
+> `ship_to` defaults to the same party object when no separate ship-to address is stored. This is
+> handled in template data preparation by copying `party` → `ship_to` when `ship_to` is null.
+> `state_code` is derived from the 2-digit GST state code prefix of the GSTIN (first two digits).
+
+---
+
+##### Zone C — Items Table
+
+Contains columns: **Sl No. | Description of Goods | HSN/SAC | Quantity | Rate | per | Disc.% | Amount**.
+Below the items rows, CGST and SGST (or IGST for inter-state) rows appear in the same table,
+followed by a **Total** row.
+
+```handlebars
+<table class="items-table">
+  <thead>
+    <tr>
+      <th>Sl No.</th>
+      <th>Description of Goods</th>
+      <th>HSN/SAC</th>
+      <th>Quantity</th>
+      <th>Rate</th>
+      <th>per</th>
+      {{#if has_discount}}<th>Disc. %</th>{{/if}}
+      <th>Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each items}}
+    <tr>
+      <td class="center">{{increment @index}}</td>
+      <td>
+        <strong>{{product_name}}</strong>
+        {{#if description}}<br/><small>{{description}}</small>{{/if}}
+      </td>
+      <td class="center">{{hsn_sac_code}}</td>
+      <td class="right">{{format_number initial_quantity 2}} {{unit}}</td>
+      <td class="right">{{format_currency rate}}</td>
+      <td class="center">{{unit}}</td>
+      {{#if @root.has_discount}}<td class="center">{{discount_percent}}</td>{{/if}}
+      <td class="right">{{format_currency amount}}</td>
+    </tr>
+    {{/each}}
+
+    <!-- Tax sub-rows (intra-state: CGST + SGST) -->
+    {{#unless is_inter_state}}
+    {{#if gst_enabled}}
+    <tr class="tax-row">
+      <td colspan="6" class="right"><em>CGST</em></td>
+      <td class="right">{{format_currency cgst_total}}</td>
+    </tr>
+    <tr class="tax-row">
+      <td colspan="6" class="right"><em>SGST</em></td>
+      <td class="right">{{format_currency sgst_total}}</td>
+    </tr>
+    {{/if}}
+    {{/unless}}
+
+    <!-- Tax sub-row (inter-state: IGST) -->
+    {{#if is_inter_state}}
+    {{#if gst_enabled}}
+    <tr class="tax-row">
+      <td colspan="6" class="right"><em>IGST</em></td>
+      <td class="right">{{format_currency igst_total}}</td>
+    </tr>
+    {{/if}}
+    {{/if}}
+
+    <!-- Total row -->
+    <tr class="total-row">
+      <td colspan="3" class="right"><strong>Total</strong></td>
+      <td class="right"><strong>{{total_quantity_display}}</strong></td>
+      <td colspan="2"></td>
+      <td class="right"><strong>₹ {{format_number grand_total 2}}</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- Amount in words -->
+<div class="amount-words-row">
+  <span class="label">Amount Chargeable (in words)</span>
+  <span class="eoe">E. &amp; O.E</span>
+</div>
+<div class="amount-words-value">
+  <strong>{{grand_total_words}}</strong>
+</div>
+```
+
+> [!NOTE]
+> `total_quantity_display` is computed in `templates.rs`: sum of `initial_quantity` + unit across
+> all items, formatted as e.g. `7 No`. For mixed units: show empty.
+> Tax rows are only rendered when `gst_enabled` is true.
+
+---
+
+##### Zone D — HSN/SAC Tax Breakup Footer + Declaration
+
+This zone contains two blocks side by side:
+
+**Left block** — HSN/SAC-wise tax summary table (per the Tally reference):
+
+| HSN/SAC | Taxable Value | Central Tax Rate | Central Tax Amt | State Tax Rate | State Tax Amt | Total Tax Amt |
+
+For inter-state invoices the columns change to: HSN/SAC | Taxable Value | IGST Rate | IGST Amount | Total Tax Amount.
+
+```handlebars
+{{#if gst_enabled}}
+<table class="hsn-summary-table">
+  <thead>
+    <tr>
+      <th>HSN/SAC</th>
+      <th>Taxable Value</th>
+      {{#unless is_inter_state}}
+      <th colspan="2">Central Tax</th>
+      <th colspan="2">State Tax</th>
+      {{else}}
+      <th colspan="2">Integrated Tax</th>
+      {{/unless}}
+      <th>Total Tax Amount</th>
+    </tr>
+    <tr>
+      <th></th><th></th>
+      {{#unless is_inter_state}}
+      <th>Rate</th><th>Amount</th>
+      <th>Rate</th><th>Amount</th>
+      {{else}}
+      <th>Rate</th><th>Amount</th>
+      {{/unless}}
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each hsn_summary}}
+    <tr>
+      <td>{{hsn_sac_code}}</td>
+      <td class="right">{{format_number taxable_value 2}}</td>
+      {{#unless @root.is_inter_state}}
+      <td class="center">{{cgst_rate}}%</td>
+      <td class="right">{{format_number cgst_amount 2}}</td>
+      <td class="center">{{sgst_rate}}%</td>
+      <td class="right">{{format_number sgst_amount 2}}</td>
+      {{else}}
+      <td class="center">{{igst_rate}}%</td>
+      <td class="right">{{format_number igst_amount 2}}</td>
+      {{/unless}}
+      <td class="right">{{format_number total_tax 2}}</td>
+    </tr>
+    {{/each}}
+    <!-- Summary totals row -->
+    <tr class="summary-total-row">
+      <td><strong>Total</strong></td>
+      <td class="right"><strong>{{format_number taxable_total 2}}</strong></td>
+      {{#unless is_inter_state}}
+      <td></td>
+      <td class="right"><strong>{{format_number cgst_total 2}}</strong></td>
+      <td></td>
+      <td class="right"><strong>{{format_number sgst_total 2}}</strong></td>
+      {{else}}
+      <td></td>
+      <td class="right"><strong>{{format_number igst_total 2}}</strong></td>
+      {{/unless}}
+      <td class="right"><strong>{{format_number tax_total 2}}</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- Tax Amount in Words -->
+<div class="tax-amount-words">
+  <strong>Tax Amount (In words) : {{tax_total_words}}</strong>
+</div>
+{{/if}}
+
+<!-- Declaration + Signature (two columns) -->
+<div class="declaration-signature-row">
+  <div class="declaration">
+    <strong>Declaration</strong><br/>
+    We declare that this invoice shows the actual price of the goods
+    described and that all particulars are true and correct.
+  </div>
+  <div class="signature-block">
+    <div class="for-company">for {{company.name}}</div>
+    <div class="signature-line"></div>
+    <div class="authorised-signatory">Authorised Signatory</div>
+  </div>
+</div>
+
+<!-- Page footer -->
+<div class="page-footer-note">This is a Computer Generated Invoice</div>
+```
+
+---
+
+##### Template Context Additions for `templates.rs`
+
+The `get_sales_invoice_data` / `get_purchase_invoice_data` functions in `templates.rs` must be
+extended to compute and inject:
+
+| Context Key | Type | Source |
+|-------------|------|--------|
+| `gst_enabled` | `bool` | `app_settings` |
+| `is_inter_state` | `bool` | `company.state != party.state` |
+| `party.gstin` | `String` | `customers.gstin` |
+| `party.state` | `String` | `customers.state` |
+| `party.state_code` | `String` | first 2 chars of GSTIN |
+| `company.state_code` | `String` | first 2 chars of company GSTIN |
+| `ship_to` | `Object` | defaults to same as `party` |
+| `cgst_total` | `f64` | `SUM(voucher_items.cgst_amount)` |
+| `sgst_total` | `f64` | `SUM(voucher_items.sgst_amount)` |
+| `igst_total` | `f64` | `SUM(voucher_items.igst_amount)` |
+| `tax_total` | `f64` | `cgst_total + sgst_total + igst_total` |
+| `taxable_total` | `f64` | `grand_total - tax_total` |
+| `tax_total_words` | `String` | `number_to_words_indian(tax_total)` |
+| `hsn_summary` | `Vec<HsnSummaryRow>` | Grouped by `hsn_sac_code` + `resolved_gst_rate` |
+| `total_quantity_display` | `String` | Sum of qty + unit if uniform |
+| `irn` | `Option<String>` | `vouchers.irn` |
+| `ack_no` | `Option<String>` | `vouchers.ack_no` |
+| `ack_date` | `Option<String>` | `vouchers.ack_date` |
+| `qr_code_data` | `Option<String>` | base64 QR PNG from IRN |
+
+**`HsnSummaryRow` struct** (computed in `templates.rs`):
+
+```rust
+struct HsnSummaryRow {
+    hsn_sac_code: String,
+    taxable_value: f64,
+    cgst_rate: f64,
+    cgst_amount: f64,
+    sgst_rate: f64,
+    sgst_amount: f64,
+    igst_rate: f64,
+    igst_amount: f64,
+    total_tax: f64,
+}
+```
+
+Built by grouping `voucher_items` by `(hsn_sac_code, resolved_gst_rate)` in-memory after the items
+query.
+
+##### Additional `vouchers` columns
+
+Two new columns required for e-Invoice support:
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `ack_no TEXT` | optional | Acknowledgement number from IRP |
+| `ack_date DATE` | optional | Date acknowledged by IRP |
+
+(`irn` was already planned in the schema section above.)
+
+##### e-Invoice QR Code Generation
+
+Add optional dependency to `Cargo.toml`:
+
+```toml
+qrcode = "0.14"
+image = { version = "0.25", features = ["png"] }
+```
+
+New helper in `tax_utils.rs`:
+
+```rust
+pub fn irn_to_qr_base64(irn: &str) -> Option<String> {
+    use qrcode::QrCode;
+    use image::Luma;
+    let code = QrCode::new(irn.as_bytes()).ok()?;
+    let image = code.render::<Luma<u8>>().build();
+    let mut png_bytes: Vec<u8> = Vec::new();
+    image.write_to(&mut std::io::Cursor::new(&mut png_bytes),
+                   image::ImageFormat::Png).ok()?;
+    Some(format!("data:image/png;base64,{}", base64::encode(&png_bytes)))
+}
+```
+
+Called in `get_sales_invoice_data` / `get_purchase_invoice_data` when `irn` is present.
+
+##### CSS Notes (`tax_invoice_gst.css`)
+
+Key styling decisions:
+- Font: `'Arial', sans-serif`, 10–11pt base for A4 print fidelity (matches Tally output)
+- `einvoice-block`: bordered box, flex row, IRN in left cell, QR in right cell (≈ 80×80 px)
+- `header-outer`: `border-collapse: collapse; width: 100%`, all cells with `border: 1px solid #000`
+- `items-table`: standard bordered table; `tax-row` cells italicized; `total-row` bold
+- `hsn-summary-table`: compact font (9pt), full-width, bordered
+- `declaration-signature-row`: flex/grid two-column, declaration left, signature right
+- `page-footer-note`: centered, small text, border-top
+- Print media: `@page { size: A4; margin: 10mm }`, no box-shadow, no background colors
 
 ---
 

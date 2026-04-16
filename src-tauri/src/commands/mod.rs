@@ -16,6 +16,9 @@ pub mod reports;
 pub mod sales_returns;
 pub mod settings;
 pub mod stock_journal;
+pub mod tax;
+#[allow(dead_code)]
+pub mod tax_utils;
 pub mod templates;
 pub mod voucher_units;
 
@@ -37,5 +40,6 @@ pub use reports::*;
 pub use sales_returns::*;
 pub use settings::*;
 pub use stock_journal::*;
+pub use tax::*;
 pub use templates::*;
 pub use voucher_units::*;

@@ -53,7 +53,7 @@ import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialo
 import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
 import ProductDialog from '@/components/dialogs/ProductDialog';
-import { Product, ProductGroup, ProductUnitConversion, Unit, Employee } from '@/lib/tauri';
+import { Product, ProductGroup, ProductUnitConversion, Unit, Employee, GstTaxSlab, api } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 
 
@@ -98,6 +98,7 @@ export default function SalesInvoicePage() {
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
+  const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
 
   // New state for print preview
   const [showPrintPreview, setShowPrintPreview] = useState(false);
@@ -120,7 +121,7 @@ export default function SalesInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -128,6 +129,8 @@ export default function SalesInvoicePage() {
           invoke<any>('get_voucher_settings', { voucherType: 'sales_invoice' }),
           invoke<ProductGroup[]>('get_product_groups'),
           invoke<Employee[]>('get_employees'),
+          api.gst.getSettings().catch(() => null),
+          api.gst.getSlabs().catch(() => [] as GstTaxSlab[]),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
@@ -137,6 +140,10 @@ export default function SalesInvoicePage() {
         }
         setProductGroups(groupsData);
         setEmployees(employeesData.filter((e: Employee) => e.status === 'active'));
+        // Only show GST columns if GST is enabled in settings
+        if (gstSettings?.gst_enabled) {
+          setGstSlabs(slabsData);
+        }
 
         const combinedParties = accountsData.map(acc => ({
           id: acc.id,
@@ -329,22 +336,35 @@ export default function SalesInvoicePage() {
   };
 
   const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number) => {
+    // Slab-aware GST resolution
+    const productMap: Record<string, Product> = {};
+    products.forEach(p => { productMap[String(p.id)] = p; });
+    const slabMap: Record<string, GstTaxSlab> = {};
+    gstSlabs.forEach(s => { slabMap[s.id] = s; });
+
     let subtotal = 0;
     let totalTax = 0;
 
     items.forEach((item) => {
       const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
       const amount = finalQty * item.rate;
+      const discountAmt = item.discount_amount || 0;
+      const taxableAmount = amount - discountAmt;
 
-      const discountAmount = item.discount_amount || 0;
-      const taxableAmount = amount - discountAmount;
-      const taxAmount = taxableAmount * (item.tax_rate / 100);
+      // Slab takes priority; fall back to legacy item.tax_rate
+      const product = productMap[String(item.product_id)];
+      let gstRate = item.tax_rate || 0;
+      if (product?.gst_slab_id) {
+        const slab = slabMap[product.gst_slab_id];
+        if (slab) {
+          gstRate = slab.is_dynamic === 1
+            ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
+            : slab.fixed_rate;
+        }
+      }
 
-      subtotal += taxableAmount; // Should subtotal be Gross or Net? 
-      // Backend uses subtotal = Gross - ItemDisc. So taxableAmount sum.
-      // Wait, backend subtotal += amount - discount_amount. Yes.
-
-      totalTax += taxAmount;
+      subtotal += taxableAmount;
+      totalTax += taxableAmount * (gstRate / 100);
     });
 
     subtotal = Math.round(subtotal * 100) / 100;
@@ -1066,6 +1086,8 @@ export default function SalesInvoicePage() {
               }, 50);
             }}
             defaultUnitKind="sale"
+            gstSlabs={gstSlabs}
+            fullProducts={products as any}
             footerRightContent={
               partyBalance !== null && shouldShowPartyBalance ? (
                 <div className={`text-xs font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -1092,7 +1114,7 @@ export default function SalesInvoicePage() {
             {/* Totals */}
             <div className="col-span-2 bg-card border rounded-lg p-3 shrink-0">
               <div className="flex justify-between items-end">
-                <div className="flex gap-3">
+                <div className="flex gap-3 items-end">
                   <div>
                     <Label className="text-xs font-medium mb-1 block">Discount %</Label>
                     <Input
@@ -1133,8 +1155,12 @@ export default function SalesInvoicePage() {
                     />
                   </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-xs font-mono font-medium mb-2">₹ {salesState.totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                <div className="text-right space-y-0.5">
+                  <div className="text-xs text-muted-foreground">Subtotal</div>
+                  <div className="text-xs font-mono font-medium">₹ {salesState.totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                  {salesState.totals.tax > 0 && (
+                    <div className="text-xs font-mono text-muted-foreground">Tax: ₹ {salesState.totals.tax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                  )}
                   <div className="text-lg font-mono font-bold">₹ {salesState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                 </div>
               </div>

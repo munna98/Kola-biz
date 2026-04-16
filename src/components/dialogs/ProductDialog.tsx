@@ -4,9 +4,10 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IconCheck, IconCircleDashedPlus, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
-import { api, Product, CreateProduct, Unit, ProductGroup, CreateProductUnitConversion } from '@/lib/tauri';
+import { api, Product, CreateProduct, Unit, ProductGroup, CreateProductUnitConversion, GstTaxSlab } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { useDialog } from '@/hooks/use-dialog';
 
@@ -105,20 +106,28 @@ export default function ProductDialog({
     purchase_rate: 0,
     sales_rate: 0,
     mrp: 0,
-    conversions: defaultUnitId ? [createBaseRow(defaultUnitId)] : []
+    conversions: defaultUnitId ? [createBaseRow(defaultUnitId)] : [],
+    hsn_sac_code: '',
+    gst_slab_id: undefined,
   });
   const [conversionRows, setConversionRows] = useState<ConversionRow[]>(defaultUnitId ? [createBaseRow(defaultUnitId)] : []);
   const [loading, setLoading] = useState(false);
   const [showUnitSection, setShowUnitSection] = useState(false);
+  const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const unitLocked = Boolean(product?.has_transactions);
 
-  const orderedFields = ['code', 'name', 'group', 'unit', 'purchase', 'sales', 'mrp'];
+  const orderedFields = ['code', 'name', 'group', 'unit', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp'];
 
   const { register, handleKeyDown, handleSelectKeyDown, parseNumber, formatNumber } = useDialog(
     open,
     onOpenChange,
     orderedFields
   );
+
+  // Load GST slabs once
+  useEffect(() => {
+    api.gst.getSlabs().then(setGstSlabs).catch(console.error);
+  }, []);
 
   useEffect(() => {
     if (!open) return;
@@ -138,7 +147,9 @@ export default function ProductDialog({
           purchase_rate: product.purchase_rate,
           sales_rate: product.sales_rate,
           mrp: product.mrp,
-          conversions: []
+          conversions: [],
+          hsn_sac_code: product.hsn_sac_code || '',
+          gst_slab_id: product.gst_slab_id,
         });
 
         try {
@@ -174,7 +185,9 @@ export default function ProductDialog({
           purchase_rate: 0,
           sales_rate: 0,
           mrp: 0,
-          conversions: []
+          conversions: [],
+          hsn_sac_code: '',
+          gst_slab_id: undefined,
         });
         setConversionRows(initialUnitId ? [createBaseRow(initialUnitId, initialPurchaseRate, initialSalesRate)] : []);
       }
@@ -206,7 +219,9 @@ export default function ProductDialog({
       purchase_rate: 0,
       sales_rate: 0,
       mrp: 0,
-      conversions: []
+      conversions: [],
+      hsn_sac_code: '',
+      gst_slab_id: undefined,
     });
     setConversionRows(unitId ? [createBaseRow(unitId)] : []);
     setShowUnitSection(false);
@@ -386,6 +401,49 @@ export default function ProductDialog({
                   <IconCircleDashedPlus size={14} />
                 </Button>
               </div>
+            </div>
+          </div>
+
+          {/* ── GST / HSN fields ── */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label className="text-xs font-medium mb-1 block">HSN / SAC Code</Label>
+              <Input
+                ref={register('hsn') as any}
+                value={form.hsn_sac_code || ''}
+                onChange={e => setForm({ ...form, hsn_sac_code: e.target.value })}
+                onKeyDown={(e) => handleKeyDown(e, 'hsn')}
+                placeholder="e.g. 6109"
+                className="h-8 text-sm font-mono"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-medium mb-1 block">GST Category</Label>
+              <Select
+                value={form.gst_slab_id || 'none'}
+                onValueChange={v => setForm({ ...form, gst_slab_id: v === 'none' ? undefined : v })}
+              >
+                <SelectTrigger
+                  ref={register('gst_slab') as any}
+                  className="h-8 text-sm"
+                  onKeyDown={(e) => handleSelectKeyDown(e, 'gst_slab')}
+                >
+                  <SelectValue placeholder="No GST" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No GST</SelectItem>
+                  {gstSlabs.filter(s => s.is_active === 1).map(slab => (
+                    <SelectItem key={slab.id} value={slab.id}>
+                      <span className="flex items-center gap-2">
+                        {slab.name}
+                        {slab.is_dynamic === 1 && (
+                          <Badge variant="secondary" className="text-[10px] py-0 px-1 ml-1">Threshold</Badge>
+                        )}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

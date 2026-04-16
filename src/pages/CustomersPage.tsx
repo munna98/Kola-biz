@@ -30,7 +30,7 @@ export default function CustomersPage() {
     setOpen(true);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Move this customer to Recycle Bin?')) {
       try {
         await api.customers.delete(id);
@@ -43,7 +43,7 @@ export default function CustomersPage() {
     }
   };
 
-  const handleRestore = async (id: number) => {
+  const handleRestore = async (id: string) => {
     try {
       await api.customers.restore(id);
       toast.success('Customer restored successfully');
@@ -54,7 +54,7 @@ export default function CustomersPage() {
     }
   };
 
-  const handleHardDelete = async (id: number) => {
+  const handleHardDelete = async (id: string) => {
     if (confirm('PERMANENTLY delete this customer? This action cannot be undone.')) {
       try {
         await api.customers.hardDelete(id);

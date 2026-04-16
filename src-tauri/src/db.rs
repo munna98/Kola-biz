@@ -1,4 +1,4 @@
-use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool, Sqlite};
+﻿use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool, Sqlite};
 use tauri::Manager;
 
 pub async fn init_db(
@@ -797,6 +797,109 @@ pub async fn init_db(
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_employees_user ON employees(user_id)")
         .execute(&pool)
         .await?;
+
+    // ==================== GST MODULE ====================
+
+    // GST Tax Slabs table
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS gst_tax_slabs (
+            id            TEXT PRIMARY KEY,
+            name          TEXT NOT NULL,
+            is_dynamic    INTEGER DEFAULT 0,
+            fixed_rate    REAL DEFAULT 0,
+            threshold     REAL DEFAULT 0,
+            below_rate    REAL DEFAULT 0,
+            above_rate    REAL DEFAULT 0,
+            is_active     INTEGER DEFAULT 1,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Seed default GST slabs
+    sqlx::query(
+        "INSERT OR IGNORE INTO gst_tax_slabs (id, name, is_dynamic, fixed_rate) VALUES
+        ('gst_0',   'GST 0%',   0, 0),
+        ('gst_5',   'GST 5%',   0, 5),
+        ('gst_18',  'GST 18%',  0, 18),
+        ('gst_28',  'GST 28%',  0, 28)",
+    )
+    .execute(&pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO gst_tax_slabs (id, name, is_dynamic, threshold, below_rate, above_rate) VALUES
+        ('gst_apparel', 'GST 5/18% @2500', 1, 2500.0, 5.0, 18.0)",
+    )
+    .execute(&pool)
+    .await?;
+
+    // Migration: update apparel slab for existing databases
+    let _ = sqlx::query(
+        "UPDATE gst_tax_slabs
+         SET name = 'GST 5/18% @2500', threshold = 2500.0, above_rate = 18.0
+         WHERE id = 'gst_apparel' AND (name = 'GST 5/12% @1000' OR above_rate = 12.0)"
+    )
+    .execute(&pool)
+    .await;
+
+    // Migration: retire GST 12% fixed slab
+    let _ = sqlx::query("UPDATE gst_tax_slabs SET is_active = 0 WHERE id = 'gst_12'")
+    .execute(&pool)
+    .await;
+
+    // Migration: Add GST columns to products
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN hsn_sac_code TEXT")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN gst_slab_id TEXT REFERENCES gst_tax_slabs(id)")
+        .execute(&pool)
+        .await;
+
+    // Migration: Add GST columns to customers
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN gstin TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN address_line_1 TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN address_line_2 TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN address_line_3 TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN state TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN city TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN postal_code TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN country TEXT").execute(&pool).await;
+
+    // Migration: Add GST columns to suppliers
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN gstin TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN address_line_1 TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN address_line_2 TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN address_line_3 TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN state TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN city TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN postal_code TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN country TEXT").execute(&pool).await;
+
+    // Migration: Add GST columns to chart_of_accounts
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN gstin TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN address_line_1 TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN address_line_2 TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN state TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN city TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN postal_code TEXT").execute(&pool).await;
+
+    // Migration: Add GST split columns to voucher_items
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN cgst_rate REAL DEFAULT 0").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN sgst_rate REAL DEFAULT 0").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN igst_rate REAL DEFAULT 0").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN cgst_amount REAL DEFAULT 0").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN sgst_amount REAL DEFAULT 0").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN igst_amount REAL DEFAULT 0").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN hsn_sac_code TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN gst_slab_id TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN resolved_gst_rate REAL DEFAULT 0").execute(&pool).await;
+
+    // Migration: Add e-Invoice columns to vouchers
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN irn TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN ack_no TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN ack_date DATE").execute(&pool).await;
 
     // ==================== SEEDING ====================
 

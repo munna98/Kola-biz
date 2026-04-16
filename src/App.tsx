@@ -43,6 +43,8 @@ import CompanyProfilePage from './pages/settings/CompanyProfilePage';
 import { InvoiceTemplatesPage } from './pages/settings/InvoiceTemplatesPage';
 import BarcodeSettingsPage from './pages/settings/BarcodeSettingsPage';
 import DbSettingsPage from './pages/settings/DbSettingsPage';
+import TaxSettingsPage from './pages/settings/TaxSettingsPage';
+import GSTReportPage from './pages/reports/GSTReportPage';
 import DashboardPage from './pages/DashboardPage';
 import InvoiceDesigner from './components/settings/invoice-designer/InvoiceDesigner';
 import { LicenseProvider } from './components/providers/LicenseProvider';
@@ -187,6 +189,9 @@ function AppContent() {
       case 'barcode_settings': return <BarcodeSettingsPage />;
       case 'db_settings': return <DbSettingsPage />;
       case 'invoice_designer': return <InvoiceDesigner templateId={activeSectionParams?.templateId} voucherType={activeSectionParams?.voucherType} onBack={() => dispatch({ type: 'app/setActiveSection', payload: 'invoice_settings' })} />;
+
+      case 'tax_settings': return <TaxSettingsPage />;
+      case 'gst_report': return <GSTReportPage />;
 
       default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;
     }

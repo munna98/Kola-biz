@@ -1,5 +1,6 @@
 use crate::commands::company::get_company_profile;
 use crate::commands::entries::{PaymentVoucher, ReceiptVoucher};
+use crate::commands::tax_utils;
 use crate::template_engine::TemplateEngine;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -515,6 +516,22 @@ async fn get_purchase_invoice_data(
             .await
             .ok();
 
+    // Fetch extra GST fields from suppliers table directly (added by migration)
+    let gst_extra: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> =
+        sqlx::query_as(
+            "SELECT gstin, address_line_1, state, city, postal_code FROM suppliers WHERE id = ?",
+        )
+        .bind(&invoice.supplier_id)
+        .fetch_optional(pool.inner())
+        .await
+        .unwrap_or(None);
+
+    // Fetch company state for inter-state detection
+    let company = crate::commands::company::get_company_profile(pool.clone()).await.ok();
+    let company_state = company.as_ref().and_then(|c| c.state.clone()).unwrap_or_default();
+    let company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
+    let _company_state_code = tax_utils::state_code_from_gstin(if company_gstin.is_empty() { None } else { Some(&company_gstin) });
+
     // Calculate Old Balance (Ledger balance BEFORE this invoice)
     // supplier_id IS the account_id in the new design
     let account_id = invoice.supplier_id.clone();
@@ -585,34 +602,57 @@ async fn get_purchase_invoice_data(
         if let Some(obj) = invoice_val.as_object_mut() {
             obj.insert(
                 "items".to_string(),
-                serde_json::to_value(formatted_items).unwrap_or(json!([])),
+                serde_json::to_value(formatted_items.clone()).unwrap_or(json!([])),
             );
 
-            // Add party object for template
-            if let Some(sup) = supplier {
-                obj.insert(
-                    "party".to_string(),
-                    json!({
-                        "name": sup.name,
-                        "address": sup.address,
-                        "phone": sup.phone,
-                        "email": sup.email,
-                        "gstin": Option::<String>::None,
-                    }),
-                );
+            // Build enriched party object with GST fields from gst_extra
+            let (party_gstin, party_state, party_address_1, party_city, party_postal) =
+                if let Some((g, a1, s, c, p)) = &gst_extra {
+                    (
+                        g.clone().unwrap_or_default(),
+                        s.clone().unwrap_or_default(),
+                        a1.clone().unwrap_or_default(),
+                        c.clone().unwrap_or_default(),
+                        p.clone().unwrap_or_default(),
+                    )
+                } else {
+                    (String::new(), String::new(), String::new(), String::new(), String::new())
+                };
+
+            let party_state_code = tax_utils::state_code_from_gstin(
+                if party_gstin.is_empty() { None } else { Some(&party_gstin) },
+            );
+
+            let party_obj = if let Some(sup) = supplier {
+                json!({
+                    "name": sup.name,
+                    "address": sup.address,
+                    "address_line_1": if party_address_1.is_empty() { sup.address.clone() } else { Some(party_address_1.clone()) },
+                    "phone": sup.phone,
+                    "email": sup.email,
+                    "gstin": if party_gstin.is_empty() { None } else { Some(party_gstin.clone()) },
+                    "state": if party_state.is_empty() { None } else { Some(party_state.clone()) },
+                    "city": if party_city.is_empty() { None } else { Some(party_city.clone()) },
+                    "postal_code": if party_postal.is_empty() { None } else { Some(party_postal.clone()) },
+                    "state_code": &party_state_code,
+                })
             } else {
-                // Fallback to basic info from invoice
-                obj.insert(
-                    "party".to_string(),
-                    json!({
-                        "name": invoice.supplier_name,
-                        "address": Option::<String>::None,
-                        "phone": Option::<String>::None,
-                        "email": Option::<String>::None,
-                        "gstin": Option::<String>::None,
-                    }),
-                );
-            }
+                json!({
+                    "name": invoice.supplier_name,
+                    "address": Option::<String>::None,
+                    "address_line_1": Option::<String>::None,
+                    "phone": Option::<String>::None,
+                    "email": Option::<String>::None,
+                    "gstin": Option::<String>::None,
+                    "state": Option::<String>::None,
+                    "city": Option::<String>::None,
+                    "postal_code": Option::<String>::None,
+                    "state_code": "",
+                })
+            };
+
+            obj.insert("party".to_string(), party_obj.clone());
+            obj.insert("ship_to".to_string(), party_obj); // defaults to same
 
             // Calculate subtotal for template
             let subtotal =
@@ -626,16 +666,19 @@ async fn get_purchase_invoice_data(
 
             // Add Balance Details
             let balance_due = old_balance - invoice.grand_total + paid_amount;
-
             obj.insert("old_balance".to_string(), json!(old_balance));
             obj.insert("paid_amount".to_string(), json!(paid_amount));
 
-            // Total Balance for Purchase (Negative Credit)
-            // Old Balance is Credit (negative). Bill adds Credit (negative impact).
             let total_balance = old_balance - invoice.grand_total;
             obj.insert("total_balance".to_string(), json!(total_balance));
-
             obj.insert("balance_due".to_string(), json!(balance_due));
+
+            // ======= GST Context =======
+            let inter_state = tax_utils::is_inter_state(
+                Some(&company_state),
+                Some(&party_state),
+            );
+            inject_gst_context(obj, pool.inner(), &id, &formatted_items, inter_state).await;
         }
         Ok(invoice_val)
     } else {
@@ -651,16 +694,30 @@ async fn get_sales_invoice_data(
     let items =
         crate::commands::invoices::get_sales_invoice_items(pool.clone(), id.clone()).await?;
 
-    // Fetch customer details
+    // Fetch customer details (basic struct)
     let customer =
         crate::commands::parties::get_customer(pool.clone(), invoice.customer_id.clone())
             .await
             .ok();
 
-    // Calculate Old Balance (Ledger balance BEFORE this invoice)
-    // customer_id IS the account_id in the new design
-    let account_id = invoice.customer_id.clone();
+    // Fetch extra GST fields from customers table directly (added by migration)
+    let gst_extra: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> =
+        sqlx::query_as(
+            "SELECT gstin, address_line_1, state, city, postal_code FROM customers WHERE id = ?",
+        )
+        .bind(&invoice.customer_id)
+        .fetch_optional(pool.inner())
+        .await
+        .unwrap_or(None);
 
+    // Fetch company state for inter-state detection
+    let company = crate::commands::company::get_company_profile(pool.clone()).await.ok();
+    let company_state = company.as_ref().and_then(|c| c.state.clone()).unwrap_or_default();
+    let company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
+    let _company_state_code = tax_utils::state_code_from_gstin(if company_gstin.is_empty() { None } else { Some(&company_gstin) });
+
+    // Calculate Old Balance (Ledger balance BEFORE this invoice)
+    let account_id = invoice.customer_id.clone();
     // Sum of all debit - credit for this account for vouchers BEFORE this one
     // We use voucher_date and id to strictly order "before"
     let balance_res: (f64, f64) = sqlx::query_as(
@@ -688,7 +745,7 @@ async fn get_sales_invoice_data(
     let paid_amount: f64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
-    .bind(id)
+    .bind(&id)
     .fetch_one(pool.inner())
     .await
     .unwrap_or(0.0);
@@ -721,34 +778,57 @@ async fn get_sales_invoice_data(
         if let Some(obj) = invoice_val.as_object_mut() {
             obj.insert(
                 "items".to_string(),
-                serde_json::to_value(formatted_items).unwrap_or(json!([])),
+                serde_json::to_value(formatted_items.clone()).unwrap_or(json!([])),
             );
 
-            // Add party object for template
-            if let Some(cust) = customer {
-                obj.insert(
-                    "party".to_string(),
-                    json!({
-                        "name": cust.name,
-                        "address": cust.address,
-                        "phone": cust.phone,
-                        "email": cust.email,
-                        "gstin": Option::<String>::None,
-                    }),
-                );
+            // Build enriched party object with GST fields from gst_extra
+            let (party_gstin, party_state, party_address_1, party_city, party_postal) =
+                if let Some((g, a1, s, c, p)) = &gst_extra {
+                    (
+                        g.clone().unwrap_or_default(),
+                        s.clone().unwrap_or_default(),
+                        a1.clone().unwrap_or_default(),
+                        c.clone().unwrap_or_default(),
+                        p.clone().unwrap_or_default(),
+                    )
+                } else {
+                    (String::new(), String::new(), String::new(), String::new(), String::new())
+                };
+
+            let party_state_code = tax_utils::state_code_from_gstin(
+                if party_gstin.is_empty() { None } else { Some(&party_gstin) },
+            );
+
+            let party_obj = if let Some(cust) = customer {
+                json!({
+                    "name": cust.name,
+                    "address": cust.address,
+                    "address_line_1": if party_address_1.is_empty() { cust.address.clone() } else { Some(party_address_1.clone()) },
+                    "phone": cust.phone,
+                    "email": cust.email,
+                    "gstin": if party_gstin.is_empty() { None } else { Some(party_gstin.clone()) },
+                    "state": if party_state.is_empty() { None } else { Some(party_state.clone()) },
+                    "city": if party_city.is_empty() { None } else { Some(party_city.clone()) },
+                    "postal_code": if party_postal.is_empty() { None } else { Some(party_postal.clone()) },
+                    "state_code": &party_state_code,
+                })
             } else {
-                // Fallback to basic info from invoice
-                obj.insert(
-                    "party".to_string(),
-                    json!({
-                        "name": invoice.customer_name,
-                        "address": Option::<String>::None,
-                        "phone": Option::<String>::None,
-                        "email": Option::<String>::None,
-                        "gstin": Option::<String>::None,
-                    }),
-                );
-            }
+                json!({
+                    "name": invoice.customer_name,
+                    "address": Option::<String>::None,
+                    "address_line_1": Option::<String>::None,
+                    "phone": Option::<String>::None,
+                    "email": Option::<String>::None,
+                    "gstin": Option::<String>::None,
+                    "state": Option::<String>::None,
+                    "city": Option::<String>::None,
+                    "postal_code": Option::<String>::None,
+                    "state_code": "",
+                })
+            };
+
+            obj.insert("party".to_string(), party_obj.clone());
+            obj.insert("ship_to".to_string(), party_obj); // defaults to same
 
             // Calculate subtotal for template
             let subtotal =
@@ -771,6 +851,13 @@ async fn get_sales_invoice_data(
             // Total Balance = Old Balance + Bill Amount (Grand Total)
             let total_balance = old_balance + invoice.grand_total;
             obj.insert("total_balance".to_string(), json!(total_balance));
+
+            // ======= GST Context =======
+            let inter_state = tax_utils::is_inter_state(
+                Some(&company_state),
+                Some(&party_state),
+            );
+            inject_gst_context(obj, pool.inner(), &id, &formatted_items, inter_state).await;
         }
         Ok(invoice_val)
     } else {
@@ -900,4 +987,186 @@ async fn get_receipt_data(
         );
     }
     Ok(val)
+}
+
+// ============================================================
+// GST Context Injection Helper
+// ============================================================
+
+/// Injects all GST-related fields into the template data object.
+async fn inject_gst_context(
+    obj: &mut serde_json::Map<String, serde_json::Value>,
+    pool: &SqlitePool,
+    voucher_id: &str,
+    items: &[serde_json::Value],
+    is_inter_state: bool,
+) {
+    // 1. GST enabled setting
+    let gst_enabled: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'",
+    )
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true")
+    .unwrap_or(false);
+
+    obj.insert("gst_enabled".to_string(), json!(gst_enabled));
+    obj.insert("is_inter_state".to_string(), json!(is_inter_state));
+
+    // 2. e-Invoice fields from voucher
+    let einv: Option<(Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT irn, ack_no, ack_date FROM vouchers WHERE id = ?",
+    )
+    .bind(voucher_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    let (irn, ack_no, ack_date) = einv.unwrap_or((None, None, None));
+    let qr_data = irn.as_deref().and_then(crate::commands::tax_utils::irn_to_qr_base64);
+    obj.insert("irn".to_string(), json!(irn));
+    obj.insert("ack_no".to_string(), json!(ack_no));
+    obj.insert("ack_date".to_string(), json!(ack_date));
+    obj.insert("qr_code_data".to_string(), json!(qr_data));
+
+    // 3. GST amounts from voucher_items (prefer stored values)
+    let gst_rows: Vec<(Option<String>, f64, f64, f64, f64, f64, f64, f64, f64, f64)> =
+        sqlx::query_as(
+            "SELECT
+                COALESCE(hsn_sac_code, '') as hsn_code,
+                COALESCE(amount, 0) as taxable_value,
+                COALESCE(cgst_rate, 0) as cgst_rate,
+                COALESCE(sgst_rate, 0) as sgst_rate,
+                COALESCE(igst_rate, 0) as igst_rate,
+                COALESCE(cgst_amount, 0) as cgst_amt,
+                COALESCE(sgst_amount, 0) as sgst_amt,
+                COALESCE(igst_amount, 0) as igst_amt,
+                COALESCE(resolved_gst_rate, 0) as gst_rate,
+                COALESCE(cgst_amount + sgst_amount + igst_amount, 0) as total_tax
+             FROM voucher_items WHERE voucher_id = ?",
+        )
+        .bind(voucher_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+    let taxable_total: f64 = gst_rows.iter().map(|r| r.1).sum();
+    let cgst_total: f64 = gst_rows.iter().map(|r| r.5).sum();
+    let sgst_total: f64 = gst_rows.iter().map(|r| r.6).sum();
+    let igst_total: f64 = gst_rows.iter().map(|r| r.7).sum();
+    let tax_total = cgst_total + sgst_total + igst_total;
+
+    obj.insert("taxable_total".to_string(), json!(round2(taxable_total)));
+    obj.insert("cgst_total".to_string(), json!(round2(cgst_total)));
+    obj.insert("sgst_total".to_string(), json!(round2(sgst_total)));
+    obj.insert("igst_total".to_string(), json!(round2(igst_total)));
+    obj.insert("tax_total".to_string(), json!(round2(tax_total)));
+
+    // 4. Total quantity display
+    let total_qty: f64 = items
+        .iter()
+        .filter_map(|i| i["initial_quantity"].as_f64())
+        .sum();
+    obj.insert("total_quantity_display".to_string(), json!(format!("{:.2}", total_qty)));
+
+    // 5. HSN/SAC summary grouped by code + rate
+    use std::collections::BTreeMap;
+    let mut hsn_map: BTreeMap<String, (f64, f64, f64, f64, f64, f64, f64)> = BTreeMap::new();
+    for (hsn, taxable, cgst_r, sgst_r, igst_r, cgst_a, sgst_a, igst_a, gst_r, _) in &gst_rows {
+        let code = hsn.as_deref().unwrap_or("");
+        let key = format!("{}|{:.2}", code, gst_r);
+        let entry = hsn_map.entry(key).or_insert((0.0, *cgst_r, *sgst_r, *igst_r, 0.0, 0.0, 0.0));
+        entry.0 += taxable;
+        entry.4 += cgst_a;
+        entry.5 += sgst_a;
+        entry.6 += igst_a;
+    }
+
+    let hsn_summary: Vec<serde_json::Value> = hsn_map
+        .into_iter()
+        .map(|(key, (taxable, cgst_r, sgst_r, igst_r, cgst_a, sgst_a, igst_a))| {
+            let hsn_code = key.split('|').next().unwrap_or("").to_string();
+            let total_tax = cgst_a + sgst_a + igst_a;
+            json!({
+                "hsn_sac_code": if hsn_code.is_empty() { "N/A".to_string() } else { hsn_code },
+                "taxable_value": round2(taxable),
+                "cgst_rate": cgst_r,
+                "sgst_rate": sgst_r,
+                "igst_rate": igst_r,
+                "cgst_amount": round2(cgst_a),
+                "sgst_amount": round2(sgst_a),
+                "igst_amount": round2(igst_a),
+                "total_tax": round2(total_tax),
+            })
+        })
+        .collect();
+
+    obj.insert("hsn_summary".to_string(), json!(hsn_summary));
+
+    // 6. Tax total in words
+    let tax_words = number_to_words_indian(tax_total);
+    obj.insert("tax_total_words".to_string(), json!(format!("Indian Rupee {} Only", tax_words)));
+}
+
+fn round2(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
+
+/// Converts a floating-point rupee amount to Indian number words.
+fn number_to_words_indian(amount: f64) -> String {
+    const ONES: &[&str] = &[
+        "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+        "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+        "Seventeen", "Eighteen", "Nineteen",
+    ];
+    const TENS: &[&str] = &[
+        "", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety",
+    ];
+
+    fn two_digit(n: u64) -> String {
+        if n < 20 {
+            ONES[n as usize].to_string()
+        } else {
+            let ten = TENS[(n / 10) as usize];
+            let one = ONES[(n % 10) as usize];
+            if one.is_empty() { ten.to_string() } else { format!("{} {}", ten, one) }
+        }
+    }
+
+    fn three_digit(n: u64) -> String {
+        if n >= 100 {
+            let h = ONES[(n / 100) as usize];
+            let rem = n % 100;
+            if rem == 0 { format!("{} Hundred", h) }
+            else { format!("{} Hundred {}", h, two_digit(rem)) }
+        } else {
+            two_digit(n)
+        }
+    }
+
+    let rupees = amount.floor() as u64;
+    let paise = ((amount - amount.floor()) * 100.0).round() as u64;
+    if rupees == 0 && paise == 0 {
+        return "Zero".to_string();
+    }
+
+    let mut parts = Vec::<String>::new();
+    let crores = rupees / 10_000_000;
+    let lakhs   = (rupees % 10_000_000) / 100_000;
+    let thousands = (rupees % 100_000) / 1_000;
+    let hundreds  = rupees % 1_000;
+
+    if crores    > 0 { parts.push(format!("{} Crore",    three_digit(crores))); }
+    if lakhs     > 0 { parts.push(format!("{} Lakh",     two_digit(lakhs))); }
+    if thousands > 0 { parts.push(format!("{} Thousand", two_digit(thousands))); }
+    if hundreds  > 0 { parts.push(three_digit(hundreds)); }
+
+    let mut result = parts.join(" ");
+    if paise > 0 {
+        result = format!("{} and {} Paise", result, two_digit(paise));
+    }
+    result
 }

@@ -94,6 +94,8 @@ export default function Topbar() {
                         <MenubarItem onClick={() => handleNavigation('balance_sheet')}>Balance Sheet</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('profit_loss')}>Profit & Loss</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('cash_flow')}>Cash Flow</MenubarItem>
+                        <MenubarSeparator />
+                        <MenubarItem onClick={() => handleNavigation('gst_report')}>GST Report</MenubarItem>
                     </MenubarContent>
                 </MenubarMenu>
 
@@ -109,6 +111,7 @@ export default function Topbar() {
                         <MenubarItem onClick={() => handleNavigation('voucher_settings')}>Voucher Settings</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('voucher_sequences')}>Voucher Numbering</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('barcode_settings')}>Barcode Settings</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('tax_settings')}>Tax Settings</MenubarItem>
                         <MenubarSeparator />
                         <MenubarItem onClick={() => handleNavigation('users')}>Users</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('license')}>License</MenubarItem>

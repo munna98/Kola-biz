@@ -45,7 +45,7 @@ export default function ChartOfAccountsPage() {
     setOpen(true);
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (confirm('Move this account to Recycle Bin?')) {
       try {
         await api.chartOfAccounts.delete(id);
@@ -59,7 +59,7 @@ export default function ChartOfAccountsPage() {
     }
   };
 
-  const handleRestore = async (id: number) => {
+  const handleRestore = async (id: string) => {
     try {
       await api.chartOfAccounts.restore(id);
       toast.success('Account restored successfully');
@@ -70,7 +70,7 @@ export default function ChartOfAccountsPage() {
     }
   };
 
-  const handleHardDelete = async (id: number) => {
+  const handleHardDelete = async (id: string) => {
     if (confirm('PERMANENTLY delete this account? This action cannot be undone.')) {
       try {
         await api.chartOfAccounts.hardDelete(id);

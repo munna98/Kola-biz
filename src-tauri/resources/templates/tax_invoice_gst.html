@@ -1,0 +1,272 @@
+<!-- [HEADER] -->
+{{#if irn}}
+<div class="einvoice-block">
+  <div class="einvoice-left">
+    <div class="einvoice-badge">e-Invoice</div>
+    <table class="einvoice-table">
+      <tr>
+        <td class="ei-label">IRN</td>
+        <td class="ei-colon">:</td>
+        <td class="ei-value irn-value">{{irn}}</td>
+      </tr>
+      <tr>
+        <td class="ei-label">Ack No.</td>
+        <td class="ei-colon">:</td>
+        <td class="ei-value">{{ack_no}}</td>
+      </tr>
+      <tr>
+        <td class="ei-label">Ack Date</td>
+        <td class="ei-colon">:</td>
+        <td class="ei-value"><strong>{{format_date ack_date}}</strong></td>
+      </tr>
+    </table>
+  </div>
+  {{#if qr_code_data}}
+  <div class="einvoice-right">
+    <img class="einvoice-qr" src="{{qr_code_data}}" alt="e-Invoice QR Code" />
+  </div>
+  {{/if}}
+</div>
+{{/if}}
+
+<div class="invoice-title-row">Tax Invoice</div>
+
+<table class="header-outer">
+  <tbody>
+    <!-- Row 1: Company block | Invoice meta fields -->
+    <tr>
+      <td class="company-cell" rowspan="2">
+        <strong class="company-name">{{company.name}}</strong><br/>
+        {{#if company.address_line1}}{{company.address_line1}}<br/>{{/if}}
+        {{#if company.address_line2}}{{company.address_line2}}<br/>{{/if}}
+        {{#if company.city}}{{company.city}}{{/if}}{{#if company.state}}, {{company.state}}{{/if}}{{#if company.pincode}} - {{company.pincode}}{{/if}}
+        {{#if company.gstin}}<br/><strong>GSTIN/UIN:</strong> {{company.gstin}}{{/if}}
+        {{#if company.state}}<br/><strong>State Name :</strong> {{company.state}}{{#if company.state_code}}, <strong>Code :</strong> {{company.state_code}}{{/if}}{{/if}}
+      </td>
+      <td class="meta-outer-cell">
+        <table class="meta-table">
+          <tr>
+            <td class="meta-label">Invoice No.</td>
+            <td class="meta-value"><strong>{{voucher_no}}</strong></td>
+            <td class="meta-label">Dated</td>
+            <td class="meta-value"><strong>{{format_date voucher_date}}</strong></td>
+          </tr>
+          <tr>
+            <td class="meta-label">Delivery Note</td>
+            <td class="meta-value">{{delivery_note}}</td>
+            <td class="meta-label">Mode/Terms of Payment</td>
+            <td class="meta-value">{{payment_terms}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Reference No. &amp; Date.</td>
+            <td class="meta-value">{{reference}}</td>
+            <td class="meta-label">Other References</td>
+            <td class="meta-value">{{other_references}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Buyer's Order No.</td>
+            <td class="meta-value">{{buyer_order_no}}</td>
+            <td class="meta-label">Dated</td>
+            <td class="meta-value">{{buyer_order_date}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Dispatch Doc No.</td>
+            <td class="meta-value">{{dispatch_doc_no}}</td>
+            <td class="meta-label">Delivery Note Date</td>
+            <td class="meta-value">{{delivery_note_date}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Dispatched through</td>
+            <td class="meta-value">{{dispatched_through}}</td>
+            <td class="meta-label">Destination</td>
+            <td class="meta-value">{{destination}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label" colspan="4">Terms of Delivery &nbsp; {{terms_of_delivery}}</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+
+    <!-- Row 2: Consignee (Ship To) | Buyer (Bill To) -->
+    <tr>
+      <td class="party-pair-cell">
+        <table class="party-pair-table">
+          <tr>
+            <td class="party-cell">
+              <div class="party-label">Consignee (Ship to)</div>
+              <strong>{{ship_to.name}}</strong><br/>
+              {{#if ship_to.address_line_1}}{{ship_to.address_line_1}}<br/>{{/if}}
+              {{#if ship_to.gstin}}<strong>GSTIN/UIN &nbsp;</strong> : {{ship_to.gstin}}<br/>{{/if}}
+              {{#if ship_to.state}}<strong>State Name &nbsp;</strong> : {{ship_to.state}}{{#if ship_to.state_code}}, <strong>Code :</strong> {{ship_to.state_code}}{{/if}}{{/if}}
+            </td>
+            <td class="party-cell">
+              <div class="party-label">Buyer (Bill to)</div>
+              <strong>{{party.name}}</strong><br/>
+              {{#if party.address_line_1}}{{party.address_line_1}}<br/>{{/if}}
+              {{#if party.gstin}}<strong>GSTIN/UIN &nbsp;</strong> : {{party.gstin}}<br/>{{/if}}
+              {{#if party.state}}<strong>State Name &nbsp;</strong> : {{party.state}}{{#if party.state_code}}, <strong>Code :</strong> {{party.state_code}}{{/if}}{{/if}}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- [BODY] -->
+<table class="items-table">
+  <thead>
+    <tr>
+      <th class="col-slno">Sl No.</th>
+      <th class="col-desc">Description of Goods</th>
+      <th class="col-hsn">HSN/SAC</th>
+      <th class="col-qty">Quantity</th>
+      <th class="col-rate">Rate</th>
+      <th class="col-per">per</th>
+      <th class="col-amount">Amount</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each items}}
+    <tr class="item-row">
+      <td class="center">{{increment @index}}</td>
+      <td>
+        <strong>{{product_name}}</strong>
+        {{#if description}}<br/><small class="item-desc">{{description}}</small>{{/if}}
+      </td>
+      <td class="center">{{hsn_sac_code}}</td>
+      <td class="right">{{format_number initial_quantity 2}} {{unit}}</td>
+      <td class="right">{{format_number rate 2}}</td>
+      <td class="center">{{unit}}</td>
+      <td class="right">{{format_number amount 2}}</td>
+    </tr>
+    {{/each}}
+
+    <!-- GST sub-rows: intra-state CGST + SGST -->
+    {{#unless is_inter_state}}
+    {{#if gst_enabled}}
+    <tr class="tax-row">
+      <td colspan="5"></td>
+      <td class="right tax-label"><em>CGST</em></td>
+      <td class="right">{{format_number cgst_total 2}}</td>
+    </tr>
+    <tr class="tax-row">
+      <td colspan="5"></td>
+      <td class="right tax-label"><em>SGST</em></td>
+      <td class="right">{{format_number sgst_total 2}}</td>
+    </tr>
+    {{/if}}
+    {{/unless}}
+
+    <!-- GST sub-row: inter-state IGST -->
+    {{#if is_inter_state}}
+    {{#if gst_enabled}}
+    <tr class="tax-row">
+      <td colspan="5"></td>
+      <td class="right tax-label"><em>IGST</em></td>
+      <td class="right">{{format_number igst_total 2}}</td>
+    </tr>
+    {{/if}}
+    {{/if}}
+
+    <!-- Total row -->
+    <tr class="total-row">
+      <td colspan="3" class="right"><strong>Total</strong></td>
+      <td class="right"><strong>{{total_quantity_display}}</strong></td>
+      <td colspan="2"></td>
+      <td class="right"><strong>&#8377; {{format_number grand_total 2}}</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- Amount chargeable in words -->
+<div class="amount-words-bar">
+  <span class="amount-words-label">Amount Chargeable (in words)</span>
+  <span class="eoe">E. &amp; O.E</span>
+</div>
+<div class="amount-words-value">
+  <strong>{{grand_total_words}}</strong>
+</div>
+
+{{#if gst_enabled}}
+<!-- HSN/SAC-wise Tax Breakup -->
+<table class="hsn-table">
+  <thead>
+    <tr>
+      <th rowspan="2" class="hsn-col-code">HSN/SAC</th>
+      <th rowspan="2" class="hsn-col-taxable">Taxable Value</th>
+      {{#unless is_inter_state}}
+      <th colspan="2" class="hsn-group-header">Central Tax</th>
+      <th colspan="2" class="hsn-group-header">State Tax</th>
+      {{else}}
+      <th colspan="2" class="hsn-group-header">Integrated Tax</th>
+      {{/unless}}
+      <th rowspan="2" class="hsn-col-total">Total Tax Amount</th>
+    </tr>
+    <tr>
+      {{#unless is_inter_state}}
+      <th class="hsn-col-rate">Rate</th>
+      <th class="hsn-col-amt">Amount</th>
+      <th class="hsn-col-rate">Rate</th>
+      <th class="hsn-col-amt">Amount</th>
+      {{else}}
+      <th class="hsn-col-rate">Rate</th>
+      <th class="hsn-col-amt">Amount</th>
+      {{/unless}}
+    </tr>
+  </thead>
+  <tbody>
+    {{#each hsn_summary}}
+    <tr>
+      <td class="center">{{hsn_sac_code}}</td>
+      <td class="right">{{format_number taxable_value 2}}</td>
+      {{#unless @root.is_inter_state}}
+      <td class="center">{{format_number cgst_rate 2}}%</td>
+      <td class="right">{{format_number cgst_amount 2}}</td>
+      <td class="center">{{format_number sgst_rate 2}}%</td>
+      <td class="right">{{format_number sgst_amount 2}}</td>
+      {{else}}
+      <td class="center">{{format_number igst_rate 2}}%</td>
+      <td class="right">{{format_number igst_amount 2}}</td>
+      {{/unless}}
+      <td class="right">{{format_number total_tax 2}}</td>
+    </tr>
+    {{/each}}
+    <tr class="hsn-total-row">
+      <td><strong>Total</strong></td>
+      <td class="right"><strong>{{format_number taxable_total 2}}</strong></td>
+      {{#unless is_inter_state}}
+      <td></td>
+      <td class="right"><strong>{{format_number cgst_total 2}}</strong></td>
+      <td></td>
+      <td class="right"><strong>{{format_number sgst_total 2}}</strong></td>
+      {{else}}
+      <td></td>
+      <td class="right"><strong>{{format_number igst_total 2}}</strong></td>
+      {{/unless}}
+      <td class="right"><strong>{{format_number tax_total 2}}</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="tax-words-bar">
+  <strong>Tax Amount (In words) : {{tax_total_words}}</strong>
+</div>
+{{/if}}
+
+<!-- [FOOTER] -->
+<div class="declaration-signature-row">
+  <div class="declaration-block">
+    <div class="declaration-title">Declaration</div>
+    <div class="declaration-text">We declare that this invoice shows the actual price of the goods
+    described and that all particulars are true and correct.</div>
+  </div>
+  <div class="signature-block">
+    <div class="for-company">for <strong>{{company.name}}</strong></div>
+    <div class="signature-space"></div>
+    <div class="authorised-label">Authorised Signatory</div>
+  </div>
+</div>
+
+<div class="page-foot">This is a Computer Generated Invoice</div>

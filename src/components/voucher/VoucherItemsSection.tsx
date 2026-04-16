@@ -8,6 +8,7 @@ import { VoucherItemsTable } from '@/components/voucher/VoucherItemsTable';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { cn } from '@/lib/utils';
 import { getDefaultProductUnitId, type ProductUnitDefaultKind } from '@/lib/product-units';
+import type { GstTaxSlab, Product as TauriProduct } from '@/lib/tauri';
 
 const QuantityInput = React.forwardRef<HTMLInputElement, React.ComponentProps<typeof Input>>(({ value, onChange, onKeyDown, onBlur, onFocus, ...props }, ref) => {
     const [isFocused, setIsFocused] = React.useState(false);
@@ -109,8 +110,9 @@ export interface VoucherItemsSectionProps {
     onProductCreate?: (name: string, rowIndex: number) => void;
     onSectionExit?: () => void;
     defaultUnitKind?: ProductUnitDefaultKind;
+    gstSlabs?: GstTaxSlab[];
+    fullProducts?: TauriProduct[];
 }
-
 export interface VoucherItemsSectionRef {
     focusFirstProduct: () => void;
 }
@@ -130,7 +132,8 @@ const DEFAULT_COLUMNS: ColumnSettings[] = [
     { id: 'total', label: 'Total', visible: true, order: 10 },
 ];
 
-export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, VoucherItemsSectionProps>(({
+export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, VoucherItemsSectionProps>((
+    {
     items,
     products,
     productUnitsByProduct,
@@ -147,7 +150,9 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     footerRightContent,
     onProductCreate,
     onSectionExit,
-    defaultUnitKind = 'sale'
+    defaultUnitKind = 'sale',
+    gstSlabs = [],
+    fullProducts = [],
 }, ref) => {
     // Ref to the first product combobox
     const firstProductRef = useRef<HTMLButtonElement>(null);
@@ -194,21 +199,39 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
         onAddItem
     });
 
+    const GST_COL_IDS = ['gst_rate', 'cgst', 'sgst', 'igst'];
+
     const columns = useMemo(() => {
         let cols = settings?.columns ? [...settings.columns] : DEFAULT_COLUMNS.filter(c => c.id !== 'sl_no');
         cols = cols.sort((a, b) => a.order - b.order).filter(c => c.visible && c.id !== 'sl_no');
+
+        if (gstSlabs.length === 0) {
+            // GST disabled -- strip GST columns from saved settings
+            cols = cols.filter(c => !GST_COL_IDS.includes(c.id));
+        } else if (!cols.some(c => GST_COL_IDS.includes(c.id))) {
+            // GST enabled but no GST cols in saved settings yet -- auto-inject defaults
+            const amountIdx = cols.findIndex(c => c.id === 'amount');
+            const insertAt = amountIdx >= 0 ? amountIdx + 1 : cols.length;
+            cols.splice(insertAt, 0,
+                { id: 'gst_rate', label: 'GST%',    visible: true, order: 7.4 },
+                { id: 'cgst',     label: 'CGST \u20b9', visible: true, order: 7.5 },
+                { id: 'sgst',     label: 'SGST \u20b9', visible: true, order: 7.6 },
+            );
+        }
+        // else: user already has GST cols in saved voucher settings -- respect them
+
         return [{ id: 'sl_no', label: '#', visible: true, order: -1 } as ColumnSettings, ...cols];
-    }, [settings]);
+    }, [settings, gstSlabs]);
 
     // Replicate grid-cols-12 behavior dynamically
     const getGridTemplate = () => {
         return columns.map(col => {
             if (col.id === 'sl_no') return '24px';
-            if (col.width) return col.width;
             if (col.id === 'product') return '3fr';
-            if (['deduction', 'amount', 'discount_percent', 'discount_amount', 'tax_rate'].includes(col.id)) return '0.6fr';
+            if (['cgst', 'sgst', 'igst'].includes(col.id)) return '0.8fr';
+            if (['deduction', 'amount', 'discount_percent', 'discount_amount', 'tax_rate', 'gst_rate'].includes(col.id)) return '0.6fr';
             return '1fr';
-        }).join(' ') + ' 64px'; // w-16 equivalent for 2 action buttons
+        }).join(' ') + ' 64px';
     };
 
     const gridStyle = {
@@ -274,6 +297,22 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                     : (product
                         ? getDefaultProductUnitId(productUnits, defaultUnitKind, product.unit_id)
                         : undefined) ?? '';
+
+                // Compute per-item GST rate from slab
+                const fullProduct = fullProducts.find(p => String(p.id) === String(item.product_id));
+                let resolvedGstRate = item.tax_rate || 0;
+                if (fullProduct?.gst_slab_id && gstSlabs.length > 0) {
+                    const slab = gstSlabs.find(s => s.id === fullProduct.gst_slab_id);
+                    if (slab) {
+                        resolvedGstRate = slab.is_dynamic === 1
+                            ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
+                            : slab.fixed_rate;
+                    }
+                }
+                const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
+                const taxableAmt = (finalQty * item.rate) - (item.discount_amount || 0);
+                const totalGstAmt = taxableAmt * (resolvedGstRate / 100);
+                const splitAmt = totalGstAmt / 2;
 
                 // Handle number input changes safely
                 const handleNumberChange = (field: string, val: string) => {
@@ -510,6 +549,30 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     step="0.01"
                                     disabled={isReadOnly}
                                 />
+                            );
+                        case 'gst_rate':
+                            return (
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-center bg-muted/50 border border-input rounded-md font-mono text-muted-foreground">
+                                    {resolvedGstRate > 0 ? `${resolvedGstRate}%` : '-'}
+                                </div>
+                            );
+                        case 'cgst':
+                            return (
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-mono text-muted-foreground">
+                                    {resolvedGstRate > 0 ? `₹${splitAmt.toFixed(2)}` : '-'}
+                                </div>
+                            );
+                        case 'sgst':
+                            return (
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-mono text-muted-foreground">
+                                    {resolvedGstRate > 0 ? `₹${splitAmt.toFixed(2)}` : '-'}
+                                </div>
+                            );
+                        case 'igst':
+                            return (
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-mono text-muted-foreground">
+                                    {resolvedGstRate > 0 ? `₹${totalGstAmt.toFixed(2)}` : '-'}
+                                </div>
                             );
                         case 'total':
                             return (

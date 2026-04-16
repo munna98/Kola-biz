@@ -37,6 +37,10 @@ const AVAILABLE_COLUMNS = [
     { id: 'discount_percent', label: 'Disc %', defaultVisible: false },
     { id: 'discount_amount', label: 'Disc', defaultVisible: false },
     { id: 'tax_rate', label: 'Tax %', defaultVisible: false },
+    { id: 'gst_rate', label: 'GST%', defaultVisible: false },
+    { id: 'cgst', label: 'CGST \u20b9', defaultVisible: false },
+    { id: 'sgst', label: 'SGST \u20b9', defaultVisible: false },
+    { id: 'igst', label: 'IGST \u20b9', defaultVisible: false },
     { id: 'total', label: 'Total', defaultVisible: true },
 ];
 
