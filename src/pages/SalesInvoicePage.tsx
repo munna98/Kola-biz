@@ -826,12 +826,27 @@ export default function SalesInvoicePage() {
   const getItemAmount = (item: typeof salesState.items[0]) => {
     const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
     const amount = finalQty * item.rate;
+    const taxableAmount = amount - (item.discount_amount || 0);
+
+    // Resolve GST Rate from Slab
+    let gstRate = item.tax_rate || 0;
+    const product = products.find(p => String(p.id) === String(item.product_id));
+    if (product?.gst_slab_id) {
+      const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
+      if (slab) {
+        gstRate = slab.is_dynamic === 1
+          ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
+          : slab.fixed_rate;
+      }
+    }
+
     if (voucherSettings?.taxInclusive) {
-        const taxAmount = amount - (amount / (1 + (item.tax_rate / 100)));
-        return { finalQty, amount, taxAmount, total: amount };
+      const baseTaxableAmount = taxableAmount / (1 + (gstRate / 100));
+      const taxAmount = taxableAmount - baseTaxableAmount;
+      return { finalQty, amount: taxableAmount, taxAmount, total: taxableAmount };
     } else {
-        const taxAmount = amount * (item.tax_rate / 100);
-        return { finalQty, amount, taxAmount, total: amount + taxAmount };
+      const taxAmount = taxableAmount * (gstRate / 100);
+      return { finalQty, amount: taxableAmount, taxAmount, total: taxableAmount + taxAmount };
     }
   };
 

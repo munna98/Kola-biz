@@ -42,7 +42,7 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
-import { Product, ProductUnitConversion, Unit } from '@/lib/tauri';
+import { Product, ProductUnitConversion, Unit, GstTaxSlab } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 
 interface Party {
@@ -58,6 +58,7 @@ export default function SalesReturnPage() {
     const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
     const [parties, setParties] = useState<Party[]>([]);
+    const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
@@ -76,16 +77,18 @@ export default function SalesReturnPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData] = await Promise.all([
+                const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, gstSlabsData] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
                     invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
                     invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable', 'Cash', 'Bank Account'] }),
                     invoke<any>('get_voucher_settings', { voucherType: 'sales_return' }),
+                    invoke<GstTaxSlab[]>('get_gst_tax_slabs'),
                 ]);
                 setProducts(productsData);
                 setUnits(unitsData);
                 setProductUnitConversions(productUnitConversionsData);
+                setGstSlabs(gstSlabsData);
                 if (settingsData) setVoucherSettings(settingsData);
 
                 const combinedParties = accountsData.map(acc => ({
@@ -263,13 +266,30 @@ export default function SalesReturnPage() {
         let subtotal = 0;
         let totalTax = 0;
 
+        // Slab-aware GST resolution mapper
+        const slabMap: Record<string, GstTaxSlab> = {};
+        gstSlabs.forEach(s => { slabMap[s.id] = s; });
+        const productMap: Record<string, Product> = {};
+        products.forEach(p => { productMap[String(p.id)] = p; });
+
         items.forEach((item) => {
             const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
             const amount = finalQty * item.rate;
 
             const discountAmount = item.discount_amount || 0;
             const amountAfterDiscount = amount - discountAmount;
+            
+            // Resolve GST Rate from Slab
             let gstRate = item.tax_rate || 0;
+            const product = productMap[String(item.product_id)];
+            if (product?.gst_slab_id) {
+                const slab = slabMap[product.gst_slab_id];
+                if (slab) {
+                    gstRate = slab.is_dynamic === 1
+                        ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
+                        : slab.fixed_rate;
+                }
+            }
 
             if (voucherSettings?.taxInclusive) {
                 const baseTaxableAmount = amountAfterDiscount / (1 + (gstRate / 100));
@@ -281,6 +301,7 @@ export default function SalesReturnPage() {
                 totalTax += amountAfterDiscount * (gstRate / 100);
             }
         });
+
 
         subtotal = Math.round(subtotal * 100) / 100;
         totalTax = Math.round(totalTax * 100) / 100;
@@ -542,12 +563,27 @@ export default function SalesReturnPage() {
     const getItemAmount = (item: typeof salesReturnState.items[0]) => {
         const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
         const amount = finalQty * item.rate;
+        const taxableAmount = amount - (item.discount_amount || 0);
+
+        // Resolve GST Rate from Slab
+        let gstRate = item.tax_rate || 0;
+        const product = products.find(p => String(p.id) === String(item.product_id));
+        if (product?.gst_slab_id) {
+            const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
+            if (slab) {
+                gstRate = slab.is_dynamic === 1
+                    ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
+                    : slab.fixed_rate;
+            }
+        }
+
         if (voucherSettings?.taxInclusive) {
-            const taxAmount = amount - (amount / (1 + (item.tax_rate / 100)));
-            return { finalQty, amount, taxAmount, total: amount };
+            const baseTaxableAmount = taxableAmount / (1 + (gstRate / 100));
+            const taxAmount = taxableAmount - baseTaxableAmount;
+            return { finalQty, amount: taxableAmount, taxAmount, total: taxableAmount };
         } else {
-            const taxAmount = amount * (item.tax_rate / 100);
-            return { finalQty, amount, taxAmount, total: amount + taxAmount };
+            const taxAmount = taxableAmount * (gstRate / 100);
+            return { finalQty, amount: taxableAmount, taxAmount, total: taxableAmount + taxAmount };
         }
     };
 

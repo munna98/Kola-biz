@@ -102,6 +102,7 @@ export default function ProductDialog({
   const [form, setForm] = useState<CreateProduct>({
     code: '',
     name: '',
+    barcode: '',
     unit_id: defaultUnitId,
     purchase_rate: 0,
     sales_rate: 0,
@@ -116,7 +117,7 @@ export default function ProductDialog({
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const unitLocked = Boolean(product?.has_transactions);
 
-  const orderedFields = ['code', 'name', 'group', 'unit', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp'];
+  const orderedFields = ['code', 'name', 'group', 'unit', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp', 'barcode'];
 
   const { register, handleKeyDown, handleSelectKeyDown, parseNumber, formatNumber } = useDialog(
     open,
@@ -142,6 +143,7 @@ export default function ProductDialog({
         setForm({
           code: product.code,
           name: product.name,
+          barcode: product.barcode || '',
           group_id: product.group_id,
           unit_id: product.unit_id,
           purchase_rate: product.purchase_rate,
@@ -180,6 +182,7 @@ export default function ProductDialog({
         setForm({
           code: '',
           name: '',
+          barcode: '',
           group_id: undefined,
           unit_id: initialUnitId,
           purchase_rate: 0,
@@ -214,6 +217,7 @@ export default function ProductDialog({
     setForm({
       code: '',
       name: '',
+      barcode: '',
       group_id: undefined,
       unit_id: unitId,
       purchase_rate: 0,
@@ -446,7 +450,7 @@ export default function ProductDialog({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
+          <div className="grid grid-cols-4 gap-4">
             <div>
               <Label className="text-xs font-medium mb-1 block">Purchase Rate</Label>
               <Input
@@ -484,6 +488,17 @@ export default function ProductDialog({
                 onKeyDown={(e) => handleKeyDown(e, 'mrp')}
                 placeholder="0.00"
                 className="h-8 text-sm text-right font-mono"
+              />
+            </div>
+            <div>
+              <Label className="text-xs font-medium mb-1 block">Barcode</Label>
+              <Input
+                ref={register('barcode') as any}
+                value={form.barcode || ''}
+                onChange={e => setForm({ ...form, barcode: e.target.value })}
+                onKeyDown={(e) => handleKeyDown(e, 'barcode')}
+                placeholder="Scan / Enter"
+                className="h-8 text-sm"
               />
             </div>
           </div>

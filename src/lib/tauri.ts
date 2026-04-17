@@ -96,6 +96,7 @@ export interface Product {
   purchase_rate: number;
   sales_rate: number;
   mrp: number;
+  barcode?: string;
   is_active: number;
   created_at: string;
   has_transactions: boolean;
@@ -135,6 +136,7 @@ export interface CreateProduct {
   purchase_rate: number;
   sales_rate: number;
   mrp: number;
+  barcode?: string;
   conversions?: CreateProductUnitConversion[];
   hsn_sac_code?: string;
   gst_slab_id?: string;

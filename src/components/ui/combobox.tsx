@@ -19,6 +19,7 @@ import {
 interface ComboboxOption {
   value: string | number
   label: string
+  searchString?: string
 }
 
 interface ComboboxProps {
@@ -177,7 +178,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
                   key={option.value}
                   // cmdk uses the 'value' prop for internal filtering. 
                   // It should ideally be the label string.
-                  value={String(option.label)}
+                  value={option.searchString || String(option.label)}
                   onSelect={() => {
                     itemSelected.current = true;
                     onChange(option.value)

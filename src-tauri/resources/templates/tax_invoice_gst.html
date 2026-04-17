@@ -1,4 +1,6 @@
 <!-- [HEADER] -->
+<div class="invoice-wrapper">
+
 {{#if irn}}
 <div class="einvoice-block">
   <div class="einvoice-left">
@@ -33,16 +35,69 @@
 
 <table class="header-outer">
   <tbody>
-    <!-- Row 1: Company block | Invoice meta fields -->
     <tr>
-      <td class="company-cell" rowspan="2">
-        <strong class="company-name">{{company.name}}</strong><br/>
-        {{#if company.address_line1}}{{company.address_line1}}<br/>{{/if}}
-        {{#if company.address_line2}}{{company.address_line2}}<br/>{{/if}}
-        {{#if company.city}}{{company.city}}{{/if}}{{#if company.state}}, {{company.state}}{{/if}}{{#if company.pincode}} - {{company.pincode}}{{/if}}
-        {{#if company.gstin}}<br/><strong>GSTIN/UIN:</strong> {{company.gstin}}{{/if}}
-        {{#if company.state}}<br/><strong>State Name :</strong> {{company.state}}{{#if company.state_code}}, <strong>Code :</strong> {{company.state_code}}{{/if}}{{/if}}
+      <!-- LEFT COLUMN: 3 stacked address blocks -->
+      <td class="addr-col">
+
+        <!-- Block 1: Company -->
+        <div class="addr-block addr-company">
+          <strong class="company-name">{{company.name}}</strong>
+          {{#if company.address_line1}}<div class="addr-line">{{company.address_line1}}</div>{{/if}}
+          {{#if company.address_line2}}<div class="addr-line">{{company.address_line2}}</div>{{/if}}
+          {{#if company.city}}<div class="addr-line">{{company.city}}{{#if company.state}}, {{company.state}}{{/if}}{{#if company.pincode}} - {{company.pincode}}{{/if}}</div>{{/if}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">GSTIN/UIN</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{company.gstin}}</span>
+          </div>
+          <div class="addr-field-row">
+            <span class="addr-field-label">State Name</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{company.state}}{{#if company.state_code}}, <span class="field-key">Code :</span> {{company.state_code}}{{/if}}</span>
+          </div>
+        </div>
+
+        <div class="addr-separator"></div>
+
+        <!-- Block 2: Consignee / Ship To -->
+        <div class="addr-block">
+          <div class="addr-section-label">Consignee (Ship to)</div>
+          <strong>{{ship_to.name}}</strong>
+          {{#if ship_to.address_line_1}}<div class="addr-line">{{ship_to.address_line_1}}</div>{{/if}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">GSTIN/UIN</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{ship_to.gstin}}</span>
+          </div>
+          <div class="addr-field-row">
+            <span class="addr-field-label">State Name</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{ship_to.state}}{{#if ship_to.state_code}}, <span class="field-key">Code :</span> {{ship_to.state_code}}{{/if}}</span>
+          </div>
+        </div>
+
+        <div class="addr-separator"></div>
+
+        <!-- Block 3: Buyer / Bill To -->
+        <div class="addr-block">
+          <div class="addr-section-label">Buyer (Bill to)</div>
+          <strong>{{party.name}}</strong>
+          {{#if party.address_line_1}}<div class="addr-line">{{party.address_line_1}}</div>{{/if}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">GSTIN/UIN</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{party.gstin}}</span>
+          </div>
+          <div class="addr-field-row">
+            <span class="addr-field-label">State Name</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{party.state}}{{#if party.state_code}}, <span class="field-key">Code :</span> {{party.state_code}}{{/if}}</span>
+          </div>
+        </div>
+
       </td>
+
+      <!-- RIGHT COLUMN: Invoice meta details -->
       <td class="meta-outer-cell">
         <table class="meta-table">
           <tr>
@@ -87,38 +142,14 @@
         </table>
       </td>
     </tr>
-
-    <!-- Row 2: Consignee (Ship To) | Buyer (Bill To) -->
-    <tr>
-      <td class="party-pair-cell">
-        <table class="party-pair-table">
-          <tr>
-            <td class="party-cell">
-              <div class="party-label">Consignee (Ship to)</div>
-              <strong>{{ship_to.name}}</strong><br/>
-              {{#if ship_to.address_line_1}}{{ship_to.address_line_1}}<br/>{{/if}}
-              {{#if ship_to.gstin}}<strong>GSTIN/UIN &nbsp;</strong> : {{ship_to.gstin}}<br/>{{/if}}
-              {{#if ship_to.state}}<strong>State Name &nbsp;</strong> : {{ship_to.state}}{{#if ship_to.state_code}}, <strong>Code :</strong> {{ship_to.state_code}}{{/if}}{{/if}}
-            </td>
-            <td class="party-cell">
-              <div class="party-label">Buyer (Bill to)</div>
-              <strong>{{party.name}}</strong><br/>
-              {{#if party.address_line_1}}{{party.address_line_1}}<br/>{{/if}}
-              {{#if party.gstin}}<strong>GSTIN/UIN &nbsp;</strong> : {{party.gstin}}<br/>{{/if}}
-              {{#if party.state}}<strong>State Name &nbsp;</strong> : {{party.state}}{{#if party.state_code}}, <strong>Code :</strong> {{party.state_code}}{{/if}}{{/if}}
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
   </tbody>
 </table>
 
 <!-- [BODY] -->
 <table class="items-table">
   <thead>
-    <tr>
-      <th class="col-slno">Sl No.</th>
+    <tr class="items-thead-row">
+      <th class="col-slno">Sl<br/>No.</th>
       <th class="col-desc">Description of Goods</th>
       <th class="col-hsn">HSN/SAC</th>
       <th class="col-qty">Quantity</th>
@@ -127,7 +158,7 @@
       <th class="col-amount">Amount</th>
     </tr>
   </thead>
-  <tbody>
+  <tbody class="items-tbody">
     {{#each items}}
     <tr class="item-row">
       <td class="center">{{increment @index}}</td>
@@ -136,37 +167,67 @@
         {{#if description}}<br/><small class="item-desc">{{description}}</small>{{/if}}
       </td>
       <td class="center">{{hsn_sac_code}}</td>
-      <td class="right">{{format_number initial_quantity 2}} {{unit}}</td>
+      <td class="right">{{format_number initial_quantity 2}}</td>
       <td class="right">{{format_number rate 2}}</td>
       <td class="center">{{unit}}</td>
       <td class="right">{{format_number amount 2}}</td>
     </tr>
     {{/each}}
 
+    <!-- Spacer: 7 individual cells so column dividers continue through empty space -->
+    <tr class="spacer-row">
+      <td class="sp-slno"></td>
+      <td class="sp-desc"></td>
+      <td class="sp-hsn"></td>
+      <td class="sp-qty"></td>
+      <td class="sp-rate"></td>
+      <td class="sp-per"></td>
+      <td class="sp-amount"></td>
+    </tr>
+
     <!-- GST sub-rows: intra-state CGST + SGST -->
+    <!-- Use individual cells (not colspan) so column dividers stay continuous -->
     {{#unless is_inter_state}}
     {{#if gst_enabled}}
+    {{#if has_cgst}}
     <tr class="tax-row">
-      <td colspan="5"></td>
+      <td class="sp-slno"></td>
+      <td class="sp-desc"></td>
+      <td class="sp-hsn"></td>
+      <td class="sp-qty"></td>
+      <td class="sp-rate"></td>
       <td class="right tax-label"><em>CGST</em></td>
       <td class="right">{{format_number cgst_total 2}}</td>
     </tr>
+    {{/if}}
+    {{#if has_sgst}}
     <tr class="tax-row">
-      <td colspan="5"></td>
+      <td class="sp-slno"></td>
+      <td class="sp-desc"></td>
+      <td class="sp-hsn"></td>
+      <td class="sp-qty"></td>
+      <td class="sp-rate"></td>
       <td class="right tax-label"><em>SGST</em></td>
       <td class="right">{{format_number sgst_total 2}}</td>
     </tr>
+    {{/if}}
     {{/if}}
     {{/unless}}
 
     <!-- GST sub-row: inter-state IGST -->
     {{#if is_inter_state}}
     {{#if gst_enabled}}
+    {{#if has_igst}}
     <tr class="tax-row">
-      <td colspan="5"></td>
+      <td class="sp-slno"></td>
+      <td class="sp-desc"></td>
+      <td class="sp-hsn"></td>
+      <td class="sp-qty"></td>
+      <td class="sp-rate"></td>
       <td class="right tax-label"><em>IGST</em></td>
       <td class="right">{{format_number igst_total 2}}</td>
     </tr>
+    {{/if}}
     {{/if}}
     {{/if}}
 
@@ -193,18 +254,18 @@
 <!-- HSN/SAC-wise Tax Breakup -->
 <table class="hsn-table">
   <thead>
-    <tr>
+    <tr class="hsn-header-row">
       <th rowspan="2" class="hsn-col-code">HSN/SAC</th>
-      <th rowspan="2" class="hsn-col-taxable">Taxable Value</th>
+      <th rowspan="2" class="hsn-col-taxable">Taxable<br/>Value</th>
       {{#unless is_inter_state}}
       <th colspan="2" class="hsn-group-header">Central Tax</th>
       <th colspan="2" class="hsn-group-header">State Tax</th>
       {{else}}
       <th colspan="2" class="hsn-group-header">Integrated Tax</th>
       {{/unless}}
-      <th rowspan="2" class="hsn-col-total">Total Tax Amount</th>
+      <th rowspan="2" class="hsn-col-total">Total<br/>Tax Amount</th>
     </tr>
-    <tr>
+    <tr class="hsn-sub-header-row">
       {{#unless is_inter_state}}
       <th class="hsn-col-rate">Rate</th>
       <th class="hsn-col-amt">Amount</th>
@@ -270,3 +331,5 @@
 </div>
 
 <div class="page-foot">This is a Computer Generated Invoice</div>
+
+</div>{{! closes invoice-wrapper }}

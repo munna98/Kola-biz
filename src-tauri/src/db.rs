@@ -111,6 +111,7 @@ pub async fn init_db(
             purchase_rate REAL NOT NULL,
             sales_rate REAL NOT NULL,
             mrp REAL NOT NULL,
+            barcode TEXT,
             is_active INTEGER DEFAULT 1,
             deleted_at DATETIME,
             deleted_by TEXT,
@@ -122,6 +123,10 @@ pub async fn init_db(
     )
     .execute(&pool)
     .await?;
+
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN barcode TEXT")
+        .execute(&pool)
+        .await;
 
     // ==================== ACCOUNTING MODULE ====================
 

@@ -65,6 +65,7 @@ interface Product {
     id: string;
     code: string;
     name: string;
+    barcode?: string;
     unit_id: string;
     purchase_rate?: number;
     sales_rate?: number;
@@ -332,7 +333,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 <Combobox
                                     key={col.id}
                                     ref={idx === 0 ? firstProductRef : undefined}
-                                    options={products.map(p => ({ value: p.id, label: `${p.code} - ${p.name}` }))}
+                                    options={products.map(p => ({ 
+                                        value: p.id, 
+                                        label: `${p.code} - ${p.name}`,
+                                        searchString: p.barcode ? `${p.code} - ${p.name} ${p.barcode}` : undefined
+                                    }))}
                                     value={item.product_id}
                                     onChange={(value) => {
                                         onUpdateItem(idx, 'product_id', value);

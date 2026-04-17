@@ -455,6 +455,11 @@ pub async fn reset_template_to_default(
             let css = include_str!("../../resources/templates/minimal_clean.css");
             (html, css)
         }
+        "TPL-SI-GST-001" | "TPL-PI-GST-001" => {
+            let html = include_str!("../../resources/templates/tax_invoice_gst.html");
+            let css = include_str!("../../resources/templates/tax_invoice_gst.css");
+            (html, css)
+        }
         _ => return Ok(()), // Custom templates can't be reset to seed
     };
 
@@ -526,22 +531,13 @@ async fn get_purchase_invoice_data(
         .await
         .unwrap_or(None);
 
-    // Fetch company state for inter-state detection
+    // Fetch company profile and state for inter-state detection
     let company = crate::commands::company::get_company_profile(pool.clone()).await.ok();
     let company_state = company.as_ref().and_then(|c| c.state.clone()).unwrap_or_default();
     let company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
-    let _company_state_code = tax_utils::state_code_from_gstin(if company_gstin.is_empty() { None } else { Some(&company_gstin) });
 
     // Calculate Old Balance (Ledger balance BEFORE this invoice)
-    // supplier_id IS the account_id in the new design
     let account_id = invoice.supplier_id.clone();
-
-    // Sum of all debit - credit for this account for vouchers BEFORE this one
-    // We use voucher_date and id to strictly order "before"
-    // For Suppliers (Creditors), Balance is Cr - Dr usually, but the system stores debit/credit.
-    // Let's stick to Dr - Cr for consistent math, and UI handles Dr/Cr suffix.
-    // Or if we want "Amount Payable", it's Cr - Dr.
-    // Let's use Dr - Cr (Net) consistent with sales.
     let balance_res: (f64, f64) = sqlx::query_as(
         "SELECT 
             COALESCE(SUM(je.debit), 0.0) as total_debit, 
@@ -560,12 +556,9 @@ async fn get_purchase_invoice_data(
     .await
     .unwrap_or((0.0, 0.0));
 
-    // Old Balance (Dr - Cr)
     let old_balance = balance_res.0 - balance_res.1;
 
     // Calculate Paid Amount for this specific invoice
-    // For Purchase, we pay, so we look for payments allocated to this invoice
-    // payment_allocations table links payment_voucher_id to invoice_voucher_id
     let paid_amount: f64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
@@ -573,6 +566,26 @@ async fn get_purchase_invoice_data(
     .fetch_one(pool.inner())
     .await
     .unwrap_or(0.0);
+
+    // Pre-fetch HSN code (product-level fallback) and unit abbreviation for each item
+    let item_meta: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT vi.id,
+                COALESCE(vi.hsn_sac_code, p.hsn_sac_code) as hsn_sac_code,
+                u.symbol as unit
+         FROM voucher_items vi
+         LEFT JOIN products p ON vi.product_id = p.id
+         LEFT JOIN units u ON vi.unit_id = u.id
+         WHERE vi.voucher_id = ?",
+    )
+    .bind(&id)
+    .fetch_all(pool.inner())
+    .await
+    .unwrap_or_default();
+
+    let meta_map: std::collections::HashMap<String, (String, String)> = item_meta
+        .into_iter()
+        .map(|(iid, hsn, unit)| (iid, (hsn.unwrap_or_default(), unit.unwrap_or_default())))
+        .collect();
 
     // Format items with calculated fields for template
     let formatted_items: Vec<serde_json::Value> = items
@@ -589,9 +602,31 @@ async fn get_purchase_invoice_data(
                 let less_quantity = (item.count as f64) * item.deduction_per_unit;
                 obj.insert("less_quantity".to_string(), json!(less_quantity));
 
-                // Ensure hsn_code exists (even if null/empty)
-                if !obj.contains_key("hsn_code") {
-                    obj.insert("hsn_code".to_string(), json!(""));
+                // Inject HSN code and unit from product data
+                let (hsn, unit) = meta_map.get(&item.id).cloned().unwrap_or_default();
+                obj.insert("hsn_sac_code".to_string(), json!(hsn));
+                obj.insert("unit".to_string(), json!(unit));
+
+                // Fetch party state for GST split
+                let party_state = gst_extra.as_ref().and_then(|e| e.2.clone()).unwrap_or_default();
+                let is_inter = tax_utils::is_inter_state(Some(&company_state), Some(&party_state));
+                let total_tax = item.tax_amount;
+                let total_rate = item.tax_rate;
+
+                if is_inter {
+                    obj.insert("cgst_rate".to_string(), json!(0.0));
+                    obj.insert("sgst_rate".to_string(), json!(0.0));
+                    obj.insert("igst_rate".to_string(), json!(total_rate));
+                    obj.insert("cgst_amount".to_string(), json!(0.0));
+                    obj.insert("sgst_amount".to_string(), json!(0.0));
+                    obj.insert("igst_amount".to_string(), json!(total_tax));
+                } else {
+                    obj.insert("cgst_rate".to_string(), json!(total_rate / 2.0));
+                    obj.insert("sgst_rate".to_string(), json!(total_rate / 2.0));
+                    obj.insert("igst_rate".to_string(), json!(0.0));
+                    obj.insert("cgst_amount".to_string(), json!(total_tax / 2.0));
+                    obj.insert("sgst_amount".to_string(), json!(total_tax / 2.0));
+                    obj.insert("igst_amount".to_string(), json!(0.0));
                 }
             }
             item_val
@@ -604,6 +639,11 @@ async fn get_purchase_invoice_data(
                 "items".to_string(),
                 serde_json::to_value(formatted_items.clone()).unwrap_or(json!([])),
             );
+
+            // Inject Company Profile
+            if let Some(c) = company {
+                obj.insert("company".to_string(), serde_json::to_value(c).unwrap_or(json!({})));
+            }
 
             // Build enriched party object with GST fields from gst_extra
             let (party_gstin, party_state, party_address_1, party_city, party_postal) =
@@ -686,6 +726,7 @@ async fn get_purchase_invoice_data(
     }
 }
 
+
 async fn get_sales_invoice_data(
     pool: State<'_, SqlitePool>,
     id: String,
@@ -710,16 +751,13 @@ async fn get_sales_invoice_data(
         .await
         .unwrap_or(None);
 
-    // Fetch company state for inter-state detection
+    // Fetch company profile and state for inter-state detection
     let company = crate::commands::company::get_company_profile(pool.clone()).await.ok();
     let company_state = company.as_ref().and_then(|c| c.state.clone()).unwrap_or_default();
     let company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
-    let _company_state_code = tax_utils::state_code_from_gstin(if company_gstin.is_empty() { None } else { Some(&company_gstin) });
 
     // Calculate Old Balance (Ledger balance BEFORE this invoice)
     let account_id = invoice.customer_id.clone();
-    // Sum of all debit - credit for this account for vouchers BEFORE this one
-    // We use voucher_date and id to strictly order "before"
     let balance_res: (f64, f64) = sqlx::query_as(
         "SELECT 
             COALESCE(SUM(je.debit), 0.0) as total_debit, 
@@ -738,7 +776,6 @@ async fn get_sales_invoice_data(
     .await
     .unwrap_or((0.0, 0.0));
 
-    // For Assets (debtors), Balance is Dr - Cr
     let old_balance = balance_res.0 - balance_res.1;
 
     // Calculate Paid Amount for this specific invoice
@@ -749,6 +786,26 @@ async fn get_sales_invoice_data(
     .fetch_one(pool.inner())
     .await
     .unwrap_or(0.0);
+
+    // Pre-fetch HSN code (product-level fallback) and unit abbreviation for each item
+    let item_meta: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT vi.id,
+                COALESCE(vi.hsn_sac_code, p.hsn_sac_code) as hsn_sac_code,
+                u.symbol as unit
+         FROM voucher_items vi
+         LEFT JOIN products p ON vi.product_id = p.id
+         LEFT JOIN units u ON vi.unit_id = u.id
+         WHERE vi.voucher_id = ?",
+    )
+    .bind(&id)
+    .fetch_all(pool.inner())
+    .await
+    .unwrap_or_default();
+
+    let meta_map: std::collections::HashMap<String, (String, String)> = item_meta
+        .into_iter()
+        .map(|(iid, hsn, unit)| (iid, (hsn.unwrap_or_default(), unit.unwrap_or_default())))
+        .collect();
 
     // Format items with calculated fields for template
     let formatted_items: Vec<serde_json::Value> = items
@@ -765,9 +822,31 @@ async fn get_sales_invoice_data(
                 let less_quantity = (item.count as f64) * item.deduction_per_unit;
                 obj.insert("less_quantity".to_string(), json!(less_quantity));
 
-                // Ensure hsn_code exists (even if null/empty)
-                if !obj.contains_key("hsn_code") {
-                    obj.insert("hsn_code".to_string(), json!(""));
+                // Inject HSN code and unit from product data
+                let (hsn, unit) = meta_map.get(&item.id).cloned().unwrap_or_default();
+                obj.insert("hsn_sac_code".to_string(), json!(hsn));
+                obj.insert("unit".to_string(), json!(unit));
+
+                // Fetch party state for GST split logic
+                let party_state = gst_extra.as_ref().and_then(|e| e.2.clone()).unwrap_or_default();
+                let is_inter = tax_utils::is_inter_state(Some(&company_state), Some(&party_state));
+                let total_tax = item.tax_amount;
+                let total_rate = item.tax_rate;
+
+                if is_inter {
+                    obj.insert("cgst_rate".to_string(), json!(0.0));
+                    obj.insert("sgst_rate".to_string(), json!(0.0));
+                    obj.insert("igst_rate".to_string(), json!(total_rate));
+                    obj.insert("cgst_amount".to_string(), json!(0.0));
+                    obj.insert("sgst_amount".to_string(), json!(0.0));
+                    obj.insert("igst_amount".to_string(), json!(total_tax));
+                } else {
+                    obj.insert("cgst_rate".to_string(), json!(total_rate / 2.0));
+                    obj.insert("sgst_rate".to_string(), json!(total_rate / 2.0));
+                    obj.insert("igst_rate".to_string(), json!(0.0));
+                    obj.insert("cgst_amount".to_string(), json!(total_tax / 2.0));
+                    obj.insert("sgst_amount".to_string(), json!(total_tax / 2.0));
+                    obj.insert("igst_amount".to_string(), json!(0.0));
                 }
             }
             item_val
@@ -780,6 +859,11 @@ async fn get_sales_invoice_data(
                 "items".to_string(),
                 serde_json::to_value(formatted_items.clone()).unwrap_or(json!([])),
             );
+
+            // Inject Company Profile
+            if let Some(c) = company {
+                obj.insert("company".to_string(), serde_json::to_value(c).unwrap_or(json!({})));
+            }
 
             // Build enriched party object with GST fields from gst_extra
             let (party_gstin, party_state, party_address_1, party_city, party_postal) =
@@ -864,6 +948,7 @@ async fn get_sales_invoice_data(
         Err("Failed to serialize sales invoice".to_string())
     }
 }
+
 
 async fn get_payment_data(
     pool: State<'_, SqlitePool>,
@@ -1032,26 +1117,51 @@ async fn inject_gst_context(
     obj.insert("ack_date".to_string(), json!(ack_date));
     obj.insert("qr_code_data".to_string(), json!(qr_data));
 
-    // 3. GST amounts from voucher_items (prefer stored values)
-    let gst_rows: Vec<(Option<String>, f64, f64, f64, f64, f64, f64, f64, f64, f64)> =
+    // 3. GST amounts from voucher_items — HSN falls back to product table
+    // We fetch basic values and the total tax_amount.
+    // If specific split amounts are zero, we split them on-the-fly.
+    let gst_raw: Vec<(Option<String>, f64, f64, f64, f64, f64, f64, f64, f64, f64)> =
         sqlx::query_as(
             "SELECT
-                COALESCE(hsn_sac_code, '') as hsn_code,
-                COALESCE(amount, 0) as taxable_value,
-                COALESCE(cgst_rate, 0) as cgst_rate,
-                COALESCE(sgst_rate, 0) as sgst_rate,
-                COALESCE(igst_rate, 0) as igst_rate,
-                COALESCE(cgst_amount, 0) as cgst_amt,
-                COALESCE(sgst_amount, 0) as sgst_amt,
-                COALESCE(igst_amount, 0) as igst_amt,
-                COALESCE(resolved_gst_rate, 0) as gst_rate,
-                COALESCE(cgst_amount + sgst_amount + igst_amount, 0) as total_tax
-             FROM voucher_items WHERE voucher_id = ?",
+                COALESCE(vi.hsn_sac_code, p.hsn_sac_code, '') as hsn_code,
+                COALESCE(vi.amount, 0) as taxable_value,
+                COALESCE(vi.cgst_rate, 0) as cgst_rate,
+                COALESCE(vi.sgst_rate, 0) as sgst_rate,
+                COALESCE(vi.igst_rate, 0) as igst_rate,
+                COALESCE(vi.cgst_amount, 0) as cgst_amt,
+                COALESCE(vi.sgst_amount, 0) as sgst_amt,
+                COALESCE(vi.igst_amount, 0) as igst_amt,
+                COALESCE(vi.tax_rate, 0) as total_rate,
+                COALESCE(vi.tax_amount, 0) as total_tax
+             FROM voucher_items vi
+             LEFT JOIN products p ON vi.product_id = p.id
+             WHERE vi.voucher_id = ?",
         )
         .bind(voucher_id)
         .fetch_all(pool)
         .await
         .unwrap_or_default();
+
+    // Process raw rows to ensure split values are present
+    let gst_rows: Vec<(Option<String>, f64, f64, f64, f64, f64, f64, f64, f64, f64)> = gst_raw
+        .into_iter()
+        .map(|r| {
+            let (hsn, taxable, mut cr, mut sr, mut ir, mut ca, mut sa, mut ia, tr, ta) = r;
+            // If all split amounts are zero but total tax exists, split it
+            if ca == 0.0 && sa == 0.0 && ia == 0.0 && (ta != 0.0 || tr != 0.0) {
+                if is_inter_state {
+                    ir = tr;
+                    ia = ta;
+                } else {
+                    cr = tr / 2.0;
+                    sr = tr / 2.0;
+                    ca = ta / 2.0;
+                    sa = ta / 2.0;
+                }
+            }
+            (hsn, taxable, cr, sr, ir, ca, sa, ia, tr, ta)
+        })
+        .collect();
 
     let taxable_total: f64 = gst_rows.iter().map(|r| r.1).sum();
     let cgst_total: f64 = gst_rows.iter().map(|r| r.5).sum();
@@ -1064,6 +1174,10 @@ async fn inject_gst_context(
     obj.insert("sgst_total".to_string(), json!(round2(sgst_total)));
     obj.insert("igst_total".to_string(), json!(round2(igst_total)));
     obj.insert("tax_total".to_string(), json!(round2(tax_total)));
+
+    obj.insert("has_cgst".to_string(), json!(round2(cgst_total) > 0.0));
+    obj.insert("has_sgst".to_string(), json!(round2(sgst_total) > 0.0));
+    obj.insert("has_igst".to_string(), json!(round2(igst_total) > 0.0));
 
     // 4. Total quantity display
     let total_qty: f64 = items
