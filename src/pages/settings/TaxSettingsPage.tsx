@@ -20,7 +20,6 @@ const DEFAULT_GST_SETTINGS: GstSettings = {
   gst_enabled: false,
   gst_registration_type: 'Regular',
   composition_rate: 1,
-  gst_tax_inclusive: false,
 };
 
 interface SlabForm {
@@ -215,18 +214,6 @@ export default function TaxSettingsPage() {
                 />
               </div>
             )}
-          </div>
-
-          {/* Tax Inclusive */}
-          <div className="flex items-center justify-between">
-            <div>
-              <Label className="text-sm font-medium">Tax Inclusive Pricing</Label>
-              <p className="text-xs text-muted-foreground mt-0.5">Prices include tax amount (tax is extracted from price)</p>
-            </div>
-            <Switch
-              checked={settings.gst_tax_inclusive}
-              onCheckedChange={v => setSettings(s => ({ ...s, gst_tax_inclusive: v }))}
-            />
           </div>
 
           <div className="flex justify-end">

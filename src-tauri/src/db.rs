@@ -1,4 +1,4 @@
-﻿use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool, Sqlite};
+use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool, Sqlite};
 use tauri::Manager;
 
 pub async fn init_db(
@@ -820,7 +820,7 @@ pub async fn init_db(
     // Seed default GST slabs
     sqlx::query(
         "INSERT OR IGNORE INTO gst_tax_slabs (id, name, is_dynamic, fixed_rate) VALUES
-        ('gst_0',   'GST 0%',   0, 0),
+        ('gst_0',   'NIL',   0, 0),
         ('gst_5',   'GST 5%',   0, 5),
         ('gst_18',  'GST 18%',  0, 18),
         ('gst_28',  'GST 28%',  0, 28)",
@@ -828,12 +828,12 @@ pub async fn init_db(
     .execute(&pool)
     .await?;
 
-    sqlx::query(
-        "INSERT OR IGNORE INTO gst_tax_slabs (id, name, is_dynamic, threshold, below_rate, above_rate) VALUES
-        ('gst_apparel', 'GST 5/18% @2500', 1, 2500.0, 5.0, 18.0)",
-    )
-    .execute(&pool)
-    .await?;
+    // ==================== GST MODULE MIGRATIONS ====================
+
+    // Migration: rename GST 0% to NIL
+    let _ = sqlx::query("UPDATE gst_tax_slabs SET name = 'NIL' WHERE id = 'gst_0' AND name != 'NIL'")
+        .execute(&pool)
+        .await;
 
     // Migration: update apparel slab for existing databases
     let _ = sqlx::query(
@@ -867,6 +867,10 @@ pub async fn init_db(
     let _ = sqlx::query("ALTER TABLE customers ADD COLUMN postal_code TEXT").execute(&pool).await;
     let _ = sqlx::query("ALTER TABLE customers ADD COLUMN country TEXT").execute(&pool).await;
 
+    // Migration: Move legacy address to address_line_1 and drop address column
+    let _ = sqlx::query("UPDATE customers SET address_line_1 = address WHERE address_line_1 IS NULL OR address_line_1 = ''").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE customers DROP COLUMN address").execute(&pool).await;
+
     // Migration: Add GST columns to suppliers
     let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN gstin TEXT").execute(&pool).await;
     let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN address_line_1 TEXT").execute(&pool).await;
@@ -876,6 +880,10 @@ pub async fn init_db(
     let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN city TEXT").execute(&pool).await;
     let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN postal_code TEXT").execute(&pool).await;
     let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN country TEXT").execute(&pool).await;
+
+    // Migration: Move legacy address to address_line_1 and drop address column
+    let _ = sqlx::query("UPDATE suppliers SET address_line_1 = address WHERE address_line_1 IS NULL OR address_line_1 = ''").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers DROP COLUMN address").execute(&pool).await;
 
     // Migration: Add GST columns to chart_of_accounts
     let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN gstin TEXT").execute(&pool).await;

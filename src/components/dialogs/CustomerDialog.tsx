@@ -47,7 +47,7 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
                 name: customerToEdit.name,
                 email: customerToEdit.email || '',
                 phone: customerToEdit.phone || '',
-                address_line_1: customerToEdit.address_line_1 || customerToEdit.address || '',
+                address_line_1: customerToEdit.address_line_1 || '',
                 address_line_2: customerToEdit.address_line_2 || '',
                 address_line_3: customerToEdit.address_line_3 || '',
                 city: customerToEdit.city || '',

@@ -96,7 +96,7 @@ export default function SalesInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, taxInclusive?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
 
@@ -349,7 +349,7 @@ export default function SalesInvoicePage() {
       const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
       const amount = finalQty * item.rate;
       const discountAmt = item.discount_amount || 0;
-      const taxableAmount = amount - discountAmt;
+      const amountAfterDiscount = amount - discountAmt;
 
       // Slab takes priority; fall back to legacy item.tax_rate
       const product = productMap[String(item.product_id)];
@@ -363,8 +363,15 @@ export default function SalesInvoicePage() {
         }
       }
 
-      subtotal += taxableAmount;
-      totalTax += taxableAmount * (gstRate / 100);
+      if (voucherSettings?.taxInclusive) {
+        const baseTaxableAmount = amountAfterDiscount / (1 + (gstRate / 100));
+        const taxAmt = amountAfterDiscount - baseTaxableAmount;
+        subtotal += baseTaxableAmount;
+        totalTax += taxAmt;
+      } else {
+        subtotal += amountAfterDiscount;
+        totalTax += amountAfterDiscount * (gstRate / 100);
+      }
     });
 
     subtotal = Math.round(subtotal * 100) / 100;
@@ -819,8 +826,13 @@ export default function SalesInvoicePage() {
   const getItemAmount = (item: typeof salesState.items[0]) => {
     const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
     const amount = finalQty * item.rate;
-    const taxAmount = amount * (item.tax_rate / 100);
-    return { finalQty, amount, taxAmount, total: amount + taxAmount };
+    if (voucherSettings?.taxInclusive) {
+        const taxAmount = amount - (amount / (1 + (item.tax_rate / 100)));
+        return { finalQty, amount, taxAmount, total: amount };
+    } else {
+        const taxAmount = amount * (item.tax_rate / 100);
+        return { finalQty, amount, taxAmount, total: amount + taxAmount };
+    }
   };
 
   // Determine if form should be disabled (viewing mode)
@@ -1156,8 +1168,10 @@ export default function SalesInvoicePage() {
                   </div>
                 </div>
                 <div className="text-right space-y-0.5">
-                  <div className="text-xs text-muted-foreground">Subtotal</div>
-                  <div className="text-xs font-mono font-medium">₹ {salesState.totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                  <div className="flex justify-between items-center gap-2 text-xs">
+                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="font-mono font-medium">₹ {salesState.totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                  </div>
                   {salesState.totals.tax > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">Tax: ₹ {salesState.totals.tax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                   )}

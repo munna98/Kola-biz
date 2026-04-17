@@ -61,7 +61,7 @@ export default function PurchaseReturnPage() {
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
-    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, skipToNextRowAfterQty?: boolean } | undefined>(undefined);
+    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, skipToNextRowAfterQty?: boolean, taxInclusive?: boolean } | undefined>(undefined);
     const { print } = usePrint();
     const productUnitsByProduct = useMemo(
         () => buildProductUnitMap(productUnitConversions),
@@ -269,11 +269,18 @@ export default function PurchaseReturnPage() {
             const amount = finalQty * item.rate;
 
             const discountAmount = item.discount_amount || 0;
-            const taxableAmount = amount - discountAmount;
-            const taxAmount = taxableAmount * (item.tax_rate / 100);
+            const amountAfterDiscount = amount - discountAmount;
+            let gstRate = item.tax_rate || 0;
 
-            subtotal += taxableAmount;
-            totalTax += taxAmount;
+            if (voucherSettings?.taxInclusive) {
+                const baseTaxableAmount = amountAfterDiscount / (1 + (gstRate / 100));
+                const taxAmt = amountAfterDiscount - baseTaxableAmount;
+                subtotal += baseTaxableAmount;
+                totalTax += taxAmt;
+            } else {
+                subtotal += amountAfterDiscount;
+                totalTax += amountAfterDiscount * (gstRate / 100);
+            }
         });
 
         subtotal = Math.round(subtotal * 100) / 100;
@@ -536,8 +543,13 @@ export default function PurchaseReturnPage() {
     const getItemAmount = (item: typeof purchaseReturnState.items[0]) => {
         const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
         const amount = finalQty * item.rate;
-        const taxAmount = amount * (item.tax_rate / 100);
-        return { finalQty, amount, taxAmount, total: amount + taxAmount };
+        if (voucherSettings?.taxInclusive) {
+            const taxAmount = amount - (amount / (1 + (item.tax_rate / 100)));
+            return { finalQty, amount, taxAmount, total: amount };
+        } else {
+            const taxAmount = amount * (item.tax_rate / 100);
+            return { finalQty, amount, taxAmount, total: amount + taxAmount };
+        }
     };
 
     // Determine if form should be disabled (viewing mode)
@@ -678,9 +690,9 @@ export default function PurchaseReturnPage() {
                         {/* Totals */}
                         <div className="col-span-2 bg-card border rounded-lg p-2.5 space-y-1.5">
                             <div className="space-y-1.5">
-                                <div className="flex justify-between text-xs">
-                                    <span className="text-muted-foreground">Subtotal:</span>
-                                    <span className="font-medium font-mono">₹{purchaseReturnState.totals.subtotal.toFixed(2)}</span>
+                                <div className="flex justify-between items-center gap-2 text-xs">
+                                    <span className="text-muted-foreground">Subtotal</span>
+                                    <span className="font-medium font-mono">₹ {purchaseReturnState.totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                 </div>
 
                                 {/* Discount */}
@@ -728,8 +740,8 @@ export default function PurchaseReturnPage() {
                                     </div>
                                 </div>
                                 <div className="border-t pt-1.5 flex justify-between text-sm">
-                                    <span className="font-semibold">Grand Total:</span>
-                                    <span className="font-bold font-mono text-primary">₹{purchaseReturnState.totals.grandTotal.toFixed(2)}</span>
+                                    <span className="font-semibold">Grand Total</span>
+                                    <span className="font-bold font-mono text-primary">₹ {purchaseReturnState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                 </div>
                             </div>
                         </div>

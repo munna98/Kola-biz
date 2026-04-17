@@ -23,6 +23,7 @@ interface VoucherSettings {
     showPaymentModal?: boolean; // Default true - when false, Cash Sale auto-pays, others stay unpaid
     enableBarcodePrinting?: boolean; // Show barcode print button in print preview
     skipToNextRowAfterQty?: boolean; // Skip to next row on enter after quantity
+    taxInclusive?: boolean; // Treat item rates as inclusive of GST
 }
 
 const AVAILABLE_COLUMNS = [
@@ -38,9 +39,9 @@ const AVAILABLE_COLUMNS = [
     { id: 'discount_amount', label: 'Disc', defaultVisible: false },
     { id: 'tax_rate', label: 'Tax %', defaultVisible: false },
     { id: 'gst_rate', label: 'GST%', defaultVisible: false },
-    { id: 'cgst', label: 'CGST \u20b9', defaultVisible: false },
-    { id: 'sgst', label: 'SGST \u20b9', defaultVisible: false },
-    { id: 'igst', label: 'IGST \u20b9', defaultVisible: false },
+    { id: 'cgst', label: 'CGST ₹', defaultVisible: false },
+    { id: 'sgst', label: 'SGST ₹', defaultVisible: false },
+    { id: 'igst', label: 'IGST ₹', defaultVisible: false },
     { id: 'total', label: 'Total', defaultVisible: true },
 ];
 
@@ -58,11 +59,20 @@ export default function VoucherSettingsPage() {
     const [showPaymentModal, setShowPaymentModal] = useState(true);
     const [enableBarcodePrinting, setEnableBarcodePrinting] = useState(false);
     const [skipToNextRowAfterQty, setSkipToNextRowAfterQty] = useState(false);
+    const [taxInclusive, setTaxInclusive] = useState(false);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
         loadSettings(selectedVoucher);
     }, [selectedVoucher]);
+
+    const getBaseDefaultValue = (colId: string, voucherType: string) => {
+        if (colId === 'count') return 1;
+        if (colId === 'deduction') {
+            return (voucherType === 'purchase_invoice' || voucherType === 'purchase_return') ? 1.5 : 1.0;
+        }
+        return undefined;
+    };
 
     const loadSettings = async (voucherType: string) => {
         setLoading(true);
@@ -77,6 +87,7 @@ export default function VoucherSettingsPage() {
                 setShowPaymentModal(savedSettings.showPaymentModal !== false); // Default true
                 setEnableBarcodePrinting(savedSettings.enableBarcodePrinting || false);
                 setSkipToNextRowAfterQty(savedSettings.skipToNextRowAfterQty || false);
+                setTaxInclusive(savedSettings.taxInclusive || false);
 
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
@@ -84,8 +95,15 @@ export default function VoucherSettingsPage() {
 
                 // 1. Add saved columns that still exist in AVAILABLE_COLUMNS
                 savedSettings.columns.forEach(savedCol => {
-                    if (AVAILABLE_COLUMNS.some(c => c.id === savedCol.id)) {
-                        initialColumns.push(savedCol);
+                    const baseCol = AVAILABLE_COLUMNS.find(c => c.id === savedCol.id);
+                    if (baseCol) {
+                        initialColumns.push({
+                            ...savedCol,
+                            // If savedCol doesn't have a defaultValue, try to get the base default
+                            defaultValue: savedCol.defaultValue !== undefined && savedCol.defaultValue !== "" 
+                                ? savedCol.defaultValue 
+                                : getBaseDefaultValue(savedCol.id, voucherType)
+                        });
                     }
                 });
 
@@ -96,6 +114,7 @@ export default function VoucherSettingsPage() {
                             id: col.id,
                             label: col.label,
                             visible: col.defaultVisible,
+                            defaultValue: getBaseDefaultValue(col.id, voucherType),
                             order: initialColumns.length // append to end
                         });
                     }
@@ -106,10 +125,12 @@ export default function VoucherSettingsPage() {
                 setShowPaymentModal(true);
                 setEnableBarcodePrinting(false);
                 setSkipToNextRowAfterQty(false);
+                setTaxInclusive(false);
                 initialColumns = AVAILABLE_COLUMNS.map((col, index) => ({
                     id: col.id,
                     label: col.label,
                     visible: col.defaultVisible,
+                    defaultValue: getBaseDefaultValue(col.id, voucherType),
                     order: index
                 }));
             }
@@ -131,7 +152,8 @@ export default function VoucherSettingsPage() {
                 autoPrint: autoPrint,
                 showPaymentModal: showPaymentModal,
                 enableBarcodePrinting: enableBarcodePrinting,
-                skipToNextRowAfterQty: skipToNextRowAfterQty
+                skipToNextRowAfterQty: skipToNextRowAfterQty,
+                taxInclusive: taxInclusive
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -284,6 +306,25 @@ export default function VoucherSettingsPage() {
                                 </label>
                                 <p className="text-sm text-muted-foreground">
                                     Pressing Enter on the Quantity field will immediately add/jump to the next row.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 mb-6">
+                            <Checkbox
+                                id="tax-inclusive"
+                                checked={taxInclusive}
+                                onCheckedChange={(checked) => setTaxInclusive(checked as boolean)}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                                <label
+                                    htmlFor="tax-inclusive"
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                    Tax Inclusive Pricing
+                                </label>
+                                <p className="text-sm text-muted-foreground">
+                                    When enabled, item rates are treated as inclusive of tax. The system will reverse-calculate the base price.
                                 </p>
                             </div>
                         </div>

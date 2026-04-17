@@ -46,7 +46,7 @@ export default function SupplierDialog({ open, onOpenChange, supplierToEdit, onS
                 name: supplierToEdit.name,
                 email: supplierToEdit.email || '',
                 phone: supplierToEdit.phone || '',
-                address_line_1: supplierToEdit.address_line_1 || supplierToEdit.address || '',
+                address_line_1: supplierToEdit.address_line_1 || '',
                 address_line_2: supplierToEdit.address_line_2 || '',
                 address_line_3: supplierToEdit.address_line_3 || '',
                 city: supplierToEdit.city || '',

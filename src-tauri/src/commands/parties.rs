@@ -11,7 +11,6 @@ pub struct Customer {
     pub name: String,
     pub email: Option<String>,
     pub phone: Option<String>,
-    pub address: Option<String>,
     pub address_line_1: Option<String>,
     pub address_line_2: Option<String>,
     pub address_line_3: Option<String>,
@@ -31,7 +30,6 @@ pub struct CreateCustomer {
     pub name: String,
     pub email: Option<String>,
     pub phone: Option<String>,
-    pub address: Option<String>,
     pub address_line_1: Option<String>,
     pub address_line_2: Option<String>,
     pub address_line_3: Option<String>,
@@ -45,7 +43,7 @@ pub struct CreateCustomer {
 #[tauri::command]
 pub async fn get_customers(pool: State<'_, SqlitePool>) -> Result<Vec<Customer>, String> {
     sqlx::query_as::<_, Customer>(
-        "SELECT id, code, name, email, phone, address, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE deleted_at IS NULL ORDER BY name ASC",
+        "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE deleted_at IS NULL ORDER BY name ASC",
     )
     .fetch_all(pool.inner())
     .await
@@ -54,7 +52,7 @@ pub async fn get_customers(pool: State<'_, SqlitePool>) -> Result<Vec<Customer>,
 
 #[tauri::command]
 pub async fn get_customer(pool: State<'_, SqlitePool>, id: String) -> Result<Customer, String> {
-    sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE id = ?")
+    sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE id = ?")
         .bind(id)
         .fetch_one(pool.inner())
         .await
@@ -99,14 +97,13 @@ pub async fn create_customer(
     };
 
     let _ = sqlx::query(
-        "INSERT INTO customers (id, code, name, email, phone, address, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO customers (id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&code)
     .bind(&customer.name)
     .bind(&customer.email)
     .bind(&customer.phone)
-    .bind(&customer.address)
     .bind(&customer.address_line_1)
     .bind(&customer.address_line_2)
     .bind(&customer.address_line_3)
@@ -139,7 +136,7 @@ pub async fn create_customer(
     .await
     .map_err(|e| e.to_string())?;
 
-    sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE id = ?")
+    sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE id = ?")
         .bind(id)
         .fetch_one(pool.inner())
         .await
@@ -153,12 +150,11 @@ pub async fn update_customer(
     customer: CreateCustomer,
 ) -> Result<(), String> {
     sqlx::query(
-        "UPDATE customers SET name = ?, email = ?, phone = ?, address = ?, address_line_1 = ?, address_line_2 = ?, address_line_3 = ?, city = ?, state = ?, postal_code = ?, country = ?, gstin = ? WHERE id = ?"
+        "UPDATE customers SET name = ?, email = ?, phone = ?, address_line_1 = ?, address_line_2 = ?, address_line_3 = ?, city = ?, state = ?, postal_code = ?, country = ?, gstin = ? WHERE id = ?"
     )
     .bind(&customer.name)
     .bind(&customer.email)
     .bind(&customer.phone)
-    .bind(&customer.address)
     .bind(&customer.address_line_1)
     .bind(&customer.address_line_2)
     .bind(&customer.address_line_3)
@@ -240,7 +236,7 @@ pub async fn delete_customer(pool: State<'_, SqlitePool>, id: String) -> Result<
 #[tauri::command]
 pub async fn get_deleted_customers(pool: State<'_, SqlitePool>) -> Result<Vec<Customer>, String> {
     sqlx::query_as::<_, Customer>(
-        "SELECT id, code, name, email, phone, address, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+        "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
     )
     .fetch_all(pool.inner())
     .await
@@ -321,7 +317,6 @@ pub struct Supplier {
     pub name: String,
     pub email: Option<String>,
     pub phone: Option<String>,
-    pub address: Option<String>,
     pub address_line_1: Option<String>,
     pub address_line_2: Option<String>,
     pub address_line_3: Option<String>,
@@ -341,7 +336,6 @@ pub struct CreateSupplier {
     pub name: String,
     pub email: Option<String>,
     pub phone: Option<String>,
-    pub address: Option<String>,
     pub address_line_1: Option<String>,
     pub address_line_2: Option<String>,
     pub address_line_3: Option<String>,
@@ -355,7 +349,7 @@ pub struct CreateSupplier {
 #[tauri::command]
 pub async fn get_suppliers(pool: State<'_, SqlitePool>) -> Result<Vec<Supplier>, String> {
     sqlx::query_as::<_, Supplier>(
-        "SELECT id, code, name, email, phone, address, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE deleted_at IS NULL ORDER BY name ASC",
+        "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE deleted_at IS NULL ORDER BY name ASC",
     )
     .fetch_all(pool.inner())
     .await
@@ -364,7 +358,7 @@ pub async fn get_suppliers(pool: State<'_, SqlitePool>) -> Result<Vec<Supplier>,
 
 #[tauri::command]
 pub async fn get_supplier(pool: State<'_, SqlitePool>, id: String) -> Result<Supplier, String> {
-    sqlx::query_as::<_, Supplier>("SELECT id, code, name, email, phone, address, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE id = ?")
+    sqlx::query_as::<_, Supplier>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE id = ?")
         .bind(id)
         .fetch_one(pool.inner())
         .await
@@ -409,14 +403,13 @@ pub async fn create_supplier(
     };
 
     let _ = sqlx::query(
-        "INSERT INTO suppliers (id, code, name, email, phone, address, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO suppliers (id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&code)
     .bind(&supplier.name)
     .bind(&supplier.email)
     .bind(&supplier.phone)
-    .bind(&supplier.address)
     .bind(&supplier.address_line_1)
     .bind(&supplier.address_line_2)
     .bind(&supplier.address_line_3)
@@ -449,7 +442,7 @@ pub async fn create_supplier(
     .await
     .map_err(|e| e.to_string())?;
 
-    sqlx::query_as::<_, Supplier>("SELECT id, code, name, email, phone, address, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE id = ?")
+    sqlx::query_as::<_, Supplier>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE id = ?")
         .bind(id)
         .fetch_one(pool.inner())
         .await
@@ -463,12 +456,11 @@ pub async fn update_supplier(
     supplier: CreateSupplier,
 ) -> Result<(), String> {
     sqlx::query(
-        "UPDATE suppliers SET name = ?, email = ?, phone = ?, address = ?, address_line_1 = ?, address_line_2 = ?, address_line_3 = ?, city = ?, state = ?, postal_code = ?, country = ?, gstin = ? WHERE id = ?"
+        "UPDATE suppliers SET name = ?, email = ?, phone = ?, address_line_1 = ?, address_line_2 = ?, address_line_3 = ?, city = ?, state = ?, postal_code = ?, country = ?, gstin = ? WHERE id = ?"
     )
     .bind(&supplier.name)
     .bind(&supplier.email)
     .bind(&supplier.phone)
-    .bind(&supplier.address)
     .bind(&supplier.address_line_1)
     .bind(&supplier.address_line_2)
     .bind(&supplier.address_line_3)
@@ -550,7 +542,7 @@ pub async fn delete_supplier(pool: State<'_, SqlitePool>, id: String) -> Result<
 #[tauri::command]
 pub async fn get_deleted_suppliers(pool: State<'_, SqlitePool>) -> Result<Vec<Supplier>, String> {
     sqlx::query_as::<_, Supplier>(
-        "SELECT id, code, name, email, phone, address, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+        "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
     )
     .fetch_all(pool.inner())
     .await

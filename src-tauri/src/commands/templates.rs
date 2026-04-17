@@ -626,8 +626,8 @@ async fn get_purchase_invoice_data(
             let party_obj = if let Some(sup) = supplier {
                 json!({
                     "name": sup.name,
-                    "address": sup.address,
-                    "address_line_1": if party_address_1.is_empty() { sup.address.clone() } else { Some(party_address_1.clone()) },
+                    "address": sup.address_line_1.clone(),
+                    "address_line_1": if party_address_1.is_empty() { sup.address_line_1.clone() } else { Some(party_address_1.clone()) },
                     "phone": sup.phone,
                     "email": sup.email,
                     "gstin": if party_gstin.is_empty() { None } else { Some(party_gstin.clone()) },
@@ -802,8 +802,8 @@ async fn get_sales_invoice_data(
             let party_obj = if let Some(cust) = customer {
                 json!({
                     "name": cust.name,
-                    "address": cust.address,
-                    "address_line_1": if party_address_1.is_empty() { cust.address.clone() } else { Some(party_address_1.clone()) },
+                    "address": cust.address_line_1.clone(),
+                    "address_line_1": if party_address_1.is_empty() { cust.address_line_1.clone() } else { Some(party_address_1.clone()) },
                     "phone": cust.phone,
                     "email": cust.email,
                     "gstin": if party_gstin.is_empty() { None } else { Some(party_gstin.clone()) },

@@ -57,7 +57,6 @@ export interface CreateGstTaxSlab {
 export interface GstSettings {
   gst_enabled: boolean;
   gst_registration_type: string;
-  gst_tax_inclusive: boolean;
   composition_rate: number;
 }
 
@@ -149,7 +148,6 @@ export interface Customer {
   name: string;
   email?: string;
   phone?: string;
-  address?: string;
   address_line_1?: string;
   address_line_2?: string;
   address_line_3?: string;
@@ -167,7 +165,6 @@ export interface CreateCustomer {
   name: string;
   email?: string;
   phone?: string;
-  address?: string;
   address_line_1?: string;
   address_line_2?: string;
   address_line_3?: string;
@@ -184,7 +181,6 @@ export interface Supplier {
   name: string;
   email?: string;
   phone?: string;
-  address?: string;
   address_line_1?: string;
   address_line_2?: string;
   address_line_3?: string;
@@ -202,7 +198,6 @@ export interface CreateSupplier {
   name: string;
   email?: string;
   phone?: string;
-  address?: string;
   address_line_1?: string;
   address_line_2?: string;
   address_line_3?: string;

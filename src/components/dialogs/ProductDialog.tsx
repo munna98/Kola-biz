@@ -108,7 +108,7 @@ export default function ProductDialog({
     mrp: 0,
     conversions: defaultUnitId ? [createBaseRow(defaultUnitId)] : [],
     hsn_sac_code: '',
-    gst_slab_id: undefined,
+    gst_slab_id: 'gst_0',
   });
   const [conversionRows, setConversionRows] = useState<ConversionRow[]>(defaultUnitId ? [createBaseRow(defaultUnitId)] : []);
   const [loading, setLoading] = useState(false);
@@ -187,7 +187,7 @@ export default function ProductDialog({
           mrp: 0,
           conversions: [],
           hsn_sac_code: '',
-          gst_slab_id: undefined,
+          gst_slab_id: 'gst_0',
         });
         setConversionRows(initialUnitId ? [createBaseRow(initialUnitId, initialPurchaseRate, initialSalesRate)] : []);
       }
@@ -221,7 +221,7 @@ export default function ProductDialog({
       mrp: 0,
       conversions: [],
       hsn_sac_code: '',
-      gst_slab_id: undefined,
+      gst_slab_id: 'gst_0',
     });
     setConversionRows(unitId ? [createBaseRow(unitId)] : []);
     setShowUnitSection(false);
@@ -420,18 +420,17 @@ export default function ProductDialog({
             <div>
               <Label className="text-xs font-medium mb-1 block">GST Category</Label>
               <Select
-                value={form.gst_slab_id || 'none'}
-                onValueChange={v => setForm({ ...form, gst_slab_id: v === 'none' ? undefined : v })}
+                value={form.gst_slab_id || 'gst_0'}
+                onValueChange={v => setForm({ ...form, gst_slab_id: v })}
               >
                 <SelectTrigger
                   ref={register('gst_slab') as any}
                   className="h-8 text-sm"
                   onKeyDown={(e) => handleSelectKeyDown(e, 'gst_slab')}
                 >
-                  <SelectValue placeholder="No GST" />
+                  <SelectValue placeholder="NIL" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No GST</SelectItem>
                   {gstSlabs.filter(s => s.is_active === 1).map(slab => (
                     <SelectItem key={slab.id} value={slab.id}>
                       <span className="flex items-center gap-2">

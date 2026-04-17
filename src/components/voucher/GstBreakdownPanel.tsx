@@ -94,7 +94,7 @@ export function GstBreakdownPanel({
       const slab = product.gst_slab_id ? slabMap[product.gst_slab_id] : undefined;
       const gstRate = resolveGstRate(slab, item.rate);
       const hsnKey = product.hsn_sac_code || '';
-      const slabName = slab?.name || 'No GST';
+      const slabName = slab?.name || 'NIL';
       const bucketKey = `${hsnKey}|${gstRate}|${slabName}`;
 
       const totalTax = taxableValue * (gstRate / 100);

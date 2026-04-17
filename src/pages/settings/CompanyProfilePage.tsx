@@ -12,6 +12,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { toast } from 'sonner';
 import { IconBuilding, IconFileText, IconCreditCard, IconPhoto } from '@tabler/icons-react';
 
+const INDIAN_STATES = [
+  'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat',
+  'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh',
+  'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab',
+  'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand',
+  'West Bengal',
+  'Andaman and Nicobar Islands', 'Chandigarh', 'Dadra and Nagar Haveli and Daman and Diu',
+  'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
+];
 
 export default function CompanyProfilePage() {
     const dispatch = useDispatch();
@@ -200,12 +209,19 @@ export default function CompanyProfilePage() {
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="state">State</Label>
-                                    <Input
-                                        id="state"
-                                        value={profile.state}
-                                        onChange={(e) => handleInputChange('state', e.target.value)}
-                                        placeholder="State"
-                                    />
+                                    <Select
+                                        value={profile.state || ''}
+                                        onValueChange={(value) => handleInputChange('state', value)}
+                                    >
+                                        <SelectTrigger id="state">
+                                            <SelectValue placeholder="Select State" />
+                                        </SelectTrigger>
+                                        <SelectContent className="max-h-60">
+                                            {INDIAN_STATES.map((s) => (
+                                                <SelectItem key={s} value={s}>{s}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="pincode">Pincode</Label>

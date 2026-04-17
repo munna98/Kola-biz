@@ -23,7 +23,7 @@ The old generic `tax_rate` / `tax_amount` columns on `voucher_items` are depreca
 
 | Topic | Decision |
 |-------|----------|
-| GST Slabs | 0%, 5%, 18%, 40%, plus dynamic slabs such as 5 / 18% @2500 |
+| GST Slabs | NIL (0%), 5%, 18%, 40%, plus dynamic slabs such as 5 / 18% @2500 |
 | Price-threshold GST | Centralized in `gst_tax_slabs`, not `products` |
 | Product tax model | Product stores only `gst_slab_id` and `hsn_sac_code` |
 | Party address model | Use `address_line_1` to `address_line_4`, `city`, `state`, `postal_code`, `country`, `gstin` |
@@ -69,7 +69,7 @@ CREATE TABLE IF NOT EXISTS gst_tax_slabs (
 );
 
 INSERT OR IGNORE INTO gst_tax_slabs (id, name, is_dynamic, fixed_rate) VALUES
-  ('gst_0',   'GST 0%',   0, 0),
+  ('gst_0',   'NIL',      0, 0),
   ('gst_5',   'GST 5%',   0, 5),
   ('gst_18',  'GST 18%',  0, 18),
   ('gst_40',  'GST 40%',  0, 40);
@@ -341,10 +341,10 @@ The product UI becomes simpler.
 - Add `HSN/SAC Code` field.
 - Add a `GST Category` dropdown.
 - Dropdown options come from `gst_tax_slabs`, for example:
-  - `GST 0%`
+  - `NIL`
   - `GST 5%`
   - `GST 18%`
-  - `GST 40%`
+  - `GST 28%`
   - `GST 5 / 18% @2500`
 - Remove checkboxes and fields related to product-level "Price Based" logic.
 

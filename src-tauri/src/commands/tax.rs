@@ -147,7 +147,6 @@ pub async fn delete_gst_tax_slab(
 pub struct GstSettings {
     pub gst_enabled: bool,
     pub gst_registration_type: String, // "Regular" | "Composition" | "Unregistered"
-    pub gst_tax_inclusive: bool,
     pub composition_rate: f64,
 }
 
@@ -174,9 +173,6 @@ pub async fn get_gst_settings(
         .unwrap_or(false);
     let gst_registration_type = read("gst_registration_type").await
         .unwrap_or_else(|| "Regular".to_string());
-    let gst_tax_inclusive = read("gst_tax_inclusive").await
-        .map(|v| v == "true")
-        .unwrap_or(false);
     let composition_rate = read("composition_rate").await
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(1.0);
@@ -184,7 +180,6 @@ pub async fn get_gst_settings(
     Ok(GstSettings {
         gst_enabled,
         gst_registration_type,
-        gst_tax_inclusive,
         composition_rate,
     })
 }
@@ -197,7 +192,6 @@ pub async fn save_gst_settings(
     let pairs: Vec<(&str, String)> = vec![
         ("gst_enabled",            settings.gst_enabled.to_string()),
         ("gst_registration_type",  settings.gst_registration_type.clone()),
-        ("gst_tax_inclusive",      settings.gst_tax_inclusive.to_string()),
         ("composition_rate",       settings.composition_rate.to_string()),
     ];
 
