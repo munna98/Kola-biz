@@ -674,27 +674,71 @@ pub async fn get_day_book(
     pool: State<'_, SqlitePool>,
     from_date: String,
     to_date: String,
+    detailed: Option<bool>,
 ) -> Result<Vec<DayBookEntry>, String> {
-    let query = "
-        SELECT 
-            v.voucher_no,
-            v.voucher_type,
-            v.voucher_date,
-            CASE 
-                WHEN v.party_type = 'customer' THEN (SELECT name FROM customers WHERE id = v.party_id)
-                WHEN v.party_type = 'supplier' THEN (SELECT name FROM suppliers WHERE id = v.party_id)
-                ELSE NULL
-            END as party_name,
-            coa.account_name,
-            CAST(je.debit AS REAL) as debit,
-            CAST(je.credit AS REAL) as credit,
-            je.narration
-        FROM journal_entries je
-        JOIN vouchers v ON je.voucher_id = v.id
-        JOIN chart_of_accounts coa ON je.account_id = coa.id
-        WHERE v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
-        ORDER BY v.voucher_date ASC, v.id ASC, je.id ASC
-    ";
+    let query = if detailed.unwrap_or(false) {
+        "
+            SELECT 
+                v.voucher_no,
+                v.voucher_type,
+                v.voucher_date,
+                CASE 
+                    WHEN v.party_type = 'customer' THEN (SELECT name FROM customers WHERE id = v.party_id)
+                    WHEN v.party_type = 'supplier' THEN (SELECT name FROM suppliers WHERE id = v.party_id)
+                    ELSE NULL
+                END as party_name,
+                coa.account_name,
+                CAST(je.debit AS REAL) as debit,
+                CAST(je.credit AS REAL) as credit,
+                COALESCE(je.narration, v.narration, '') as narration
+            FROM journal_entries je
+            JOIN vouchers v ON je.voucher_id = v.id
+            JOIN chart_of_accounts coa ON je.account_id = coa.id
+            WHERE v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+            ORDER BY v.voucher_date ASC, v.id ASC, je.id ASC
+        "
+    } else {
+        "
+            SELECT 
+                v.voucher_no,
+                v.voucher_type,
+                v.voucher_date,
+                CASE 
+                    WHEN v.party_type = 'customer' THEN (SELECT name FROM customers WHERE id = v.party_id)
+                    WHEN v.party_type = 'supplier' THEN (SELECT name FROM suppliers WHERE id = v.party_id)
+                    ELSE NULL
+                END as party_name,
+                COALESCE(
+                    party_coa.account_name,
+                    CASE 
+                        WHEN COUNT(DISTINCT coa.account_name) = 1 THEN MAX(coa.account_name)
+                        ELSE ''
+                    END
+                ) as account_name,
+                CAST(ROUND(
+                    CASE
+                        WHEN v.voucher_type IN ('sales_invoice', 'receipt', 'purchase_return') THEN SUM(je.debit)
+                        WHEN v.voucher_type IN ('purchase_invoice', 'payment', 'sales_return') THEN 0
+                        ELSE SUM(je.debit)
+                    END
+                , 2) AS REAL) as debit,
+                CAST(ROUND(
+                    CASE
+                        WHEN v.voucher_type IN ('sales_invoice', 'receipt', 'purchase_return') THEN 0
+                        WHEN v.voucher_type IN ('purchase_invoice', 'payment', 'sales_return') THEN SUM(je.credit)
+                        ELSE SUM(je.credit)
+                    END
+                , 2) AS REAL) as credit,
+                COALESCE(v.narration, '') as narration
+            FROM journal_entries je
+            JOIN vouchers v ON je.voucher_id = v.id
+            JOIN chart_of_accounts coa ON je.account_id = coa.id
+            LEFT JOIN chart_of_accounts party_coa ON v.party_id = party_coa.id
+            WHERE v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+            GROUP BY v.id, v.voucher_no, v.voucher_type, v.voucher_date, v.party_type, v.party_id, v.narration, party_coa.account_name
+            ORDER BY v.voucher_date ASC, v.id ASC
+        "
+    };
 
     sqlx::query_as::<_, DayBookEntry>(query)
         .bind(&from_date)

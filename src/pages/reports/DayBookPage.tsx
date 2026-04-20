@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
@@ -24,6 +25,7 @@ export default function DayBookPage() {
   const [loading, setLoading] = useState(false);
   const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0]);
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+  const [detailed, setDetailed] = useState(false);
 
   const loadDayBook = async () => {
     try {
@@ -31,6 +33,7 @@ export default function DayBookPage() {
       const result = await invoke<DayBookEntry[]>('get_day_book', {
         fromDate,
         toDate,
+        detailed,
       });
       setEntries(result);
     } catch (error) {
@@ -43,7 +46,7 @@ export default function DayBookPage() {
 
   useEffect(() => {
     loadDayBook();
-  }, [fromDate, toDate]);
+  }, [fromDate, toDate, detailed]);
 
   const totalDebit = entries.reduce((sum, row) => sum + row.debit, 0);
   const totalCredit = entries.reduce((sum, row) => sum + row.credit, 0);
@@ -115,6 +118,16 @@ export default function DayBookPage() {
               className="h-9"
             />
           </div>
+          <div className="flex items-center gap-2 pb-2">
+            <Checkbox
+              id="day-book-detailed"
+              checked={detailed}
+              onCheckedChange={(checked) => setDetailed(checked === true)}
+            />
+            <Label htmlFor="day-book-detailed" className="text-sm font-medium cursor-pointer">
+              Detailed
+            </Label>
+          </div>
           <Button onClick={loadDayBook} size="sm">
             Generate Report
           </Button>
@@ -129,6 +142,9 @@ export default function DayBookPage() {
             <h1 className="text-2xl font-bold">Day Book</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Period: {formatDate(fromDate)} to {formatDate(toDate)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Mode: {detailed ? 'Detailed' : 'Summary'}
             </p>
           </div>
 
