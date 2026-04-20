@@ -141,8 +141,8 @@ pub async fn get_purchase_invoices(
             v.party_type,
             v.reference,
             v.total_amount,
-            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.grand_total,
+            ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
+            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -181,8 +181,8 @@ pub async fn get_purchase_invoice(
             v.party_type,
             v.reference,
             v.total_amount,
-            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.grand_total,
+            ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
+            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -733,8 +733,8 @@ pub async fn get_sales_invoices(pool: State<'_, SqlitePool>) -> Result<Vec<Sales
             v.party_type,
             v.reference,
             v.total_amount,
-            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.grand_total,
+            ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
+            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -772,8 +772,8 @@ pub async fn get_sales_invoice(
             v.party_type,
             v.reference,
             v.total_amount,
-            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.grand_total,
+            ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
+            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -1258,7 +1258,14 @@ pub async fn list_vouchers(
             v.voucher_no,
             v.voucher_date,
             COALESCE(coa.account_name, CASE WHEN v.voucher_type = 'journal' THEN 'Journal Entry' WHEN v.voucher_type = 'opening_balance' THEN 'Opening Balance' WHEN v.voucher_type = 'opening_stock' THEN 'Opening Stock' WHEN v.voucher_type = 'stock_journal' THEN 'Stock Journal' ELSE 'N/A' END) as party_name,
-            ROUND(COALESCE(v.grand_total, v.total_amount, 0.0), 2) as total_amount,
+            ROUND(
+                CASE
+                    WHEN v.voucher_type IN ('sales_invoice', 'purchase_invoice', 'sales_return', 'purchase_return')
+                        THEN COALESCE(v.subtotal, v.total_amount, 0.0) - COALESCE(v.discount_amount, 0.0) + COALESCE(v.tax_amount, 0.0)
+                    ELSE COALESCE(v.grand_total, v.total_amount, 0.0)
+                END,
+                2
+            ) as total_amount,
             v.status,
             v.voucher_type
         FROM vouchers v

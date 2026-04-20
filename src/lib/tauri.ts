@@ -61,7 +61,10 @@ export interface GstSettings {
 }
 
 export interface GstSummaryRow {
+  sl: number;
+  description: string;
   hsn_sac_code: string;
+  uqc: string;
   gst_rate: number;
   taxable_value: number;
   cgst: number;

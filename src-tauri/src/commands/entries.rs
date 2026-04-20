@@ -1865,8 +1865,8 @@ pub async fn get_pending_invoices(
             v.voucher_no,
             v.voucher_date,
             v.voucher_type,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0) as total_amount,
-            (v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0) - COALESCE(
+            ROUND(COALESCE(v.subtotal, v.total_amount, 0.0) - COALESCE(v.discount_amount, 0.0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0.0), 0.0), 2) as total_amount,
+            (ROUND(COALESCE(v.subtotal, v.total_amount, 0.0) - COALESCE(v.discount_amount, 0.0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0.0), 0.0), 2) - COALESCE(
                 (SELECT SUM(allocated_amount) FROM payment_allocations WHERE invoice_voucher_id = v.id), 0.0
             )) as pending_amount,
             v.narration

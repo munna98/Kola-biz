@@ -8,6 +8,9 @@ import {
     MenubarItem,
     MenubarMenu,
     MenubarSeparator,
+    MenubarSub,
+    MenubarSubContent,
+    MenubarSubTrigger,
     MenubarTrigger,
 } from '@/components/ui/menubar';
 
@@ -95,7 +98,17 @@ export default function Topbar() {
                         <MenubarItem onClick={() => handleNavigation('profit_loss')}>Profit & Loss</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('cash_flow')}>Cash Flow</MenubarItem>
                         <MenubarSeparator />
-                        <MenubarItem onClick={() => handleNavigation('gst_report')}>GST Report</MenubarItem>
+                        <MenubarSub>
+                            <MenubarSubTrigger>GST Reports</MenubarSubTrigger>
+                            <MenubarSubContent>
+                                <MenubarItem onClick={() => handleNavigation('gstr1')}>
+                                    GSTR-1 (Outward Supplies)
+                                </MenubarItem>
+                                <MenubarItem onClick={() => handleNavigation('gstr3b')}>
+                                    GSTR-3B (Net Liability)
+                                </MenubarItem>
+                            </MenubarSubContent>
+                        </MenubarSub>
                     </MenubarContent>
                 </MenubarMenu>
 

@@ -62,8 +62,9 @@ pub fn resolve_effective_rate(unit_price: f64, slab: &GstTaxSlab) -> f64 {
 
 /// Given a taxable value and effective rate, split into CGST+SGST or IGST.
 pub fn compute_split(taxable_value: f64, effective_rate: f64, is_inter_state: bool) -> ResolvedGst {
+    let total_tax = round2((taxable_value * effective_rate) / 100.0);
+
     if is_inter_state {
-        let igst = round2((taxable_value * effective_rate) / 100.0);
         ResolvedGst {
             effective_rate,
             cgst_rate: 0.0,
@@ -71,21 +72,22 @@ pub fn compute_split(taxable_value: f64, effective_rate: f64, is_inter_state: bo
             igst_rate: effective_rate,
             cgst_amount: 0.0,
             sgst_amount: 0.0,
-            igst_amount: igst,
-            total_tax: igst,
+            igst_amount: total_tax,
+            total_tax,
         }
     } else {
         let split_rate = effective_rate / 2.0;
-        let half_tax = round2((taxable_value * split_rate) / 100.0);
+        let cgst_amount = round2(total_tax / 2.0);
+        let sgst_amount = round2(total_tax - cgst_amount);
         ResolvedGst {
             effective_rate,
             cgst_rate: split_rate,
             sgst_rate: split_rate,
             igst_rate: 0.0,
-            cgst_amount: half_tax,
-            sgst_amount: half_tax,
+            cgst_amount,
+            sgst_amount,
             igst_amount: 0.0,
-            total_tax: round2(half_tax * 2.0),
+            total_tax,
         }
     }
 }

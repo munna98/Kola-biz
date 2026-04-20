@@ -72,17 +72,36 @@ interface RateCellProps {
 
 const RateCell = React.forwardRef<HTMLInputElement, RateCellProps>(({ rate, exTaxRate, taxInclusive, resolvedGstRate, isReadOnly, onChange }, ref) => {
     const [isFocused, setIsFocused] = React.useState(false);
+    const [localValue, setLocalValue] = React.useState('');
+
+    const blurredValue = React.useMemo(() => {
+        const valueToDisplay = taxInclusive && resolvedGstRate > 0 ? exTaxRate : rate;
+        return Number.isFinite(valueToDisplay) && valueToDisplay !== 0
+            ? valueToDisplay.toFixed(2)
+            : valueToDisplay === 0
+                ? '0.00'
+                : '';
+    }, [exTaxRate, rate, resolvedGstRate, taxInclusive]);
+
+    React.useEffect(() => {
+        if (!isFocused) {
+            setLocalValue(blurredValue);
+        }
+    }, [blurredValue, isFocused]);
+
     // When focused: show real stored (inclusive) rate for editing
     // When blurred:  show ex-tax rate (reverse-calculated) for clarity
-    const displayValue = isFocused
-        ? (rate || '')
-        : (taxInclusive && resolvedGstRate > 0 ? Number(exTaxRate.toFixed(4)) || '' : rate || '');
-
     const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
         setIsFocused(true);
+        setLocalValue(rate ? String(rate) : '');
         // Defer select() so it runs after React re-renders the inclusive rate value
         const el = e.currentTarget;
         requestAnimationFrame(() => el.select());
+    };
+
+    const handleBlur = () => {
+        setIsFocused(false);
+        setLocalValue(blurredValue);
     };
 
     return (
@@ -90,10 +109,13 @@ const RateCell = React.forwardRef<HTMLInputElement, RateCellProps>(({ rate, exTa
             ref={ref}
             data-field="rate"
             type="number"
-            value={displayValue}
+            value={isFocused ? localValue : blurredValue}
             onFocus={handleFocus}
-            onBlur={() => setIsFocused(false)}
-            onChange={(e) => onChange(e.target.value)}
+            onBlur={handleBlur}
+            onChange={(e) => {
+                setLocalValue(e.target.value);
+                onChange(e.target.value);
+            }}
             className="h-7 text-xs text-right font-mono"
             placeholder="0.00"
             step="0.01"
@@ -103,6 +125,70 @@ const RateCell = React.forwardRef<HTMLInputElement, RateCellProps>(({ rate, exTa
     );
 });
 RateCell.displayName = 'RateCell';
+
+interface FormattedNumberInputProps extends Omit<React.ComponentProps<typeof Input>, 'value' | 'onChange'> {
+    value: number;
+    onChangeValue: (val: string) => void;
+    decimals?: number;
+    emptyWhenZero?: boolean;
+}
+
+const FormattedNumberInput = React.forwardRef<HTMLInputElement, FormattedNumberInputProps>(
+    ({ value, onChangeValue, decimals = 2, emptyWhenZero = true, onFocus, onBlur, onKeyDown, ...props }, ref) => {
+        const [isFocused, setIsFocused] = React.useState(false);
+        const [localValue, setLocalValue] = React.useState('');
+
+        const blurredValue = React.useMemo(() => {
+            if (!Number.isFinite(value)) {
+                return '';
+            }
+
+            if (value === 0 && emptyWhenZero) {
+                return '';
+            }
+
+            return value.toFixed(decimals);
+        }, [decimals, emptyWhenZero, value]);
+
+        React.useEffect(() => {
+            if (!isFocused) {
+                setLocalValue(blurredValue);
+            }
+        }, [blurredValue, isFocused]);
+
+        const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+            setIsFocused(true);
+            setLocalValue(value || value === 0 ? String(value) : '');
+            onFocus?.(e);
+            requestAnimationFrame(() => e.currentTarget.select());
+        };
+
+        const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+            setIsFocused(false);
+            setLocalValue(blurredValue);
+            onBlur?.(e);
+        };
+
+        const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+            setLocalValue(e.target.value);
+            onChangeValue(e.target.value);
+        };
+
+        return (
+            <Input
+                ref={ref}
+                type="number"
+                value={isFocused ? localValue : blurredValue}
+                onFocus={handleFocus}
+                onBlur={handleBlur}
+                onChange={handleChange}
+                onKeyDown={onKeyDown}
+                {...props}
+            />
+        );
+    }
+);
+FormattedNumberInput.displayName = 'FormattedNumberInput';
 
 interface Product {
     id: string;
@@ -528,26 +614,25 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             );
                         case 'count':
                             return (
-                                <Input
+                                <FormattedNumberInput
                                     key={col.id}
                                     data-field="count"
-                                    type="number"
-                                    value={item.count || ''}
-                                    onChange={(e) => handleNumberChange('count', e.target.value)}
+                                    value={item.count || 0}
+                                    onChangeValue={(val) => handleNumberChange('count', val)}
                                     className="h-7 text-xs text-right font-mono"
                                     placeholder="1.00"
                                     step="0.01"
                                     disabled={isReadOnly}
+                                    emptyWhenZero={false}
                                 />
                             );
                         case 'deduction':
                             return (
-                                <Input
+                                <FormattedNumberInput
                                     key={col.id}
                                     data-field="deduction"
-                                    type="number"
-                                    value={item.deduction_per_unit || ''}
-                                    onChange={(e) => handleNumberChange('deduction_per_unit', e.target.value)}
+                                    value={item.deduction_per_unit || 0}
+                                    onChangeValue={(val) => handleNumberChange('deduction_per_unit', val)}
                                     className="h-7 text-xs text-left font-mono"
                                     placeholder="0.00"
                                     step="0.01"
@@ -569,12 +654,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             );
                         case 'discount_percent':
                             return (
-                                <Input
+                                <FormattedNumberInput
                                     key={col.id}
                                     data-field="discount_percent"
-                                    type="number"
-                                    value={item.discount_percent || ''}
-                                    onChange={(e) => handleNumberChange('discount_percent', e.target.value)}
+                                    value={item.discount_percent || 0}
+                                    onChangeValue={(val) => handleNumberChange('discount_percent', val)}
                                     className="h-7 text-xs text-right font-mono"
                                     placeholder="0"
                                     step="0.01"
@@ -583,12 +667,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             );
                         case 'discount_amount':
                             return (
-                                <Input
+                                <FormattedNumberInput
                                     key={col.id}
                                     data-field="discount_amount"
-                                    type="number"
-                                    value={item.discount_amount || ''}
-                                    onChange={(e) => handleNumberChange('discount_amount', e.target.value)}
+                                    value={item.discount_amount || 0}
+                                    onChangeValue={(val) => handleNumberChange('discount_amount', val)}
                                     className="h-7 text-xs text-right font-mono"
                                     placeholder="0.00"
                                     step="0.01"
@@ -597,12 +680,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             );
                         case 'tax_rate':
                             return (
-                                <Input
+                                <FormattedNumberInput
                                     key={col.id}
                                     data-field="tax_rate"
-                                    type="number"
-                                    value={item.tax_rate || ''}
-                                    onChange={(e) => handleNumberChange('tax_rate', e.target.value)}
+                                    value={item.tax_rate || 0}
+                                    onChangeValue={(val) => handleNumberChange('tax_rate', val)}
                                     className="h-7 text-xs text-right font-mono"
                                     placeholder="0.00"
                                     step="0.01"

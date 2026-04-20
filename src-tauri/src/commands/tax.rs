@@ -215,30 +215,35 @@ pub async fn save_gst_settings(
 
 // ============= GSTR SUMMARY QUERIES =============
 
-/// GSTR-1: Outward supply summary grouped by HSN/SAC + resolved GST rate.
+/// GSTR-1: Outward supply summary grouped by HSN/SAC + description + unit + resolved GST rate.
 #[tauri::command]
 pub async fn get_gstr1_summary(
     pool: State<'_, SqlitePool>,
     from_date: String,
     to_date: String,
 ) -> Result<serde_json::Value, String> {
-    let rows: Vec<(String, f64, f64, f64, f64, f64, f64, f64)> = sqlx::query_as(
+    // Each tuple: (description, hsn, uqc, gst_rate, taxable, cgst, sgst, igst, tax, total)
+    let rows: Vec<(String, String, String, f64, f64, f64, f64, f64, f64, f64)> = sqlx::query_as(
         "SELECT
-            COALESCE(vi.hsn_sac_code, 'N/A')        AS hsn_sac_code,
-            COALESCE(vi.resolved_gst_rate, 0)        AS gst_rate,
-            COALESCE(SUM(vi.amount), 0)              AS taxable_value,
-            COALESCE(SUM(vi.cgst_amount), 0)         AS cgst_amount,
-            COALESCE(SUM(vi.sgst_amount), 0)         AS sgst_amount,
-            COALESCE(SUM(vi.igst_amount), 0)         AS igst_amount,
+            COALESCE(p.name, vi.description, 'N/A')                            AS description,
+            COALESCE(vi.hsn_sac_code, 'N/A')                                   AS hsn_sac_code,
+            COALESCE(u.symbol, 'NOS')                                          AS uqc,
+            COALESCE(vi.resolved_gst_rate, 0)                                  AS gst_rate,
+            COALESCE(SUM(vi.amount), 0)                                        AS taxable_value,
+            COALESCE(SUM(vi.cgst_amount), 0)                                   AS cgst,
+            COALESCE(SUM(vi.sgst_amount), 0)                                   AS sgst,
+            COALESCE(SUM(vi.igst_amount), 0)                                   AS igst,
             COALESCE(SUM(vi.cgst_amount + vi.sgst_amount + vi.igst_amount), 0) AS total_tax,
             COALESCE(SUM(vi.amount + vi.cgst_amount + vi.sgst_amount + vi.igst_amount), 0) AS total_value
          FROM voucher_items vi
          JOIN vouchers v ON vi.voucher_id = v.id
+         LEFT JOIN products p ON vi.product_id = p.id
+         LEFT JOIN units u ON vi.unit_id = u.id
          WHERE v.voucher_type = 'sales_invoice'
            AND v.voucher_date BETWEEN ? AND ?
            AND v.deleted_at IS NULL
-         GROUP BY vi.hsn_sac_code, vi.resolved_gst_rate
-         ORDER BY vi.hsn_sac_code",
+         GROUP BY p.name, vi.description, vi.hsn_sac_code, u.symbol, vi.resolved_gst_rate
+         ORDER BY vi.hsn_sac_code, p.name",
     )
     .bind(&from_date)
     .bind(&to_date)
@@ -248,21 +253,25 @@ pub async fn get_gstr1_summary(
 
     let items: Vec<serde_json::Value> = rows
         .into_iter()
-        .map(|(hsn, rate, taxable, cgst, sgst, igst, tax, total)| {
+        .enumerate()
+        .map(|(i, (desc, hsn, uqc, rate, taxable, cgst, sgst, igst, tax, total))| {
             json!({
+                "sl": i + 1,
+                "description": desc,
                 "hsn_sac_code": hsn,
+                "uqc": uqc,
                 "gst_rate": rate,
                 "taxable_value": taxable,
-                "cgst_amount": cgst,
-                "sgst_amount": sgst,
-                "igst_amount": igst,
+                "cgst": cgst,
+                "sgst": sgst,
+                "igst": igst,
                 "total_tax": tax,
                 "total_value": total,
             })
         })
         .collect();
 
-    Ok(json!({ "items": items }))
+    Ok(serde_json::Value::Array(items))
 }
 
 /// GSTR-3B: Net output liability vs input credit for the period.
@@ -311,25 +320,16 @@ pub async fn get_gstr3b_summary(
     .unwrap_or((0.0, 0.0, 0.0, 0.0));
 
     Ok(json!({
-        "outward": {
-            "taxable_value": out.0,
-            "cgst": out.1,
-            "sgst": out.2,
-            "igst": out.3,
-            "total_tax": out.1 + out.2 + out.3,
-        },
-        "inward": {
-            "taxable_value": inp.0,
-            "cgst_credit": inp.1,
-            "sgst_credit": inp.2,
-            "igst_credit": inp.3,
-            "total_credit": inp.1 + inp.2 + inp.3,
-        },
-        "net_liability": {
-            "cgst": out.1 - inp.1,
-            "sgst": out.2 - inp.2,
-            "igst": out.3 - inp.3,
-            "total": (out.1 + out.2 + out.3) - (inp.1 + inp.2 + inp.3),
-        }
+        "outward_taxable":  out.0,
+        "outward_cgst":     out.1,
+        "outward_sgst":     out.2,
+        "outward_igst":     out.3,
+        "inward_taxable":   inp.0,
+        "inward_cgst":      inp.1,
+        "inward_sgst":      inp.2,
+        "inward_igst":      inp.3,
+        "net_cgst":         out.1 - inp.1,
+        "net_sgst":         out.2 - inp.2,
+        "net_igst":         out.3 - inp.3,
     }))
 }

@@ -49,14 +49,14 @@ pub async fn get_outstanding_invoices(
             v.voucher_no,
             v.voucher_date,
             coa.account_name as party_name,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0) as total_amount,
+            ROUND(COALESCE(v.subtotal, v.total_amount, 0.0) - COALESCE(v.discount_amount, 0.0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0.0), 0.0), 2) as total_amount,
             COALESCE(
                 (SELECT SUM(pa.allocated_amount) 
                  FROM payment_allocations pa 
                  WHERE pa.invoice_voucher_id = v.id), 
                 0.0
             ) as allocated_amount,
-            (v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)) - COALESCE(
+            ROUND(COALESCE(v.subtotal, v.total_amount, 0.0) - COALESCE(v.discount_amount, 0.0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0.0), 0.0), 2) - COALESCE(
                 (SELECT SUM(pa.allocated_amount) 
                  FROM payment_allocations pa 
                  WHERE pa.invoice_voucher_id = v.id), 
@@ -128,7 +128,7 @@ pub async fn create_allocation(
     .map_err(|e| e.to_string())?;
 
     let invoice_total: f64 = sqlx::query_scalar(
-        "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
+        "SELECT ROUND(COALESCE(v.subtotal, v.total_amount, 0.0) - COALESCE(v.discount_amount, 0.0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0.0), 0.0), 2)
          FROM vouchers v
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
          WHERE v.id = ?
@@ -267,7 +267,7 @@ pub async fn delete_allocation(pool: State<'_, SqlitePool>, id: String) -> Resul
     .map_err(|e| e.to_string())?;
 
     let invoice_total: f64 = sqlx::query_scalar(
-        "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
+        "SELECT ROUND(COALESCE(v.subtotal, v.total_amount, 0.0) - COALESCE(v.discount_amount, 0.0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0.0), 0.0), 2)
          FROM vouchers v
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
          WHERE v.id = ?
@@ -493,7 +493,7 @@ pub async fn create_quick_payment(
     .map_err(|e| e.to_string())?;
 
     let invoice_total: f64 = sqlx::query_scalar(
-        "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
+        "SELECT ROUND(COALESCE(v.subtotal, v.total_amount, 0.0) - COALESCE(v.discount_amount, 0.0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0.0), 0.0), 2)
          FROM vouchers v
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
          WHERE v.id = ?
@@ -716,7 +716,7 @@ pub async fn update_quick_payment(
     .map_err(|e| e.to_string())?;
 
     let invoice_total: f64 = sqlx::query_scalar(
-        "SELECT v.total_amount + COALESCE(SUM(vi.tax_amount), 0.0)
+        "SELECT ROUND(COALESCE(v.subtotal, v.total_amount, 0.0) - COALESCE(v.discount_amount, 0.0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0.0), 0.0), 2)
          FROM vouchers v
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
          WHERE v.id = ?
