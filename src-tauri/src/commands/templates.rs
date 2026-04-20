@@ -567,6 +567,9 @@ async fn get_purchase_invoice_data(
     .await
     .unwrap_or(0.0);
 
+    // Read tax_inclusive from the voucher record itself (set at save time for historical accuracy)
+    let tax_inclusive: bool = invoice.tax_inclusive != 0;
+
     // Pre-fetch HSN code (product-level fallback) and unit abbreviation for each item
     let item_meta: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT vi.id,
@@ -593,10 +596,35 @@ async fn get_purchase_invoice_data(
         .map(|item| {
             let mut item_val = serde_json::to_value(&item).unwrap_or(json!({}));
             if let Some(obj) = item_val.as_object_mut() {
-                // Add total field (amount + tax) which template expects
-                let amount = item.amount;
-                let tax = item.tax_amount;
-                obj.insert("total".to_string(), json!(amount + tax));
+                // If tax-inclusive: reverse-calculate base amount and ex-tax rate
+                let gross_amt = item.amount;
+                let tax_rate = item.tax_rate;
+                let (base_amt, tax_amt, ex_tax_rate) = if tax_inclusive && tax_rate > 0.0 {
+                    let base = gross_amt / (1.0 + tax_rate / 100.0);
+                    let tax = gross_amt - base;
+                    let final_qty = item.initial_quantity - (item.count as f64) * item.deduction_per_unit;
+                    let ex_rate = if final_qty > 0.0 { base / final_qty } else { item.rate };
+                    (base, tax, ex_rate)
+                } else {
+                    (gross_amt, item.tax_amount, item.rate)
+                };
+
+                // Store the inclusive/original values for reference
+                obj.insert("inclusive_rate".to_string(), json!(item.rate));
+                obj.insert("inclusive_amount".to_string(), json!(item.amount));
+                
+                // Override rate and amount with ex-tax values so standard invoice templates work correctly
+                obj.insert("rate".to_string(), json!(round2(ex_tax_rate)));
+                obj.insert("amount".to_string(), json!(round2(base_amt)));
+
+                // Inject explicit ex-tax vars for backwards compatibility
+                obj.insert("base_amount".to_string(), json!(round2(base_amt)));
+                obj.insert("ex_tax_rate".to_string(), json!(round2(ex_tax_rate)));
+                obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
+
+                // total = inclusive grand total per line
+                let total = if tax_inclusive { gross_amt } else { gross_amt + tax_amt };
+                obj.insert("total".to_string(), json!(round2(total)));
 
                 // Add less_quantity field (count * deduction_per_unit)
                 let less_quantity = (item.count as f64) * item.deduction_per_unit;
@@ -610,7 +638,6 @@ async fn get_purchase_invoice_data(
                 // Fetch party state for GST split
                 let party_state = gst_extra.as_ref().and_then(|e| e.2.clone()).unwrap_or_default();
                 let is_inter = tax_utils::is_inter_state(Some(&company_state), Some(&party_state));
-                let total_tax = item.tax_amount;
                 let total_rate = item.tax_rate;
 
                 if is_inter {
@@ -619,13 +646,13 @@ async fn get_purchase_invoice_data(
                     obj.insert("igst_rate".to_string(), json!(total_rate));
                     obj.insert("cgst_amount".to_string(), json!(0.0));
                     obj.insert("sgst_amount".to_string(), json!(0.0));
-                    obj.insert("igst_amount".to_string(), json!(total_tax));
+                    obj.insert("igst_amount".to_string(), json!(round2(tax_amt)));
                 } else {
                     obj.insert("cgst_rate".to_string(), json!(total_rate / 2.0));
                     obj.insert("sgst_rate".to_string(), json!(total_rate / 2.0));
                     obj.insert("igst_rate".to_string(), json!(0.0));
-                    obj.insert("cgst_amount".to_string(), json!(total_tax / 2.0));
-                    obj.insert("sgst_amount".to_string(), json!(total_tax / 2.0));
+                    obj.insert("cgst_amount".to_string(), json!(round2(tax_amt / 2.0)));
+                    obj.insert("sgst_amount".to_string(), json!(round2(tax_amt / 2.0)));
                     obj.insert("igst_amount".to_string(), json!(0.0));
                 }
             }
@@ -787,6 +814,9 @@ async fn get_sales_invoice_data(
     .await
     .unwrap_or(0.0);
 
+    // Read tax_inclusive from the voucher record itself (set at save time for historical accuracy)
+    let tax_inclusive: bool = invoice.tax_inclusive != 0;
+
     // Pre-fetch HSN code (product-level fallback) and unit abbreviation for each item
     let item_meta: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT vi.id,
@@ -813,10 +843,35 @@ async fn get_sales_invoice_data(
         .map(|item| {
             let mut item_val = serde_json::to_value(&item).unwrap_or(json!({}));
             if let Some(obj) = item_val.as_object_mut() {
-                // Add total field (amount + tax) which template expects
-                let amount = item.amount;
-                let tax = item.tax_amount;
-                obj.insert("total".to_string(), json!(amount + tax));
+                // If tax-inclusive: reverse-calculate base amount and ex-tax rate from inclusive amount
+                let gross_amt = item.amount; // stored as inclusive gross (qty * rate - discount)
+                let tax_rate = item.tax_rate;
+                let (base_amt, tax_amt, ex_tax_rate) = if tax_inclusive && tax_rate > 0.0 {
+                    let base = gross_amt / (1.0 + tax_rate / 100.0);
+                    let tax = gross_amt - base;
+                    let final_qty = item.initial_quantity - (item.count as f64) * item.deduction_per_unit;
+                    let ex_rate = if final_qty > 0.0 { base / final_qty } else { item.rate };
+                    (base, tax, ex_rate)
+                } else {
+                    (gross_amt, item.tax_amount, item.rate)
+                };
+
+                // Store the inclusive/original values for reference
+                obj.insert("inclusive_rate".to_string(), json!(item.rate));
+                obj.insert("inclusive_amount".to_string(), json!(item.amount));
+                
+                // Override rate and amount with ex-tax values so standard invoice templates work correctly
+                obj.insert("rate".to_string(), json!(round2(ex_tax_rate)));
+                obj.insert("amount".to_string(), json!(round2(base_amt)));
+
+                // Inject explicit ex-tax vars for backwards compatibility
+                obj.insert("base_amount".to_string(), json!(round2(base_amt)));
+                obj.insert("ex_tax_rate".to_string(), json!(round2(ex_tax_rate)));
+                obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
+
+                // total = inclusive grand total per line
+                let total = if tax_inclusive { gross_amt } else { gross_amt + tax_amt };
+                obj.insert("total".to_string(), json!(round2(total)));
 
                 // Add less_quantity field (count * deduction_per_unit)
                 let less_quantity = (item.count as f64) * item.deduction_per_unit;
@@ -830,7 +885,6 @@ async fn get_sales_invoice_data(
                 // Fetch party state for GST split logic
                 let party_state = gst_extra.as_ref().and_then(|e| e.2.clone()).unwrap_or_default();
                 let is_inter = tax_utils::is_inter_state(Some(&company_state), Some(&party_state));
-                let total_tax = item.tax_amount;
                 let total_rate = item.tax_rate;
 
                 if is_inter {
@@ -839,13 +893,13 @@ async fn get_sales_invoice_data(
                     obj.insert("igst_rate".to_string(), json!(total_rate));
                     obj.insert("cgst_amount".to_string(), json!(0.0));
                     obj.insert("sgst_amount".to_string(), json!(0.0));
-                    obj.insert("igst_amount".to_string(), json!(total_tax));
+                    obj.insert("igst_amount".to_string(), json!(round2(tax_amt)));
                 } else {
                     obj.insert("cgst_rate".to_string(), json!(total_rate / 2.0));
                     obj.insert("sgst_rate".to_string(), json!(total_rate / 2.0));
                     obj.insert("igst_rate".to_string(), json!(0.0));
-                    obj.insert("cgst_amount".to_string(), json!(total_tax / 2.0));
-                    obj.insert("sgst_amount".to_string(), json!(total_tax / 2.0));
+                    obj.insert("cgst_amount".to_string(), json!(round2(tax_amt / 2.0)));
+                    obj.insert("sgst_amount".to_string(), json!(round2(tax_amt / 2.0)));
                     obj.insert("igst_amount".to_string(), json!(0.0));
                 }
             }
@@ -919,6 +973,7 @@ async fn get_sales_invoice_data(
                 invoice.grand_total - invoice.tax_amount + invoice.discount_amount.unwrap_or(0.0);
             obj.insert("subtotal".to_string(), json!(subtotal));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
+            obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
 
             // Detect cash sale (no meaningful balance to show)
             let is_cash = invoice.customer_name == "Cash";
@@ -972,7 +1027,7 @@ async fn get_payment_data(
             v.reference as reference_number,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.grand_total,
             v.narration,
             v.status,
             v.created_at,
@@ -1034,7 +1089,7 @@ async fn get_receipt_data(
             v.reference as reference_number,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.grand_total,
             v.narration,
             v.status,
             v.created_at,
@@ -1117,56 +1172,24 @@ async fn inject_gst_context(
     obj.insert("ack_date".to_string(), json!(ack_date));
     obj.insert("qr_code_data".to_string(), json!(qr_data));
 
-    // 3. GST amounts from voucher_items — HSN falls back to product table
-    // We fetch basic values and the total tax_amount.
-    // If specific split amounts are zero, we split them on-the-fly.
-    let gst_raw: Vec<(Option<String>, f64, f64, f64, f64, f64, f64, f64, f64, f64)> =
-        sqlx::query_as(
-            "SELECT
-                COALESCE(vi.hsn_sac_code, p.hsn_sac_code, '') as hsn_code,
-                COALESCE(vi.amount, 0) as taxable_value,
-                COALESCE(vi.cgst_rate, 0) as cgst_rate,
-                COALESCE(vi.sgst_rate, 0) as sgst_rate,
-                COALESCE(vi.igst_rate, 0) as igst_rate,
-                COALESCE(vi.cgst_amount, 0) as cgst_amt,
-                COALESCE(vi.sgst_amount, 0) as sgst_amt,
-                COALESCE(vi.igst_amount, 0) as igst_amt,
-                COALESCE(vi.tax_rate, 0) as total_rate,
-                COALESCE(vi.tax_amount, 0) as total_tax
-             FROM voucher_items vi
-             LEFT JOIN products p ON vi.product_id = p.id
-             WHERE vi.voucher_id = ?",
-        )
-        .bind(voucher_id)
-        .fetch_all(pool)
-        .await
-        .unwrap_or_default();
-
-    // Process raw rows to ensure split values are present
-    let gst_rows: Vec<(Option<String>, f64, f64, f64, f64, f64, f64, f64, f64, f64)> = gst_raw
-        .into_iter()
-        .map(|r| {
-            let (hsn, taxable, mut cr, mut sr, mut ir, mut ca, mut sa, mut ia, tr, ta) = r;
-            // If all split amounts are zero but total tax exists, split it
-            if ca == 0.0 && sa == 0.0 && ia == 0.0 && (ta != 0.0 || tr != 0.0) {
-                if is_inter_state {
-                    ir = tr;
-                    ia = ta;
-                } else {
-                    cr = tr / 2.0;
-                    sr = tr / 2.0;
-                    ca = ta / 2.0;
-                    sa = ta / 2.0;
-                }
-            }
-            (hsn, taxable, cr, sr, ir, ca, sa, ia, tr, ta)
-        })
-        .collect();
-
-    let taxable_total: f64 = gst_rows.iter().map(|r| r.1).sum();
-    let cgst_total: f64 = gst_rows.iter().map(|r| r.5).sum();
-    let sgst_total: f64 = gst_rows.iter().map(|r| r.6).sum();
-    let igst_total: f64 = gst_rows.iter().map(|r| r.7).sum();
+    // 3. GST amounts from the already-formatted items — base_amount is already reverse-calculated if tax_inclusive
+    // We sum base_amount (ex-tax) and the split tax amounts directly from the formatted items passed in.
+    let taxable_total: f64 = items
+        .iter()
+        .filter_map(|i| i["base_amount"].as_f64())
+        .sum();
+    let cgst_total: f64 = items
+        .iter()
+        .filter_map(|i| i["cgst_amount"].as_f64())
+        .sum();
+    let sgst_total: f64 = items
+        .iter()
+        .filter_map(|i| i["sgst_amount"].as_f64())
+        .sum();
+    let igst_total: f64 = items
+        .iter()
+        .filter_map(|i| i["igst_amount"].as_f64())
+        .sum();
     let tax_total = cgst_total + sgst_total + igst_total;
 
     obj.insert("taxable_total".to_string(), json!(round2(taxable_total)));
@@ -1186,13 +1209,23 @@ async fn inject_gst_context(
         .sum();
     obj.insert("total_quantity_display".to_string(), json!(format!("{:.2}", total_qty)));
 
-    // 5. HSN/SAC summary grouped by code + rate
+    // 5. HSN/SAC summary grouped by code + rate — built from pre-formatted items
+    //    so base_amount is already tax-inclusive-aware (reverse-calculated if needed)
     use std::collections::BTreeMap;
+    // (taxable, cgst_r, sgst_r, igst_r, cgst_a, sgst_a, igst_a)
     let mut hsn_map: BTreeMap<String, (f64, f64, f64, f64, f64, f64, f64)> = BTreeMap::new();
-    for (hsn, taxable, cgst_r, sgst_r, igst_r, cgst_a, sgst_a, igst_a, gst_r, _) in &gst_rows {
-        let code = hsn.as_deref().unwrap_or("");
-        let key = format!("{}|{:.2}", code, gst_r);
-        let entry = hsn_map.entry(key).or_insert((0.0, *cgst_r, *sgst_r, *igst_r, 0.0, 0.0, 0.0));
+    for item in items {
+        let hsn = item["hsn_sac_code"].as_str().unwrap_or("").to_string();
+        let taxable = item["base_amount"].as_f64().unwrap_or(0.0);
+        let gst_r = item["tax_rate"].as_f64().unwrap_or(0.0);
+        let cgst_r = item["cgst_rate"].as_f64().unwrap_or(0.0);
+        let sgst_r = item["sgst_rate"].as_f64().unwrap_or(0.0);
+        let igst_r = item["igst_rate"].as_f64().unwrap_or(0.0);
+        let cgst_a = item["cgst_amount"].as_f64().unwrap_or(0.0);
+        let sgst_a = item["sgst_amount"].as_f64().unwrap_or(0.0);
+        let igst_a = item["igst_amount"].as_f64().unwrap_or(0.0);
+        let key = format!("{}|{:.2}", hsn, gst_r);
+        let entry = hsn_map.entry(key).or_insert((0.0, cgst_r, sgst_r, igst_r, 0.0, 0.0, 0.0));
         entry.0 += taxable;
         entry.4 += cgst_a;
         entry.5 += sgst_a;

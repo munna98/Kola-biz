@@ -1,10 +1,55 @@
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::State;
-use uuid::Uuid;
 
+
+use uuid::Uuid;
 use super::resolve_voucher_line_unit;
 use crate::voucher_seq::get_next_voucher_number;
+
+fn round2(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
+}
+
+// ============= GST INVOICE HELPERS =============
+
+#[derive(Debug)]
+pub struct ProcessedVoucherItem {
+    pub id: String,
+    pub product_id: String,
+    pub description: Option<String>,
+    pub initial_quantity: f64,
+    pub count: i64,
+    pub deduction_per_unit: f64,
+    pub final_quantity: f64,
+    pub unit_id: Option<String>,
+    pub base_quantity: f64,
+    pub rate: f64,
+    pub amount: f64,
+    pub discount_percent: f64,
+    pub discount_amount: f64,
+    pub tax_rate: f64,
+    pub tax_amount: f64,
+    pub remarks: Option<String>,
+    pub cgst_rate: f64,
+    pub sgst_rate: f64,
+    pub igst_rate: f64,
+    pub cgst_amount: f64,
+    pub sgst_amount: f64,
+    pub igst_amount: f64,
+    pub hsn_sac_code: Option<String>,
+    pub gst_slab_id: Option<String>,
+    pub resolved_gst_rate: f64,
+}
+
+pub struct ProcessedVoucher {
+    pub items: Vec<ProcessedVoucherItem>,
+    pub subtotal: f64,
+    pub total_cgst: f64,
+    pub total_sgst: f64,
+    pub total_igst: f64,
+}
+
 
 // ============= PURCHASE INVOICE =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -26,6 +71,7 @@ pub struct PurchaseInvoice {
     pub created_at: String,
     pub deleted_at: Option<String>,
     pub created_by_name: Option<String>,
+    pub tax_inclusive: i64,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -77,6 +123,7 @@ pub struct CreatePurchaseInvoice {
     pub discount_amount: Option<f64>,
     pub items: Vec<CreatePurchaseInvoiceItem>,
     pub user_id: Option<String>,
+    pub tax_inclusive: Option<bool>,
 }
 
 
@@ -95,14 +142,15 @@ pub async fn get_purchase_invoices(
             v.reference,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
             v.status,
             v.created_at,
             v.deleted_at,
-            u.full_name as created_by_name
+            u.full_name as created_by_name,
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -129,20 +177,20 @@ pub async fn get_purchase_invoice(
             v.voucher_no,
             v.voucher_date,
             v.party_id as supplier_id,
-            v.party_id as supplier_id,
             coa.account_name as supplier_name,
             v.party_type,
             v.reference,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
             v.status,
             v.created_at,
             v.deleted_at,
-            u.full_name as created_by_name
+            u.full_name as created_by_name,
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -178,99 +226,105 @@ pub async fn get_purchase_invoice_items(
 
 #[tauri::command]
 pub async fn create_purchase_invoice(
-    pool: State<'_, SqlitePool>,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
     invoice: CreatePurchaseInvoice,
 ) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    // Generate voucher number
-    let voucher_no = get_next_voucher_number(pool.inner(), "purchase_invoice").await?;
+    let voucher_no = crate::voucher_seq::get_next_voucher_number(pool.inner(), "purchase_invoice").await?;
 
-    // Calculate totals
+    let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1").fetch_optional(&mut *tx).await.ok().flatten();
+    let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.supplier_id).fetch_optional(&mut *tx).await.ok().flatten();
+    let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
+    let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
+
+    let mut processed_items = Vec::new();
     let mut subtotal = 0.0;
+    let mut total_cgst = 0.0;
+    let mut total_sgst = 0.0;
+    let mut total_igst = 0.0;
 
     for item in &invoice.items {
-        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let amount = final_qty * item.rate;
+        let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
+        let unit_snapshot = super::resolve_voucher_line_unit(&mut tx, &item.product_id, item.unit_id.as_deref(), "purchase", final_quantity).await?;
+        
+        let product: Option<(Option<String>, Option<String>)> = sqlx::query_as("SELECT hsn_sac_code, gst_slab_id FROM products WHERE id = ?").bind(&item.product_id).fetch_optional(&mut *tx).await.unwrap_or(None);
+        let (hsn_sac_code, gst_slab_id) = product.unwrap_or((None, None));
+        
+        let mut effective_rate = item.tax_rate;
+        if let Some(ref slab_id) = gst_slab_id {
+            if let Some(slab) = crate::commands::tax_utils::get_slab(pool.inner(), slab_id).await {
+                effective_rate = crate::commands::tax_utils::resolve_effective_rate(item.rate, &slab);
+            }
+        }
+        
+        let raw_amount = final_quantity * item.rate;
         let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 {
-            amount * (discount_percent / 100.0)
+        let discount_amount = if discount_percent > 0.0 { raw_amount * (discount_percent / 100.0) } else { item.discount_amount.unwrap_or(0.0) };
+        let net_before_tax = raw_amount - discount_amount;
+        
+        let (taxable_amount, tax_amount, base_amount, base_rate) = if tax_inclusive {
+            let tax_amt = net_before_tax - (net_before_tax / (1.0 + (effective_rate / 100.0)));
+            let txbl = net_before_tax - tax_amt;
+            let b_amt = txbl + discount_amount;
+            (txbl, tax_amt, b_amt, b_amt / final_quantity)
         } else {
-            item.discount_amount.unwrap_or(0.0)
+            (net_before_tax, net_before_tax * (effective_rate / 100.0), raw_amount, item.rate)
         };
-        subtotal += amount - discount_amount;
+        
+        subtotal += taxable_amount;
+        
+        let mut cgst_rate = 0.0; let mut sgst_rate = 0.0; let mut igst_rate = 0.0;
+        let mut cgst_amount = 0.0; let mut sgst_amount = 0.0; let mut igst_amount = 0.0;
+        if effective_rate > 0.0 {
+            let split = crate::commands::tax_utils::compute_split(taxable_amount, effective_rate, is_inter_state);
+            cgst_rate = split.cgst_rate; sgst_rate = split.sgst_rate; igst_rate = split.igst_rate;
+            cgst_amount = split.cgst_amount; sgst_amount = split.sgst_amount; igst_amount = split.igst_amount;
+            total_cgst += cgst_amount; total_sgst += sgst_amount; total_igst += igst_amount;
+        }
+
+        
+        processed_items.push(ProcessedVoucherItem {
+            id: Uuid::now_v7().to_string(),
+            product_id: item.product_id.clone(), description: item.description.clone(), initial_quantity: item.initial_quantity,
+            count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: Some(unit_snapshot.unit_id.clone()),
+            base_quantity: unit_snapshot.base_quantity, rate: base_rate, amount: base_amount, discount_percent, discount_amount,
+            tax_rate: effective_rate, tax_amount, remarks: item.remarks.clone(), cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount,
+            hsn_sac_code, gst_slab_id, resolved_gst_rate: effective_rate,
+        });
     }
 
-    // Apply discounts
-    let discount_amount = invoice.discount_amount.unwrap_or(0.0);
-    let total_amount = subtotal - discount_amount;
+    subtotal = round2(subtotal);
+    total_cgst = round2(total_cgst);
+    total_sgst = round2(total_sgst);
+    total_igst = round2(total_igst);
+    let discount_amount = round2(invoice.discount_amount.unwrap_or(0.0));
+    let total_amount = round2(subtotal - discount_amount);
+    let total_tax = round2(total_cgst + total_sgst + total_igst);
+    let grand_total = round2(total_amount + total_tax);
 
+    
     let voucher_id = Uuid::now_v7().to_string();
-
-    // Create voucher
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, total_amount, narration, status, created_by)
-         VALUES (?, ?, 'purchase_invoice', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?)"
     )
-    .bind(&voucher_id)
-    .bind(&voucher_no)
-    .bind(&invoice.voucher_date)
-    .bind(&invoice.supplier_id)
-    .bind(&invoice.party_type)
-    .bind(&invoice.reference)
-    .bind(subtotal)
-    .bind(invoice.discount_rate.unwrap_or(0.0))
-    .bind(discount_amount)
-    .bind(total_amount)
-    .bind(&invoice.narration)
-    .bind(&invoice.user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    .bind(&voucher_id).bind(&voucher_no).bind("purchase_invoice").bind(&invoice.voucher_date).bind(&invoice.supplier_id)
+    .bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(invoice.discount_rate.unwrap_or(0.0))
+    .bind(discount_amount).bind(total_tax).bind(total_amount).bind(&invoice.narration)
+    .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
-    for item in &invoice.items {
-        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let unit_snapshot = resolve_voucher_line_unit(
-            &mut tx,
-            &item.product_id,
-            item.unit_id.as_deref(),
-            "purchase",
-            final_qty,
-        )
-        .await?;
-        let amount = final_qty * item.rate;
-        let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 {
-            amount * (discount_percent / 100.0)
-        } else {
-            item.discount_amount.unwrap_or(0.0)
-        };
-        let taxable_amount = amount - discount_amount;
-        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
-        let item_id = Uuid::now_v7().to_string();
-
+    for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(&item_id)
-        .bind(&voucher_id)
-        .bind(&item.product_id)
-        .bind(&item.description)
-        .bind(item.initial_quantity)
-        .bind(item.count)
-        .bind(item.deduction_per_unit)
-        .bind(final_qty)
-        .bind(&unit_snapshot.unit_id)
-        .bind(unit_snapshot.base_quantity)
-        .bind(item.rate)
-        .bind(amount)
-        .bind(item.tax_rate)
-        .bind(tax_amount)
-        .bind(item.discount_percent.unwrap_or(0.0))
-        .bind(item.discount_amount.unwrap_or(0.0))
-        .bind(&item.remarks)
+        .bind(&item.id).bind(&voucher_id).bind(&item.product_id).bind(&item.description).bind(item.initial_quantity)
+        .bind(item.count).bind(item.deduction_per_unit).bind(item.final_quantity).bind(&item.unit_id).bind(item.base_quantity)
+        .bind(item.rate).bind(item.amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
+        .bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
+        .bind(item.igst_amount).bind(&item.hsn_sac_code).bind(&item.gst_slab_id).bind(item.resolved_gst_rate)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -278,154 +332,60 @@ pub async fn create_purchase_invoice(
 
     // ============= CREATE JOURNAL ENTRIES =============
 
+
+
     let party_id = invoice.supplier_id;
-
-    // Calculate total tax
-    let total_tax: f64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(tax_amount), 0) FROM voucher_items WHERE voucher_id = ?",
-    )
-    .bind(&voucher_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    // Get account IDs
-    let purchases_account: String =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5001'")
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    let tax_account: String =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1005'")
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    let party_account: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE id = ?")
-        .bind(&party_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| format!("Party account not found: {}", e))?;
-
-    // Check party's account group for narration and payment status
-    let party_group: Option<String> = sqlx::query_scalar(
-        "SELECT account_group FROM chart_of_accounts WHERE id = ?"
-    )
-    .bind(&party_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-    let is_cash_bank = matches!(party_group.as_deref(), Some("Cash") | Some("Bank Account"));
-    let party_narration = if is_cash_bank { "Cash purchase" } else { "Amount payable" };
-
-    // Debit: Purchases Account (with subtotal, before discount)
-    let je_id_1 = Uuid::now_v7().to_string();
-    sqlx::query(
-        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, ?, 0, 'Purchase of goods')",
-    )
-    .bind(&je_id_1)
-    .bind(&voucher_id)
-    .bind(&purchases_account)
-    .bind(subtotal)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    // Debit: Tax Receivable (GST Input)
-    if total_tax > 0.0 {
-        let je_id_2 = Uuid::now_v7().to_string();
-        sqlx::query(
-            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, 'Input tax on purchases')",
-        )
-        .bind(&je_id_2)
-        .bind(&voucher_id)
-        .bind(&tax_account)
-        .bind(total_tax)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    
+    let main_account: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5001'").fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+    
+    // Group tax manually
+    let mut tax_ledgers: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for row in &processed_items {
+        if row.tax_amount > 0.0 {
+            let accounts = crate::commands::tax_utils::resolve_gst_account_names(row.resolved_gst_rate, is_inter_state, true);
+            if let Some(cgst_acc) = accounts.cgst_account {
+                *tax_ledgers.entry(cgst_acc).or_insert(0.0) += row.cgst_amount;
+            }
+            if let Some(sgst_acc) = accounts.sgst_account {
+                *tax_ledgers.entry(sgst_acc).or_insert(0.0) += row.sgst_amount;
+            }
+            if let Some(igst_acc) = accounts.igst_account {
+                *tax_ledgers.entry(igst_acc).or_insert(0.0) += row.igst_amount;
+            }
+        }
     }
 
-    // Credit: Accounts Payable (Supplier) or Cash
-    // Amount owed = subtotal - discount + tax
-    let amount_payable = subtotal - discount_amount + total_tax;
-    let je_id_3 = Uuid::now_v7().to_string();
-    sqlx::query(
-        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, 0, ?, ?)",
-    )
-    .bind(&je_id_3)
-    .bind(&voucher_id)
-    .bind(&party_account)
-    .bind(amount_payable)
-    .bind(party_narration)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    
 
-    // Credit: Discount Received (if discount applied)
+    // Party entry
+    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)").bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&party_id).bind(0.0).bind(total_amount + total_tax).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+    // Main entry
+    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)").bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&main_account).bind(subtotal).bind(0.0).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+    // Discount entry
     if discount_amount > 0.0 {
-        let discount_account: i64 =
-            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'")
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-
-        sqlx::query(
-            "INSERT INTO journal_entries (voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, 0, ?, 'Discount received from supplier')",
-        )
-        .bind(&voucher_id)
-        .bind(discount_account)
-        .bind(discount_amount)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+        let dis_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'").fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)").bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(dis_acc).bind(0.0).bind(discount_amount).execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
-    // Create stock movements
-    let items_for_stock: Vec<(String, f64, i64, f64, f64)> = sqlx::query_as(
-        "SELECT product_id, base_quantity, count, rate, amount FROM voucher_items WHERE voucher_id = ?",
-    )
-    .bind(&voucher_id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    for item in items_for_stock {
-        let sm_id = Uuid::now_v7().to_string();
-        sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
-             VALUES (?, ?, ?, 'IN', ?, ?, ?, ?)"
-        )
-        .bind(&sm_id)
-        .bind(&voucher_id)
-        .bind(&item.0)
-        .bind(item.1)
-        .bind(item.2)
-        .bind(item.3)
-        .bind(item.4)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    }
-
-    // Auto-mark as paid if party is a Cash or Bank account (no separate payment needed)
-    if is_cash_bank {
-        sqlx::query("UPDATE vouchers SET payment_status = 'paid' WHERE id = ?")
-            .bind(&voucher_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+    // Tax entries
+    for (acc_name, amt) in tax_ledgers {
+        if amt > 0.0 {
+            let acc_id = crate::commands::tax_utils::ensure_gst_account_exists(pool.inner(), &acc_name, !true).await?;
+            let (dr, cr) = if true { (amt, 0.0) } else { (0.0, amt) };
+            
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
+                .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(dr).bind(cr)
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
-
-    Ok(voucher_id)
+    Ok(voucher_id.to_string())
 }
+
+
 
 #[tauri::command]
 pub async fn delete_purchase_invoice(
@@ -515,337 +475,173 @@ pub async fn delete_purchase_invoice(
 
 #[tauri::command]
 pub async fn update_purchase_invoice(
-    pool: State<'_, SqlitePool>,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
     id: String,
     invoice: CreatePurchaseInvoice,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    // Get old party info before update
-    let old_party: (String, String) =
-        sqlx::query_as("SELECT party_id, party_type FROM vouchers WHERE id = ?")
-            .bind(&id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
 
-    // Check if party is changing
-    let party_changed = old_party.0 != invoice.supplier_id || old_party.1 != invoice.party_type;
 
-    // Calculate totals
+    let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1").fetch_optional(&mut *tx).await.ok().flatten();
+    let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.supplier_id).fetch_optional(&mut *tx).await.ok().flatten();
+    let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
+    let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
+
+    let mut processed_items = Vec::new();
     let mut subtotal = 0.0;
+    let mut total_cgst = 0.0;
+    let mut total_sgst = 0.0;
+    let mut total_igst = 0.0;
 
     for item in &invoice.items {
-        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let amount = final_qty * item.rate;
+        let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
+        let unit_snapshot = super::resolve_voucher_line_unit(&mut tx, &item.product_id, item.unit_id.as_deref(), "purchase", final_quantity).await?;
+        
+        let product: Option<(Option<String>, Option<String>)> = sqlx::query_as("SELECT hsn_sac_code, gst_slab_id FROM products WHERE id = ?").bind(&item.product_id).fetch_optional(&mut *tx).await.unwrap_or(None);
+        let (hsn_sac_code, gst_slab_id) = product.unwrap_or((None, None));
+        
+        let mut effective_rate = item.tax_rate;
+        if let Some(ref slab_id) = gst_slab_id {
+            if let Some(slab) = crate::commands::tax_utils::get_slab(pool.inner(), slab_id).await {
+                effective_rate = crate::commands::tax_utils::resolve_effective_rate(item.rate, &slab);
+            }
+        }
+        
+        let raw_amount = final_quantity * item.rate;
         let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 {
-            amount * (discount_percent / 100.0)
+        let discount_amount = if discount_percent > 0.0 { raw_amount * (discount_percent / 100.0) } else { item.discount_amount.unwrap_or(0.0) };
+        let net_before_tax = raw_amount - discount_amount;
+        
+        let (taxable_amount, tax_amount, base_amount, base_rate) = if tax_inclusive {
+            let tax_amt = net_before_tax - (net_before_tax / (1.0 + (effective_rate / 100.0)));
+            let txbl = net_before_tax - tax_amt;
+            let b_amt = txbl + discount_amount;
+            (txbl, tax_amt, b_amt, b_amt / final_quantity)
         } else {
-            item.discount_amount.unwrap_or(0.0)
+            (net_before_tax, net_before_tax * (effective_rate / 100.0), raw_amount, item.rate)
         };
-        subtotal += amount - discount_amount;
+        
+        subtotal += taxable_amount;
+        
+        let mut cgst_rate = 0.0; let mut sgst_rate = 0.0; let mut igst_rate = 0.0;
+        let mut cgst_amount = 0.0; let mut sgst_amount = 0.0; let mut igst_amount = 0.0;
+        if effective_rate > 0.0 {
+            let split = crate::commands::tax_utils::compute_split(taxable_amount, effective_rate, is_inter_state);
+            cgst_rate = split.cgst_rate; sgst_rate = split.sgst_rate; igst_rate = split.igst_rate;
+            cgst_amount = split.cgst_amount; sgst_amount = split.sgst_amount; igst_amount = split.igst_amount;
+            total_cgst += cgst_amount; total_sgst += sgst_amount; total_igst += igst_amount;
+        }
+
+        
+        processed_items.push(ProcessedVoucherItem {
+            id: Uuid::now_v7().to_string(),
+            product_id: item.product_id.clone(), description: item.description.clone(), initial_quantity: item.initial_quantity,
+            count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: Some(unit_snapshot.unit_id.clone()),
+            base_quantity: unit_snapshot.base_quantity, rate: base_rate, amount: base_amount, discount_percent, discount_amount,
+            tax_rate: effective_rate, tax_amount, remarks: item.remarks.clone(), cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount,
+            hsn_sac_code, gst_slab_id, resolved_gst_rate: effective_rate,
+        });
     }
 
-    // Apply discounts
-    let discount_amount = invoice.discount_amount.unwrap_or(0.0);
-    let total_amount = subtotal - discount_amount;
+    subtotal = round2(subtotal);
+    total_cgst = round2(total_cgst);
+    total_sgst = round2(total_sgst);
+    total_igst = round2(total_igst);
+    let discount_amount = round2(invoice.discount_amount.unwrap_or(0.0));
+    let total_amount = round2(subtotal - discount_amount);
+    let total_tax = round2(total_cgst + total_sgst + total_igst);
+    let grand_total = round2(total_amount + total_tax);
 
-    // Update voucher header
-    sqlx::query(
+    let voucher_id = id;
+    let _ = sqlx::query(
         "UPDATE vouchers 
-         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, total_amount = ?, narration = ?, status = 'posted'
-         WHERE id = ? AND voucher_type = 'purchase_invoice'"
+         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, 
+             discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?,
+             tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?
+         WHERE id = ?"
     )
-    .bind(&invoice.voucher_date)
-    .bind(&invoice.supplier_id)
-    .bind(&invoice.party_type)
-    .bind(&invoice.reference)
-    .bind(subtotal)
-    .bind(invoice.discount_rate.unwrap_or(0.0))
-    .bind(discount_amount)
-    .bind(total_amount)
-    .bind(&invoice.narration)
-    .bind(&id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    .bind(&invoice.voucher_date).bind(&invoice.supplier_id).bind(&invoice.party_type).bind(&invoice.reference)
+    .bind(subtotal).bind(invoice.discount_rate.unwrap_or(0.0)).bind(discount_amount)
+    .bind(total_tax).bind(total_amount).bind(&invoice.narration)
+    .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
+    .bind(grand_total).bind(&voucher_id)
+    .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?").bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    // Update payment allocations if party changed
-    if party_changed {
+    // Insert items
+    for item in &processed_items {
         sqlx::query(
-            "UPDATE payment_allocations 
-             SET party_id = ?, party_type = ? 
-             WHERE invoice_voucher_id = ?",
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(&invoice.supplier_id)
-        .bind(&invoice.party_type)
-        .bind(&id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        // Also update the payment/receipt vouchers that are allocated to this invoice
-        sqlx::query(
-            "UPDATE vouchers 
-             SET party_id = ?, party_type = ? 
-             WHERE id IN (
-                 SELECT payment_voucher_id FROM payment_allocations 
-                 WHERE invoice_voucher_id = ?
-             )",
-        )
-        .bind(&invoice.supplier_id)
-        .bind(&invoice.party_type)
-        .bind(&id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-        // Update journal entries for payment vouchers to use new party account
-        sqlx::query(
-            "UPDATE journal_entries 
-             SET account_id = ? 
-             WHERE voucher_id IN (
-                 SELECT payment_voucher_id FROM payment_allocations 
-                 WHERE invoice_voucher_id = ?
-             )
-             AND account_id = ?",
-        )
-        .bind(&invoice.supplier_id)
-        .bind(&id)
-        .bind(&old_party.0)
+        .bind(&item.id).bind(&voucher_id).bind(&item.product_id).bind(&item.description).bind(item.initial_quantity)
+        .bind(item.count).bind(item.deduction_per_unit).bind(item.final_quantity).bind(&item.unit_id).bind(item.base_quantity)
+        .bind(item.rate).bind(item.amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
+        .bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
+        .bind(item.igst_amount).bind(&item.hsn_sac_code).bind(&item.gst_slab_id).bind(item.resolved_gst_rate)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     }
 
-    // Delete existing related data
-    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
-        .bind(&id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    // ============= CREATE JOURNAL ENTRIES =============
 
-    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
-        .bind(&id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
-        .bind(&id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Re-insert items
-    for item in &invoice.items {
-        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let unit_snapshot = resolve_voucher_line_unit(
-            &mut tx,
-            &item.product_id,
-            item.unit_id.as_deref(),
-            "purchase",
-            final_qty,
-        )
-        .await?;
-        let amount = final_qty * item.rate;
-        let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 {
-            amount * (discount_percent / 100.0)
-        } else {
-            item.discount_amount.unwrap_or(0.0)
-        };
-        let taxable_amount = amount - discount_amount;
-        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
-
-        let item_id = Uuid::now_v7().to_string();
-        sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(&item_id)
-        .bind(&id)
-        .bind(&item.product_id)
-        .bind(&item.description)
-        .bind(item.initial_quantity)
-        .bind(item.count)
-        .bind(item.deduction_per_unit)
-        .bind(final_qty)
-        .bind(&unit_snapshot.unit_id)
-        .bind(unit_snapshot.base_quantity)
-        .bind(item.rate)
-        .bind(amount)
-        .bind(item.tax_rate)
-        .bind(tax_amount)
-        .bind(item.discount_percent.unwrap_or(0.0))
-        .bind(item.discount_amount.unwrap_or(0.0))
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    }
-
-    // Calculate total tax from new items
-    let total_tax: f64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(tax_amount), 0) FROM voucher_items WHERE voucher_id = ?",
-    )
-    .bind(&id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    // Get account IDs (same as create)
-    let purchases_account: String =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5001'")
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    let tax_account: String =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1005'")
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?").bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     let party_id = invoice.supplier_id;
-
-    let party_account: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE id = ?")
-        .bind(&party_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| format!("Party account not found: {}", e))?;
-
-    // Check party's account group for narration and payment status
-    let is_cash_bank: bool = sqlx::query_scalar::<_, String>(
-        "SELECT account_group FROM chart_of_accounts WHERE id = ?"
-    )
-    .bind(&party_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?
-    .map(|g| g == "Cash" || g == "Bank Account")
-    .unwrap_or(false);
-    let party_narration = if is_cash_bank { "Cash purchase" } else { "Amount payable" };
-
-    // Debit: Purchases Account (with subtotal, before discount)
-    let je_id_1 = Uuid::now_v7().to_string();
-    sqlx::query(
-        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, ?, 0, 'Purchase of goods')",
-    )
-    .bind(&je_id_1)
-    .bind(&id)
-    .bind(&purchases_account)
-    .bind(subtotal)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    // Debit: Tax Receivable (GST Input)
-    if total_tax > 0.0 {
-        let je_id_2 = Uuid::now_v7().to_string();
-        sqlx::query(
-            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, 'Input tax on purchases')",
-        )
-        .bind(&je_id_2)
-        .bind(&id)
-        .bind(&tax_account)
-        .bind(total_tax)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    
+    let main_account: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5001'").fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+    
+    // Group tax manually
+    let mut tax_ledgers: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for row in &processed_items {
+        if row.tax_amount > 0.0 {
+            let accounts = crate::commands::tax_utils::resolve_gst_account_names(row.resolved_gst_rate, is_inter_state, true);
+            if let Some(cgst_acc) = accounts.cgst_account {
+                *tax_ledgers.entry(cgst_acc).or_insert(0.0) += row.cgst_amount;
+            }
+            if let Some(sgst_acc) = accounts.sgst_account {
+                *tax_ledgers.entry(sgst_acc).or_insert(0.0) += row.sgst_amount;
+            }
+            if let Some(igst_acc) = accounts.igst_account {
+                *tax_ledgers.entry(igst_acc).or_insert(0.0) += row.igst_amount;
+            }
+        }
     }
 
-    // Credit: Accounts Payable (Party) or Cash
-    // Amount owed = subtotal - discount + tax
-    let amount_payable = subtotal - discount_amount + total_tax;
-    let je_id_3 = Uuid::now_v7().to_string();
-    sqlx::query(
-        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, 0, ?, ?)",
-    )
-    .bind(&je_id_3)
-    .bind(&id)
-    .bind(&party_account)
-    .bind(amount_payable)
-    .bind(party_narration)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    
 
-    // Credit: Discount Received (if discount applied)
+    // Party entry
+    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)").bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&party_id).bind(0.0).bind(total_amount + total_tax).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+    // Main entry
+    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)").bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&main_account).bind(subtotal).bind(0.0).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+    // Discount entry
     if discount_amount > 0.0 {
-        let discount_account: String =
-            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'")
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-
-        let je_id_4 = Uuid::now_v7().to_string();
-        sqlx::query(
-            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, ?, 'Discount received from supplier')",
-        )
-        .bind(&je_id_4)
-        .bind(&id)
-        .bind(&discount_account)
-        .bind(discount_amount)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+        let dis_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'").fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)").bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(dis_acc).bind(0.0).bind(discount_amount).execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
-    // Re-create stock movements
-    for item in &invoice.items {
-        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let unit_snapshot = resolve_voucher_line_unit(
-            &mut tx,
-            &item.product_id,
-            item.unit_id.as_deref(),
-            "purchase",
-            final_qty,
-        )
-        .await?;
-        let amount = final_qty * item.rate;
-        let sm_id = Uuid::now_v7().to_string();
-
-        sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
-             VALUES (?, ?, ?, 'IN', ?, ?, ?, ?)"
-        )
-        .bind(&sm_id)
-        .bind(&id)
-        .bind(&item.product_id)
-        .bind(unit_snapshot.base_quantity)
-        .bind(item.count)
-        .bind(item.rate)
-        .bind(amount)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    }
-
-    // Auto-mark as paid if party is a Cash or Bank account
-    if is_cash_bank {
-        sqlx::query("UPDATE vouchers SET payment_status = 'paid' WHERE id = ?")
-            .bind(&id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
-    } else {
-        // If party changed from Cash/Bank to a regular party, reset status
-        sqlx::query("UPDATE vouchers SET payment_status = 'unpaid' WHERE id = ? AND payment_status = 'paid' AND NOT EXISTS (SELECT 1 FROM payment_allocations WHERE invoice_voucher_id = ?)")
-            .bind(&id)
-            .bind(&id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+    // Tax entries
+    for (acc_name, amt) in tax_ledgers {
+        if amt > 0.0 {
+            let acc_id = crate::commands::tax_utils::ensure_gst_account_exists(pool.inner(), &acc_name, !true).await?;
+            let (dr, cr) = if true { (amt, 0.0) } else { (0.0, amt) };
+            
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
+                .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(dr).bind(cr)
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(voucher_id.to_string())
 }
+
+
 
 // ============= SALES INVOICE =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -868,6 +664,7 @@ pub struct SalesInvoice {
     pub created_at: String,
     pub deleted_at: Option<String>,
     pub created_by_name: Option<String>,
+    pub tax_inclusive: i64,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -920,6 +717,7 @@ pub struct CreateSalesInvoice {
     pub discount_amount: Option<f64>,
     pub items: Vec<CreateSalesInvoiceItem>,
     pub user_id: Option<String>,
+    pub tax_inclusive: Option<bool>,
 }
 
 #[tauri::command]
@@ -936,14 +734,15 @@ pub async fn get_sales_invoices(pool: State<'_, SqlitePool>) -> Result<Vec<Sales
             v.reference,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
             v.status,
             v.created_at,
             v.deleted_at,
-            u.full_name as created_by_name
+            u.full_name as created_by_name,
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -974,14 +773,15 @@ pub async fn get_sales_invoice(
             v.reference,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
             v.status,
             v.created_at,
             v.deleted_at,
-            u.full_name as created_by_name
+            u.full_name as created_by_name,
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -1017,99 +817,105 @@ pub async fn get_sales_invoice_items(
 
 #[tauri::command]
 pub async fn create_sales_invoice(
-    pool: State<'_, SqlitePool>,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
     invoice: CreateSalesInvoice,
 ) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    // Generate voucher number
-    let voucher_no = get_next_voucher_number(pool.inner(), "sales_invoice").await?;
+    let voucher_no = crate::voucher_seq::get_next_voucher_number(pool.inner(), "sales_invoice").await?;
 
-    // Calculate totals
+    let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1").fetch_optional(&mut *tx).await.ok().flatten();
+    let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.customer_id).fetch_optional(&mut *tx).await.ok().flatten();
+    let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
+    let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
+
+    let mut processed_items = Vec::new();
     let mut subtotal = 0.0;
+    let mut total_cgst = 0.0;
+    let mut total_sgst = 0.0;
+    let mut total_igst = 0.0;
 
     for item in &invoice.items {
         let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let amount = final_quantity * item.rate;
+        let unit_snapshot = super::resolve_voucher_line_unit(&mut tx, &item.product_id, item.unit_id.as_deref(), "sale", final_quantity).await?;
+        
+        let product: Option<(Option<String>, Option<String>)> = sqlx::query_as("SELECT hsn_sac_code, gst_slab_id FROM products WHERE id = ?").bind(&item.product_id).fetch_optional(&mut *tx).await.unwrap_or(None);
+        let (hsn_sac_code, gst_slab_id) = product.unwrap_or((None, None));
+        
+        let mut effective_rate = item.tax_rate;
+        if let Some(ref slab_id) = gst_slab_id {
+            if let Some(slab) = crate::commands::tax_utils::get_slab(pool.inner(), slab_id).await {
+                effective_rate = crate::commands::tax_utils::resolve_effective_rate(item.rate, &slab);
+            }
+        }
+        
+        let raw_amount = final_quantity * item.rate;
         let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 {
-            amount * (discount_percent / 100.0)
+        let discount_amount = if discount_percent > 0.0 { raw_amount * (discount_percent / 100.0) } else { item.discount_amount.unwrap_or(0.0) };
+        let net_before_tax = raw_amount - discount_amount;
+        
+        let (taxable_amount, tax_amount, base_amount, base_rate) = if tax_inclusive {
+            let tax_amt = net_before_tax - (net_before_tax / (1.0 + (effective_rate / 100.0)));
+            let txbl = net_before_tax - tax_amt;
+            let b_amt = txbl + discount_amount;
+            (txbl, tax_amt, b_amt, b_amt / final_quantity)
         } else {
-            item.discount_amount.unwrap_or(0.0)
+            (net_before_tax, net_before_tax * (effective_rate / 100.0), raw_amount, item.rate)
         };
-        subtotal += amount - discount_amount;
+        
+        subtotal += taxable_amount;
+        
+        let mut cgst_rate = 0.0; let mut sgst_rate = 0.0; let mut igst_rate = 0.0;
+        let mut cgst_amount = 0.0; let mut sgst_amount = 0.0; let mut igst_amount = 0.0;
+        if effective_rate > 0.0 {
+            let split = crate::commands::tax_utils::compute_split(taxable_amount, effective_rate, is_inter_state);
+            cgst_rate = split.cgst_rate; sgst_rate = split.sgst_rate; igst_rate = split.igst_rate;
+            cgst_amount = split.cgst_amount; sgst_amount = split.sgst_amount; igst_amount = split.igst_amount;
+            total_cgst += cgst_amount; total_sgst += sgst_amount; total_igst += igst_amount;
+        }
+
+        
+        processed_items.push(ProcessedVoucherItem {
+            id: Uuid::now_v7().to_string(),
+            product_id: item.product_id.clone(), description: item.description.clone(), initial_quantity: item.initial_quantity,
+            count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: Some(unit_snapshot.unit_id.clone()),
+            base_quantity: unit_snapshot.base_quantity, rate: base_rate, amount: base_amount, discount_percent, discount_amount,
+            tax_rate: effective_rate, tax_amount, remarks: item.remarks.clone(), cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount,
+            hsn_sac_code, gst_slab_id, resolved_gst_rate: effective_rate,
+        });
     }
 
-    // Apply discounts
-    let discount_amount = invoice.discount_amount.unwrap_or(0.0);
-    let total_amount = subtotal - discount_amount;
+    subtotal = round2(subtotal);
+    total_cgst = round2(total_cgst);
+    total_sgst = round2(total_sgst);
+    total_igst = round2(total_igst);
+    let discount_amount = round2(invoice.discount_amount.unwrap_or(0.0));
+    let total_amount = round2(subtotal - discount_amount);
+    let total_tax = round2(total_cgst + total_sgst + total_igst);
+    let grand_total = round2(total_amount + total_tax);
 
-    // Create voucher
+    
     let voucher_id = Uuid::now_v7().to_string();
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, total_amount, narration, status, created_by)
-         VALUES (?, ?, 'sales_invoice', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?)"
     )
-    .bind(&voucher_id)
-    .bind(&voucher_no)
-    .bind(&invoice.voucher_date)
-    .bind(&invoice.customer_id)
-    .bind(&invoice.salesperson_id)
-    .bind(&invoice.party_type)
-    .bind(&invoice.reference)
-    .bind(subtotal)
-    .bind(invoice.discount_rate.unwrap_or(0.0))
-    .bind(discount_amount)
-    .bind(total_amount)
-    .bind(&invoice.narration)
-    .bind(&invoice.user_id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    .bind(&voucher_id).bind(&voucher_no).bind("sales_invoice").bind(&invoice.voucher_date).bind(&invoice.customer_id)
+    .bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(invoice.discount_rate.unwrap_or(0.0))
+    .bind(discount_amount).bind(total_tax).bind(total_amount).bind(&invoice.narration)
+    .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
-    for item in &invoice.items {
-        let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let unit_snapshot = resolve_voucher_line_unit(
-            &mut tx,
-            &item.product_id,
-            item.unit_id.as_deref(),
-            "sale",
-            final_quantity,
-        )
-        .await?;
-        let amount = final_quantity * item.rate;
-        let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 {
-            amount * (discount_percent / 100.0)
-        } else {
-            item.discount_amount.unwrap_or(0.0)
-        };
-        let taxable_amount = amount - discount_amount;
-        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
-        let item_id = Uuid::now_v7().to_string();
-
+    for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(&item_id)
-        .bind(&voucher_id)
-        .bind(&item.product_id)
-        .bind(&item.description)
-        .bind(item.initial_quantity)
-        .bind(item.count)
-        .bind(item.deduction_per_unit)
-        .bind(final_quantity)
-        .bind(&unit_snapshot.unit_id)
-        .bind(unit_snapshot.base_quantity)
-        .bind(item.rate)
-        .bind(amount)
-        .bind(item.tax_rate)
-        .bind(tax_amount)
-        .bind(item.discount_percent.unwrap_or(0.0))
-        .bind(item.discount_amount.unwrap_or(0.0))
-        .bind(&item.remarks)
+        .bind(&item.id).bind(&voucher_id).bind(&item.product_id).bind(&item.description).bind(item.initial_quantity)
+        .bind(item.count).bind(item.deduction_per_unit).bind(item.final_quantity).bind(&item.unit_id).bind(item.base_quantity)
+        .bind(item.rate).bind(item.amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
+        .bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
+        .bind(item.igst_amount).bind(&item.hsn_sac_code).bind(&item.gst_slab_id).bind(item.resolved_gst_rate)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -1117,157 +923,60 @@ pub async fn create_sales_invoice(
 
     // ============= CREATE JOURNAL ENTRIES =============
 
+
+
     let party_id = invoice.customer_id;
-
-    // Calculate total tax
-    let total_tax: f64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(tax_amount), 0) FROM voucher_items WHERE voucher_id = ?",
-    )
-    .bind(&voucher_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    // Get account IDs
-    let sales_account: String =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4001'")
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    let tax_account: String =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '2002'")
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
-
-    let party_account: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE id = ?")
-        .bind(&party_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| format!("Party account not found: {}", e))?;
-
-    // Check party's account group for narration and payment status
-    let is_cash_bank = matches!(
-        sqlx::query_scalar::<_, String>("SELECT account_group FROM chart_of_accounts WHERE id = ?")
-            .bind(&party_id)
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?
-            .as_deref(),
-        Some("Cash") | Some("Bank Account")
-    );
-    let party_narration = if is_cash_bank { "Cash sale" } else { "Amount receivable" };
-
-    // Debit: Accounts Receivable (Party) or Cash
-    // Amount due = subtotal - discount + tax
-    let amount_receivable = subtotal - discount_amount + total_tax;
-    let je_id_1 = Uuid::now_v7().to_string();
-    sqlx::query(
-        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, ?, 0, ?)",
-    )
-    .bind(&je_id_1)
-    .bind(&voucher_id)
-    .bind(&party_account)
-    .bind(amount_receivable)
-    .bind(party_narration)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    // Credit: Sales Account (with subtotal, before discount)
-    let je_id_2 = Uuid::now_v7().to_string();
-    sqlx::query(
-        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, 0, ?, 'Sales of goods')",
-    )
-    .bind(&je_id_2)
-    .bind(&voucher_id)
-    .bind(&sales_account)
-    .bind(subtotal)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    // Credit: Tax Payable (GST Output)
-    if total_tax > 0.0 {
-        let je_id_3 = Uuid::now_v7().to_string();
-        sqlx::query(
-            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, ?, 'Output tax on sales')",
-        )
-        .bind(&je_id_3)
-        .bind(&voucher_id)
-        .bind(&tax_account)
-        .bind(total_tax)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    
+    let main_account: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4001'").fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+    
+    // Group tax manually
+    let mut tax_ledgers: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for row in &processed_items {
+        if row.tax_amount > 0.0 {
+            let accounts = crate::commands::tax_utils::resolve_gst_account_names(row.resolved_gst_rate, is_inter_state, false);
+            if let Some(cgst_acc) = accounts.cgst_account {
+                *tax_ledgers.entry(cgst_acc).or_insert(0.0) += row.cgst_amount;
+            }
+            if let Some(sgst_acc) = accounts.sgst_account {
+                *tax_ledgers.entry(sgst_acc).or_insert(0.0) += row.sgst_amount;
+            }
+            if let Some(igst_acc) = accounts.igst_account {
+                *tax_ledgers.entry(igst_acc).or_insert(0.0) += row.igst_amount;
+            }
+        }
     }
 
-    // Debit: Discount Allowed (if discount applied)
+    
+
+    // Party entry
+    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)").bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&party_id).bind(grand_total).bind(0.0).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+    // Main entry
+    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)").bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&main_account).bind(0.0).bind(subtotal).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+    // Discount entry
     if discount_amount > 0.0 {
-        let discount_account: String =
-            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'")
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-
-        let je_id_4 = Uuid::now_v7().to_string();
-        sqlx::query(
-            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, 'Discount allowed to customer')",
-        )
-        .bind(&je_id_4)
-        .bind(&voucher_id)
-        .bind(&discount_account)
-        .bind(discount_amount)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+        let dis_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'").fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)").bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(dis_acc).bind(discount_amount).bind(0.0).execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
-    // Create stock movements (OUT)
-    let items_for_stock: Vec<(String, f64, i64, f64, f64)> = sqlx::query_as(
-        "SELECT product_id, base_quantity, count, rate, amount FROM voucher_items WHERE voucher_id = ?",
-    )
-    .bind(&voucher_id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    for item in items_for_stock {
-        let sm_id = Uuid::now_v7().to_string();
-        sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
-             VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)"
-        )
-        .bind(&sm_id)
-        .bind(&voucher_id)
-        .bind(&item.0)
-        .bind(item.1)
-        .bind(item.2)
-        .bind(item.3)
-        .bind(item.4)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    }
-
-    // Auto-mark as paid if party is a Cash or Bank account
-    if is_cash_bank {
-        sqlx::query("UPDATE vouchers SET payment_status = 'paid' WHERE id = ?")
-            .bind(&voucher_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+    // Tax entries
+    for (acc_name, amt) in tax_ledgers {
+        if amt > 0.0 {
+            let acc_id = crate::commands::tax_utils::ensure_gst_account_exists(pool.inner(), &acc_name, !false).await?;
+            let (dr, cr) = if false { (amt, 0.0) } else { (0.0, amt) };
+            
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
+                .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(dr).bind(cr)
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
-
-    Ok(voucher_id)
+    Ok(voucher_id.to_string())
 }
+
+
 
 #[tauri::command]
 pub async fn delete_sales_invoice(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
@@ -1354,305 +1063,173 @@ pub async fn delete_sales_invoice(pool: State<'_, SqlitePool>, id: String) -> Re
 
 #[tauri::command]
 pub async fn update_sales_invoice(
-    pool: State<'_, SqlitePool>,
+    pool: tauri::State<'_, sqlx::SqlitePool>,
     id: String,
     invoice: CreateSalesInvoice,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    // Get old party info before update
-    let old_party: (String, String) =
-        sqlx::query_as("SELECT party_id, party_type FROM vouchers WHERE id = ?")
-            .bind(&id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
 
-    // Check if party is changing
-    let party_changed = old_party.0 != invoice.customer_id || old_party.1 != invoice.party_type;
 
-    // Calculate totals
+    let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1").fetch_optional(&mut *tx).await.ok().flatten();
+    let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.customer_id).fetch_optional(&mut *tx).await.ok().flatten();
+    let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
+    let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
+
+    let mut processed_items = Vec::new();
     let mut subtotal = 0.0;
+    let mut total_cgst = 0.0;
+    let mut total_sgst = 0.0;
+    let mut total_igst = 0.0;
 
     for item in &invoice.items {
         let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let amount = final_quantity * item.rate;
+        let unit_snapshot = super::resolve_voucher_line_unit(&mut tx, &item.product_id, item.unit_id.as_deref(), "sale", final_quantity).await?;
+        
+        let product: Option<(Option<String>, Option<String>)> = sqlx::query_as("SELECT hsn_sac_code, gst_slab_id FROM products WHERE id = ?").bind(&item.product_id).fetch_optional(&mut *tx).await.unwrap_or(None);
+        let (hsn_sac_code, gst_slab_id) = product.unwrap_or((None, None));
+        
+        let mut effective_rate = item.tax_rate;
+        if let Some(ref slab_id) = gst_slab_id {
+            if let Some(slab) = crate::commands::tax_utils::get_slab(pool.inner(), slab_id).await {
+                effective_rate = crate::commands::tax_utils::resolve_effective_rate(item.rate, &slab);
+            }
+        }
+        
+        let raw_amount = final_quantity * item.rate;
         let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 {
-            amount * (discount_percent / 100.0)
+        let discount_amount = if discount_percent > 0.0 { raw_amount * (discount_percent / 100.0) } else { item.discount_amount.unwrap_or(0.0) };
+        let net_before_tax = raw_amount - discount_amount;
+        
+        let (taxable_amount, tax_amount, base_amount, base_rate) = if tax_inclusive {
+            let tax_amt = net_before_tax - (net_before_tax / (1.0 + (effective_rate / 100.0)));
+            let txbl = net_before_tax - tax_amt;
+            let b_amt = txbl + discount_amount;
+            (txbl, tax_amt, b_amt, b_amt / final_quantity)
         } else {
-            item.discount_amount.unwrap_or(0.0)
+            (net_before_tax, net_before_tax * (effective_rate / 100.0), raw_amount, item.rate)
         };
-        subtotal += amount - discount_amount;
+        
+        subtotal += taxable_amount;
+        
+        let mut cgst_rate = 0.0; let mut sgst_rate = 0.0; let mut igst_rate = 0.0;
+        let mut cgst_amount = 0.0; let mut sgst_amount = 0.0; let mut igst_amount = 0.0;
+        if effective_rate > 0.0 {
+            let split = crate::commands::tax_utils::compute_split(taxable_amount, effective_rate, is_inter_state);
+            cgst_rate = split.cgst_rate; sgst_rate = split.sgst_rate; igst_rate = split.igst_rate;
+            cgst_amount = split.cgst_amount; sgst_amount = split.sgst_amount; igst_amount = split.igst_amount;
+            total_cgst += cgst_amount; total_sgst += sgst_amount; total_igst += igst_amount;
+        }
+
+        
+        processed_items.push(ProcessedVoucherItem {
+            id: Uuid::now_v7().to_string(),
+            product_id: item.product_id.clone(), description: item.description.clone(), initial_quantity: item.initial_quantity,
+            count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: Some(unit_snapshot.unit_id.clone()),
+            base_quantity: unit_snapshot.base_quantity, rate: base_rate, amount: base_amount, discount_percent, discount_amount,
+            tax_rate: effective_rate, tax_amount, remarks: item.remarks.clone(), cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount,
+            hsn_sac_code, gst_slab_id, resolved_gst_rate: effective_rate,
+        });
     }
 
-    // Apply discounts
-    let discount_amount = invoice.discount_amount.unwrap_or(0.0);
-    let total_amount = subtotal - discount_amount;
+    subtotal = round2(subtotal);
+    total_cgst = round2(total_cgst);
+    total_sgst = round2(total_sgst);
+    total_igst = round2(total_igst);
+    let discount_amount = round2(invoice.discount_amount.unwrap_or(0.0));
+    let total_amount = round2(subtotal - discount_amount);
+    let total_tax = round2(total_cgst + total_sgst + total_igst);
+    let grand_total = round2(total_amount + total_tax);
 
-    // Update voucher header
-    sqlx::query(
+    let voucher_id = id;
+    let _ = sqlx::query(
         "UPDATE vouchers 
-         SET voucher_date = ?, party_id = ?, salesperson_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, total_amount = ?, narration = ?, status = 'posted'
-         WHERE id = ? AND voucher_type = 'sales_invoice'"
+         SET voucher_date = ?, party_id = ?, salesperson_id = ?, party_type = ?, reference = ?, subtotal = ?, 
+             discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?,
+             tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?
+         WHERE id = ?"
     )
-    .bind(&invoice.voucher_date)
-    .bind(&invoice.customer_id)
-    .bind(&invoice.salesperson_id)
-    .bind(&invoice.party_type)
-    .bind(&invoice.reference)
-    .bind(subtotal)
-    .bind(invoice.discount_rate.unwrap_or(0.0))
-    .bind(discount_amount)
-    .bind(total_amount)
-    .bind(&invoice.narration)
-    .bind(&id)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    .bind(&invoice.voucher_date).bind(&invoice.customer_id).bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference)
+    .bind(subtotal).bind(invoice.discount_rate.unwrap_or(0.0)).bind(discount_amount)
+    .bind(total_tax).bind(total_amount).bind(&invoice.narration)
+    .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
+    .bind(grand_total).bind(&voucher_id)
+    .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    
+    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?").bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    // Update payment allocations if party changed
-    if party_changed {
+    // Insert items
+    for item in &processed_items {
         sqlx::query(
-            "UPDATE payment_allocations 
-             SET party_id = ?, party_type = ? 
-             WHERE invoice_voucher_id = ?",
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(&invoice.customer_id)
-        .bind(&invoice.party_type)
-        .bind(&id)
+        .bind(&item.id).bind(&voucher_id).bind(&item.product_id).bind(&item.description).bind(item.initial_quantity)
+        .bind(item.count).bind(item.deduction_per_unit).bind(item.final_quantity).bind(&item.unit_id).bind(item.base_quantity)
+        .bind(item.rate).bind(item.amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
+        .bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
+        .bind(item.igst_amount).bind(&item.hsn_sac_code).bind(&item.gst_slab_id).bind(item.resolved_gst_rate)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     }
 
-    // Delete existing related data
-    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
-        .bind(&id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    // ============= CREATE JOURNAL ENTRIES =============
 
-    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
-        .bind(&id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?").bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
-        .bind(&id)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    // Re-insert items
-    for item in &invoice.items {
-        let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let unit_snapshot = resolve_voucher_line_unit(
-            &mut tx,
-            &item.product_id,
-            item.unit_id.as_deref(),
-            "sale",
-            final_quantity,
-        )
-        .await?;
-        let amount = final_quantity * item.rate;
-        let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 {
-            amount * (discount_percent / 100.0)
-        } else {
-            item.discount_amount.unwrap_or(0.0)
-        };
-        let taxable_amount = amount - discount_amount;
-        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
-        let item_id = Uuid::now_v7().to_string();
-
-        sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-        )
-        .bind(&item_id)
-        .bind(&id)
-        .bind(&item.product_id)
-        .bind(&item.description)
-        .bind(item.initial_quantity)
-        .bind(item.count)
-        .bind(item.deduction_per_unit)
-        .bind(final_quantity)
-        .bind(&unit_snapshot.unit_id)
-        .bind(unit_snapshot.base_quantity)
-        .bind(item.rate)
-        .bind(amount)
-        .bind(item.tax_rate)
-        .bind(tax_amount)
-        .bind(item.discount_percent.unwrap_or(0.0))
-        .bind(item.discount_amount.unwrap_or(0.0))
-        .bind(&item.remarks)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    let party_id = invoice.customer_id;
+    
+    let main_account: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4001'").fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+    
+    // Group tax manually
+    let mut tax_ledgers: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    for row in &processed_items {
+        if row.tax_amount > 0.0 {
+            let accounts = crate::commands::tax_utils::resolve_gst_account_names(row.resolved_gst_rate, is_inter_state, false);
+            if let Some(cgst_acc) = accounts.cgst_account {
+                *tax_ledgers.entry(cgst_acc).or_insert(0.0) += row.cgst_amount;
+            }
+            if let Some(sgst_acc) = accounts.sgst_account {
+                *tax_ledgers.entry(sgst_acc).or_insert(0.0) += row.sgst_amount;
+            }
+            if let Some(igst_acc) = accounts.igst_account {
+                *tax_ledgers.entry(igst_acc).or_insert(0.0) += row.igst_amount;
+            }
+        }
     }
 
-    // Calculate total tax from new items
-    let total_tax: f64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(tax_amount), 0) FROM voucher_items WHERE voucher_id = ?",
-    )
-    .bind(&id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    
 
-    // Get account IDs
-    let sales_account: String =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4001'")
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+    // Party entry
+    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)").bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&party_id).bind(grand_total).bind(0.0).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    let tax_account: String =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '2002'")
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+    // Main entry
+    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)").bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&main_account).bind(0.0).bind(subtotal).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    let party_id = invoice.customer_id.clone();
-
-    let party_account: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE id = ?")
-        .bind(&party_id)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(|e| format!("Party account not found: {}", e))?;
-
-    // Check party's account group for narration and payment status
-    let is_cash_bank: bool = sqlx::query_scalar::<_, String>(
-        "SELECT account_group FROM chart_of_accounts WHERE id = ?"
-    )
-    .bind(&party_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?
-    .map(|g| g == "Cash" || g == "Bank Account")
-    .unwrap_or(false);
-    let party_narration = if is_cash_bank { "Cash sale" } else { "Amount receivable" };
-
-    // Debit: Accounts Receivable (Party) or Cash
-    let amount_receivable = subtotal - discount_amount + total_tax;
-    let je_id_1 = Uuid::now_v7().to_string();
-    sqlx::query(
-        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, ?, 0, ?)",
-    )
-    .bind(&je_id_1)
-    .bind(&id)
-    .bind(&party_account)
-    .bind(amount_receivable)
-    .bind(party_narration)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    // Credit: Sales Account (with subtotal, before discount)
-    let je_id_2 = Uuid::now_v7().to_string();
-    sqlx::query(
-        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, 0, ?, 'Sales of goods')",
-    )
-    .bind(&je_id_2)
-    .bind(&id)
-    .bind(&sales_account)
-    .bind(subtotal)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    // Credit: Tax Payable (GST Output)
-    if total_tax > 0.0 {
-        let je_id_3 = Uuid::now_v7().to_string();
-        sqlx::query(
-            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, ?, 'Output tax on sales')",
-        )
-        .bind(&je_id_3)
-        .bind(&id)
-        .bind(&tax_account)
-        .bind(total_tax)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    }
-
-    // Debit: Discount Allowed (if discount applied)
+    // Discount entry
     if discount_amount > 0.0 {
-        let discount_account: String =
-            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'")
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-
-        let je_id_4 = Uuid::now_v7().to_string();
-        sqlx::query(
-            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, 'Discount allowed to customer')",
-        )
-        .bind(&je_id_4)
-        .bind(&id)
-        .bind(&discount_account)
-        .bind(discount_amount)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
+        let dis_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'").fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)").bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(dis_acc).bind(discount_amount).bind(0.0).execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
-    // Re-create stock movements (OUT)
-    for item in &invoice.items {
-        let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let unit_snapshot = resolve_voucher_line_unit(
-            &mut tx,
-            &item.product_id,
-            item.unit_id.as_deref(),
-            "sale",
-            final_quantity,
-        )
-        .await?;
-        let amount = final_quantity * item.rate;
-        let sm_id = Uuid::now_v7().to_string();
-
-        sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
-             VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)"
-        )
-        .bind(&sm_id)
-        .bind(&id)
-        .bind(&item.product_id)
-        .bind(unit_snapshot.base_quantity)
-        .bind(item.count)
-        .bind(item.rate)
-        .bind(amount)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    }
-
-    // Auto-mark as paid if party is a Cash or Bank account
-    if is_cash_bank {
-        sqlx::query("UPDATE vouchers SET payment_status = 'paid' WHERE id = ?")
-            .bind(&id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
-    } else {
-        // If party changed from Cash/Bank to a regular party, reset status
-        sqlx::query("UPDATE vouchers SET payment_status = 'unpaid' WHERE id = ? AND payment_status = 'paid' AND NOT EXISTS (SELECT 1 FROM payment_allocations WHERE invoice_voucher_id = ?)")
-            .bind(&id)
-            .bind(&id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+    // Tax entries
+    for (acc_name, amt) in tax_ledgers {
+        if amt > 0.0 {
+            let acc_id = crate::commands::tax_utils::ensure_gst_account_exists(pool.inner(), &acc_name, !false).await?;
+            let (dr, cr) = if false { (amt, 0.0) } else { (0.0, amt) };
+            
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
+                .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(dr).bind(cr)
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
-    Ok(())
+    Ok(voucher_id.to_string())
 }
+
+
 
 // ============= VOUCHER NAVIGATION =============
 
@@ -1681,7 +1258,7 @@ pub async fn list_vouchers(
             v.voucher_no,
             v.voucher_date,
             COALESCE(coa.account_name, CASE WHEN v.voucher_type = 'journal' THEN 'Journal Entry' WHEN v.voucher_type = 'opening_balance' THEN 'Opening Balance' WHEN v.voucher_type = 'opening_stock' THEN 'Opening Stock' WHEN v.voucher_type = 'stock_journal' THEN 'Stock Journal' ELSE 'N/A' END) as party_name,
-            COALESCE(v.total_amount, 0.0) as total_amount,
+            ROUND(COALESCE(v.grand_total, v.total_amount, 0.0), 2) as total_amount,
             v.status,
             v.voucher_type
         FROM vouchers v

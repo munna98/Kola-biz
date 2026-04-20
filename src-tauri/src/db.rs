@@ -267,6 +267,27 @@ pub async fn init_db(
         .execute(&pool)
         .await;
 
+    // Migration: Add tax_inclusive to vouchers if not exists
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN tax_inclusive INTEGER NOT NULL DEFAULT 0")
+        .execute(&pool)
+        .await;
+
+    // Migration: Add GST split columns to vouchers if not exists
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN cgst_amount REAL DEFAULT 0")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN sgst_amount REAL DEFAULT 0")
+        .execute(&pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN igst_amount REAL DEFAULT 0")
+        .execute(&pool)
+        .await;
+
+    // Migration: Add grand_total to vouchers if not exists
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN grand_total REAL DEFAULT 0")
+        .execute(&pool)
+        .await;
+
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_salesperson ON vouchers(salesperson_id)")
         .execute(&pool)
         .await?;

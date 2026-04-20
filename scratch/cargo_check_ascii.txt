@@ -1,0 +1,137 @@
+    Checking kola_biz v0.1.0 (D:\MunnaProjects\Kola-biz\src-tauri)
+error[E0252]: the name `Uuid` is defined multiple times
+   --> src\commands\invoices.rs:349:9
+    |
+294 |     use uuid::Uuid;
+    |         ---------- previous import of the type `Uuid` here
+...
+349 |     use uuid::Uuid;
+    |         ^^^^^^^^^^ `Uuid` reimported here
+    |
+    = note: `Uuid` must be defined only once in the type namespace of this block
+
+error[E0252]: the name `Uuid` is defined multiple times
+   --> src\commands\invoices.rs:932:9
+    |
+877 |     use uuid::Uuid;
+    |         ---------- previous import of the type `Uuid` here
+...
+932 |     use uuid::Uuid;
+    |         ^^^^^^^^^^ `Uuid` reimported here
+    |
+    = note: `Uuid` must be defined only once in the type namespace of this block
+
+warning: unused import: `uuid::Uuid`
+ --> src\commands\invoices.rs:4:5
+  |
+4 | use uuid::Uuid;
+  |     ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `super::resolve_voucher_line_unit`
+ --> src\commands\invoices.rs:6:5
+  |
+6 | use super::resolve_voucher_line_unit;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::voucher_seq::get_next_voucher_number`
+ --> src\commands\invoices.rs:7:5
+  |
+7 | use crate::voucher_seq::get_next_voucher_number;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `uuid::Uuid`
+   --> src\commands\invoices.rs:349:9
+    |
+349 |     use uuid::Uuid;
+    |         ^^^^^^^^^^
+
+warning: unused import: `uuid::Uuid`
+   --> src\commands\invoices.rs:932:9
+    |
+932 |     use uuid::Uuid;
+    |         ^^^^^^^^^^
+
+warning: unused import: `opening_stock::*`
+  --> src\commands\mod.rs:34:9
+   |
+34 | pub use opening_stock::*;
+   |         ^^^^^^^^^^^^^^^^
+
+warning: unused import: `stock_journal::*`
+  --> src\commands\mod.rs:42:9
+   |
+42 | pub use stock_journal::*;
+   |         ^^^^^^^^^^^^^^^^
+
+error[E0308]: mismatched types
+   --> src\commands\invoices.rs:284:102
+    |
+284 |             count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: unit_snapshot.unit_id,
+    |                                                                                                      ^^^^^^^^^^^^^^^^^^^^^ expected `Option<String>`, found `String`
+    |
+    = note: expected enum `std::option::Option<std::string::String>`
+             found struct `std::string::String`
+help: try wrapping the expression in `Some`
+    |
+284 |             count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: Some(unit_snapshot.unit_id),
+    |                                                                                                      +++++                     +
+
+error[E0308]: mismatched types
+   --> src\commands\invoices.rs:531:102
+    |
+531 |             count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: unit_snapshot.unit_id,
+    |                                                                                                      ^^^^^^^^^^^^^^^^^^^^^ expected `Option<String>`, found `String`
+    |
+    = note: expected enum `std::option::Option<std::string::String>`
+             found struct `std::string::String`
+help: try wrapping the expression in `Some`
+    |
+531 |             count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: Some(unit_snapshot.unit_id),
+    |                                                                                                      +++++                     +
+
+error[E0308]: mismatched types
+   --> src\commands\invoices.rs:867:102
+    |
+867 |             count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: unit_snapshot.unit_id,
+    |                                                                                                      ^^^^^^^^^^^^^^^^^^^^^ expected `Option<String>`, found `String`
+    |
+    = note: expected enum `std::option::Option<std::string::String>`
+             found struct `std::string::String`
+help: try wrapping the expression in `Some`
+    |
+867 |             count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: Some(unit_snapshot.unit_id),
+    |                                                                                                      +++++                     +
+
+error[E0308]: mismatched types
+    --> src\commands\invoices.rs:1111:102
+     |
+1111 |             count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: unit_snapshot.unit_id,
+     |                                                                                                      ^^^^^^^^^^^^^^^^^^^^^ expected `Option<String>`, found `String`
+     |
+     = note: expected enum `std::option::Option<std::string::String>`
+              found struct `std::string::String`
+help: try wrapping the expression in `Some`
+     |
+1111 |             count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: Some(unit_snapshot.unit_id),
+     |                                                                                                      +++++                     +
+
+warning: unused variable: `company_gstin`
+   --> src\commands\templates.rs:537:9
+    |
+537 |     let company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
+    |         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_company_gstin`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `company_gstin`
+   --> src\commands\templates.rs:784:9
+    |
+784 |     let company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
+    |         ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_company_gstin`
+
+Some errors have detailed explanations: E0252, E0308.
+For more information about an error, try `rustc --explain E0252`.
+warning: `kola_biz` (lib) generated 9 warnings
+error: could not compile `kola_biz` (lib) due to 6 previous errors; 9 warnings emitted

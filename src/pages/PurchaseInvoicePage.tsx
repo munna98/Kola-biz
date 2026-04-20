@@ -524,6 +524,7 @@ export default function PurchaseInvoicePage() {
               rate: item.rate,
               tax_rate: item.tax_rate
             })),
+            tax_inclusive: voucherSettings?.taxInclusive ?? false,
           },
         });
 
@@ -584,6 +585,7 @@ export default function PurchaseInvoicePage() {
               tax_rate: item.tax_rate
             })),
             user_id: user?.id.toString(),
+            tax_inclusive: voucherSettings?.taxInclusive ?? false,
           },
         });
         toast.success('Purchase invoice created successfully');
@@ -827,7 +829,7 @@ export default function PurchaseInvoicePage() {
     if (voucherSettings?.taxInclusive) {
       const baseTaxableAmount = taxableAmount / (1 + (gstRate / 100));
       const taxAmount = taxableAmount - baseTaxableAmount;
-      return { finalQty, amount: taxableAmount, taxAmount, total: taxableAmount };
+      return { finalQty, amount: baseTaxableAmount, taxAmount, total: taxableAmount };
     } else {
       const taxAmount = taxableAmount * (gstRate / 100);
       return { finalQty, amount: taxableAmount, taxAmount, total: taxableAmount + taxAmount };
@@ -1047,6 +1049,7 @@ export default function PurchaseInvoicePage() {
             defaultUnitKind="purchase"
             gstSlabs={gstSlabs}
             fullProducts={products as any}
+            taxInclusive={voucherSettings?.taxInclusive}
             footerRightContent={
               partyBalance !== null && shouldShowPartyBalance ? (
                 <div className={`text-xs font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>

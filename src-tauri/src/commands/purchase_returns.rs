@@ -25,6 +25,7 @@ pub struct PurchaseReturn {
     pub status: String,
     pub created_at: String,
     pub deleted_at: Option<String>,
+    pub tax_inclusive: i64,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -74,6 +75,7 @@ pub struct CreatePurchaseReturn {
     pub discount_rate: Option<f64>,
     pub discount_amount: Option<f64>,
     pub items: Vec<CreatePurchaseReturnItem>,
+    pub tax_inclusive: Option<bool>,
 }
 
 
@@ -92,7 +94,7 @@ pub async fn get_purchase_returns(
             v.reference,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -127,7 +129,7 @@ pub async fn get_purchase_return(
             v.reference,
             v.total_amount,
             COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
-            v.total_amount + COALESCE(SUM(vi.tax_amount), 0) as grand_total,
+            v.grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -195,11 +197,24 @@ pub async fn create_purchase_return(
     let discount_amount = invoice.discount_amount.unwrap_or(0.0);
     let total_amount = subtotal - discount_amount;
 
+    
+    let mut total_tax = 0.0;
+    for item in &invoice.items {
+        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
+        let amount = final_qty * item.rate;
+        let discount_amount = if item.discount_percent.unwrap_or(0.0) > 0.0 { amount * (item.discount_percent.unwrap_or(0.0) / 100.0) } else { item.discount_amount.unwrap_or(0.0) };
+        let taxable_amount = amount - discount_amount;
+        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
+        total_tax += tax_amount;
+    }
+    let grand_total = total_amount + total_tax;
+    let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
+    
     // Create voucher
     let voucher_id = Uuid::now_v7().to_string();
     sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, total_amount, narration, status)
-         VALUES (?, ?, 'purchase_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted')"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total)
+         VALUES (?, ?, 'purchase_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?)"
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -210,8 +225,11 @@ pub async fn create_purchase_return(
     .bind(subtotal)
     .bind(invoice.discount_rate.unwrap_or(0.0))
     .bind(discount_amount)
+    .bind(total_tax)
     .bind(total_amount)
     .bind(&invoice.narration)
+    .bind(tax_inclusive as i64)
+    .bind(grand_total)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -424,10 +442,23 @@ pub async fn update_purchase_return(
     let discount_amount = invoice.discount_amount.unwrap_or(0.0);
     let total_amount = subtotal - discount_amount;
 
+    
+    let mut total_tax = 0.0;
+    for item in &invoice.items {
+        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
+        let amount = final_qty * item.rate;
+        let discount_amount = if item.discount_percent.unwrap_or(0.0) > 0.0 { amount * (item.discount_percent.unwrap_or(0.0) / 100.0) } else { item.discount_amount.unwrap_or(0.0) };
+        let taxable_amount = amount - discount_amount;
+        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
+        total_tax += tax_amount;
+    }
+    let grand_total = total_amount + total_tax;
+    let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
+    
     // Update Header
     sqlx::query(
         "UPDATE vouchers 
-         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, total_amount = ?, narration = ?, status = 'posted'
+         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?, status = 'posted', tax_inclusive = ?, grand_total = ?
          WHERE id = ? AND voucher_type = 'purchase_return'"
     )
     .bind(&invoice.voucher_date)
@@ -437,8 +468,11 @@ pub async fn update_purchase_return(
     .bind(subtotal)
     .bind(invoice.discount_rate.unwrap_or(0.0))
     .bind(discount_amount)
+    .bind(total_tax)
     .bind(total_amount)
     .bind(&invoice.narration)
+    .bind(tax_inclusive as i64)
+    .bind(grand_total)
     .bind(&id)
     .execute(&mut *tx)
     .await

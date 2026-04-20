@@ -134,7 +134,7 @@ export default function SuppliersPage() {
                     <td className="p-3 font-medium">{s.name}</td>
                     <td className="p-3 text-sm text-muted-foreground">{s.email || '-'}</td>
                     <td className="p-3 text-sm">{s.phone || '-'}</td>
-                    <td className="p-3 text-sm">{s.address || '-'}</td>
+                    <td className="p-3 text-sm">{s.address_line_1 || '-'}</td>
                     <td className="p-3 flex gap-2">
                       {!showDeleted ? (
                         <>

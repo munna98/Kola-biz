@@ -61,6 +61,49 @@ const QuantityInput = React.forwardRef<HTMLInputElement, React.ComponentProps<ty
 });
 QuantityInput.displayName = 'QuantityInput';
 
+interface RateCellProps {
+    rate: number;
+    exTaxRate: number;
+    taxInclusive: boolean;
+    resolvedGstRate: number;
+    isReadOnly: boolean;
+    onChange: (val: string) => void;
+}
+
+const RateCell = React.forwardRef<HTMLInputElement, RateCellProps>(({ rate, exTaxRate, taxInclusive, resolvedGstRate, isReadOnly, onChange }, ref) => {
+    const [isFocused, setIsFocused] = React.useState(false);
+    // When focused: show real stored (inclusive) rate for editing
+    // When blurred:  show ex-tax rate (reverse-calculated) for clarity
+    const displayValue = isFocused
+        ? (rate || '')
+        : (taxInclusive && resolvedGstRate > 0 ? Number(exTaxRate.toFixed(4)) || '' : rate || '');
+
+    const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
+        setIsFocused(true);
+        // Defer select() so it runs after React re-renders the inclusive rate value
+        const el = e.currentTarget;
+        requestAnimationFrame(() => el.select());
+    };
+
+    return (
+        <Input
+            ref={ref}
+            data-field="rate"
+            type="number"
+            value={displayValue}
+            onFocus={handleFocus}
+            onBlur={() => setIsFocused(false)}
+            onChange={(e) => onChange(e.target.value)}
+            className="h-7 text-xs text-right font-mono"
+            placeholder="0.00"
+            step="0.01"
+            disabled={isReadOnly}
+            title={taxInclusive && resolvedGstRate > 0 ? `Inclusive rate: ${rate}  |  Ex-tax: ${exTaxRate.toFixed(2)}` : undefined}
+        />
+    );
+});
+RateCell.displayName = 'RateCell';
+
 interface Product {
     id: string;
     code: string;
@@ -113,6 +156,7 @@ export interface VoucherItemsSectionProps {
     defaultUnitKind?: ProductUnitDefaultKind;
     gstSlabs?: GstTaxSlab[];
     fullProducts?: TauriProduct[];
+    taxInclusive?: boolean;
 }
 export interface VoucherItemsSectionRef {
     focusFirstProduct: () => void;
@@ -154,6 +198,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     defaultUnitKind = 'sale',
     gstSlabs = [],
     fullProducts = [],
+    taxInclusive = false,
 }, ref) => {
     // Ref to the first product combobox
     const firstProductRef = useRef<HTMLButtonElement>(null);
@@ -311,9 +356,19 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                     }
                 }
                 const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
-                const taxableAmt = (finalQty * item.rate) - (item.discount_amount || 0);
-                const totalGstAmt = taxableAmt * (resolvedGstRate / 100);
+                const grossAmt = (finalQty * item.rate) - (item.discount_amount || 0);
+                // When tax-inclusive: reverse-calculate base and tax from inclusive amount
+                const baseAmt = taxInclusive && resolvedGstRate > 0
+                    ? grossAmt / (1 + resolvedGstRate / 100)
+                    : grossAmt;
+                const totalGstAmt = taxInclusive
+                    ? grossAmt - baseAmt
+                    : grossAmt * (resolvedGstRate / 100);
                 const splitAmt = totalGstAmt / 2;
+                // Reverse ex-tax rate per unit (for display when blurred)
+                const exTaxRate = taxInclusive && resolvedGstRate > 0 && finalQty > 0
+                    ? baseAmt / finalQty
+                    : item.rate;
 
                 // Handle number input changes safely
                 const handleNumberChange = (field: string, val: string) => {
@@ -461,16 +516,14 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             );
                         case 'rate':
                             return (
-                                <Input
+                                <RateCell
                                     key={col.id}
-                                    data-field="rate"
-                                    type="number"
-                                    value={item.rate || ''}
-                                    onChange={(e) => handleNumberChange('rate', e.target.value)}
-                                    className="h-7 text-xs text-right font-mono"
-                                    placeholder="0.00"
-                                    step="0.01"
-                                    disabled={isReadOnly}
+                                    rate={item.rate || 0}
+                                    exTaxRate={exTaxRate}
+                                    taxInclusive={taxInclusive}
+                                    resolvedGstRate={resolvedGstRate}
+                                    isReadOnly={isReadOnly}
+                                    onChange={(val) => handleNumberChange('rate', val)}
                                 />
                             );
                         case 'count':
@@ -508,9 +561,10 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 </div>
                             );
                         case 'amount':
+                            // Show base (ex-tax) amount when tax-inclusive
                             return (
                                 <div key={col.id} className="h-7 text-xs flex items-center justify-start px-3 bg-muted/50 border border-input rounded-md font-medium font-mono">
-                                    ₹{calc.amount.toFixed(2)}
+                                    ₹{(taxInclusive ? baseAmt : calc.amount).toFixed(2)}
                                 </div>
                             );
                         case 'discount_percent':

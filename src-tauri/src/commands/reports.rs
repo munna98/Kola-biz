@@ -736,7 +736,7 @@ pub async fn get_transaction_report(
             v.voucher_date,
             v.party_id,
             coa.account_name as party_name,
-            v.total_amount as amount,
+            COALESCE(v.grand_total, v.total_amount, 0.0) as amount,
             v.narration,
             v.created_at
         FROM vouchers v
@@ -855,7 +855,7 @@ pub async fn get_party_outstanding(
                 v.party_id,
                 v.party_type,
                 COUNT(v.id) as total_invoices,
-                SUM(v.total_amount) as total_amount,
+                SUM(COALESCE(v.grand_total, v.total_amount, 0.0)) as total_amount,
                 MIN(v.voucher_date) as oldest_invoice_date
             FROM vouchers v
             WHERE v.voucher_type = ? AND v.party_type = ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
@@ -937,7 +937,7 @@ pub async fn get_party_invoice_details(
         SELECT 
             v.voucher_no,
             v.voucher_date,
-            CAST(v.total_amount AS REAL) as total_amount,
+            CAST(COALESCE(v.grand_total, v.total_amount, 0.0) AS REAL) as total_amount,
             CAST(COALESCE((
                 SELECT SUM(allocated_amount) FROM payment_allocations 
                 WHERE invoice_voucher_id = v.id AND allocation_date <= ?
@@ -1247,7 +1247,7 @@ pub async fn get_dashboard_metrics(
 ) -> Result<DashboardMetrics, String> {
     // Get revenue (sales)
     let revenue: Option<f64> = sqlx::query_scalar(
-        "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
+        "SELECT CAST(COALESCE(SUM(COALESCE(grand_total, total_amount, 0)), 0) AS REAL)
          FROM vouchers
          WHERE voucher_type = 'sales_invoice'
          AND voucher_date >= ? AND voucher_date <= ?
@@ -1261,7 +1261,7 @@ pub async fn get_dashboard_metrics(
 
     // Get expenses (purchases)
     let expenses: Option<f64> = sqlx::query_scalar(
-        "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
+        "SELECT CAST(COALESCE(SUM(COALESCE(grand_total, total_amount, 0)), 0) AS REAL)
          FROM vouchers
          WHERE voucher_type = 'purchase_invoice'
          AND voucher_date >= ? AND voucher_date <= ?
@@ -1361,7 +1361,7 @@ pub async fn get_dashboard_metrics(
     let prev_period_to = prev_to - chrono::Duration::days(period_days);
 
     let prev_revenue: Option<f64> = sqlx::query_scalar(
-        "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
+        "SELECT CAST(COALESCE(SUM(COALESCE(grand_total, total_amount, 0)), 0) AS REAL)
          FROM vouchers
          WHERE voucher_type = 'sales_invoice'
          AND voucher_date >= ? AND voucher_date <= ?
@@ -1427,7 +1427,7 @@ pub async fn get_revenue_trend(
         let date_str = current_date.to_string();
 
         let revenue: Option<f64> = sqlx::query_scalar(
-            "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
+            "SELECT CAST(COALESCE(SUM(COALESCE(grand_total, total_amount, 0)), 0) AS REAL)
              FROM vouchers
              WHERE voucher_type = 'sales_invoice'
              AND voucher_date = ?
@@ -1439,7 +1439,7 @@ pub async fn get_revenue_trend(
         .map_err(|e| e.to_string())?;
 
         let expenses: Option<f64> = sqlx::query_scalar(
-            "SELECT CAST(COALESCE(SUM(total_amount), 0) AS REAL)
+            "SELECT CAST(COALESCE(SUM(COALESCE(grand_total, total_amount, 0)), 0) AS REAL)
              FROM vouchers
              WHERE voucher_type = 'purchase_invoice'
              AND voucher_date = ?
@@ -1641,7 +1641,7 @@ pub async fn get_recent_activity(
             v.voucher_type,
             v.voucher_date,
             coa.account_name as party_name,
-            CAST(v.total_amount AS REAL) as amount
+            CAST(COALESCE(v.grand_total, v.total_amount, 0.0) AS REAL) as amount
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         WHERE v.deleted_at IS NULL

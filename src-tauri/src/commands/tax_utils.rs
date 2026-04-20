@@ -158,6 +158,43 @@ pub async fn get_gst_account_id(
     .flatten()
 }
 
+/// Retrieves the GST account ID by name, Auto-creating it if it doesn't exist.
+pub async fn ensure_gst_account_exists(
+    pool: &SqlitePool,
+    account_name: &str,
+    is_payable: bool,
+) -> Result<String, String> {
+    if let Some(id) = get_gst_account_id(pool, account_name).await {
+        return Ok(id);
+    }
+
+    use uuid::Uuid;
+    let id = Uuid::new_v4().to_string();
+    let short_uuid = &id[0..6];
+    let account_code = format!("GST-AUTO-{}", short_uuid).to_uppercase();
+    
+    // Usually, input credits are Asset under 'Tax Receivable', output tax is Liability under 'Duties & Taxes'.
+    let account_type = if is_payable { "Liability" } else { "Asset" };
+    let account_group = if is_payable { "Duties & Taxes" } else { "Tax Receivable" };
+    let description = format!("Auto-created ledger for {}", account_name);
+
+    sqlx::query(
+        "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, is_system)
+         VALUES (?, ?, ?, ?, ?, ?, 1)",
+    )
+    .bind(&id)
+    .bind(&account_code)
+    .bind(account_name)
+    .bind(account_type)
+    .bind(account_group)
+    .bind(description)
+    .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(id)
+}
+
 // ============= INTER-STATE DETECTION =============
 
 /// Returns true if company_state and party_state are different (non-empty, non-null).

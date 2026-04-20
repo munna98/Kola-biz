@@ -134,7 +134,7 @@ export default function CustomersPage() {
                     <td className="p-3 font-medium">{c.name}</td>
                     <td className="p-3 text-sm text-muted-foreground">{c.email || '-'}</td>
                     <td className="p-3 text-sm">{c.phone || '-'}</td>
-                    <td className="p-3 text-sm">{c.address || '-'}</td>
+                    <td className="p-3 text-sm">{c.address_line_1 || '-'}</td>
                     <td className="p-3 flex gap-2">
                       {!showDeleted ? (
                         <>

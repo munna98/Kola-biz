@@ -97,6 +97,7 @@ export default function SalesInvoicePage() {
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, taxInclusive?: boolean } | undefined>(undefined);
+  const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
 
@@ -137,6 +138,7 @@ export default function SalesInvoicePage() {
         setProductUnitConversions(productUnitConversionsData);
         if (settingsData) {
           setVoucherSettings(settingsData);
+          setIsTaxInclusive(!!settingsData.taxInclusive);
         }
         setProductGroups(groupsData);
         setEmployees(employeesData.filter((e: Employee) => e.status === 'active'));
@@ -162,6 +164,12 @@ export default function SalesInvoicePage() {
 
     loadData();
   }, [dispatch]);
+
+  useEffect(() => {
+    if (salesState.mode === 'new' && !salesState.currentVoucherId) {
+      setIsTaxInclusive(!!voucherSettings?.taxInclusive);
+    }
+  }, [salesState.mode, salesState.currentVoucherId, voucherSettings?.taxInclusive]);
 
   // Clear savedInvoiceId when navigating to a different voucher (so we don't hold onto stale IDs)
   useEffect(() => {
@@ -363,7 +371,7 @@ export default function SalesInvoicePage() {
         }
       }
 
-      if (voucherSettings?.taxInclusive) {
+      if (isTaxInclusive) {
         const baseTaxableAmount = amountAfterDiscount / (1 + (gstRate / 100));
         const taxAmt = amountAfterDiscount - baseTaxableAmount;
         subtotal += baseTaxableAmount;
@@ -450,6 +458,7 @@ export default function SalesInvoicePage() {
               rate: item.rate,
               tax_rate: item.tax_rate
             })),
+            tax_inclusive: isTaxInclusive,
           },
         });
         toast.success('Sales invoice updated successfully');
@@ -496,6 +505,7 @@ export default function SalesInvoicePage() {
               tax_rate: item.tax_rate
             })),
             user_id: user?.id.toString(),
+            tax_inclusive: isTaxInclusive,
           },
         });
         toast.success('Sales invoice created successfully');
@@ -576,6 +586,8 @@ export default function SalesInvoicePage() {
       dispatch(setSalesNarration(invoice.narration || ''));
       dispatch(setSalesDiscountRate(invoice.discount_rate || 0));
       dispatch(setSalesDiscountAmount(invoice.discount_amount || 0));
+      const loadedTaxInclusive = Boolean(invoice.tax_inclusive);
+      setIsTaxInclusive(loadedTaxInclusive);
 
       // Set Creator Name
       dispatch(setSalesCreatedByName(invoice.created_by_name));
@@ -584,6 +596,9 @@ export default function SalesInvoicePage() {
       // Clear default empty item
       // Note: resetSalesForm sets items to [], so we just add
       items.forEach(item => {
+        const displayRate = loadedTaxInclusive
+          ? item.rate * (1 + ((item.tax_rate || 0) / 100))
+          : item.rate;
         dispatch(addSalesItem({
         product_id: item.product_id || 0, // Using product_id from item if available, else need map
         product_name: item.description, // Fallback
@@ -593,7 +608,7 @@ export default function SalesInvoicePage() {
           initial_quantity: item.initial_quantity,
           count: item.count,
           deduction_per_unit: item.deduction_per_unit,
-          rate: item.rate,
+          rate: displayRate,
           tax_rate: item.tax_rate,
           discount_percent: item.discount_percent || 0,
           discount_amount: item.discount_amount || 0,
@@ -612,7 +627,9 @@ export default function SalesInvoicePage() {
         initial_quantity: item.initial_quantity,
         count: item.count,
         deduction_per_unit: item.deduction_per_unit,
-        rate: item.rate,
+        rate: loadedTaxInclusive
+          ? item.rate * (1 + ((item.tax_rate || 0) / 100))
+          : item.rate,
         tax_rate: item.tax_rate,
         discount_percent: item.discount_percent || 0,
         discount_amount: item.discount_amount || 0,
@@ -840,10 +857,10 @@ export default function SalesInvoicePage() {
       }
     }
 
-    if (voucherSettings?.taxInclusive) {
+    if (isTaxInclusive) {
       const baseTaxableAmount = taxableAmount / (1 + (gstRate / 100));
       const taxAmount = taxableAmount - baseTaxableAmount;
-      return { finalQty, amount: taxableAmount, taxAmount, total: taxableAmount };
+      return { finalQty, amount: baseTaxableAmount, taxAmount, total: taxableAmount };
     } else {
       const taxAmount = taxableAmount * (gstRate / 100);
       return { finalQty, amount: taxableAmount, taxAmount, total: taxableAmount + taxAmount };
@@ -1115,6 +1132,7 @@ export default function SalesInvoicePage() {
             defaultUnitKind="sale"
             gstSlabs={gstSlabs}
             fullProducts={products as any}
+            taxInclusive={isTaxInclusive}
             footerRightContent={
               partyBalance !== null && shouldShowPartyBalance ? (
                 <div className={`text-xs font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>

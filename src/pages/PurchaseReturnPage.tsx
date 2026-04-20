@@ -580,7 +580,7 @@ export default function PurchaseReturnPage() {
         if (voucherSettings?.taxInclusive) {
             const baseTaxableAmount = taxableAmount / (1 + (gstRate / 100));
             const taxAmount = taxableAmount - baseTaxableAmount;
-            return { finalQty, amount: taxableAmount, taxAmount, total: taxableAmount };
+            return { finalQty, amount: baseTaxableAmount, taxAmount, total: taxableAmount };
         } else {
             const taxAmount = taxableAmount * (gstRate / 100);
             return { finalQty, amount: taxableAmount, taxAmount, total: taxableAmount + taxAmount };
@@ -706,6 +706,9 @@ export default function PurchaseReturnPage() {
                                 document.getElementById('voucher-discount-amount')?.focus();
                             }, 50);
                         }}
+                        gstSlabs={gstSlabs}
+                        fullProducts={products as any}
+                        taxInclusive={voucherSettings?.taxInclusive}
                     />
 
                     {/* Totals and Notes */}

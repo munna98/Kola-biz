@@ -114,7 +114,7 @@ export function VoucherListViewSheet({
                                             {voucher.party_name || 'N/A'}
                                         </span>
                                         <span className="font-bold text-sm">
-                                            ₹{voucher.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                            ₹{voucher.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         </span>
                                     </div>
                                 </button>
