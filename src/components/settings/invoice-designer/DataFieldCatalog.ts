@@ -49,6 +49,7 @@ export const DATA_FIELD_CATALOG: DataFieldCategory[] = [
         icon: 'IconCalculator',
         fields: [
             { key: 'subtotal', label: 'Subtotal', example: '10,000.00', format: 'currency' },
+            { key: 'invoice_discount_amount', label: 'Bill Discount', example: '250.00', format: 'currency' },
             { key: 'discount_amount', label: 'Discount', example: '500.00', format: 'currency' },
             { key: 'discount_rate', label: 'Discount %', example: '5', format: 'number' },
             { key: 'tax_total', label: 'Total Tax', example: '1,710.00', format: 'currency' },
@@ -99,6 +100,8 @@ export const ITEM_TABLE_COLUMNS = [
     { key: 'final_quantity', label: 'Final Qty', defaultWidth: 8, align: 'right' as const, format: 'number' as const },
     { key: 'rate', label: 'Rate', defaultWidth: 10, align: 'right' as const, format: 'currency' as const },
     { key: 'amount', label: 'Amount', defaultWidth: 10, align: 'right' as const, format: 'currency' as const },
+    { key: 'discount_percent', label: 'Disc %', defaultWidth: 7, align: 'right' as const, format: 'number' as const },
+    { key: 'discount_amount', label: 'Disc Amt', defaultWidth: 9, align: 'right' as const, format: 'currency' as const },
     { key: 'tax_rate', label: 'Tax %', defaultWidth: 6, align: 'center' as const, format: 'number' as const },
     { key: 'tax_amount', label: 'Tax Amt', defaultWidth: 8, align: 'right' as const, format: 'currency' as const },
     { key: 'total', label: 'Total', defaultWidth: 10, align: 'right' as const, format: 'currency' as const },

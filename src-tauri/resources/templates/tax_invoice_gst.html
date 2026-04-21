@@ -155,6 +155,7 @@
       <th class="col-qty">Quantity</th>
       <th class="col-rate">Rate</th>
       <th class="col-per">per</th>
+      <th class="col-disc">Disc %</th>
       <th class="col-amount">Amount</th>
     </tr>
   </thead>
@@ -170,6 +171,7 @@
       <td class="right">{{format_number initial_quantity 2}}</td>
       <td class="right">{{format_number rate 2}}</td>
       <td class="center">{{unit}}</td>
+      <td class="right">{{format_number discount_percent 2}}</td>
       <td class="right">{{format_number amount 2}}</td>
     </tr>
     {{/each}}
@@ -182,6 +184,7 @@
       <td class="sp-qty"></td>
       <td class="sp-rate"></td>
       <td class="sp-per"></td>
+      <td class="sp-disc"></td>
       <td class="sp-amount"></td>
     </tr>
 
@@ -196,6 +199,7 @@
       <td class="sp-hsn"></td>
       <td class="sp-qty"></td>
       <td class="sp-rate"></td>
+      <td class="sp-per"></td>
       <td class="right tax-label"><em>CGST</em></td>
       <td class="right">{{format_number cgst_total 2}}</td>
     </tr>
@@ -207,6 +211,7 @@
       <td class="sp-hsn"></td>
       <td class="sp-qty"></td>
       <td class="sp-rate"></td>
+      <td class="sp-per"></td>
       <td class="right tax-label"><em>SGST</em></td>
       <td class="right">{{format_number sgst_total 2}}</td>
     </tr>
@@ -224,6 +229,7 @@
       <td class="sp-hsn"></td>
       <td class="sp-qty"></td>
       <td class="sp-rate"></td>
+      <td class="sp-per"></td>
       <td class="right tax-label"><em>IGST</em></td>
       <td class="right">{{format_number igst_total 2}}</td>
     </tr>
@@ -231,12 +237,24 @@
     {{/if}}
     {{/if}}
 
-    <!-- Total row -->
-    <tr class="total-row">
-      <td colspan="3" class="right"><strong>Total</strong></td>
-      <td class="right"><strong>{{total_quantity_display}}</strong></td>
-      <td colspan="2"></td>
-      <td class="right"><strong>&#8377; {{format_number grand_total 2}}</strong></td>
+    <!-- Summary footer row: Tally-style with Disc/Total label, qty, and stacked amount -->
+    <tr class="summary-footer-row">
+      <td colspan="3" class="sf-left-empty"></td>
+      <td class="right sf-qty"><strong>{{total_quantity_display}}</strong></td>
+      <td class="sf-rate-empty"></td>
+      <td class="sf-per-empty"></td>
+      <td class="right sf-disc-total-label">
+        {{#if has_discount}}
+        <span class="sf-disc-label">Disc</span><br/>
+        {{/if}}
+        <strong>Total</strong>
+      </td>
+      <td class="right sf-amount-cell">
+        {{#if has_discount}}
+        <span class="sf-subtotal-ghost">{{format_number bill_discount 2}}</span><br/>
+        {{/if}}
+        <strong class="sf-grand-total">&#8377;&nbsp;{{format_number grand_total 2}}</strong>
+      </td>
     </tr>
   </tbody>
 </table>

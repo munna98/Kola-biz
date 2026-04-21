@@ -55,6 +55,7 @@ import CustomerDialog from '@/components/dialogs/CustomerDialog';
 import ProductDialog from '@/components/dialogs/ProductDialog';
 import { Product, ProductGroup, ProductUnitConversion, Unit, Employee, GstTaxSlab, api } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
+import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
 
 
 
@@ -350,59 +351,53 @@ export default function SalesInvoicePage() {
     const slabMap: Record<string, GstTaxSlab> = {};
     gstSlabs.forEach(s => { slabMap[s.id] = s; });
 
-    let subtotal = 0;
-    let totalTax = 0;
+    const resolveItemGstRate = (item: typeof salesState.items[number]) => {
+      if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
+        return item.resolved_gst_rate;
+      }
 
-    items.forEach((item) => {
-      const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
-      const amount = finalQty * item.rate;
-      const discountAmt = item.discount_amount || 0;
-      const amountAfterDiscount = amount - discountAmt;
+      if (item.gst_slab_id) {
+        const savedSlab = slabMap[item.gst_slab_id];
+        if (savedSlab) {
+          return savedSlab.is_dynamic === 1
+            ? (item.rate < savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
+            : savedSlab.fixed_rate;
+        }
+      }
 
-      // Slab takes priority; fall back to legacy item.tax_rate
       const product = productMap[String(item.product_id)];
-      let gstRate = item.tax_rate || 0;
       if (product?.gst_slab_id) {
         const slab = slabMap[product.gst_slab_id];
         if (slab) {
-          gstRate = slab.is_dynamic === 1
+          return slab.is_dynamic === 1
             ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
             : slab.fixed_rate;
         }
       }
 
-      if (isTaxInclusive) {
-        const baseTaxableAmount = amountAfterDiscount / (1 + (gstRate / 100));
-        const taxAmt = amountAfterDiscount - baseTaxableAmount;
-        subtotal += baseTaxableAmount;
-        totalTax += taxAmt;
-      } else {
-        subtotal += amountAfterDiscount;
-        totalTax += amountAfterDiscount * (gstRate / 100);
-      }
+      return item.tax_rate || 0;
+    };
+
+    const calculation = calculateVoucherDiscounts(items, {
+      discountRate: discountRate !== undefined ? discountRate : salesState.form.discount_rate,
+      discountAmount:
+        discountRate !== undefined
+          ? undefined
+          : discountAmount !== undefined
+            ? discountAmount
+            : salesState.form.discount_amount,
+      taxInclusive: isTaxInclusive,
+      resolveGstRate: resolveItemGstRate,
     });
 
-    subtotal = Math.round(subtotal * 100) / 100;
-    totalTax = Math.round(totalTax * 100) / 100;
-
-    let finalDiscountRate = discountRate !== undefined ? discountRate : salesState.form.discount_rate;
-    let finalDiscountAmount = discountAmount !== undefined ? discountAmount : salesState.form.discount_amount;
-
-    if (discountRate !== undefined && discountRate > 0) {
-      finalDiscountAmount = Math.round(subtotal * (discountRate / 100) * 100) / 100;
-    } else if (discountAmount !== undefined && discountAmount > 0) {
-      finalDiscountAmount = Math.round(discountAmount * 100) / 100;
-      finalDiscountRate = subtotal > 0 ? Math.round((discountAmount / subtotal) * 100 * 100) / 100 : 0;
-    } else {
-      finalDiscountAmount = Math.round(finalDiscountAmount * 100) / 100;
-      finalDiscountRate = Math.round(finalDiscountRate * 100) / 100;
-    }
-
-    const grandTotal = Math.round((subtotal - finalDiscountAmount + totalTax) * 100) / 100;
-
-    dispatch(setSalesDiscountRate(finalDiscountRate));
-    dispatch(setSalesDiscountAmount(finalDiscountAmount));
-    dispatch(setSalesTotals({ subtotal, discount: finalDiscountAmount, tax: totalTax, grandTotal }));
+    dispatch(setSalesDiscountRate(calculation.discountRate));
+    dispatch(setSalesDiscountAmount(calculation.discountAmount));
+    dispatch(setSalesTotals({
+      subtotal: calculation.subtotal,
+      discount: calculation.discountAmount,
+      tax: calculation.tax,
+      grandTotal: calculation.grandTotal
+    }));
   };
 
   // Ref to track if auto-print is pending after payment dialog
@@ -596,13 +591,23 @@ export default function SalesInvoicePage() {
       // Clear default empty item
       // Note: resetSalesForm sets items to [], so we just add
       items.forEach(item => {
+        const storedGstRate = item.resolved_gst_rate || item.tax_rate || 0;
         const displayRate = loadedTaxInclusive
-          ? item.rate * (1 + ((item.tax_rate || 0) / 100))
+          ? item.rate * (1 + (storedGstRate / 100))
           : item.rate;
         dispatch(addSalesItem({
         product_id: item.product_id || 0, // Using product_id from item if available, else need map
         product_name: item.description, // Fallback
         unit_id: item.unit_id,
+          hsn_sac_code: item.hsn_sac_code,
+          gst_slab_id: item.gst_slab_id,
+          resolved_gst_rate: item.resolved_gst_rate,
+          cgst_rate: item.cgst_rate,
+          sgst_rate: item.sgst_rate,
+          igst_rate: item.igst_rate,
+          cgst_amount: item.cgst_amount,
+          sgst_amount: item.sgst_amount,
+          igst_amount: item.igst_amount,
           base_quantity: item.base_quantity,
           description: item.description,
           initial_quantity: item.initial_quantity,
@@ -623,12 +628,21 @@ export default function SalesInvoicePage() {
         product_id: item.product_id || 0,
         product_name: item.description,
         unit_id: item.unit_id,
+        hsn_sac_code: item.hsn_sac_code,
+        gst_slab_id: item.gst_slab_id,
+        resolved_gst_rate: item.resolved_gst_rate,
+        cgst_rate: item.cgst_rate,
+        sgst_rate: item.sgst_rate,
+        igst_rate: item.igst_rate,
+        cgst_amount: item.cgst_amount,
+        sgst_amount: item.sgst_amount,
+        igst_amount: item.igst_amount,
         description: item.description,
         initial_quantity: item.initial_quantity,
         count: item.count,
         deduction_per_unit: item.deduction_per_unit,
         rate: loadedTaxInclusive
-          ? item.rate * (1 + ((item.tax_rate || 0) / 100))
+          ? item.rate * (1 + (((item.resolved_gst_rate || item.tax_rate) || 0) / 100))
           : item.rate,
         tax_rate: item.tax_rate,
         discount_percent: item.discount_percent || 0,
@@ -841,30 +855,43 @@ export default function SalesInvoicePage() {
   }
 
   const getItemAmount = (item: typeof salesState.items[0]) => {
-    const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
-    const amount = finalQty * item.rate;
-    const taxableAmount = amount - (item.discount_amount || 0);
-
-    // Resolve GST Rate from Slab
     let gstRate = item.tax_rate || 0;
-    const product = products.find(p => String(p.id) === String(item.product_id));
-    if (product?.gst_slab_id) {
-      const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
-      if (slab) {
-        gstRate = slab.is_dynamic === 1
-          ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
-          : slab.fixed_rate;
+    if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
+      gstRate = item.resolved_gst_rate;
+    } else if (item.gst_slab_id) {
+      const savedSlab = gstSlabs.find(s => s.id === item.gst_slab_id);
+      if (savedSlab) {
+        gstRate = savedSlab.is_dynamic === 1
+          ? (item.rate < savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
+          : savedSlab.fixed_rate;
+      }
+    } else {
+      const product = products.find(p => String(p.id) === String(item.product_id));
+      if (product?.gst_slab_id) {
+        const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
+        if (slab) {
+          gstRate = slab.is_dynamic === 1
+            ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
+            : slab.fixed_rate;
+        }
       }
     }
 
-    if (isTaxInclusive) {
-      const baseTaxableAmount = taxableAmount / (1 + (gstRate / 100));
-      const taxAmount = taxableAmount - baseTaxableAmount;
-      return { finalQty, amount: baseTaxableAmount, taxAmount, total: taxableAmount };
-    } else {
-      const taxAmount = taxableAmount * (gstRate / 100);
-      return { finalQty, amount: taxableAmount, taxAmount, total: taxableAmount + taxAmount };
-    }
+    const sourceItems = salesState.items.some((candidate) => candidate.id === item.id) ? salesState.items : [item];
+    const calculation = calculateVoucherDiscounts(sourceItems, {
+      discountRate: salesState.form.discount_rate,
+      discountAmount: salesState.form.discount_amount,
+      taxInclusive: isTaxInclusive,
+      resolveGstRate: () => gstRate,
+    });
+    const lineIndex = sourceItems.length === 1 ? 0 : sourceItems.findIndex((candidate) => candidate.id === item.id);
+    const line = calculation.lines[Math.max(lineIndex, 0)];
+    return {
+      finalQty: line.finalQty,
+      amount: line.taxableAmount,
+      taxAmount: line.taxAmount,
+      total: line.total
+    };
   };
 
   // Determine if form should be disabled (viewing mode)
@@ -1164,7 +1191,7 @@ export default function SalesInvoicePage() {
                     <Label className="text-xs font-medium mb-1 block">Discount %</Label>
                     <Input
                       type="number"
-                      value={salesState.form.discount_rate || ''}
+                      value={salesState.form.discount_rate}
                       onChange={(e) => {
                         const rate = parseFloat(e.target.value) || 0;
                         dispatch(setSalesHasUnsavedChanges(true));
@@ -1180,7 +1207,7 @@ export default function SalesInvoicePage() {
                     <Label className="text-xs font-medium mb-1 block">Discount ₹</Label>
                     <Input
                       type="number"
-                      value={salesState.form.discount_amount || ''}
+                      value={salesState.form.discount_amount}
                       onChange={(e) => {
                         const amount = parseFloat(e.target.value) || 0;
                         updateTotalsWithItems(salesState.items, undefined, amount);
@@ -1202,9 +1229,14 @@ export default function SalesInvoicePage() {
                 </div>
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
-                    <span className="text-muted-foreground">Subtotal</span>
+                    <span className="text-muted-foreground">Subtotal:</span>
                     <span className="font-mono font-medium">₹ {salesState.totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                   </div>
+                  {salesState.totals.discount > 0 && (
+                    <div className="text-xs font-mono text-muted-foreground">
+                      Discount: ₹ {salesState.totals.discount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </div>
+                  )}
                   {salesState.totals.tax > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">Tax: ₹ {salesState.totals.tax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                   )}

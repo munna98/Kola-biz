@@ -305,9 +305,10 @@ body {
 .sp-desc   { width: 35%; }
 .sp-hsn    { width: 10%; }
 .sp-qty    { width: 10%; }
-.sp-rate   { width: 10%; }
+.sp-rate   { width: 9%; }
 .sp-per    { width: 6%; }
-.sp-amount { width: 12%; }
+.sp-disc   { width: 8%; }
+.sp-amount { width: 10%; }
 
 /* Tax rows — individual cells keep column-divider borders from .items-table td */
 .tax-row td {
@@ -321,7 +322,7 @@ body {
     color: var(--text-label);
 }
 
-/* Grand total row */
+/* Grand total row (legacy, kept for safety) */
 .total-row td {
     font-weight: 700;
     border-top: 1.5px solid var(--border-dark) !important;
@@ -331,14 +332,65 @@ body {
     font-size: 10.5pt;
 }
 
+/* ============================================================
+   SUMMARY FOOTER ROW — Tally-style Disc/Total + stacked amount
+   ============================================================ */
+.summary-footer-row td {
+    border-top: 1.5px solid var(--border-dark) !important;
+    border-bottom: 1.5px solid var(--border-dark) !important;
+    background: var(--accent-light);
+    padding: 4px 6px;
+    vertical-align: middle;
+}
+
+/* Disc / Total label column */
+.sf-disc-total-label {
+    font-size: 9.5pt;
+    line-height: 1.5;
+}
+
+.sf-disc-label {
+    font-style: italic;
+    font-weight: 600;
+    color: var(--text-label);
+    font-size: 9pt;
+}
+
+/* Amount cell: subtotal ghost + bold grand total stacked */
+.sf-amount-cell {
+    line-height: 1.6;
+    white-space: nowrap;
+}
+
+.sf-subtotal-ghost {
+    font-size: 9pt;
+    color: var(--text-muted);
+    font-weight: 400;
+    display: inline-block;
+}
+
+.sf-grand-total {
+    font-size: 11pt;
+    font-weight: 700;
+    color: var(--accent);
+    display: inline-block;
+}
+
+/* Quantity cell in footer */
+.sf-qty {
+    font-size: 10pt;
+    font-weight: 700;
+}
+
 /* Column widths on header */
 .col-slno   { width: 4%;  text-align: center; }
 .col-desc   { width: 35%; }
 .col-hsn    { width: 10%; text-align: center; }
 .col-qty    { width: 10%; text-align: right; }
-.col-rate   { width: 10%; text-align: right; }
+.col-rate   { width: 9%; text-align: right; }
 .col-per    { width: 6%;  text-align: center; }
-.col-amount { width: 12%; text-align: right; }
+.col-disc   { width: 8%;  text-align: right; }
+.col-amount { width: 10%; text-align: right; }
 
 .item-desc  { color: var(--text-muted); font-size: 8.5pt; }
 

@@ -74,6 +74,8 @@ function getDefaultTableConfig(): TableConfig {
             { key: 'initial_quantity', label: 'Qty', width: 8, align: 'right', format: 'number' },
             { key: 'rate', label: 'Rate', width: 12, align: 'right', format: 'currency' },
             { key: 'amount', label: 'Amount', width: 14, align: 'right', format: 'currency' },
+            { key: 'discount_percent', label: 'Disc %', width: 7, align: 'right', format: 'number' },
+            { key: 'discount_amount', label: 'Disc Amt', width: 10, align: 'right', format: 'currency' },
             { key: 'tax_rate', label: 'Tax %', width: 6, align: 'center', format: 'number' },
             { key: 'total', label: 'Total', width: 10, align: 'right', format: 'currency' },
         ],
@@ -93,7 +95,7 @@ function getDefaultTotalsConfig(): TotalsConfig {
     return {
         rows: [
             { label: 'Subtotal', field: 'subtotal', format: 'currency' },
-            { label: 'Discount', field: 'discount_amount', format: 'currency' },
+            { label: 'Disc', field: 'invoice_discount_amount', format: 'currency' },
             { label: 'Tax', field: 'tax_total', format: 'currency' },
             { label: 'Grand Total', field: 'grand_total', format: 'currency', bold: true },
         ],

@@ -1,8 +1,9 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::State;
 use uuid::Uuid;
 
+use super::invoices::{finalize_processed_items, prepare_voucher_line};
 use super::resolve_voucher_line_unit;
 use crate::voucher_seq::get_next_voucher_number;
 
@@ -42,12 +43,23 @@ pub struct PurchaseReturnItem {
     pub unit_id: Option<String>,
     pub base_quantity: f64,
     pub rate: f64,
+    pub original_amount: f64,
     pub amount: f64,
     pub tax_rate: f64,
     pub tax_amount: f64,
     pub discount_percent: f64,
     pub discount_amount: f64,
+    pub invoice_discount_amount: f64,
     pub remarks: Option<String>,
+    pub cgst_rate: f64,
+    pub sgst_rate: f64,
+    pub igst_rate: f64,
+    pub cgst_amount: f64,
+    pub sgst_amount: f64,
+    pub igst_amount: f64,
+    pub hsn_sac_code: Option<String>,
+    pub gst_slab_id: Option<String>,
+    pub resolved_gst_rate: f64,
 }
 
 #[derive(Deserialize)]
@@ -78,7 +90,6 @@ pub struct CreatePurchaseReturn {
     pub tax_inclusive: Option<bool>,
 }
 
-
 #[tauri::command]
 pub async fn get_purchase_returns(
     pool: State<'_, SqlitePool>,
@@ -100,7 +111,8 @@ pub async fn get_purchase_returns(
             v.narration,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -135,7 +147,8 @@ pub async fn get_purchase_return(
             v.narration,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -157,7 +170,7 @@ pub async fn get_purchase_return_items(
     voucher_id: String,
 ) -> Result<Vec<PurchaseReturnItem>, String> {
     sqlx::query_as::<_, PurchaseReturnItem>(
-        "SELECT vi.*, p.name as product_name 
+        "SELECT vi.*, p.name as product_name
          FROM voucher_items vi
          JOIN products p ON vi.product_id = p.id
          WHERE vi.voucher_id = ?",
@@ -175,46 +188,62 @@ pub async fn create_purchase_return(
 ) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    // Generate voucher number
     let voucher_no = get_next_voucher_number(pool.inner(), "purchase_return").await?;
-
-    // Calculate totals
-    let mut subtotal = 0.0;
-
-    for item in &invoice.items {
-        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let amount = final_qty * item.rate;
-        let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 {
-            amount * (discount_percent / 100.0)
-        } else {
-            item.discount_amount.unwrap_or(0.0)
-        };
-        subtotal += amount - discount_amount;
-    }
-
-    // Apply discounts
-    let discount_amount = invoice.discount_amount.unwrap_or(0.0);
-    let total_amount = subtotal - discount_amount;
-
-    
-    let mut total_tax = 0.0;
-    for item in &invoice.items {
-        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let amount = final_qty * item.rate;
-        let discount_amount = if item.discount_percent.unwrap_or(0.0) > 0.0 { amount * (item.discount_percent.unwrap_or(0.0) / 100.0) } else { item.discount_amount.unwrap_or(0.0) };
-        let taxable_amount = amount - discount_amount;
-        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
-        total_tax += tax_amount;
-    }
-    let grand_total = total_amount + total_tax;
+    let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
+        .fetch_optional(&mut *tx)
+        .await
+        .ok()
+        .flatten();
+    let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?")
+        .bind(&invoice.supplier_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .ok()
+        .flatten();
+    let is_inter_state =
+        crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
-    
-    // Create voucher
+
+    let mut prepared_lines = Vec::new();
+    for item in &invoice.items {
+        prepared_lines.push(
+            prepare_voucher_line(
+                &mut tx,
+                pool.inner(),
+                "purchase",
+                &item.product_id,
+                item.unit_id.as_deref(),
+                item.description.clone(),
+                item.initial_quantity,
+                item.count,
+                item.deduction_per_unit,
+                item.rate,
+                item.tax_rate,
+                item.discount_percent,
+                item.discount_amount,
+                item.remarks.clone(),
+                tax_inclusive,
+            )
+            .await?,
+        );
+    }
+
+    let (processed, discount_rate, discount_amount) = finalize_processed_items(
+        prepared_lines,
+        is_inter_state,
+        invoice.discount_rate,
+        invoice.discount_amount,
+    );
+    let processed_items = processed.items;
+    let subtotal = processed.subtotal;
+    let total_tax = processed.total_cgst + processed.total_sgst + processed.total_igst;
+    let total_amount = subtotal - discount_amount;
+    let grand_total = total_amount + total_tax;
+
     let voucher_id = Uuid::now_v7().to_string();
     sqlx::query(
         "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total)
-         VALUES (?, ?, 'purchase_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?)"
+         VALUES (?, ?, 'purchase_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?)",
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -223,7 +252,7 @@ pub async fn create_purchase_return(
     .bind(&invoice.party_type)
     .bind(&invoice.reference)
     .bind(subtotal)
-    .bind(invoice.discount_rate.unwrap_or(0.0))
+    .bind(discount_rate)
     .bind(discount_amount)
     .bind(total_tax)
     .bind(total_amount)
@@ -234,96 +263,66 @@ pub async fn create_purchase_return(
     .await
     .map_err(|e| e.to_string())?;
 
-    // Insert items
-    for item in &invoice.items {
-        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let unit_snapshot = resolve_voucher_line_unit(
-            &mut tx,
-            &item.product_id,
-            item.unit_id.as_deref(),
-            "purchase",
-            final_qty,
-        )
-        .await?;
-        let amount = final_qty * item.rate;
-        let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 {
-            amount * (discount_percent / 100.0)
-        } else {
-            item.discount_amount.unwrap_or(0.0)
-        };
-        let taxable_amount = amount - discount_amount;
-        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
-        let item_id = Uuid::now_v7().to_string();
-
+    for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, original_amount, amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(&item_id)
+        .bind(&item.id)
         .bind(&voucher_id)
         .bind(&item.product_id)
         .bind(&item.description)
         .bind(item.initial_quantity)
         .bind(item.count)
         .bind(item.deduction_per_unit)
-        .bind(final_qty)
-        .bind(&unit_snapshot.unit_id)
-        .bind(unit_snapshot.base_quantity)
+        .bind(item.final_quantity)
+        .bind(&item.unit_id)
+        .bind(item.base_quantity)
         .bind(item.rate)
-        .bind(amount)
+        .bind(item.original_amount)
+        .bind(item.amount)
         .bind(item.tax_rate)
-        .bind(tax_amount)
-        .bind(item.discount_percent.unwrap_or(0.0))
-        .bind(item.discount_amount.unwrap_or(0.0))
+        .bind(item.tax_amount)
+        .bind(item.discount_percent)
+        .bind(item.discount_amount)
+        .bind(item.invoice_discount_amount)
         .bind(&item.remarks)
+        .bind(item.cgst_rate)
+        .bind(item.sgst_rate)
+        .bind(item.igst_rate)
+        .bind(item.cgst_amount)
+        .bind(item.sgst_amount)
+        .bind(item.igst_amount)
+        .bind(&item.hsn_sac_code)
+        .bind(&item.gst_slab_id)
+        .bind(item.resolved_gst_rate)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     }
 
-    // ============= CREATE JOURNAL ENTRIES =============
-
     let party_id = invoice.supplier_id;
-
-    // Calculate total tax
-    let total_tax: f64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(tax_amount), 0) FROM voucher_items WHERE voucher_id = ?",
-    )
-    .bind(&voucher_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    // Get account IDs
-    // 5003: Purchase Returns (Cr - Contra Expense)
     let purchase_return_account: String =
         sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5003'")
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
-
-    // 1005: GST Input / Tax Receivable (Cr - Reversal)
     let tax_account: String =
         sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1005'")
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
-
-    // Party Account (Dr - Reducing Accounts Payable)
     let party_account: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE id = ?")
         .bind(&party_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| format!("Party account not found: {}", e))?;
 
-    // Credit: Purchase Returns (with subtotal)
-    let je_id_1 = Uuid::now_v7().to_string();
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
          VALUES (?, ?, ?, 0, ?, 'Purchase Return (Goods returned)')",
     )
-    .bind(&je_id_1)
+    .bind(Uuid::now_v7().to_string())
     .bind(&voucher_id)
     .bind(&purchase_return_account)
     .bind(subtotal)
@@ -331,14 +330,12 @@ pub async fn create_purchase_return(
     .await
     .map_err(|e| e.to_string())?;
 
-    // Credit: Tax Input (GST Input - Reversal)
     if total_tax > 0.0 {
-        let je_id_2 = Uuid::now_v7().to_string();
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
              VALUES (?, ?, ?, 0, ?, 'Tax Reversal on Purchase Return')",
         )
-        .bind(&je_id_2)
+        .bind(Uuid::now_v7().to_string())
         .bind(&voucher_id)
         .bind(&tax_account)
         .bind(total_tax)
@@ -347,23 +344,18 @@ pub async fn create_purchase_return(
         .map_err(|e| e.to_string())?;
     }
 
-    // Debit: Supplier (Accounts Payable)
-    // Amount to reduce = subtotal - discount + tax
-    let amount_debit = subtotal - discount_amount + total_tax;
-    let je_id_3 = Uuid::now_v7().to_string();
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
          VALUES (?, ?, ?, ?, 0, 'Debit Note issued to Supplier')",
     )
-    .bind(&je_id_3)
+    .bind(Uuid::now_v7().to_string())
     .bind(&voucher_id)
     .bind(&party_account)
-    .bind(amount_debit)
+    .bind(subtotal - discount_amount + total_tax)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    // Debit: Discount Received (Reversal - Account 4004)
     if discount_amount > 0.0 {
         let discount_received_account: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'")
@@ -371,12 +363,11 @@ pub async fn create_purchase_return(
                 .await
                 .map_err(|e| e.to_string())?;
 
-        let je_id_4 = Uuid::now_v7().to_string();
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
              VALUES (?, ?, ?, ?, 0, 'Reversal of Discount Received')",
         )
-        .bind(&je_id_4)
+        .bind(Uuid::now_v7().to_string())
         .bind(&voucher_id)
         .bind(&discount_received_account)
         .bind(discount_amount)
@@ -385,7 +376,6 @@ pub async fn create_purchase_return(
         .map_err(|e| e.to_string())?;
     }
 
-    // ============= UPDATE STOCK (OUT) =============
     let items_for_stock: Vec<(String, f64, i64, f64, f64)> = sqlx::query_as(
         "SELECT product_id, base_quantity, count, rate, amount FROM voucher_items WHERE voucher_id = ?",
     )
@@ -395,12 +385,11 @@ pub async fn create_purchase_return(
     .map_err(|e| e.to_string())?;
 
     for item in items_for_stock {
-        let sm_id = Uuid::now_v7().to_string();
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
-             VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)"
+             VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)",
         )
-        .bind(&sm_id)
+        .bind(Uuid::now_v7().to_string())
         .bind(&voucher_id)
         .bind(&item.0)
         .bind(item.1)
@@ -413,7 +402,6 @@ pub async fn create_purchase_return(
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
-
     Ok(voucher_id)
 }
 
@@ -424,49 +412,68 @@ pub async fn update_purchase_return(
     invoice: CreatePurchaseReturn,
 ) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-
-    // Calculate totals
-    let mut subtotal = 0.0;
-    for item in &invoice.items {
-        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let amount = final_qty * item.rate;
-        let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 {
-            amount * (discount_percent / 100.0)
-        } else {
-            item.discount_amount.unwrap_or(0.0)
-        };
-        subtotal += amount - discount_amount;
-    }
-
-    let discount_amount = invoice.discount_amount.unwrap_or(0.0);
-    let total_amount = subtotal - discount_amount;
-
-    
-    let mut total_tax = 0.0;
-    for item in &invoice.items {
-        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let amount = final_qty * item.rate;
-        let discount_amount = if item.discount_percent.unwrap_or(0.0) > 0.0 { amount * (item.discount_percent.unwrap_or(0.0) / 100.0) } else { item.discount_amount.unwrap_or(0.0) };
-        let taxable_amount = amount - discount_amount;
-        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
-        total_tax += tax_amount;
-    }
-    let grand_total = total_amount + total_tax;
+    let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
+        .fetch_optional(&mut *tx)
+        .await
+        .ok()
+        .flatten();
+    let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?")
+        .bind(&invoice.supplier_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .ok()
+        .flatten();
+    let is_inter_state =
+        crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
-    
-    // Update Header
+
+    let mut prepared_lines = Vec::new();
+    for item in &invoice.items {
+        prepared_lines.push(
+            prepare_voucher_line(
+                &mut tx,
+                pool.inner(),
+                "purchase",
+                &item.product_id,
+                item.unit_id.as_deref(),
+                item.description.clone(),
+                item.initial_quantity,
+                item.count,
+                item.deduction_per_unit,
+                item.rate,
+                item.tax_rate,
+                item.discount_percent,
+                item.discount_amount,
+                item.remarks.clone(),
+                tax_inclusive,
+            )
+            .await?,
+        );
+    }
+
+    let (processed, discount_rate, discount_amount) = finalize_processed_items(
+        prepared_lines,
+        is_inter_state,
+        invoice.discount_rate,
+        invoice.discount_amount,
+    );
+    let processed_items = processed.items;
+    let subtotal = processed.subtotal;
+    let total_tax = processed.total_cgst + processed.total_sgst + processed.total_igst;
+    let total_amount = subtotal - discount_amount;
+    let grand_total = total_amount + total_tax;
+
     sqlx::query(
-        "UPDATE vouchers 
+        "UPDATE vouchers
          SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?, status = 'posted', tax_inclusive = ?, grand_total = ?
-         WHERE id = ? AND voucher_type = 'purchase_return'"
+         WHERE id = ? AND voucher_type = 'purchase_return'",
     )
     .bind(&invoice.voucher_date)
-    .bind(invoice.supplier_id.clone())
+    .bind(&invoice.supplier_id)
     .bind(&invoice.party_type)
     .bind(&invoice.reference)
     .bind(subtotal)
-    .bind(invoice.discount_rate.unwrap_or(0.0))
+    .bind(discount_rate)
     .bind(discount_amount)
     .bind(total_tax)
     .bind(total_amount)
@@ -478,105 +485,81 @@ pub async fn update_purchase_return(
     .await
     .map_err(|e| e.to_string())?;
 
-    // Cleanup old data
     sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
         .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
-
     sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
         .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
-
     sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
         .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
 
-    // Re-insert Items
-    for item in &invoice.items {
-        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let unit_snapshot = resolve_voucher_line_unit(
-            &mut tx,
-            &item.product_id,
-            item.unit_id.as_deref(),
-            "purchase",
-            final_qty,
-        )
-        .await?;
-        let amount = final_qty * item.rate;
-        let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 {
-            amount * (discount_percent / 100.0)
-        } else {
-            item.discount_amount.unwrap_or(0.0)
-        };
-        let taxable_amount = amount - discount_amount;
-        let tax_amount = taxable_amount * (item.tax_rate / 100.0);
-        let item_id = Uuid::now_v7().to_string();
-
+    for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, original_amount, amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(&item_id)
+        .bind(&item.id)
         .bind(&id)
-        .bind(item.product_id.clone())
+        .bind(&item.product_id)
         .bind(&item.description)
         .bind(item.initial_quantity)
         .bind(item.count)
         .bind(item.deduction_per_unit)
-        .bind(final_qty)
-        .bind(&unit_snapshot.unit_id)
-        .bind(unit_snapshot.base_quantity)
+        .bind(item.final_quantity)
+        .bind(&item.unit_id)
+        .bind(item.base_quantity)
         .bind(item.rate)
-        .bind(amount)
+        .bind(item.original_amount)
+        .bind(item.amount)
         .bind(item.tax_rate)
-        .bind(tax_amount)
-        .bind(item.discount_percent.unwrap_or(0.0))
-        .bind(item.discount_amount.unwrap_or(0.0))
+        .bind(item.tax_amount)
+        .bind(item.discount_percent)
+        .bind(item.discount_amount)
+        .bind(item.invoice_discount_amount)
+        .bind(&item.remarks)
+        .bind(item.cgst_rate)
+        .bind(item.sgst_rate)
+        .bind(item.igst_rate)
+        .bind(item.cgst_amount)
+        .bind(item.sgst_amount)
+        .bind(item.igst_amount)
+        .bind(&item.hsn_sac_code)
+        .bind(&item.gst_slab_id)
+        .bind(item.resolved_gst_rate)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     }
-
-    // Re-create Journal Entries
-    let total_tax: f64 = sqlx::query_scalar(
-        "SELECT COALESCE(SUM(tax_amount), 0) FROM voucher_items WHERE voucher_id = ?",
-    )
-    .bind(&id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
 
     let purchase_return_account: String =
         sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5003'")
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
-
     let tax_account: String =
         sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1005'")
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
-
     let party_account: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE id = ?")
-        .bind(invoice.supplier_id)
+        .bind(&invoice.supplier_id)
         .fetch_one(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
 
-    let je_id_1 = Uuid::now_v7().to_string();
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
          VALUES (?, ?, ?, 0, ?, 'Purchase Return (Goods returned)')",
     )
-    .bind(&je_id_1)
+    .bind(Uuid::now_v7().to_string())
     .bind(&id)
     .bind(&purchase_return_account)
     .bind(subtotal)
@@ -585,12 +568,11 @@ pub async fn update_purchase_return(
     .map_err(|e| e.to_string())?;
 
     if total_tax > 0.0 {
-        let je_id_2 = Uuid::now_v7().to_string();
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
              VALUES (?, ?, ?, 0, ?, 'Tax Reversal on Purchase Return')",
         )
-        .bind(&je_id_2)
+        .bind(Uuid::now_v7().to_string())
         .bind(&id)
         .bind(&tax_account)
         .bind(total_tax)
@@ -599,16 +581,14 @@ pub async fn update_purchase_return(
         .map_err(|e| e.to_string())?;
     }
 
-    let amount_debit = subtotal - discount_amount + total_tax;
-    let je_id_3 = Uuid::now_v7().to_string();
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
          VALUES (?, ?, ?, ?, 0, 'Debit Note issued to Supplier')",
     )
-    .bind(&je_id_3)
+    .bind(Uuid::now_v7().to_string())
     .bind(&id)
     .bind(&party_account)
-    .bind(amount_debit)
+    .bind(subtotal - discount_amount + total_tax)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -620,12 +600,11 @@ pub async fn update_purchase_return(
                 .await
                 .map_err(|e| e.to_string())?;
 
-        let je_id_4 = Uuid::now_v7().to_string();
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
              VALUES (?, ?, ?, ?, 0, 'Reversal of Discount Received')",
         )
-        .bind(&je_id_4)
+        .bind(Uuid::now_v7().to_string())
         .bind(&id)
         .bind(&discount_received_account)
         .bind(discount_amount)
@@ -634,7 +613,6 @@ pub async fn update_purchase_return(
         .map_err(|e| e.to_string())?;
     }
 
-    // Re-create Stock Movements (OUT)
     for item in &invoice.items {
         let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let unit_snapshot = resolve_voucher_line_unit(
@@ -645,20 +623,18 @@ pub async fn update_purchase_return(
             final_qty,
         )
         .await?;
-        let amount = final_qty * item.rate;
-        let sm_id = Uuid::now_v7().to_string();
 
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
-             VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)"
+             VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)",
         )
-        .bind(&sm_id)
+        .bind(Uuid::now_v7().to_string())
         .bind(&id)
-        .bind(item.product_id.clone())
+        .bind(&item.product_id)
         .bind(unit_snapshot.base_quantity)
         .bind(item.count)
         .bind(item.rate)
-        .bind(amount)
+        .bind(final_qty * item.rate)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -672,26 +648,22 @@ pub async fn update_purchase_return(
 pub async fn delete_purchase_return(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    // Delete related table data
     sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
         .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
-
     sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
         .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
-
     sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
         .bind(&id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
 
-    // Soft delete
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'purchase_return'")
         .bind(&id)
         .execute(&mut *tx)
@@ -699,6 +671,5 @@ pub async fn delete_purchase_return(pool: State<'_, SqlitePool>, id: String) -> 
         .map_err(|e| e.to_string())?;
 
     tx.commit().await.map_err(|e| e.to_string())?;
-
     Ok(())
 }

@@ -21,8 +21,17 @@ interface LineItem {
   count: number;
   deduction_per_unit: number;
   rate: number;
+  amount?: number;
   discount_amount?: number;
+  invoice_discount_amount?: number;
+  tax_amount?: number;
   tax_rate?: number; // legacy tax_rate (may be 0 / overridden by slab)
+  hsn_sac_code?: string;
+  gst_slab_id?: string;
+  resolved_gst_rate?: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
 }
 
 interface GstBreakdownPanelProps {
@@ -87,39 +96,51 @@ export function GstBreakdownPanel({
 
       const grossAmount = finalQty * item.rate;
       const discount = item.discount_amount || 0;
-      const taxableValue = Math.max(0, grossAmount - discount);
+      const invoiceDiscount = item.invoice_discount_amount || 0;
+      const taxableValue =
+        typeof item.amount === 'number' && item.amount > 0
+          ? item.amount
+          : Math.max(0, grossAmount - discount - invoiceDiscount);
 
       if (taxableValue === 0) return;
 
-      const slab = product.gst_slab_id ? slabMap[product.gst_slab_id] : undefined;
-      const gstRate = resolveGstRate(slab, item.rate);
-      const hsnKey = product.hsn_sac_code || '';
+      const savedSlab = item.gst_slab_id ? slabMap[item.gst_slab_id] : undefined;
+      const slab = savedSlab ?? (product?.gst_slab_id ? slabMap[product.gst_slab_id] : undefined);
+      const gstRate = typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0
+        ? item.resolved_gst_rate
+        : (savedSlab ? resolveGstRate(savedSlab, item.rate) : resolveGstRate(slab, item.rate));
+      const hsnKey = item.hsn_sac_code || product.hsn_sac_code || '';
       const slabName = slab?.name || 'NIL';
       const bucketKey = `${hsnKey}|${gstRate}|${slabName}`;
 
-      const totalTax = taxableValue * (gstRate / 100);
-      const halfTax = totalTax / 2;
+      const totalTax =
+        typeof item.tax_amount === 'number' && item.tax_amount > 0
+          ? item.tax_amount
+          : taxableValue * (gstRate / 100);
+      const cgstAmount = item.cgst_amount ?? (isInterState ? 0 : totalTax / 2);
+      const sgstAmount = item.sgst_amount ?? (isInterState ? 0 : totalTax / 2);
+      const igstAmount = item.igst_amount ?? (isInterState ? totalTax : 0);
 
       const existing = buckets.get(bucketKey);
       if (existing) {
         existing.taxableValue += taxableValue;
         if (isInterState) {
-          existing.igst += totalTax;
+          existing.igst += igstAmount;
         } else {
-          existing.cgst += halfTax;
-          existing.sgst += halfTax;
+          existing.cgst += cgstAmount;
+          existing.sgst += sgstAmount;
         }
-        existing.totalTax += totalTax;
+        existing.totalTax += cgstAmount + sgstAmount + igstAmount;
       } else {
         buckets.set(bucketKey, {
           hsnSacCode: hsnKey,
           slabName,
           gstRate,
           taxableValue,
-          cgst: isInterState ? 0 : halfTax,
-          sgst: isInterState ? 0 : halfTax,
-          igst: isInterState ? totalTax : 0,
-          totalTax,
+          cgst: cgstAmount,
+          sgst: sgstAmount,
+          igst: igstAmount,
+          totalTax: cgstAmount + sgstAmount + igstAmount,
         });
       }
     });

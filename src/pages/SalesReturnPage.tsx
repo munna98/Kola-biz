@@ -44,6 +44,7 @@ import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
 import { Product, ProductUnitConversion, Unit, GstTaxSlab } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
+import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
 
 interface Party {
     id: number;
@@ -263,67 +264,59 @@ export default function SalesReturnPage() {
     };
 
     const updateTotalsWithItems = (items: typeof salesReturnState.items, discountRate?: number, discountAmount?: number) => {
-        let subtotal = 0;
-        let totalTax = 0;
-
         // Slab-aware GST resolution mapper
         const slabMap: Record<string, GstTaxSlab> = {};
         gstSlabs.forEach(s => { slabMap[s.id] = s; });
         const productMap: Record<string, Product> = {};
         products.forEach(p => { productMap[String(p.id)] = p; });
 
-        items.forEach((item) => {
-            const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
-            const amount = finalQty * item.rate;
+        const resolveItemGstRate = (item: typeof salesReturnState.items[number]) => {
+            if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
+                return item.resolved_gst_rate;
+            }
 
-            const discountAmount = item.discount_amount || 0;
-            const amountAfterDiscount = amount - discountAmount;
-            
-            // Resolve GST Rate from Slab
-            let gstRate = item.tax_rate || 0;
+            if (item.gst_slab_id) {
+                const savedSlab = slabMap[item.gst_slab_id];
+                if (savedSlab) {
+                    return savedSlab.is_dynamic === 1
+                        ? (item.rate < savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
+                        : savedSlab.fixed_rate;
+                }
+            }
+
             const product = productMap[String(item.product_id)];
             if (product?.gst_slab_id) {
                 const slab = slabMap[product.gst_slab_id];
                 if (slab) {
-                    gstRate = slab.is_dynamic === 1
+                    return slab.is_dynamic === 1
                         ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
                         : slab.fixed_rate;
                 }
             }
 
-            if (voucherSettings?.taxInclusive) {
-                const baseTaxableAmount = amountAfterDiscount / (1 + (gstRate / 100));
-                const taxAmt = amountAfterDiscount - baseTaxableAmount;
-                subtotal += baseTaxableAmount;
-                totalTax += taxAmt;
-            } else {
-                subtotal += amountAfterDiscount;
-                totalTax += amountAfterDiscount * (gstRate / 100);
-            }
+            return item.tax_rate || 0;
+        };
+
+        const calculation = calculateVoucherDiscounts(items, {
+            discountRate: discountRate !== undefined ? discountRate : salesReturnState.form.discount_rate,
+            discountAmount:
+                discountRate !== undefined
+                    ? undefined
+                    : discountAmount !== undefined
+                        ? discountAmount
+                        : salesReturnState.form.discount_amount,
+            taxInclusive: !!voucherSettings?.taxInclusive,
+            resolveGstRate: resolveItemGstRate,
         });
 
-
-        subtotal = Math.round(subtotal * 100) / 100;
-        totalTax = Math.round(totalTax * 100) / 100;
-
-        let finalDiscountRate = discountRate !== undefined ? discountRate : salesReturnState.form.discount_rate;
-        let finalDiscountAmount = discountAmount !== undefined ? discountAmount : salesReturnState.form.discount_amount;
-
-        if (discountRate !== undefined && discountRate > 0) {
-            finalDiscountAmount = Math.round(subtotal * (discountRate / 100) * 100) / 100;
-        } else if (discountAmount !== undefined && discountAmount > 0) {
-            finalDiscountAmount = Math.round(discountAmount * 100) / 100;
-            finalDiscountRate = subtotal > 0 ? Math.round((discountAmount / subtotal) * 100 * 100) / 100 : 0;
-        } else {
-            finalDiscountAmount = Math.round(finalDiscountAmount * 100) / 100;
-            finalDiscountRate = Math.round(finalDiscountRate * 100) / 100;
-        }
-
-        const grandTotal = Math.round((subtotal - finalDiscountAmount + totalTax) * 100) / 100;
-
-        dispatch(setSalesReturnDiscountRate(finalDiscountRate));
-        dispatch(setSalesReturnDiscountAmount(finalDiscountAmount));
-        dispatch(setSalesReturnTotals({ subtotal, discount: finalDiscountAmount, tax: totalTax, grandTotal }));
+        dispatch(setSalesReturnDiscountRate(calculation.discountRate));
+        dispatch(setSalesReturnDiscountAmount(calculation.discountAmount));
+        dispatch(setSalesReturnTotals({
+            subtotal: calculation.subtotal,
+            discount: calculation.discountAmount,
+            tax: calculation.tax,
+            grandTotal: calculation.grandTotal
+        }));
     };
 
     const handleSubmit = async (e?: React.FormEvent) => {
@@ -451,6 +444,15 @@ export default function SalesReturnPage() {
                     product_name: item.description, // Fallback
                     unit_id: item.unit_id,
                     base_quantity: item.base_quantity,
+                    hsn_sac_code: item.hsn_sac_code,
+                    gst_slab_id: item.gst_slab_id,
+                    resolved_gst_rate: item.resolved_gst_rate,
+                    cgst_rate: item.cgst_rate,
+                    sgst_rate: item.sgst_rate,
+                    igst_rate: item.igst_rate,
+                    cgst_amount: item.cgst_amount,
+                    sgst_amount: item.sgst_amount,
+                    igst_amount: item.igst_amount,
                     description: item.description,
                     initial_quantity: item.initial_quantity,
                     count: item.count,
@@ -468,6 +470,16 @@ export default function SalesReturnPage() {
                 product_id: item.product_id || 0,
                 product_name: item.description,
                 unit_id: item.unit_id,
+                base_quantity: item.base_quantity,
+                hsn_sac_code: item.hsn_sac_code,
+                gst_slab_id: item.gst_slab_id,
+                resolved_gst_rate: item.resolved_gst_rate,
+                cgst_rate: item.cgst_rate,
+                sgst_rate: item.sgst_rate,
+                igst_rate: item.igst_rate,
+                cgst_amount: item.cgst_amount,
+                sgst_amount: item.sgst_amount,
+                igst_amount: item.igst_amount,
                 description: item.description,
                 initial_quantity: item.initial_quantity,
                 count: item.count,
@@ -561,30 +573,38 @@ export default function SalesReturnPage() {
     }
 
     const getItemAmount = (item: typeof salesReturnState.items[0]) => {
-        const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
-        const amount = finalQty * item.rate;
-        const taxableAmount = amount - (item.discount_amount || 0);
-
-        // Resolve GST Rate from Slab
         let gstRate = item.tax_rate || 0;
-        const product = products.find(p => String(p.id) === String(item.product_id));
-        if (product?.gst_slab_id) {
-            const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
-            if (slab) {
-                gstRate = slab.is_dynamic === 1
-                    ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
-                    : slab.fixed_rate;
+        if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
+            gstRate = item.resolved_gst_rate;
+        } else if (item.gst_slab_id) {
+            const savedSlab = gstSlabs.find(s => s.id === item.gst_slab_id);
+            if (savedSlab) {
+                gstRate = savedSlab.is_dynamic === 1
+                    ? (item.rate < savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
+                    : savedSlab.fixed_rate;
+            }
+        } else {
+            const product = products.find(p => String(p.id) === String(item.product_id));
+            if (product?.gst_slab_id) {
+                const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
+                if (slab) {
+                    gstRate = slab.is_dynamic === 1
+                        ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
+                        : slab.fixed_rate;
+                }
             }
         }
 
-        if (voucherSettings?.taxInclusive) {
-            const baseTaxableAmount = taxableAmount / (1 + (gstRate / 100));
-            const taxAmount = taxableAmount - baseTaxableAmount;
-            return { finalQty, amount: baseTaxableAmount, taxAmount, total: taxableAmount };
-        } else {
-            const taxAmount = taxableAmount * (gstRate / 100);
-            return { finalQty, amount: taxableAmount, taxAmount, total: taxableAmount + taxAmount };
-        }
+        const sourceItems = salesReturnState.items.some((candidate) => candidate.id === item.id) ? salesReturnState.items : [item];
+        const calculation = calculateVoucherDiscounts(sourceItems, {
+            discountRate: salesReturnState.form.discount_rate,
+            discountAmount: salesReturnState.form.discount_amount,
+            taxInclusive: !!voucherSettings?.taxInclusive,
+            resolveGstRate: () => gstRate,
+        });
+        const lineIndex = sourceItems.length === 1 ? 0 : sourceItems.findIndex((candidate) => candidate.id === item.id);
+        const line = calculation.lines[Math.max(lineIndex, 0)];
+        return { finalQty: line.finalQty, amount: line.taxableAmount, taxAmount: line.taxAmount, total: line.total };
     };
 
     // Determine if form should be disabled (viewing mode)
@@ -729,9 +749,19 @@ export default function SalesReturnPage() {
                         <div className="col-span-2 bg-card border rounded-lg p-2.5 space-y-1.5">
                             <div className="space-y-1.5">
                                 <div className="flex justify-between items-center gap-2 text-xs">
-                                    <span className="text-muted-foreground">Subtotal</span>
+                                    <span className="text-muted-foreground">Subtotal:</span>
                                     <span className="font-medium font-mono">₹ {salesReturnState.totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
                                 </div>
+                                {salesReturnState.totals.discount > 0 && (
+                                    <div className="text-xs font-mono text-muted-foreground">
+                                        Discount: ₹ {salesReturnState.totals.discount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    </div>
+                                )}
+                                {salesReturnState.totals.tax > 0 && (
+                                    <div className="text-xs font-mono text-muted-foreground">
+                                        Tax: ₹ {salesReturnState.totals.tax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    </div>
+                                )}
 
                                 {/* Discount */}
                                 <div className="space-y-1 text-xs">
@@ -740,7 +770,7 @@ export default function SalesReturnPage() {
                                             <Label className="text-xs font-medium mb-1 block">Discount %</Label>
                                             <Input
                                                 type="number"
-                                                value={salesReturnState.form.discount_rate || ''}
+                                                value={salesReturnState.form.discount_rate}
                                                 onChange={(e) => {
                                                     const rate = parseFloat(e.target.value) || 0;
                                                     dispatch(setSalesReturnHasUnsavedChanges(true));
@@ -757,7 +787,7 @@ export default function SalesReturnPage() {
                                             <Input
                                                 id="voucher-discount-amount"
                                                 type="number"
-                                                value={salesReturnState.form.discount_amount || ''}
+                                                value={salesReturnState.form.discount_amount}
                                                 onChange={(e) => {
                                                     const amount = parseFloat(e.target.value) || 0;
                                                     dispatch(setSalesReturnHasUnsavedChanges(true));

@@ -275,6 +275,15 @@ export interface SalesInvoiceItem {
   deduction_per_unit: number;
   rate: number;
   tax_rate: number;
+  hsn_sac_code?: string;
+  gst_slab_id?: string;
+  resolved_gst_rate?: number;
+  cgst_rate?: number;
+  sgst_rate?: number;
+  igst_rate?: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
 }
 
 export interface CreateSalesInvoice {

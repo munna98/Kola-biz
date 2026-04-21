@@ -929,6 +929,9 @@ pub async fn init_db(
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN hsn_sac_code TEXT").execute(&pool).await;
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN gst_slab_id TEXT").execute(&pool).await;
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN resolved_gst_rate REAL DEFAULT 0").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN original_amount REAL DEFAULT 0").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN invoice_discount_amount REAL DEFAULT 0").execute(&pool).await;
+    let _ = sqlx::query("UPDATE voucher_items SET original_amount = amount WHERE COALESCE(original_amount, 0) = 0").execute(&pool).await;
 
     // Migration: Add e-Invoice columns to vouchers
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN irn TEXT").execute(&pool).await;

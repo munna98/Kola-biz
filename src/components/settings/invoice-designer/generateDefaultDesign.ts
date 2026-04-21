@@ -257,7 +257,7 @@ function generateThermalDesign(
         totalsConfig: {
             rows: [
                 { label: 'Subtotal', field: 'subtotal', format: 'currency', bold: false },
-                { label: 'Discount', field: 'discount_amount', format: 'currency', bold: false },
+                { label: 'Disc', field: 'invoice_discount_amount', format: 'currency', bold: false },
                 { label: 'Tax', field: 'tax_total', format: 'currency', bold: false },
                 { label: 'TOTAL', field: 'grand_total', format: 'currency', bold: true },
             ],
@@ -536,6 +536,8 @@ function generateA4Design(
     tableCols.push(
         { key: 'rate', label: 'Rate', width: 12, align: 'right' },
         { key: 'amount', label: 'Amount', width: 14, align: 'right' },
+        { key: 'discount_percent', label: 'Disc %', width: 7, align: 'right' },
+        { key: 'discount_amount', label: 'Disc Amt', width: 10, align: 'right' },
         { key: 'tax_rate', label: 'Tax %', width: 6, align: 'center' },
         { key: 'total', label: 'Total', width: 10, align: 'right' },
     );
@@ -569,15 +571,14 @@ function generateA4Design(
         id: genId(),
         type: 'totals',
         x: ml + contentWidth * 0.5,
-        y,
+        y: y - 26,
         width: contentWidth * 0.5,
-        height: 40,
+        height: 26,
         styles: { fontSize: 10, padding: 0, lineHeight: 1.4 },
         label: 'Totals',
         totalsConfig: {
             rows: [
-                { label: 'Subtotal', field: 'subtotal', format: 'currency', bold: false },
-                { label: 'Discount', field: 'discount_amount', format: 'currency', bold: false },
+                { label: 'Disc', field: 'invoice_discount_amount', format: 'currency', bold: false },
                 { label: 'Tax', field: 'tax_total', format: 'currency', bold: false },
                 { label: 'Grand Total', field: 'grand_total', format: 'currency', bold: true },
             ],
@@ -587,7 +588,7 @@ function generateA4Design(
         visible: true,
         zIndex: elements.length + 1,
     });
-    y += 45;
+    y += 19;
 
     // ── Bank Details ──
     if (features.show_bank_details) {

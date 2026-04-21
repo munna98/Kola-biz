@@ -25,9 +25,11 @@ pub struct ProcessedVoucherItem {
     pub unit_id: Option<String>,
     pub base_quantity: f64,
     pub rate: f64,
+    pub original_amount: f64,
     pub amount: f64,
     pub discount_percent: f64,
     pub discount_amount: f64,
+    pub invoice_discount_amount: f64,
     pub tax_rate: f64,
     pub tax_amount: f64,
     pub remarks: Option<String>,
@@ -89,12 +91,281 @@ pub struct PurchaseInvoiceItem {
     pub unit_id: Option<String>,
     pub base_quantity: f64,
     pub rate: f64,
+    pub original_amount: f64,
     pub amount: f64,
     pub tax_rate: f64,
     pub tax_amount: f64,
     pub discount_percent: f64,
     pub discount_amount: f64,
+    pub invoice_discount_amount: f64,
     pub remarks: Option<String>,
+    pub cgst_rate: f64,
+    pub sgst_rate: f64,
+    pub igst_rate: f64,
+    pub cgst_amount: f64,
+    pub sgst_amount: f64,
+    pub igst_amount: f64,
+    pub hsn_sac_code: Option<String>,
+    pub gst_slab_id: Option<String>,
+    pub resolved_gst_rate: f64,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct DiscountAllocationInput {
+    net_before_invoice_discount: f64,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PreparedVoucherLine {
+    product_id: String,
+    description: Option<String>,
+    initial_quantity: f64,
+    count: i64,
+    deduction_per_unit: f64,
+    final_quantity: f64,
+    unit_id: Option<String>,
+    base_quantity: f64,
+    rate: f64,
+    original_amount: f64,
+    net_before_invoice_discount: f64,
+    discount_percent: f64,
+    discount_amount: f64,
+    remarks: Option<String>,
+    hsn_sac_code: Option<String>,
+    gst_slab_id: Option<String>,
+    effective_rate: f64,
+}
+
+pub(crate) fn normalize_invoice_discount(subtotal_before_invoice_discount: f64, discount_rate: Option<f64>, discount_amount: Option<f64>) -> (f64, f64) {
+    let mut resolved_amount = discount_amount.unwrap_or(0.0);
+    let mut resolved_rate = discount_rate.unwrap_or(0.0);
+
+    if resolved_amount <= 0.0 && resolved_rate > 0.0 && subtotal_before_invoice_discount > 0.0 {
+        resolved_amount = round2(subtotal_before_invoice_discount * (resolved_rate / 100.0));
+    } else if resolved_amount > 0.0 && subtotal_before_invoice_discount > 0.0 {
+        resolved_rate = round2((resolved_amount / subtotal_before_invoice_discount) * 100.0);
+    }
+
+    resolved_amount = round2(resolved_amount.min(subtotal_before_invoice_discount.max(0.0)));
+    (resolved_rate, resolved_amount)
+}
+
+pub(crate) fn allocate_invoice_discount(lines: &[DiscountAllocationInput], total_invoice_discount: f64) -> Vec<f64> {
+    if lines.is_empty() || total_invoice_discount <= 0.0 {
+        return vec![0.0; lines.len()];
+    }
+
+    let subtotal: f64 = lines.iter().map(|line| line.net_before_invoice_discount.max(0.0)).sum();
+    if subtotal <= 0.0 {
+        return vec![0.0; lines.len()];
+    }
+
+    let mut allocations = Vec::with_capacity(lines.len());
+    let mut allocated = 0.0;
+
+    for (index, line) in lines.iter().enumerate() {
+        let line_base = line.net_before_invoice_discount.max(0.0);
+        let allocation = if index == lines.len() - 1 {
+            round2((total_invoice_discount - allocated).max(0.0))
+        } else {
+            round2(total_invoice_discount * (line_base / subtotal))
+        };
+        let capped = allocation.min(round2(line_base));
+        allocations.push(capped);
+        allocated = round2(allocated + capped);
+    }
+
+    allocations
+}
+
+pub(crate) async fn prepare_voucher_line(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    pool: &SqlitePool,
+    unit_kind: &str,
+    product_id: &str,
+    unit_id: Option<&str>,
+    description: Option<String>,
+    initial_quantity: f64,
+    count: i64,
+    deduction_per_unit: f64,
+    rate: f64,
+    tax_rate: f64,
+    discount_percent: Option<f64>,
+    discount_amount: Option<f64>,
+    remarks: Option<String>,
+    tax_inclusive: bool,
+) -> Result<PreparedVoucherLine, String> {
+    let final_quantity = initial_quantity - (count as f64 * deduction_per_unit);
+    let unit_snapshot =
+        resolve_voucher_line_unit(tx, product_id, unit_id, unit_kind, final_quantity).await?;
+
+    let product: Option<(Option<String>, Option<String>)> =
+        sqlx::query_as("SELECT hsn_sac_code, gst_slab_id FROM products WHERE id = ?")
+            .bind(product_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .unwrap_or(None);
+    let (hsn_sac_code, gst_slab_id) = product.unwrap_or((None, None));
+
+    let mut effective_rate = tax_rate;
+    if let Some(ref slab_id) = gst_slab_id {
+        if let Some(slab) = crate::commands::tax_utils::get_slab(pool, slab_id).await {
+            effective_rate = crate::commands::tax_utils::resolve_effective_rate(rate, &slab);
+        }
+    }
+
+    let gross_amount = round2(final_quantity * rate);
+    let discount_percent = discount_percent.unwrap_or(0.0);
+    let entered_discount_amount = if discount_percent > 0.0 {
+        round2(gross_amount * (discount_percent / 100.0))
+    } else {
+        round2(discount_amount.unwrap_or(0.0))
+    };
+
+    let (original_amount, net_before_invoice_discount, stored_discount_amount, stored_rate) =
+        if tax_inclusive {
+            let divisor = 1.0 + (effective_rate / 100.0);
+            let original_taxable_amount = if divisor > 0.0 {
+                round2(gross_amount / divisor)
+            } else {
+                round2(gross_amount)
+            };
+            let net_inclusive_amount = round2((gross_amount - entered_discount_amount).max(0.0));
+            let taxable_after_item_discount = if divisor > 0.0 {
+                round2(net_inclusive_amount / divisor)
+            } else {
+                round2(net_inclusive_amount)
+            };
+            let item_discount_taxable =
+                round2((original_taxable_amount - taxable_after_item_discount).max(0.0));
+            let stored_rate = if final_quantity.abs() > f64::EPSILON {
+                round2(original_taxable_amount / final_quantity)
+            } else {
+                rate
+            };
+            (
+                original_taxable_amount,
+                taxable_after_item_discount,
+                item_discount_taxable,
+                stored_rate,
+            )
+        } else {
+            let raw_discountable_amount = round2((gross_amount - entered_discount_amount).max(0.0));
+            (
+                gross_amount,
+                raw_discountable_amount,
+                round2((gross_amount - raw_discountable_amount).max(0.0)),
+                rate,
+            )
+        };
+
+    Ok(PreparedVoucherLine {
+        product_id: product_id.to_string(),
+        description,
+        initial_quantity,
+        count,
+        deduction_per_unit,
+        final_quantity,
+        unit_id: Some(unit_snapshot.unit_id.clone()),
+        base_quantity: unit_snapshot.base_quantity,
+        rate: stored_rate,
+        original_amount,
+        net_before_invoice_discount,
+        discount_percent,
+        discount_amount: stored_discount_amount,
+        remarks,
+        hsn_sac_code,
+        gst_slab_id,
+        effective_rate,
+    })
+}
+
+pub(crate) fn finalize_processed_items(
+    prepared_lines: Vec<PreparedVoucherLine>,
+    is_inter_state: bool,
+    discount_rate: Option<f64>,
+    discount_amount: Option<f64>,
+) -> (ProcessedVoucher, f64, f64) {
+    let subtotal_before_invoice_discount = round2(
+        prepared_lines
+            .iter()
+            .map(|line| line.net_before_invoice_discount)
+            .sum(),
+    );
+    let (resolved_discount_rate, resolved_discount_amount) = normalize_invoice_discount(
+        subtotal_before_invoice_discount,
+        discount_rate,
+        discount_amount,
+    );
+    let allocations = allocate_invoice_discount(
+        &prepared_lines
+            .iter()
+            .map(|line| DiscountAllocationInput {
+                net_before_invoice_discount: line.net_before_invoice_discount,
+            })
+            .collect::<Vec<_>>(),
+        resolved_discount_amount,
+    );
+
+    let mut items = Vec::with_capacity(prepared_lines.len());
+    let mut total_cgst = 0.0;
+    let mut total_sgst = 0.0;
+    let mut total_igst = 0.0;
+
+    for (line, invoice_discount_amount) in prepared_lines.into_iter().zip(allocations.into_iter()) {
+        let amount = round2((line.net_before_invoice_discount - invoice_discount_amount).max(0.0));
+        let split = crate::commands::tax_utils::compute_split(
+            amount,
+            line.effective_rate,
+            is_inter_state,
+        );
+
+        total_cgst += split.cgst_amount;
+        total_sgst += split.sgst_amount;
+        total_igst += split.igst_amount;
+
+        items.push(ProcessedVoucherItem {
+            id: Uuid::now_v7().to_string(),
+            product_id: line.product_id,
+            description: line.description,
+            initial_quantity: line.initial_quantity,
+            count: line.count,
+            deduction_per_unit: line.deduction_per_unit,
+            final_quantity: line.final_quantity,
+            unit_id: line.unit_id,
+            base_quantity: line.base_quantity,
+            rate: line.rate,
+            original_amount: line.original_amount,
+            amount,
+            discount_percent: line.discount_percent,
+            discount_amount: line.discount_amount,
+            invoice_discount_amount,
+            tax_rate: line.effective_rate,
+            tax_amount: round2(split.cgst_amount + split.sgst_amount + split.igst_amount),
+            remarks: line.remarks,
+            cgst_rate: split.cgst_rate,
+            sgst_rate: split.sgst_rate,
+            igst_rate: split.igst_rate,
+            cgst_amount: split.cgst_amount,
+            sgst_amount: split.sgst_amount,
+            igst_amount: split.igst_amount,
+            hsn_sac_code: line.hsn_sac_code,
+            gst_slab_id: line.gst_slab_id,
+            resolved_gst_rate: line.effective_rate,
+        });
+    }
+
+    (
+        ProcessedVoucher {
+            items,
+            subtotal: subtotal_before_invoice_discount,
+            total_cgst: round2(total_cgst),
+            total_sgst: round2(total_sgst),
+            total_igst: round2(total_igst),
+        },
+        resolved_discount_rate,
+        resolved_discount_amount,
+    )
 }
 
 #[derive(Deserialize)]
@@ -231,74 +502,48 @@ pub async fn create_purchase_invoice(
 ) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    let voucher_no = crate::voucher_seq::get_next_voucher_number(pool.inner(), "purchase_invoice").await?;
+    let voucher_no = get_next_voucher_number(pool.inner(), "purchase_invoice").await?;
 
     let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1").fetch_optional(&mut *tx).await.ok().flatten();
     let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.supplier_id).fetch_optional(&mut *tx).await.ok().flatten();
     let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
 
-    let mut processed_items = Vec::new();
-    let mut subtotal = 0.0;
-    let mut total_cgst = 0.0;
-    let mut total_sgst = 0.0;
-    let mut total_igst = 0.0;
-
+    let mut prepared_lines = Vec::new();
     for item in &invoice.items {
-        let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let unit_snapshot = super::resolve_voucher_line_unit(&mut tx, &item.product_id, item.unit_id.as_deref(), "purchase", final_quantity).await?;
-        
-        let product: Option<(Option<String>, Option<String>)> = sqlx::query_as("SELECT hsn_sac_code, gst_slab_id FROM products WHERE id = ?").bind(&item.product_id).fetch_optional(&mut *tx).await.unwrap_or(None);
-        let (hsn_sac_code, gst_slab_id) = product.unwrap_or((None, None));
-        
-        let mut effective_rate = item.tax_rate;
-        if let Some(ref slab_id) = gst_slab_id {
-            if let Some(slab) = crate::commands::tax_utils::get_slab(pool.inner(), slab_id).await {
-                effective_rate = crate::commands::tax_utils::resolve_effective_rate(item.rate, &slab);
-            }
-        }
-        
-        let raw_amount = final_quantity * item.rate;
-        let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 { raw_amount * (discount_percent / 100.0) } else { item.discount_amount.unwrap_or(0.0) };
-        let net_before_tax = raw_amount - discount_amount;
-        
-        let (taxable_amount, tax_amount, base_amount, base_rate) = if tax_inclusive {
-            let tax_amt = net_before_tax - (net_before_tax / (1.0 + (effective_rate / 100.0)));
-            let txbl = net_before_tax - tax_amt;
-            let b_amt = txbl + discount_amount;
-            (txbl, tax_amt, b_amt, b_amt / final_quantity)
-        } else {
-            (net_before_tax, net_before_tax * (effective_rate / 100.0), raw_amount, item.rate)
-        };
-        
-        subtotal += taxable_amount;
-        
-        let mut cgst_rate = 0.0; let mut sgst_rate = 0.0; let mut igst_rate = 0.0;
-        let mut cgst_amount = 0.0; let mut sgst_amount = 0.0; let mut igst_amount = 0.0;
-        if effective_rate > 0.0 {
-            let split = crate::commands::tax_utils::compute_split(taxable_amount, effective_rate, is_inter_state);
-            cgst_rate = split.cgst_rate; sgst_rate = split.sgst_rate; igst_rate = split.igst_rate;
-            cgst_amount = split.cgst_amount; sgst_amount = split.sgst_amount; igst_amount = split.igst_amount;
-            total_cgst += cgst_amount; total_sgst += sgst_amount; total_igst += igst_amount;
-        }
-
-        
-        processed_items.push(ProcessedVoucherItem {
-            id: Uuid::now_v7().to_string(),
-            product_id: item.product_id.clone(), description: item.description.clone(), initial_quantity: item.initial_quantity,
-            count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: Some(unit_snapshot.unit_id.clone()),
-            base_quantity: unit_snapshot.base_quantity, rate: base_rate, amount: base_amount, discount_percent, discount_amount,
-            tax_rate: effective_rate, tax_amount, remarks: item.remarks.clone(), cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount,
-            hsn_sac_code, gst_slab_id, resolved_gst_rate: effective_rate,
-        });
+        prepared_lines.push(
+            prepare_voucher_line(
+                &mut tx,
+                pool.inner(),
+                "purchase",
+                &item.product_id,
+                item.unit_id.as_deref(),
+                item.description.clone(),
+                item.initial_quantity,
+                item.count,
+                item.deduction_per_unit,
+                item.rate,
+                item.tax_rate,
+                item.discount_percent,
+                item.discount_amount,
+                item.remarks.clone(),
+                tax_inclusive,
+            )
+            .await?,
+        );
     }
 
-    subtotal = round2(subtotal);
-    total_cgst = round2(total_cgst);
-    total_sgst = round2(total_sgst);
-    total_igst = round2(total_igst);
-    let discount_amount = round2(invoice.discount_amount.unwrap_or(0.0));
+    let (processed, discount_rate, discount_amount) = finalize_processed_items(
+        prepared_lines,
+        is_inter_state,
+        invoice.discount_rate,
+        invoice.discount_amount,
+    );
+    let processed_items = processed.items;
+    let subtotal = processed.subtotal;
+    let total_cgst = processed.total_cgst;
+    let total_sgst = processed.total_sgst;
+    let total_igst = processed.total_igst;
     let total_amount = round2(subtotal - discount_amount);
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let grand_total = round2(total_amount + total_tax);
@@ -310,20 +555,20 @@ pub async fn create_purchase_invoice(
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("purchase_invoice").bind(&invoice.voucher_date).bind(&invoice.supplier_id)
-    .bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(invoice.discount_rate.unwrap_or(0.0))
+    .bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(discount_rate)
     .bind(discount_amount).bind(total_tax).bind(total_amount).bind(&invoice.narration)
     .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
     for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, original_amount, amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item.id).bind(&voucher_id).bind(&item.product_id).bind(&item.description).bind(item.initial_quantity)
         .bind(item.count).bind(item.deduction_per_unit).bind(item.final_quantity).bind(&item.unit_id).bind(item.base_quantity)
-        .bind(item.rate).bind(item.amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
-        .bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
+        .bind(item.rate).bind(item.original_amount).bind(item.amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
+        .bind(item.invoice_discount_amount).bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
         .bind(item.igst_amount).bind(&item.hsn_sac_code).bind(&item.gst_slab_id).bind(item.resolved_gst_rate)
         .execute(&mut *tx)
         .await
@@ -488,67 +733,41 @@ pub async fn update_purchase_invoice(
     let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
 
-    let mut processed_items = Vec::new();
-    let mut subtotal = 0.0;
-    let mut total_cgst = 0.0;
-    let mut total_sgst = 0.0;
-    let mut total_igst = 0.0;
-
+    let mut prepared_lines = Vec::new();
     for item in &invoice.items {
-        let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let unit_snapshot = super::resolve_voucher_line_unit(&mut tx, &item.product_id, item.unit_id.as_deref(), "purchase", final_quantity).await?;
-        
-        let product: Option<(Option<String>, Option<String>)> = sqlx::query_as("SELECT hsn_sac_code, gst_slab_id FROM products WHERE id = ?").bind(&item.product_id).fetch_optional(&mut *tx).await.unwrap_or(None);
-        let (hsn_sac_code, gst_slab_id) = product.unwrap_or((None, None));
-        
-        let mut effective_rate = item.tax_rate;
-        if let Some(ref slab_id) = gst_slab_id {
-            if let Some(slab) = crate::commands::tax_utils::get_slab(pool.inner(), slab_id).await {
-                effective_rate = crate::commands::tax_utils::resolve_effective_rate(item.rate, &slab);
-            }
-        }
-        
-        let raw_amount = final_quantity * item.rate;
-        let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 { raw_amount * (discount_percent / 100.0) } else { item.discount_amount.unwrap_or(0.0) };
-        let net_before_tax = raw_amount - discount_amount;
-        
-        let (taxable_amount, tax_amount, base_amount, base_rate) = if tax_inclusive {
-            let tax_amt = net_before_tax - (net_before_tax / (1.0 + (effective_rate / 100.0)));
-            let txbl = net_before_tax - tax_amt;
-            let b_amt = txbl + discount_amount;
-            (txbl, tax_amt, b_amt, b_amt / final_quantity)
-        } else {
-            (net_before_tax, net_before_tax * (effective_rate / 100.0), raw_amount, item.rate)
-        };
-        
-        subtotal += taxable_amount;
-        
-        let mut cgst_rate = 0.0; let mut sgst_rate = 0.0; let mut igst_rate = 0.0;
-        let mut cgst_amount = 0.0; let mut sgst_amount = 0.0; let mut igst_amount = 0.0;
-        if effective_rate > 0.0 {
-            let split = crate::commands::tax_utils::compute_split(taxable_amount, effective_rate, is_inter_state);
-            cgst_rate = split.cgst_rate; sgst_rate = split.sgst_rate; igst_rate = split.igst_rate;
-            cgst_amount = split.cgst_amount; sgst_amount = split.sgst_amount; igst_amount = split.igst_amount;
-            total_cgst += cgst_amount; total_sgst += sgst_amount; total_igst += igst_amount;
-        }
-
-        
-        processed_items.push(ProcessedVoucherItem {
-            id: Uuid::now_v7().to_string(),
-            product_id: item.product_id.clone(), description: item.description.clone(), initial_quantity: item.initial_quantity,
-            count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: Some(unit_snapshot.unit_id.clone()),
-            base_quantity: unit_snapshot.base_quantity, rate: base_rate, amount: base_amount, discount_percent, discount_amount,
-            tax_rate: effective_rate, tax_amount, remarks: item.remarks.clone(), cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount,
-            hsn_sac_code, gst_slab_id, resolved_gst_rate: effective_rate,
-        });
+        prepared_lines.push(
+            prepare_voucher_line(
+                &mut tx,
+                pool.inner(),
+                "purchase",
+                &item.product_id,
+                item.unit_id.as_deref(),
+                item.description.clone(),
+                item.initial_quantity,
+                item.count,
+                item.deduction_per_unit,
+                item.rate,
+                item.tax_rate,
+                item.discount_percent,
+                item.discount_amount,
+                item.remarks.clone(),
+                tax_inclusive,
+            )
+            .await?,
+        );
     }
 
-    subtotal = round2(subtotal);
-    total_cgst = round2(total_cgst);
-    total_sgst = round2(total_sgst);
-    total_igst = round2(total_igst);
-    let discount_amount = round2(invoice.discount_amount.unwrap_or(0.0));
+    let (processed, discount_rate, discount_amount) = finalize_processed_items(
+        prepared_lines,
+        is_inter_state,
+        invoice.discount_rate,
+        invoice.discount_amount,
+    );
+    let processed_items = processed.items;
+    let subtotal = processed.subtotal;
+    let total_cgst = processed.total_cgst;
+    let total_sgst = processed.total_sgst;
+    let total_igst = processed.total_igst;
     let total_amount = round2(subtotal - discount_amount);
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let grand_total = round2(total_amount + total_tax);
@@ -562,7 +781,7 @@ pub async fn update_purchase_invoice(
          WHERE id = ?"
     )
     .bind(&invoice.voucher_date).bind(&invoice.supplier_id).bind(&invoice.party_type).bind(&invoice.reference)
-    .bind(subtotal).bind(invoice.discount_rate.unwrap_or(0.0)).bind(discount_amount)
+    .bind(subtotal).bind(discount_rate).bind(discount_amount)
     .bind(total_tax).bind(total_amount).bind(&invoice.narration)
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
     .bind(grand_total).bind(&voucher_id)
@@ -573,13 +792,13 @@ pub async fn update_purchase_invoice(
     // Insert items
     for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, original_amount, amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item.id).bind(&voucher_id).bind(&item.product_id).bind(&item.description).bind(item.initial_quantity)
         .bind(item.count).bind(item.deduction_per_unit).bind(item.final_quantity).bind(&item.unit_id).bind(item.base_quantity)
-        .bind(item.rate).bind(item.amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
-        .bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
+        .bind(item.rate).bind(item.original_amount).bind(item.amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
+        .bind(item.invoice_discount_amount).bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
         .bind(item.igst_amount).bind(&item.hsn_sac_code).bind(&item.gst_slab_id).bind(item.resolved_gst_rate)
         .execute(&mut *tx)
         .await
@@ -681,13 +900,24 @@ pub struct SalesInvoiceItem {
     pub unit_id: Option<String>,
     pub base_quantity: f64,
     pub rate: f64,
+    pub original_amount: f64,
     pub amount: f64,
     pub tax_rate: f64,
 
     pub tax_amount: f64,
     pub discount_percent: f64,
     pub discount_amount: f64,
+    pub invoice_discount_amount: f64,
     pub remarks: Option<String>,
+    pub cgst_rate: f64,
+    pub sgst_rate: f64,
+    pub igst_rate: f64,
+    pub cgst_amount: f64,
+    pub sgst_amount: f64,
+    pub igst_amount: f64,
+    pub hsn_sac_code: Option<String>,
+    pub gst_slab_id: Option<String>,
+    pub resolved_gst_rate: f64,
 }
 
 #[derive(Deserialize)]
@@ -822,74 +1052,48 @@ pub async fn create_sales_invoice(
 ) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    let voucher_no = crate::voucher_seq::get_next_voucher_number(pool.inner(), "sales_invoice").await?;
+    let voucher_no = get_next_voucher_number(pool.inner(), "sales_invoice").await?;
 
     let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1").fetch_optional(&mut *tx).await.ok().flatten();
     let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.customer_id).fetch_optional(&mut *tx).await.ok().flatten();
     let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
 
-    let mut processed_items = Vec::new();
-    let mut subtotal = 0.0;
-    let mut total_cgst = 0.0;
-    let mut total_sgst = 0.0;
-    let mut total_igst = 0.0;
-
+    let mut prepared_lines = Vec::new();
     for item in &invoice.items {
-        let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let unit_snapshot = super::resolve_voucher_line_unit(&mut tx, &item.product_id, item.unit_id.as_deref(), "sale", final_quantity).await?;
-        
-        let product: Option<(Option<String>, Option<String>)> = sqlx::query_as("SELECT hsn_sac_code, gst_slab_id FROM products WHERE id = ?").bind(&item.product_id).fetch_optional(&mut *tx).await.unwrap_or(None);
-        let (hsn_sac_code, gst_slab_id) = product.unwrap_or((None, None));
-        
-        let mut effective_rate = item.tax_rate;
-        if let Some(ref slab_id) = gst_slab_id {
-            if let Some(slab) = crate::commands::tax_utils::get_slab(pool.inner(), slab_id).await {
-                effective_rate = crate::commands::tax_utils::resolve_effective_rate(item.rate, &slab);
-            }
-        }
-        
-        let raw_amount = final_quantity * item.rate;
-        let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 { raw_amount * (discount_percent / 100.0) } else { item.discount_amount.unwrap_or(0.0) };
-        let net_before_tax = raw_amount - discount_amount;
-        
-        let (taxable_amount, tax_amount, base_amount, base_rate) = if tax_inclusive {
-            let tax_amt = net_before_tax - (net_before_tax / (1.0 + (effective_rate / 100.0)));
-            let txbl = net_before_tax - tax_amt;
-            let b_amt = txbl + discount_amount;
-            (txbl, tax_amt, b_amt, b_amt / final_quantity)
-        } else {
-            (net_before_tax, net_before_tax * (effective_rate / 100.0), raw_amount, item.rate)
-        };
-        
-        subtotal += taxable_amount;
-        
-        let mut cgst_rate = 0.0; let mut sgst_rate = 0.0; let mut igst_rate = 0.0;
-        let mut cgst_amount = 0.0; let mut sgst_amount = 0.0; let mut igst_amount = 0.0;
-        if effective_rate > 0.0 {
-            let split = crate::commands::tax_utils::compute_split(taxable_amount, effective_rate, is_inter_state);
-            cgst_rate = split.cgst_rate; sgst_rate = split.sgst_rate; igst_rate = split.igst_rate;
-            cgst_amount = split.cgst_amount; sgst_amount = split.sgst_amount; igst_amount = split.igst_amount;
-            total_cgst += cgst_amount; total_sgst += sgst_amount; total_igst += igst_amount;
-        }
-
-        
-        processed_items.push(ProcessedVoucherItem {
-            id: Uuid::now_v7().to_string(),
-            product_id: item.product_id.clone(), description: item.description.clone(), initial_quantity: item.initial_quantity,
-            count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: Some(unit_snapshot.unit_id.clone()),
-            base_quantity: unit_snapshot.base_quantity, rate: base_rate, amount: base_amount, discount_percent, discount_amount,
-            tax_rate: effective_rate, tax_amount, remarks: item.remarks.clone(), cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount,
-            hsn_sac_code, gst_slab_id, resolved_gst_rate: effective_rate,
-        });
+        prepared_lines.push(
+            prepare_voucher_line(
+                &mut tx,
+                pool.inner(),
+                "sale",
+                &item.product_id,
+                item.unit_id.as_deref(),
+                item.description.clone(),
+                item.initial_quantity,
+                item.count,
+                item.deduction_per_unit,
+                item.rate,
+                item.tax_rate,
+                item.discount_percent,
+                item.discount_amount,
+                item.remarks.clone(),
+                tax_inclusive,
+            )
+            .await?,
+        );
     }
 
-    subtotal = round2(subtotal);
-    total_cgst = round2(total_cgst);
-    total_sgst = round2(total_sgst);
-    total_igst = round2(total_igst);
-    let discount_amount = round2(invoice.discount_amount.unwrap_or(0.0));
+    let (processed, discount_rate, discount_amount) = finalize_processed_items(
+        prepared_lines,
+        is_inter_state,
+        invoice.discount_rate,
+        invoice.discount_amount,
+    );
+    let processed_items = processed.items;
+    let subtotal = processed.subtotal;
+    let total_cgst = processed.total_cgst;
+    let total_sgst = processed.total_sgst;
+    let total_igst = processed.total_igst;
     let total_amount = round2(subtotal - discount_amount);
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let grand_total = round2(total_amount + total_tax);
@@ -901,20 +1105,20 @@ pub async fn create_sales_invoice(
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("sales_invoice").bind(&invoice.voucher_date).bind(&invoice.customer_id)
-    .bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(invoice.discount_rate.unwrap_or(0.0))
+    .bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(discount_rate)
     .bind(discount_amount).bind(total_tax).bind(total_amount).bind(&invoice.narration)
     .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
     for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, original_amount, amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item.id).bind(&voucher_id).bind(&item.product_id).bind(&item.description).bind(item.initial_quantity)
         .bind(item.count).bind(item.deduction_per_unit).bind(item.final_quantity).bind(&item.unit_id).bind(item.base_quantity)
-        .bind(item.rate).bind(item.amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
-        .bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
+        .bind(item.rate).bind(item.original_amount).bind(item.amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
+        .bind(item.invoice_discount_amount).bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
         .bind(item.igst_amount).bind(&item.hsn_sac_code).bind(&item.gst_slab_id).bind(item.resolved_gst_rate)
         .execute(&mut *tx)
         .await
@@ -1076,67 +1280,41 @@ pub async fn update_sales_invoice(
     let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
 
-    let mut processed_items = Vec::new();
-    let mut subtotal = 0.0;
-    let mut total_cgst = 0.0;
-    let mut total_sgst = 0.0;
-    let mut total_igst = 0.0;
-
+    let mut prepared_lines = Vec::new();
     for item in &invoice.items {
-        let final_quantity = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let unit_snapshot = super::resolve_voucher_line_unit(&mut tx, &item.product_id, item.unit_id.as_deref(), "sale", final_quantity).await?;
-        
-        let product: Option<(Option<String>, Option<String>)> = sqlx::query_as("SELECT hsn_sac_code, gst_slab_id FROM products WHERE id = ?").bind(&item.product_id).fetch_optional(&mut *tx).await.unwrap_or(None);
-        let (hsn_sac_code, gst_slab_id) = product.unwrap_or((None, None));
-        
-        let mut effective_rate = item.tax_rate;
-        if let Some(ref slab_id) = gst_slab_id {
-            if let Some(slab) = crate::commands::tax_utils::get_slab(pool.inner(), slab_id).await {
-                effective_rate = crate::commands::tax_utils::resolve_effective_rate(item.rate, &slab);
-            }
-        }
-        
-        let raw_amount = final_quantity * item.rate;
-        let discount_percent = item.discount_percent.unwrap_or(0.0);
-        let discount_amount = if discount_percent > 0.0 { raw_amount * (discount_percent / 100.0) } else { item.discount_amount.unwrap_or(0.0) };
-        let net_before_tax = raw_amount - discount_amount;
-        
-        let (taxable_amount, tax_amount, base_amount, base_rate) = if tax_inclusive {
-            let tax_amt = net_before_tax - (net_before_tax / (1.0 + (effective_rate / 100.0)));
-            let txbl = net_before_tax - tax_amt;
-            let b_amt = txbl + discount_amount;
-            (txbl, tax_amt, b_amt, b_amt / final_quantity)
-        } else {
-            (net_before_tax, net_before_tax * (effective_rate / 100.0), raw_amount, item.rate)
-        };
-        
-        subtotal += taxable_amount;
-        
-        let mut cgst_rate = 0.0; let mut sgst_rate = 0.0; let mut igst_rate = 0.0;
-        let mut cgst_amount = 0.0; let mut sgst_amount = 0.0; let mut igst_amount = 0.0;
-        if effective_rate > 0.0 {
-            let split = crate::commands::tax_utils::compute_split(taxable_amount, effective_rate, is_inter_state);
-            cgst_rate = split.cgst_rate; sgst_rate = split.sgst_rate; igst_rate = split.igst_rate;
-            cgst_amount = split.cgst_amount; sgst_amount = split.sgst_amount; igst_amount = split.igst_amount;
-            total_cgst += cgst_amount; total_sgst += sgst_amount; total_igst += igst_amount;
-        }
-
-        
-        processed_items.push(ProcessedVoucherItem {
-            id: Uuid::now_v7().to_string(),
-            product_id: item.product_id.clone(), description: item.description.clone(), initial_quantity: item.initial_quantity,
-            count: item.count, deduction_per_unit: item.deduction_per_unit, final_quantity, unit_id: Some(unit_snapshot.unit_id.clone()),
-            base_quantity: unit_snapshot.base_quantity, rate: base_rate, amount: base_amount, discount_percent, discount_amount,
-            tax_rate: effective_rate, tax_amount, remarks: item.remarks.clone(), cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount,
-            hsn_sac_code, gst_slab_id, resolved_gst_rate: effective_rate,
-        });
+        prepared_lines.push(
+            prepare_voucher_line(
+                &mut tx,
+                pool.inner(),
+                "sale",
+                &item.product_id,
+                item.unit_id.as_deref(),
+                item.description.clone(),
+                item.initial_quantity,
+                item.count,
+                item.deduction_per_unit,
+                item.rate,
+                item.tax_rate,
+                item.discount_percent,
+                item.discount_amount,
+                item.remarks.clone(),
+                tax_inclusive,
+            )
+            .await?,
+        );
     }
 
-    subtotal = round2(subtotal);
-    total_cgst = round2(total_cgst);
-    total_sgst = round2(total_sgst);
-    total_igst = round2(total_igst);
-    let discount_amount = round2(invoice.discount_amount.unwrap_or(0.0));
+    let (processed, discount_rate, discount_amount) = finalize_processed_items(
+        prepared_lines,
+        is_inter_state,
+        invoice.discount_rate,
+        invoice.discount_amount,
+    );
+    let processed_items = processed.items;
+    let subtotal = processed.subtotal;
+    let total_cgst = processed.total_cgst;
+    let total_sgst = processed.total_sgst;
+    let total_igst = processed.total_igst;
     let total_amount = round2(subtotal - discount_amount);
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let grand_total = round2(total_amount + total_tax);
@@ -1150,7 +1328,7 @@ pub async fn update_sales_invoice(
          WHERE id = ?"
     )
     .bind(&invoice.voucher_date).bind(&invoice.customer_id).bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference)
-    .bind(subtotal).bind(invoice.discount_rate.unwrap_or(0.0)).bind(discount_amount)
+    .bind(subtotal).bind(discount_rate).bind(discount_amount)
     .bind(total_tax).bind(total_amount).bind(&invoice.narration)
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
     .bind(grand_total).bind(&voucher_id)
@@ -1161,13 +1339,13 @@ pub async fn update_sales_invoice(
     // Insert items
     for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, tax_rate, tax_amount, discount_percent, discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, original_amount, amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item.id).bind(&voucher_id).bind(&item.product_id).bind(&item.description).bind(item.initial_quantity)
         .bind(item.count).bind(item.deduction_per_unit).bind(item.final_quantity).bind(&item.unit_id).bind(item.base_quantity)
-        .bind(item.rate).bind(item.amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
-        .bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
+        .bind(item.rate).bind(item.original_amount).bind(item.amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
+        .bind(item.invoice_discount_amount).bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
         .bind(item.igst_amount).bind(&item.hsn_sac_code).bind(&item.gst_slab_id).bind(item.resolved_gst_rate)
         .execute(&mut *tx)
         .await

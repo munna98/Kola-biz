@@ -395,10 +395,17 @@ function renderA4TotalsElement(el: DesignerElement): string {
             valueHtml = `{{${row.field}}}`;
         }
 
-        html += `<tr>`;
-        html += `<td style="text-align:${config.labelAlign || 'right'};padding:2px 6px;${borderTop}${fontWeight}">${escapeHtml(row.label)}:</td>`;
-        html += `<td style="text-align:right;padding:2px 6px;width:40%;${borderTop}${fontWeight}">${valueHtml}</td>`;
-        html += '</tr>';
+        const isOptionalCurrencyRow = row.field === 'discount_amount'
+            || row.field === 'invoice_discount_amount'
+            || row.field === 'tax_total';
+        const rowHtml = `<tr><td style="text-align:${config.labelAlign || 'right'};padding:2px 6px;${borderTop}${fontWeight}">${escapeHtml(row.label)}:</td><td style="text-align:right;padding:2px 6px;width:40%;${borderTop}${fontWeight}">${valueHtml}</td></tr>`;
+
+        if (isOptionalCurrencyRow) {
+            html += `{{#if ${row.field}}}${rowHtml}{{/if}}`;
+            continue;
+        }
+
+        html += rowHtml;
     }
     html += '</tbody></table></div>';
 

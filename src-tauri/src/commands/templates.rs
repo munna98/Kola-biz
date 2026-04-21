@@ -1,4 +1,4 @@
-use crate::commands::company::get_company_profile;
+﻿use crate::commands::company::get_company_profile;
 use crate::commands::entries::{PaymentVoucher, ReceiptVoucher};
 use crate::commands::tax_utils;
 use crate::template_engine::TemplateEngine;
@@ -353,7 +353,7 @@ pub async fn save_designer_template(
     styles_css: String,
 ) -> Result<String, String> {
     if let Some(tid) = template_id {
-        // Update existing template — designer is the source of truth
+        // Update existing template â€” designer is the source of truth
         sqlx::query(
             "UPDATE invoice_templates SET 
                 name = ?, layout_config = ?, design_mode = 'designer',
@@ -598,7 +598,7 @@ async fn get_purchase_invoice_data(
             if let Some(obj) = item_val.as_object_mut() {
                 // If tax-inclusive: reverse-calculate base amount and ex-tax rate
                 let gross_amt = item.amount;
-                let tax_rate = item.tax_rate;
+                let tax_rate = if item.resolved_gst_rate > 0.0 { item.resolved_gst_rate } else { item.tax_rate };
                 let (base_amt, tax_amt, ex_tax_rate) = if tax_inclusive && tax_rate > 0.0 {
                     let base = gross_amt / (1.0 + tax_rate / 100.0);
                     let tax = gross_amt - base;
@@ -638,9 +638,16 @@ async fn get_purchase_invoice_data(
                 // Fetch party state for GST split
                 let party_state = gst_extra.as_ref().and_then(|e| e.2.clone()).unwrap_or_default();
                 let is_inter = tax_utils::is_inter_state(Some(&company_state), Some(&party_state));
-                let total_rate = item.tax_rate;
+                let total_rate = tax_rate;
 
-                if is_inter {
+                if item.cgst_rate > 0.0 || item.sgst_rate > 0.0 || item.igst_rate > 0.0 {
+                    obj.insert("cgst_rate".to_string(), json!(item.cgst_rate));
+                    obj.insert("sgst_rate".to_string(), json!(item.sgst_rate));
+                    obj.insert("igst_rate".to_string(), json!(item.igst_rate));
+                    obj.insert("cgst_amount".to_string(), json!(round2(item.cgst_amount)));
+                    obj.insert("sgst_amount".to_string(), json!(round2(item.sgst_amount)));
+                    obj.insert("igst_amount".to_string(), json!(round2(item.igst_amount)));
+                } else if is_inter {
                     obj.insert("cgst_rate".to_string(), json!(0.0));
                     obj.insert("sgst_rate".to_string(), json!(0.0));
                     obj.insert("igst_rate".to_string(), json!(total_rate));
@@ -722,10 +729,12 @@ async fn get_purchase_invoice_data(
             obj.insert("ship_to".to_string(), party_obj); // defaults to same
 
             // Calculate subtotal for template
-            let subtotal =
-                invoice.grand_total - invoice.tax_amount + invoice.discount_amount.unwrap_or(0.0);
-            obj.insert("subtotal".to_string(), json!(subtotal));
+            let bill_discount = invoice.discount_amount.unwrap_or(0.0);
+            let subtotal = invoice.grand_total - invoice.tax_amount + bill_discount;
+            obj.insert("subtotal".to_string(), json!(round2(subtotal)));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
+            obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
+            obj.insert("bill_discount".to_string(), json!(round2(bill_discount)));
 
             // Detect cash purchase (no meaningful balance to show)
             let is_cash = invoice.supplier_name == "Cash";
@@ -845,7 +854,7 @@ async fn get_sales_invoice_data(
             if let Some(obj) = item_val.as_object_mut() {
                 // If tax-inclusive: reverse-calculate base amount and ex-tax rate from inclusive amount
                 let gross_amt = item.amount; // stored as inclusive gross (qty * rate - discount)
-                let tax_rate = item.tax_rate;
+                let tax_rate = if item.resolved_gst_rate > 0.0 { item.resolved_gst_rate } else { item.tax_rate };
                 let (base_amt, tax_amt, ex_tax_rate) = if tax_inclusive && tax_rate > 0.0 {
                     let base = gross_amt / (1.0 + tax_rate / 100.0);
                     let tax = gross_amt - base;
@@ -885,9 +894,16 @@ async fn get_sales_invoice_data(
                 // Fetch party state for GST split logic
                 let party_state = gst_extra.as_ref().and_then(|e| e.2.clone()).unwrap_or_default();
                 let is_inter = tax_utils::is_inter_state(Some(&company_state), Some(&party_state));
-                let total_rate = item.tax_rate;
+                let total_rate = tax_rate;
 
-                if is_inter {
+                if item.cgst_rate > 0.0 || item.sgst_rate > 0.0 || item.igst_rate > 0.0 {
+                    obj.insert("cgst_rate".to_string(), json!(item.cgst_rate));
+                    obj.insert("sgst_rate".to_string(), json!(item.sgst_rate));
+                    obj.insert("igst_rate".to_string(), json!(item.igst_rate));
+                    obj.insert("cgst_amount".to_string(), json!(round2(item.cgst_amount)));
+                    obj.insert("sgst_amount".to_string(), json!(round2(item.sgst_amount)));
+                    obj.insert("igst_amount".to_string(), json!(round2(item.igst_amount)));
+                } else if is_inter {
                     obj.insert("cgst_rate".to_string(), json!(0.0));
                     obj.insert("sgst_rate".to_string(), json!(0.0));
                     obj.insert("igst_rate".to_string(), json!(total_rate));
@@ -969,11 +985,13 @@ async fn get_sales_invoice_data(
             obj.insert("ship_to".to_string(), party_obj); // defaults to same
 
             // Calculate subtotal for template
-            let subtotal =
-                invoice.grand_total - invoice.tax_amount + invoice.discount_amount.unwrap_or(0.0);
-            obj.insert("subtotal".to_string(), json!(subtotal));
+            let bill_discount = invoice.discount_amount.unwrap_or(0.0);
+            let subtotal = invoice.grand_total - invoice.tax_amount + bill_discount;
+            obj.insert("subtotal".to_string(), json!(round2(subtotal)));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
             obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
+            obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
+            obj.insert("bill_discount".to_string(), json!(round2(bill_discount)));
 
             // Detect cash sale (no meaningful balance to show)
             let is_cash = invoice.customer_name == "Cash";
@@ -1172,7 +1190,7 @@ async fn inject_gst_context(
     obj.insert("ack_date".to_string(), json!(ack_date));
     obj.insert("qr_code_data".to_string(), json!(qr_data));
 
-    // 3. GST amounts from the already-formatted items — base_amount is already reverse-calculated if tax_inclusive
+    // 3. GST amounts from the already-formatted items â€” base_amount is already reverse-calculated if tax_inclusive
     // We sum base_amount (ex-tax) and the split tax amounts directly from the formatted items passed in.
     let taxable_total: f64 = items
         .iter()
@@ -1209,7 +1227,7 @@ async fn inject_gst_context(
         .sum();
     obj.insert("total_quantity_display".to_string(), json!(format!("{:.2}", total_qty)));
 
-    // 5. HSN/SAC summary grouped by code + rate — built from pre-formatted items
+    // 5. HSN/SAC summary grouped by code + rate â€” built from pre-formatted items
     //    so base_amount is already tax-inclusive-aware (reverse-calculated if needed)
     use std::collections::BTreeMap;
     // (taxable, cgst_r, sgst_r, igst_r, cgst_a, sgst_a, igst_a)

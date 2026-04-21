@@ -430,10 +430,19 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                         ? getDefaultProductUnitId(productUnits, defaultUnitKind, product.unit_id)
                         : undefined) ?? '';
 
-                // Compute per-item GST rate from slab
+                // Prefer the saved voucher-item snapshot for GST display on posted vouchers.
                 const fullProduct = fullProducts.find(p => String(p.id) === String(item.product_id));
                 let resolvedGstRate = item.tax_rate || 0;
-                if (fullProduct?.gst_slab_id && gstSlabs.length > 0) {
+                if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
+                    resolvedGstRate = item.resolved_gst_rate;
+                } else if (item.gst_slab_id && gstSlabs.length > 0) {
+                    const savedSlab = gstSlabs.find(s => s.id === item.gst_slab_id);
+                    if (savedSlab) {
+                        resolvedGstRate = savedSlab.is_dynamic === 1
+                            ? (item.rate < savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
+                            : savedSlab.fixed_rate;
+                    }
+                } else if (fullProduct?.gst_slab_id && gstSlabs.length > 0) {
                     const slab = gstSlabs.find(s => s.id === fullProduct.gst_slab_id);
                     if (slab) {
                         resolvedGstRate = slab.is_dynamic === 1
@@ -450,7 +459,9 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                 const totalGstAmt = taxInclusive
                     ? grossAmt - baseAmt
                     : grossAmt * (resolvedGstRate / 100);
-                const splitAmt = totalGstAmt / 2;
+                const cgstAmt = typeof item.cgst_amount === 'number' ? item.cgst_amount : totalGstAmt / 2;
+                const sgstAmt = typeof item.sgst_amount === 'number' ? item.sgst_amount : totalGstAmt / 2;
+                const igstAmt = typeof item.igst_amount === 'number' ? item.igst_amount : totalGstAmt;
                 // Reverse ex-tax rate per unit (for display when blurred)
                 const exTaxRate = taxInclusive && resolvedGstRate > 0 && finalQty > 0
                     ? baseAmt / finalQty
@@ -693,26 +704,26 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             );
                         case 'gst_rate':
                             return (
-                                <div key={col.id} className="h-7 text-xs flex items-center justify-center bg-muted/50 border border-input rounded-md font-mono text-muted-foreground">
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-center bg-muted/50 border border-input rounded-md font-medium font-mono">
                                     {resolvedGstRate > 0 ? `${resolvedGstRate}%` : '-'}
                                 </div>
                             );
                         case 'cgst':
                             return (
-                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-mono text-muted-foreground">
-                                    {resolvedGstRate > 0 ? `₹${splitAmt.toFixed(2)}` : '-'}
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-medium font-mono">
+                                    {resolvedGstRate > 0 ? `₹${cgstAmt.toFixed(2)}` : '-'}
                                 </div>
                             );
                         case 'sgst':
                             return (
-                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-mono text-muted-foreground">
-                                    {resolvedGstRate > 0 ? `₹${splitAmt.toFixed(2)}` : '-'}
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-medium font-mono">
+                                    {resolvedGstRate > 0 ? `₹${sgstAmt.toFixed(2)}` : '-'}
                                 </div>
                             );
                         case 'igst':
                             return (
-                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-mono text-muted-foreground">
-                                    {resolvedGstRate > 0 ? `₹${totalGstAmt.toFixed(2)}` : '-'}
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-medium font-mono">
+                                    {resolvedGstRate > 0 ? `₹${igstAmt.toFixed(2)}` : '-'}
                                 </div>
                             );
                         case 'total':
