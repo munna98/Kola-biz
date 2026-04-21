@@ -933,6 +933,14 @@ pub async fn init_db(
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN invoice_discount_amount REAL DEFAULT 0").execute(&pool).await;
     let _ = sqlx::query("UPDATE voucher_items SET original_amount = amount WHERE COALESCE(original_amount, 0) = 0").execute(&pool).await;
 
+    // Migration: Add net_amount column (new semantic - amount after invoice discount)
+    // amount now stores the gross (original) amount; net_amount stores amount minus invoice discount
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN net_amount REAL DEFAULT 0").execute(&pool).await;
+    // Backfill: net_amount gets the old "amount" value (which was the net-after-discount)
+    let _ = sqlx::query("UPDATE voucher_items SET net_amount = amount WHERE COALESCE(net_amount, 0) = 0").execute(&pool).await;
+    // Promote original_amount into amount so amount = gross; only where original_amount has meaningful data
+    let _ = sqlx::query("UPDATE voucher_items SET amount = original_amount WHERE original_amount > 0").execute(&pool).await;
+
     // Migration: Add e-Invoice columns to vouchers
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN irn TEXT").execute(&pool).await;
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN ack_no TEXT").execute(&pool).await;

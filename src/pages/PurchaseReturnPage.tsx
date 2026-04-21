@@ -605,7 +605,8 @@ export default function PurchaseReturnPage() {
         });
         const lineIndex = sourceItems.length === 1 ? 0 : sourceItems.findIndex((candidate) => candidate.id === item.id);
         const line = calculation.lines[Math.max(lineIndex, 0)];
-        return { finalQty: line.finalQty, amount: line.taxableAmount, taxAmount: line.taxAmount, total: line.total };
+        const grossTax = Math.round(line.netBeforeInvoiceDiscount * (gstRate / 100) * 100) / 100;
+        return { finalQty: line.finalQty, amount: line.netBeforeInvoiceDiscount, taxAmount: grossTax, total: Math.round((line.netBeforeInvoiceDiscount + grossTax) * 100) / 100 };
     };
 
     // Determine if form should be disabled (viewing mode)

@@ -93,7 +93,16 @@ pub async fn adjust_cash_invoice_splits(
         None => return Err("Invoice not found".to_string()),
     };
 
-    // First, find the total amount and narrative from existing Cash/Bank entries
+    // Fetch the current invoice grand_total from the vouchers table
+    let invoice_amount: f64 = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(grand_total, total_amount, 0) AS REAL) FROM vouchers WHERE id = ?"
+    )
+    .bind(&invoice_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // Find existing Cash/Bank entries to determine debit/credit direction and narration
     let existing_entries: Vec<JournalEntryRow> = sqlx::query_as(
         r#"
         SELECT 
@@ -130,13 +139,11 @@ pub async fn adjust_cash_invoice_splits(
     .await
     .map_err(|e| e.to_string())?;
 
-    let total_existing: f64 = existing_entries.iter().map(|e| if is_debit { e.debit } else { e.credit }).sum();
-
     let total_new: f64 = splits.iter().map(|s| s.amount).sum();
 
-    // The sums must match exactly. We use an epsilon for f64 comparison.
-    if (total_existing - total_new).abs() > 0.01 {
-        return Err(format!("Split total ({:.2}) must equal invoice amount ({:.2})", total_new, total_existing));
+    // Validate that the split total matches the current invoice amount (not the old journal entries)
+    if (invoice_amount - total_new).abs() > 0.01 {
+        return Err(format!("Split total ({:.2}) must equal invoice amount ({:.2})", total_new, invoice_amount));
     }
 
     // Validate that all account_ids in the new splits actually exist in chart_of_accounts

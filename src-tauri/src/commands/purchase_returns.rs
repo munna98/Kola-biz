@@ -43,8 +43,8 @@ pub struct PurchaseReturnItem {
     pub unit_id: Option<String>,
     pub base_quantity: f64,
     pub rate: f64,
-    pub original_amount: f64,
-    pub amount: f64,
+    pub amount: f64,            // gross amount (original, before invoice discount)
+    pub net_amount: f64,        // net amount (after invoice discount)
     pub tax_rate: f64,
     pub tax_amount: f64,
     pub discount_percent: f64,
@@ -265,7 +265,7 @@ pub async fn create_purchase_return(
 
     for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, original_amount, amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&item.id)
@@ -279,8 +279,8 @@ pub async fn create_purchase_return(
         .bind(&item.unit_id)
         .bind(item.base_quantity)
         .bind(item.rate)
-        .bind(item.original_amount)
         .bind(item.amount)
+        .bind(item.net_amount)
         .bind(item.tax_rate)
         .bind(item.tax_amount)
         .bind(item.discount_percent)
@@ -503,7 +503,7 @@ pub async fn update_purchase_return(
 
     for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, original_amount, amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&item.id)
@@ -517,8 +517,8 @@ pub async fn update_purchase_return(
         .bind(&item.unit_id)
         .bind(item.base_quantity)
         .bind(item.rate)
-        .bind(item.original_amount)
         .bind(item.amount)
+        .bind(item.net_amount)
         .bind(item.tax_rate)
         .bind(item.tax_amount)
         .bind(item.discount_percent)

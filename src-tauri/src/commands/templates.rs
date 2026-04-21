@@ -1,4 +1,4 @@
-﻿use crate::commands::company::get_company_profile;
+use crate::commands::company::get_company_profile;
 use crate::commands::entries::{PaymentVoucher, ReceiptVoucher};
 use crate::commands::tax_utils;
 use crate::template_engine::TemplateEngine;
@@ -596,34 +596,45 @@ async fn get_purchase_invoice_data(
         .map(|item| {
             let mut item_val = serde_json::to_value(&item).unwrap_or(json!({}));
             if let Some(obj) = item_val.as_object_mut() {
-                // If tax-inclusive: reverse-calculate base amount and ex-tax rate
-                let gross_amt = item.amount;
+                // item.amount = gross (original, before invoice discount)
+                // item.net_amount = net after invoice discount (taxable base for tax calc)
+                let taxable_amt = item.net_amount;
+                let display_amt = item.amount; // original gross for Amount column
                 let tax_rate = if item.resolved_gst_rate > 0.0 { item.resolved_gst_rate } else { item.tax_rate };
+
+                // Tax calculation is based on net_amount (taxable base)
                 let (base_amt, tax_amt, ex_tax_rate) = if tax_inclusive && tax_rate > 0.0 {
-                    let base = gross_amt / (1.0 + tax_rate / 100.0);
-                    let tax = gross_amt - base;
+                    let base = taxable_amt / (1.0 + tax_rate / 100.0);
+                    let tax = taxable_amt - base;
                     let final_qty = item.initial_quantity - (item.count as f64) * item.deduction_per_unit;
                     let ex_rate = if final_qty > 0.0 { base / final_qty } else { item.rate };
                     (base, tax, ex_rate)
                 } else {
-                    (gross_amt, item.tax_amount, item.rate)
+                    (taxable_amt, item.tax_amount, item.rate)
+                };
+
+                // Display amount derived from original gross (for Amount column)
+                let display_base = if tax_inclusive && tax_rate > 0.0 {
+                    display_amt / (1.0 + tax_rate / 100.0)
+                } else {
+                    display_amt
                 };
 
                 // Store the inclusive/original values for reference
                 obj.insert("inclusive_rate".to_string(), json!(item.rate));
                 obj.insert("inclusive_amount".to_string(), json!(item.amount));
                 
-                // Override rate and amount with ex-tax values so standard invoice templates work correctly
+                // Override rate and amount with ex-tax values — amount shows original (pre-invoice-discount)
                 obj.insert("rate".to_string(), json!(round2(ex_tax_rate)));
-                obj.insert("amount".to_string(), json!(round2(base_amt)));
+                obj.insert("amount".to_string(), json!(round2(display_base)));
 
                 // Inject explicit ex-tax vars for backwards compatibility
                 obj.insert("base_amount".to_string(), json!(round2(base_amt)));
                 obj.insert("ex_tax_rate".to_string(), json!(round2(ex_tax_rate)));
                 obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
 
-                // total = inclusive grand total per line
-                let total = if tax_inclusive { gross_amt } else { gross_amt + tax_amt };
+                // total = inclusive grand total per line (based on original amount)
+                let total = if tax_inclusive { display_amt } else { display_amt + display_amt * tax_rate / 100.0 };
                 obj.insert("total".to_string(), json!(round2(total)));
 
                 // Add less_quantity field (count * deduction_per_unit)
@@ -852,34 +863,45 @@ async fn get_sales_invoice_data(
         .map(|item| {
             let mut item_val = serde_json::to_value(&item).unwrap_or(json!({}));
             if let Some(obj) = item_val.as_object_mut() {
-                // If tax-inclusive: reverse-calculate base amount and ex-tax rate from inclusive amount
-                let gross_amt = item.amount; // stored as inclusive gross (qty * rate - discount)
+                // item.amount = gross (original, before invoice discount)
+                // item.net_amount = net after invoice discount (taxable base for tax calc)
+                let taxable_amt = item.net_amount;
+                let display_amt = item.amount; // original gross for Amount column
                 let tax_rate = if item.resolved_gst_rate > 0.0 { item.resolved_gst_rate } else { item.tax_rate };
+
+                // Tax calculation is based on net_amount (taxable base)
                 let (base_amt, tax_amt, ex_tax_rate) = if tax_inclusive && tax_rate > 0.0 {
-                    let base = gross_amt / (1.0 + tax_rate / 100.0);
-                    let tax = gross_amt - base;
+                    let base = taxable_amt / (1.0 + tax_rate / 100.0);
+                    let tax = taxable_amt - base;
                     let final_qty = item.initial_quantity - (item.count as f64) * item.deduction_per_unit;
                     let ex_rate = if final_qty > 0.0 { base / final_qty } else { item.rate };
                     (base, tax, ex_rate)
                 } else {
-                    (gross_amt, item.tax_amount, item.rate)
+                    (taxable_amt, item.tax_amount, item.rate)
+                };
+
+                // Display amount derived from original gross (for Amount column)
+                let display_base = if tax_inclusive && tax_rate > 0.0 {
+                    display_amt / (1.0 + tax_rate / 100.0)
+                } else {
+                    display_amt
                 };
 
                 // Store the inclusive/original values for reference
                 obj.insert("inclusive_rate".to_string(), json!(item.rate));
                 obj.insert("inclusive_amount".to_string(), json!(item.amount));
                 
-                // Override rate and amount with ex-tax values so standard invoice templates work correctly
+                // Override rate and amount with ex-tax values — amount shows original (pre-invoice-discount)
                 obj.insert("rate".to_string(), json!(round2(ex_tax_rate)));
-                obj.insert("amount".to_string(), json!(round2(base_amt)));
+                obj.insert("amount".to_string(), json!(round2(display_base)));
 
                 // Inject explicit ex-tax vars for backwards compatibility
                 obj.insert("base_amount".to_string(), json!(round2(base_amt)));
                 obj.insert("ex_tax_rate".to_string(), json!(round2(ex_tax_rate)));
                 obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
 
-                // total = inclusive grand total per line
-                let total = if tax_inclusive { gross_amt } else { gross_amt + tax_amt };
+                // total = inclusive grand total per line (based on original amount)
+                let total = if tax_inclusive { display_amt } else { display_amt + display_amt * tax_rate / 100.0 };
                 obj.insert("total".to_string(), json!(round2(total)));
 
                 // Add less_quantity field (count * deduction_per_unit)
