@@ -108,14 +108,18 @@ export default function CompanyProfilePage() {
     };
 
     return (
-        <div className="p-6 max-w-6xl mx-auto">
-            <div className="mb-6">
-                <h1 className="text-3xl font-bold">Company Profile Settings</h1>
-                <p className="text-muted-foreground mt-1">
-                    Configure your company information, legal details, and business settings
-                </p>
+        <div className="h-full flex flex-col bg-background">
+            <div className="flex justify-between items-center p-6 border-b shrink-0">
+                <div>
+                    <h1 className="text-2xl font-bold text-foreground">Company Profile Settings</h1>
+                    <p className="text-sm text-muted-foreground mt-1">
+                        Configure your company information, legal details, and business settings
+                    </p>
+                </div>
             </div>
 
+            <div className="flex-1 overflow-auto p-6">
+            <div className="max-w-6xl mx-auto">
             <Tabs defaultValue="company" className="space-y-4">
                 <TabsList className="grid w-full grid-cols-4">
                     <TabsTrigger value="company">
@@ -467,6 +471,8 @@ export default function CompanyProfilePage() {
                 </Button>
             </div>
 
+            </div>
+            </div>
         </div>
     );
 }

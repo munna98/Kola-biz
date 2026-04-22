@@ -93,8 +93,8 @@ export default function VoucherSequencesPage() {
         try {
             const dataToSave = {
                 prefix: formData.prefix || '',
-                next_number: Number(formData.next_number) || 1,
-                padding: Number(formData.padding) || 4,
+                next_number: (Number.isFinite(formData.next_number) ? formData.next_number! : 1),
+                padding: (Number.isFinite(formData.padding) && formData.padding! >= 1 ? formData.padding! : 4),
                 suffix: formData.suffix || null,
                 separator: formData.separator || '-',
                 include_financial_year: formData.include_financial_year || false,
@@ -217,8 +217,11 @@ export default function VoucherSequencesPage() {
                                     type="number"
                                     min={1}
                                     max={10}
-                                    value={formData.padding || ''} 
-                                    onChange={e => updateField('padding', parseInt(e.target.value))}
+                                    value={formData.padding ?? ''} 
+                                    onChange={e => {
+                                        const v = e.target.valueAsNumber;
+                                        updateField('padding', Number.isFinite(v) ? Math.max(1, Math.floor(v)) : formData.padding);
+                                    }}
                                 />
                                 <p className="text-xs text-muted-foreground">Ex: Padding 4 = 0001</p>
                             </div>
@@ -263,8 +266,11 @@ export default function VoucherSequencesPage() {
                                 <Input 
                                     id="next_number" 
                                     type="number"
-                                    value={formData.next_number || ''} 
-                                    onChange={e => updateField('next_number', parseInt(e.target.value))}
+                                    value={formData.next_number ?? ''} 
+                                    onChange={e => {
+                                        const v = e.target.valueAsNumber;
+                                        updateField('next_number', Number.isFinite(v) ? Math.max(1, Math.floor(v)) : formData.next_number);
+                                    }}
                                 />
                                 <p className="text-xs text-muted-foreground">The number that will be used. Ensure it doesn't conflict with existing vouchers!</p>
                             </div>

@@ -551,7 +551,7 @@ pub async fn update_voucher_sequence(
     .bind(&data.prefix)
     .bind(data.next_number)
     .bind(data.padding)
-    .bind(&data.suffix)
+    .bind(data.suffix.as_deref().unwrap_or(""))
     .bind(&data.separator)
     .bind(data.include_financial_year)
     .bind(data.reset_yearly)
@@ -568,21 +568,26 @@ pub async fn preview_voucher_number(
     _pool: State<'_, SqlitePool>,
     data: UpdateVoucherSequence,
 ) -> Result<String, String> {
-    let mut prefix_part = data.prefix.clone();
-    if data.include_financial_year {
-        prefix_part.push_str(&data.separator);
-        prefix_part.push_str(&crate::voucher_seq::current_financial_year());
-    }
-
+    let sep = &data.separator;
     let padded_num = format!("{:0width$}", data.next_number, width = data.padding as usize);
-    let mut result = format!("{}{}{}", prefix_part, data.separator, padded_num);
-    
-    if let Some(s) = &data.suffix {
-        if !s.is_empty() {
-            result.push_str(&data.separator);
-            result.push_str(s);
-        }
+
+    // Build parts list — only include non-empty segments so no spurious separators appear
+    let mut parts: Vec<String> = Vec::new();
+    if !data.prefix.is_empty() {
+        parts.push(data.prefix.clone());
     }
+    if data.include_financial_year {
+        parts.push(crate::voucher_seq::current_financial_year());
+    }
+    parts.push(padded_num);
+
+    let base = parts.join(sep);
+
+    // Append suffix (if any) with separator
+    let result = match &data.suffix {
+        Some(s) if !s.is_empty() => format!("{}{}{}", base, sep, s),
+        _ => base,
+    };
 
     Ok(result)
 }

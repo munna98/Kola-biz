@@ -50,7 +50,7 @@ import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings, VoucherItemsSectionRef } from '@/components/voucher/VoucherItemsSection';
 
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
-import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
+import { usePrint } from '@/hooks/usePrint';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
 import ProductDialog from '@/components/dialogs/ProductDialog';
 import { Product, ProductGroup, ProductUnitConversion, Unit, Employee, GstTaxSlab, api } from '@/lib/tauri';
@@ -78,17 +78,11 @@ export default function SalesInvoicePage() {
   const [isInitializing, setIsInitializing] = useState(true);
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showListView, setShowListView] = useState(false);
-  // const { print } = usePrint(); // Removed as we use PrintPreviewDialog which uses usePrint internally // Keeping usePrint for now as it might be used later or we can remove it if completely unused.
+  const { print: printVoucher } = usePrint();
   const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
   const [showCreateProduct, setShowCreateProduct] = useState(false);
   const [newProductName, setNewProductName] = useState('');
   const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
-  // Actually, wait, usePrint is NOT used at all in this file anymore? 
-  // checking... yes, only for print() which we removed. 
-  // BUT we might want to keep the hook call if it does other init stuff?
-  // No, usePrint just returns { print, isPrinting }. 
-  // isPrinting is also not used here (it's used in header via salesState.loading maybe? No).
-  // I will just remove the line.
   const [showQuickPayment, setShowQuickPayment] = useState(false);
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
@@ -102,8 +96,7 @@ export default function SalesInvoicePage() {
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
 
-  // New state for print preview
-  const [showPrintPreview, setShowPrintPreview] = useState(false);
+
   const productUnitsByProduct = useMemo(
     () => buildProductUnitMap(productUnitConversions),
     [productUnitConversions]
@@ -541,7 +534,7 @@ export default function SalesInvoicePage() {
           } else {
             // Payment modal disabled for non-cash parties: invoice remains unpaid
             if (voucherSettings?.autoPrint) {
-              setShowPrintPreview(true);
+              setTimeout(() => printVoucher({ voucherId: newInvoiceId, voucherType: 'sales_invoice' }), 100);
             }
           }
         }
@@ -707,8 +700,7 @@ export default function SalesInvoicePage() {
       toast.error("Please save the invoice before printing");
       return;
     }
-    // Instead of direct print, open preview
-    setShowPrintPreview(true);
+    printVoucher({ voucherId: salesState.currentVoucherId, voucherType: 'sales_invoice' });
   };
 
 
@@ -998,10 +990,10 @@ export default function SalesInvoicePage() {
           setShowQuickPayment(open);
           if (!open && autoPrintPending.current) {
             autoPrintPending.current = false;
-            // Small timeout to allow dialog to fully close visually before opening next one (optional but nicer)
-            setTimeout(() => {
-              setShowPrintPreview(true);
-            }, 100);
+            const idToPrint = savedInvoiceId || salesState.currentVoucherId;
+            if (idToPrint) {
+              setTimeout(() => printVoucher({ voucherId: idToPrint, voucherType: 'sales_invoice' }), 100);
+            }
           }
         }}
         invoiceId={savedInvoiceId || salesState.currentVoucherId || undefined}
@@ -1016,13 +1008,7 @@ export default function SalesInvoicePage() {
         }}
       />
 
-      <PrintPreviewDialog
-        open={showPrintPreview}
-        onOpenChange={setShowPrintPreview}
-        voucherId={savedInvoiceId || salesState.currentVoucherId || undefined}
-        voucherType="sales_invoice"
-        title={savedInvoiceNo || salesState.currentVoucherNo ? `Print Invoice - ${savedInvoiceNo || salesState.currentVoucherNo}` : 'Print Invoice'}
-      />
+
 
       <CustomerDialog
         open={showCreateCustomer}

@@ -26,7 +26,7 @@ import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/Vouche
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
-import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
+import { usePrint } from '@/hooks/usePrint';
 import ProductDialog from '@/components/dialogs/ProductDialog';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
@@ -45,7 +45,7 @@ export default function OpeningStockPage() {
     const [units, setUnits] = useState<Unit[]>([]);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
-    const [showPrintPreview, setShowPrintPreview] = useState(false);
+    const { print: printVoucher } = usePrint();
 
     // Create Product State
     const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
@@ -118,8 +118,8 @@ export default function OpeningStockPage() {
                     unit_id: item.unit_id,
                     base_quantity: item.base_quantity,
                     description: item.description || '',
-                    initial_quantity: item.quantity,  // Map quantity to initial_quantity for form
-                    quantity: item.quantity,          // Keep quantity for calculations
+                    initial_quantity: item.quantity,
+                    quantity: item.quantity,
                     rate: item.rate,
                     amount: item.amount,
                 }));
@@ -162,7 +162,6 @@ export default function OpeningStockPage() {
         dispatch(setOpeningStockTotal(total));
     }, [openingStockState.items, dispatch]);
 
-
     const handleSave = async (e?: React.FormEvent) => {
         e?.preventDefault();
 
@@ -199,24 +198,7 @@ export default function OpeningStockPage() {
                 const id = await invoke('create_opening_stock', { data });
                 toast.success('Opening stock created successfully');
                 handleLoadVoucher(id as string);
-                nav.handleNew(true); // Reset to new after save, passing true to keep it in new mode? Or better to stay in view mode of created?
-                // Actually usually after save we might want to stay in view mode or go to new.
-                // Purchase page goes to new. Let's follow that pattern or check user pref. 
-                // For now, let's just go to view mode of the created one or new.
-                // Purchase page does: nav.handleNew(true); which implies going to NEW mode.
-                // But wait, if I want to see what I just saved, I should load it.
-                // The handleLoadVoucher above does that.
-                // But nav.handleNew(true) effectively resets it for the NEXT entry.
-                // Let's stick to showing the saved one for now or just resetting?
-                // Purchase invoice code:
-                // toast.success('Purchase invoice created successfully');
-                // ... logic to show payment dialog ...
-                // nav.handleNew(true); 
-
-                // Let's load the saved one so they see it's done. 
-                // Actually, standard pattern in high volume entry is to clear for next.
-                // But for Opening Stock, maybe view is better. 
-                // Let's stick to View mode for the newly created one for safety.
+                nav.handleNew(true);
             }
         } catch (error) {
             console.error('Failed to save opening stock:', error);
@@ -248,7 +230,7 @@ export default function OpeningStockPage() {
             toast.error("Please save the voucher before printing");
             return;
         }
-        setShowPrintPreview(true);
+        printVoucher({ voucherId: openingStockState.currentVoucherId, voucherType: 'opening_stock' });
     };
 
     const handleAddItem = (insertAt?: number) => {
@@ -257,8 +239,8 @@ export default function OpeningStockPage() {
             product_id: '',
             product_name: '',
             description: '',
-            initial_quantity: 0,  // For form display
-            quantity: 0,           // For calculations
+            initial_quantity: 0,
+            quantity: 0,
             rate: 0,
             amount: 0
         }));
@@ -283,7 +265,6 @@ export default function OpeningStockPage() {
 
     const handleCreateProductSave = async () => {
         try {
-            // Refresh products
             const [productsData, productUnitConversionsData] = await Promise.all([
                 invoke<Product[]>('get_products'),
                 invoke<ProductUnitConversion[]>('get_all_product_unit_conversions')
@@ -291,40 +272,28 @@ export default function OpeningStockPage() {
             setProducts(productsData);
             setProductUnitConversions(productUnitConversionsData);
 
-            // If we have a pending row index and a name, try to find and select the new product
             if (creatingProductRowIndex !== null && newProductName) {
                 const createdProduct = productsData.find(p => p.name.toLowerCase() === newProductName.toLowerCase());
                 if (createdProduct) {
+                    const unitId = getDefaultProductUnitId(
+                        productUnitsByProduct[createdProduct.id],
+                        'report',
+                        createdProduct.unit_id
+                    );
+                    const rate = getProductUnitRate(
+                        productUnitsByProduct[createdProduct.id],
+                        unitId,
+                        'purchase',
+                        createdProduct.purchase_rate
+                    );
                     dispatch(updateOpeningStockItem({
                         index: creatingProductRowIndex,
                         data: {
                             product_id: createdProduct.id,
                             product_name: createdProduct.name,
-                            unit_id: getDefaultProductUnitId(
-                                productUnitsByProduct[createdProduct.id],
-                                'report',
-                                createdProduct.unit_id
-                            ),
-                            rate: getProductUnitRate(
-                                productUnitsByProduct[createdProduct.id],
-                                getDefaultProductUnitId(
-                                    productUnitsByProduct[createdProduct.id],
-                                    'report',
-                                    createdProduct.unit_id
-                                ),
-                                'purchase',
-                                createdProduct.purchase_rate
-                            ),
-                            amount: openingStockState.items[creatingProductRowIndex].quantity * getProductUnitRate(
-                                productUnitsByProduct[createdProduct.id],
-                                getDefaultProductUnitId(
-                                    productUnitsByProduct[createdProduct.id],
-                                    'report',
-                                    createdProduct.unit_id
-                                ),
-                                'purchase',
-                                createdProduct.purchase_rate
-                            )
+                            unit_id: unitId,
+                            rate,
+                            amount: openingStockState.items[creatingProductRowIndex].quantity * rate
                         }
                     }));
                 }
@@ -377,14 +346,6 @@ export default function OpeningStockPage() {
                 onOpenChange={setShowListView}
                 voucherType="opening_stock"
                 onSelectVoucher={nav.handleListSelect}
-            />
-
-            <PrintPreviewDialog
-                open={showPrintPreview}
-                onOpenChange={setShowPrintPreview}
-                voucherId={openingStockState.currentVoucherId || undefined}
-                voucherType="opening_stock"
-                title={openingStockState.currentVoucherNo ? `Print Opening Stock - ${openingStockState.currentVoucherNo}` : 'Print Opening Stock'}
             />
 
             <ProductDialog
@@ -520,7 +481,6 @@ export default function OpeningStockPage() {
                             total: item.amount
                         })}
                         onSectionExit={() => {
-                            // Focus save button logic since there is no discount
                             setTimeout(() => {
                                 document.getElementById('voucher-save-btn')?.focus();
                             }, 50);

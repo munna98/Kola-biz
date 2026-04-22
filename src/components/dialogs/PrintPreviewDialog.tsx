@@ -8,7 +8,6 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { IconPrinter, IconBarcode } from '@tabler/icons-react';
-import { usePrint } from '@/hooks/usePrint';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import BarcodeLabelDialog from './BarcodeLabelDialog';
@@ -41,9 +40,9 @@ export function PrintPreviewDialog({
     templateId,
     title = 'Print Preview',
 }: PrintPreviewDialogProps) {
-    const { printRaw, isPrinting } = usePrint();
     const [content, setContent] = useState<string>('');
     const [loading, setLoading] = useState(false);
+    const [isPrinting, setIsPrinting] = useState(false);
     const [enableBarcode, setEnableBarcode] = useState(false);
     const [barcodeDialogOpen, setBarcodeDialogOpen] = useState(false);
     const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
@@ -99,10 +98,18 @@ export function PrintPreviewDialog({
         }
     };
 
-    const handlePrint = async () => {
-        if (!content) return;
-        await printRaw(content);
-        // Optional: close on print? keeping open for now so they can reprint if needed
+    const handlePrint = () => {
+        if (!content || !frameRef.current) return;
+        setIsPrinting(true);
+        try {
+            frameRef.current.contentWindow?.focus();
+            frameRef.current.contentWindow?.print();
+        } catch (e) {
+            console.error('Print failed:', e);
+            toast.error('Failed to print');
+        } finally {
+            setIsPrinting(false);
+        }
     };
 
     const handlePrintLabels = () => {

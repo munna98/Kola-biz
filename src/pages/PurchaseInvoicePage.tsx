@@ -43,7 +43,7 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings, VoucherItemsSectionRef } from '@/components/voucher/VoucherItemsSection';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
-import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
+import { usePrint } from '@/hooks/usePrint';
 import SupplierDialog from '@/components/dialogs/SupplierDialog';
 import ProductDialog from '@/components/dialogs/ProductDialog';
 import BarcodeLabelDialog from '@/components/dialogs/BarcodeLabelDialog';
@@ -86,8 +86,7 @@ export default function PurchaseInvoicePage() {
   const [newProductName, setNewProductName] = useState('');
   const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
 
-  // New state for print preview
-  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const { print: printVoucher } = usePrint();
 
   // Create Supplier Shortcut State
   const [showCreateSupplier, setShowCreateSupplier] = useState(false);
@@ -563,7 +562,12 @@ export default function PurchaseInvoicePage() {
             if (voucherSettings?.enableBarcodePrinting) {
               barcodePending.current = true;
             }
-            setShowPrintPreview(true);
+            const idToPrint = purchaseState.currentVoucherId;
+            if (idToPrint) setTimeout(() => {
+              printVoucher({ voucherId: idToPrint, voucherType: 'purchase_invoice' }).then(() => {
+                if (barcodePending.current) { barcodePending.current = false; setShowBarcodeDialog(true); }
+              });
+            }, 100);
           } else if (voucherSettings?.enableBarcodePrinting) {
             setShowBarcodeDialog(true);
           }
@@ -629,7 +633,11 @@ export default function PurchaseInvoicePage() {
               if (voucherSettings?.enableBarcodePrinting) {
                 barcodePending.current = true;
               }
-              setShowPrintPreview(true);
+              setTimeout(() => {
+                printVoucher({ voucherId: newInvoiceId, voucherType: 'purchase_invoice' }).then(() => {
+                  if (barcodePending.current) { barcodePending.current = false; setShowBarcodeDialog(true); }
+                });
+              }, 100);
             } else if (voucherSettings?.enableBarcodePrinting) {
               setShowBarcodeDialog(true);
             }
@@ -649,7 +657,9 @@ export default function PurchaseInvoicePage() {
           } else {
             // Payment modal disabled for non-cash parties: invoice remains unpaid
             if (voucherSettings?.autoPrint) {
-              setShowPrintPreview(true);
+              setTimeout(() => {
+                printVoucher({ voucherId: newInvoiceId, voucherType: 'purchase_invoice' });
+              }, 100);
             } else if (voucherSettings?.enableBarcodePrinting) {
               // No print preview, but barcode is enabled — open barcode dialog directly
               barcodePending.current = false;
@@ -708,8 +718,7 @@ export default function PurchaseInvoicePage() {
       toast.error("Please save the invoice before printing");
       return;
     }
-    // Instead of direct print, open preview
-    setShowPrintPreview(true);
+    printVoucher({ voucherId: purchaseState.currentVoucherId, voucherType: 'purchase_invoice' });
   };
 
   // Global keyboard shortcuts hook
@@ -903,10 +912,14 @@ export default function PurchaseInvoicePage() {
           setShowQuickPayment(open);
           if (!open && autoPrintPending.current) {
             autoPrintPending.current = false;
-            // Small timeout to allow dialog to fully close visually before opening next one
-            setTimeout(() => {
-              setShowPrintPreview(true);
-            }, 100);
+            const idToPrint = savedInvoiceId || purchaseState.currentVoucherId;
+            if (idToPrint) {
+              setTimeout(() => {
+                printVoucher({ voucherId: idToPrint, voucherType: 'purchase_invoice' }).then(() => {
+                  if (barcodePending.current) { barcodePending.current = false; setShowBarcodeDialog(true); }
+                });
+              }, 100);
+            }
           } else if (!open && barcodePending.current) {
             barcodePending.current = false;
             setTimeout(() => {
@@ -933,21 +946,7 @@ export default function PurchaseInvoicePage() {
         onSelectVoucher={nav.handleListSelect}
       />
 
-      <PrintPreviewDialog
-        open={showPrintPreview}
-        onOpenChange={(open) => {
-          setShowPrintPreview(open);
-          if (!open && barcodePending.current) {
-            barcodePending.current = false;
-            setTimeout(() => {
-              setShowBarcodeDialog(true);
-            }, 100);
-          }
-        }}
-        voucherId={savedInvoiceId || purchaseState.currentVoucherId || undefined}
-        voucherType="purchase_invoice"
-        title={savedInvoiceNo || purchaseState.currentVoucherNo ? `Print Invoice - ${savedInvoiceNo || purchaseState.currentVoucherNo}` : 'Print Invoice'}
-      />
+
 
       <BarcodeLabelDialog
         open={showBarcodeDialog}

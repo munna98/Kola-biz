@@ -31,7 +31,7 @@ import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/Vouche
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
-import { PrintPreviewDialog } from '@/components/dialogs/PrintPreviewDialog';
+import { usePrint } from '@/hooks/usePrint';
 import ProductDialog from '@/components/dialogs/ProductDialog';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
@@ -65,7 +65,7 @@ export default function StockJournalPage() {
     const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
-    const [showPrintPreview, setShowPrintPreview] = useState(false);
+    const { print: printVoucher } = usePrint();
     const [showCreateProduct, setShowCreateProduct] = useState(false);
     const [newProductName, setNewProductName] = useState('');
     const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
@@ -342,7 +342,7 @@ export default function StockJournalPage() {
             toast.error('Please save the voucher before printing');
             return;
         }
-        setShowPrintPreview(true);
+        printVoucher({ voucherId: stockJournalState.currentVoucherId, voucherType: 'stock_journal' });
     };
 
     const handleAddItem = (section: JournalSection, insertAt?: number) => {
@@ -616,13 +616,7 @@ export default function StockJournalPage() {
                 onSelectVoucher={nav.handleListSelect}
             />
 
-            <PrintPreviewDialog
-                open={showPrintPreview}
-                onOpenChange={setShowPrintPreview}
-                voucherId={stockJournalState.currentVoucherId || undefined}
-                voucherType="stock_journal"
-                title={stockJournalState.currentVoucherNo ? `Print Stock Journal - ${stockJournalState.currentVoucherNo}` : 'Print Stock Journal'}
-            />
+
 
             <ProductDialog
                 open={showCreateProduct}
