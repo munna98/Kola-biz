@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
-use sqlx::sqlite::SqlitePool;
 use sqlx::{Column, Row};
 use tauri::{Manager, State};
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -26,14 +27,15 @@ impl Default for PrintSettings {
 /// Get a specific app setting by key
 #[tauri::command]
 pub async fn get_app_setting(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     key: String,
 ) -> Result<Option<String>, String> {
+    let pool = registry.active_pool().await?;
     let result = sqlx::query_scalar::<_, String>(
         "SELECT setting_value FROM app_settings WHERE setting_key = ?",
     )
     .bind(&key)
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -43,10 +45,11 @@ pub async fn get_app_setting(
 /// Set an app setting (upsert)
 #[tauri::command]
 pub async fn set_app_setting(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     key: String,
     value: String,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     sqlx::query(
         "INSERT INTO app_settings (id, setting_key, setting_value, updated_at) 
          VALUES (hex(randomblob(16)), ?, ?, CURRENT_TIMESTAMP)
@@ -56,7 +59,7 @@ pub async fn set_app_setting(
     )
     .bind(&key)
     .bind(&value)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -65,9 +68,18 @@ pub async fn set_app_setting(
 
 /// Get print settings
 #[tauri::command]
-pub async fn get_print_settings(pool: State<'_, SqlitePool>) -> Result<PrintSettings, String> {
-    let silent = get_app_setting(pool.clone(), "silent_print".to_string()).await?;
-    let printer = get_app_setting(pool.clone(), "default_printer".to_string()).await?;
+pub async fn get_print_settings(registry: State<'_, Arc<DbRegistry>>) -> Result<PrintSettings, String> {
+    let pool = registry.active_pool().await?;
+    let silent = sqlx::query_scalar::<_, String>("SELECT setting_value FROM app_settings WHERE setting_key = ?")
+        .bind("silent_print")
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+    let printer = sqlx::query_scalar::<_, String>("SELECT setting_value FROM app_settings WHERE setting_key = ?")
+        .bind("default_printer")
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(PrintSettings {
         silent_print: silent.map(|v| v == "true").unwrap_or(false),
@@ -78,17 +90,27 @@ pub async fn get_print_settings(pool: State<'_, SqlitePool>) -> Result<PrintSett
 /// Save print settings
 #[tauri::command]
 pub async fn save_print_settings(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     settings: PrintSettings,
 ) -> Result<(), String> {
-    set_app_setting(
-        pool.clone(),
-        "silent_print".to_string(),
-        settings.silent_print.to_string(),
-    )
-    .await?;
+    let pool = registry.active_pool().await?;
+    let upsert = "INSERT INTO app_settings (id, setting_key, setting_value, updated_at) 
+         VALUES (hex(randomblob(16)), ?, ?, CURRENT_TIMESTAMP)
+         ON CONFLICT(setting_key) DO UPDATE SET 
+         setting_value = excluded.setting_value, updated_at = CURRENT_TIMESTAMP";
+    sqlx::query(upsert)
+        .bind("silent_print")
+        .bind(settings.silent_print.to_string())
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
     if let Some(printer) = settings.default_printer {
-        set_app_setting(pool.clone(), "default_printer".to_string(), printer).await?;
+        sqlx::query(upsert)
+            .bind("default_printer")
+            .bind(printer)
+            .execute(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
     }
     Ok(())
 }
@@ -237,14 +259,15 @@ pub async fn print_silently(
 /// Get voucher settings for a specific voucher type
 #[tauri::command]
 pub async fn get_voucher_settings(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     voucher_type: String,
 ) -> Result<Option<serde_json::Value>, String> {
+    let pool = registry.active_pool().await?;
     let result = sqlx::query_scalar::<_, String>(
         "SELECT settings FROM voucher_settings WHERE voucher_type = ?",
     )
     .bind(&voucher_type)
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -259,10 +282,11 @@ pub async fn get_voucher_settings(
 /// Save voucher settings for a specific voucher type
 #[tauri::command]
 pub async fn save_voucher_settings(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     voucher_type: String,
     settings: serde_json::Value,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let settings_json = serde_json::to_string(&settings).map_err(|e| e.to_string())?;
 
     sqlx::query(
@@ -274,7 +298,7 @@ pub async fn save_voucher_settings(
     )
     .bind(&voucher_type)
     .bind(&settings_json)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -284,12 +308,13 @@ pub async fn save_voucher_settings(
 /// Reset database data based on selected options
 #[tauri::command]
 pub async fn reset_database_data(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     mode: String,
     voucher_types: Vec<String>,
     master_tables: Vec<String>,
     reset_sequences: bool,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Enable foreign keys explicitly to ensure data integrity or cascading
@@ -415,9 +440,10 @@ pub struct QueryResult {
 /// Execute a raw SQL query against the database
 #[tauri::command]
 pub async fn execute_raw_query(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     query: String,
 ) -> Result<QueryResult, String> {
+    let pool = registry.active_pool().await?;
     let trimmed = query.trim();
     if trimmed.is_empty() {
         return Err("Query cannot be empty".to_string());
@@ -433,7 +459,7 @@ pub async fn execute_raw_query(
     if is_select {
         // Execute as a query that returns rows
         let rows = sqlx::query(trimmed)
-            .fetch_all(pool.inner())
+            .fetch_all(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -486,7 +512,7 @@ pub async fn execute_raw_query(
     } else {
         // Execute as a statement (INSERT, UPDATE, DELETE, etc.)
         let result = sqlx::query(trimmed)
-            .execute(pool.inner())
+            .execute(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -516,12 +542,13 @@ pub struct VoucherSequence {
 
 #[tauri::command]
 pub async fn list_voucher_sequences(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<Vec<VoucherSequence>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, VoucherSequence>(
         "SELECT * FROM voucher_sequences ORDER BY voucher_type ASC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
@@ -539,10 +566,11 @@ pub struct UpdateVoucherSequence {
 
 #[tauri::command]
 pub async fn update_voucher_sequence(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     data: UpdateVoucherSequence,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     sqlx::query(
         "UPDATE voucher_sequences 
          SET prefix = ?, next_number = ?, padding = ?, suffix = ?, separator = ?, include_financial_year = ?, reset_yearly = ?
@@ -556,7 +584,7 @@ pub async fn update_voucher_sequence(
     .bind(data.include_financial_year)
     .bind(data.reset_yearly)
     .bind(&id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -565,7 +593,7 @@ pub async fn update_voucher_sequence(
 
 #[tauri::command]
 pub async fn preview_voucher_number(
-    _pool: State<'_, SqlitePool>,
+    _pool: State<'_, Arc<DbRegistry>>,
     data: UpdateVoucherSequence,
 ) -> Result<String, String> {
     let sep = &data.separator;

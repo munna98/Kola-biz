@@ -1,6 +1,7 @@
-use chrono;
+﻿use chrono;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 
 // ============= TRIAL BALANCE =============
@@ -14,10 +15,11 @@ pub struct TrialBalanceRow {
 
 #[tauri::command]
 pub async fn get_trial_balance(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     from_date: Option<String>,
     to_date: String,
 ) -> Result<Vec<TrialBalanceRow>, String> {
+    let pool = registry.active_pool().await?;
     let date_filter = if let Some(from) = from_date {
         format!(
             "AND v.voucher_date >= '{}' AND v.voucher_date <= '{}'",
@@ -44,7 +46,7 @@ pub async fn get_trial_balance(
     );
 
     sqlx::query_as::<_, TrialBalanceRow>(&query)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
 }
@@ -70,16 +72,17 @@ pub struct LedgerReport {
 
 #[tauri::command]
 pub async fn get_ledger_report(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     account_id: String,
     from_date: Option<String>,
     to_date: String,
 ) -> Result<LedgerReport, String> {
+    let pool = registry.active_pool().await?;
     let account = sqlx::query_as::<_, (f64, String)>(
         "SELECT CAST(opening_balance AS REAL), opening_balance_type FROM chart_of_accounts WHERE id = ?"
     )
     .bind(&account_id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| format!("Failed to fetch account {}: {}", account_id, e))?;
 
@@ -100,7 +103,7 @@ pub async fn get_ledger_report(
         )
         .bind(&account_id)
         .bind(from)
-        .fetch_optional(pool.inner())
+        .fetch_optional(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -136,7 +139,7 @@ pub async fn get_ledger_report(
 
     let mut entries: Vec<LedgerEntry> = sqlx::query_as(&query)
         .bind(account_id)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -178,9 +181,10 @@ pub struct BalanceSheetData {
 
 #[tauri::command]
 pub async fn get_balance_sheet(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     as_on_date: String,
 ) -> Result<BalanceSheetData, String> {
+    let pool = registry.active_pool().await?;
     let query = "
         SELECT 
             coa.account_name,
@@ -199,7 +203,7 @@ pub async fn get_balance_sheet(
 
     let rows = sqlx::query_as::<_, (String, String, String, f64, String, f64, f64)>(query)
         .bind(&as_on_date)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -271,7 +275,7 @@ pub async fn get_balance_sheet(
 
     let pl_rows = sqlx::query_as::<_, (String, f64, f64)>(pl_query)
         .bind(&as_on_date)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -322,10 +326,11 @@ pub struct PLAccount {
 
 #[tauri::command]
 pub async fn get_profit_loss(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     from_date: String,
     to_date: String,
 ) -> Result<ProfitLossData, String> {
+    let pool = registry.active_pool().await?;
     let query = "
         SELECT 
             coa.account_name,
@@ -344,7 +349,7 @@ pub async fn get_profit_loss(
     let rows = sqlx::query_as::<_, (String, String, String, f64, f64)>(query)
         .bind(&from_date)
         .bind(&to_date)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -408,10 +413,11 @@ pub struct CashFlowData {
 
 #[tauri::command]
 pub async fn get_cash_flow(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     from_date: String,
     to_date: String,
 ) -> Result<CashFlowData, String> {
+    let pool = registry.active_pool().await?;
     // Get opening date (day before from_date)
     let opening_date_obj =
         chrono::NaiveDate::parse_from_str(&from_date, "%Y-%m-%d").map_err(|e| e.to_string())?;
@@ -429,7 +435,7 @@ pub async fn get_cash_flow(
 
     let opening_cash: f64 = sqlx::query_scalar(opening_cash_query)
         .bind(&opening_date)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -445,7 +451,7 @@ pub async fn get_cash_flow(
 
     let closing_cash: f64 = sqlx::query_scalar(closing_cash_query)
         .bind(&to_date)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -467,7 +473,7 @@ pub async fn get_cash_flow(
     let cash_sales: f64 = sqlx::query_scalar(cash_sales_query)
         .bind(&from_date)
         .bind(&to_date)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .unwrap_or(0.0);
 
@@ -485,7 +491,7 @@ pub async fn get_cash_flow(
     let cash_purchases: f64 = sqlx::query_scalar(cash_purchases_query)
         .bind(&from_date)
         .bind(&to_date)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .unwrap_or(0.0);
 
@@ -504,7 +510,7 @@ pub async fn get_cash_flow(
     let debtor_payment: f64 = sqlx::query_scalar(debtor_payment_query)
         .bind(&from_date)
         .bind(&to_date)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .unwrap_or(0.0);
 
@@ -523,7 +529,7 @@ pub async fn get_cash_flow(
     let creditor_payment: f64 = sqlx::query_scalar(creditor_payment_query)
         .bind(&from_date)
         .bind(&to_date)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .unwrap_or(0.0);
 
@@ -542,7 +548,7 @@ pub async fn get_cash_flow(
     let other_expenses: f64 = sqlx::query_scalar(other_expenses_query)
         .bind(&from_date)
         .bind(&to_date)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .unwrap_or(0.0);
 
@@ -603,7 +609,7 @@ pub async fn get_cash_flow(
     let net_investing: f64 = sqlx::query_scalar(investing_query)
         .bind(&from_date)
         .bind(&to_date)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .unwrap_or(0.0);
 
@@ -631,7 +637,7 @@ pub async fn get_cash_flow(
     let net_financing: f64 = sqlx::query_scalar(financing_query)
         .bind(&from_date)
         .bind(&to_date)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .unwrap_or(0.0);
 
@@ -671,11 +677,12 @@ pub struct DayBookEntry {
 
 #[tauri::command]
 pub async fn get_day_book(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     from_date: String,
     to_date: String,
     detailed: Option<bool>,
 ) -> Result<Vec<DayBookEntry>, String> {
+    let pool = registry.active_pool().await?;
     let query = if detailed.unwrap_or(false) {
         "
             SELECT 
@@ -743,7 +750,7 @@ pub async fn get_day_book(
     sqlx::query_as::<_, DayBookEntry>(query)
         .bind(&from_date)
         .bind(&to_date)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
 }
@@ -764,12 +771,13 @@ pub struct Transaction {
 
 #[tauri::command]
 pub async fn get_transaction_report(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     from_date: String,
     to_date: String,
     voucher_type: Option<String>,
     party_id: Option<String>,
 ) -> Result<Vec<Transaction>, String> {
+    let pool = registry.active_pool().await?;
     let mut checklist = Vec::new();
 
     let mut query_str = String::from(
@@ -823,7 +831,7 @@ pub async fn get_transaction_report(
     }
 
     query
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
 }
@@ -843,10 +851,11 @@ pub struct PartyOutstanding {
 
 #[tauri::command]
 pub async fn get_party_outstanding(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     party_type: String,
     as_on_date: String,
 ) -> Result<Vec<PartyOutstanding>, String> {
+    let pool = registry.active_pool().await?;
     let (account_group, voucher_type, _code_prefix) = if party_type == "customer" {
         ("Accounts Receivable", "sales_invoice", "1003-")
     } else {
@@ -934,7 +943,7 @@ pub async fn get_party_outstanding(
             .bind(&as_on_date)
             .bind(&party_type)
             .bind(account_group)
-            .fetch_all(pool.inner())
+            .fetch_all(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -977,11 +986,12 @@ pub struct InvoiceDetail {
 
 #[tauri::command]
 pub async fn get_party_invoice_details(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     party_id: String, // This is coa.id
     party_type: String,
     as_on_date: String,
 ) -> Result<Vec<InvoiceDetail>, String> {
+    let pool = registry.active_pool().await?;
     let (voucher_type, code_prefix) = if party_type == "customer" {
         ("sales_invoice", "1003-")
     } else {
@@ -1014,7 +1024,7 @@ pub async fn get_party_invoice_details(
         .bind(&party_type)
         .bind(voucher_type)
         .bind(&as_on_date)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1057,10 +1067,11 @@ pub struct StockSummary {
 
 #[tauri::command]
 pub async fn get_stock_report(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     group_id: Option<String>,
     as_on_date: String,
 ) -> Result<Vec<StockSummary>, String> {
+    let pool = registry.active_pool().await?;
     let group_filter = if let Some(gid) = group_id {
         format!("AND p.group_id = '{}'", gid)
     } else {
@@ -1140,7 +1151,7 @@ pub async fn get_stock_report(
     .bind(&as_on_date)
     .bind(&as_on_date)
     .bind(&as_on_date)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1180,11 +1191,12 @@ pub struct StockMovement {
 
 #[tauri::command]
 pub async fn get_stock_movements(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     product_id: String,
     from_date: Option<String>,
     to_date: String,
 ) -> Result<Vec<StockMovement>, String> {
+    let pool = registry.active_pool().await?;
     let date_filter = if let Some(ref from) = from_date {
         format!(
             "AND v.voucher_date >= '{}' AND v.voucher_date <= '{}'",
@@ -1211,7 +1223,7 @@ pub async fn get_stock_movements(
         )
         .bind(&product_id)
         .bind(from)
-        .fetch_optional(pool.inner())
+        .fetch_optional(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1247,7 +1259,7 @@ pub async fn get_stock_movements(
         Option<String>,
     )> = sqlx::query_as(query.as_str())
         .bind(product_id)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1297,10 +1309,11 @@ pub struct DashboardMetrics {
 
 #[tauri::command]
 pub async fn get_dashboard_metrics(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     from_date: String,
     to_date: String,
 ) -> Result<DashboardMetrics, String> {
+    let pool = registry.active_pool().await?;
     // Get revenue (sales)
     let revenue: Option<f64> = sqlx::query_scalar(
         "SELECT CAST(COALESCE(SUM(COALESCE(grand_total, total_amount, 0)), 0) AS REAL)
@@ -1311,7 +1324,7 @@ pub async fn get_dashboard_metrics(
     )
     .bind(&from_date)
     .bind(&to_date)
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1325,7 +1338,7 @@ pub async fn get_dashboard_metrics(
     )
     .bind(&from_date)
     .bind(&to_date)
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1346,7 +1359,7 @@ pub async fn get_dashboard_metrics(
         ) * p.sales_rate, 0) AS REAL)
          FROM products p WHERE p.deleted_at IS NULL",
     )
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1365,7 +1378,7 @@ pub async fn get_dashboard_metrics(
          WHERE coa.account_group IN ('Cash', 'Bank Accounts')
          AND coa.deleted_at IS NULL",
     )
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1384,7 +1397,7 @@ pub async fn get_dashboard_metrics(
          WHERE coa.account_group = 'Accounts Receivable'
          AND coa.deleted_at IS NULL",
     )
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1403,7 +1416,7 @@ pub async fn get_dashboard_metrics(
          WHERE coa.account_group = 'Accounts Payable'
          AND coa.deleted_at IS NULL",
     )
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1425,7 +1438,7 @@ pub async fn get_dashboard_metrics(
     )
     .bind(prev_period_from.to_string())
     .bind(prev_period_to.to_string())
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1470,9 +1483,10 @@ pub struct RevenueTrend {
 
 #[tauri::command]
 pub async fn get_revenue_trend(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     days: i32,
 ) -> Result<Vec<RevenueTrend>, String> {
+    let pool = registry.active_pool().await?;
     let end_date = chrono::Local::now().naive_local().date();
     let start_date = end_date - chrono::Duration::days(days as i64);
 
@@ -1490,7 +1504,7 @@ pub async fn get_revenue_trend(
              AND deleted_at IS NULL",
         )
         .bind(&date_str)
-        .fetch_optional(pool.inner())
+        .fetch_optional(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1502,7 +1516,7 @@ pub async fn get_revenue_trend(
              AND deleted_at IS NULL",
         )
         .bind(&date_str)
-        .fetch_optional(pool.inner())
+        .fetch_optional(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1527,11 +1541,12 @@ pub struct TopProduct {
 
 #[tauri::command]
 pub async fn get_top_products(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     limit: i32,
     from_date: String,
     to_date: String,
 ) -> Result<Vec<TopProduct>, String> {
+    let pool = registry.active_pool().await?;
     let query = "
         SELECT
             p.name as product_name,
@@ -1552,7 +1567,7 @@ pub async fn get_top_products(
         .bind(&from_date)
         .bind(&to_date)
         .bind(limit)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
 }
@@ -1566,9 +1581,10 @@ pub struct CashFlowSummary {
 
 #[tauri::command]
 pub async fn get_cash_flow_summary(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     days: i32,
 ) -> Result<Vec<CashFlowSummary>, String> {
+    let pool = registry.active_pool().await?;
     let end_date = chrono::Local::now().naive_local().date();
     let start_date = end_date - chrono::Duration::days(days as i64);
 
@@ -1594,7 +1610,7 @@ pub async fn get_cash_flow_summary(
              AND v.deleted_at IS NULL",
         )
         .bind(&date_str)
-        .fetch_optional(pool.inner())
+        .fetch_optional(&pool)
         .await
         .map_err(|e| e.to_string())?
         .unwrap_or(0.0);
@@ -1615,7 +1631,7 @@ pub async fn get_cash_flow_summary(
              AND v.deleted_at IS NULL",
         )
         .bind(&date_str)
-        .fetch_optional(pool.inner())
+        .fetch_optional(&pool)
         .await
         .map_err(|e| e.to_string())?
         .unwrap_or(0.0);
@@ -1642,9 +1658,10 @@ pub struct StockAlert {
 
 #[tauri::command]
 pub async fn get_stock_alerts(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     threshold: f64,
 ) -> Result<Vec<StockAlert>, String> {
+    let pool = registry.active_pool().await?;
     let query = "
         SELECT
             p.id as product_id,
@@ -1670,7 +1687,7 @@ pub async fn get_stock_alerts(
 
     sqlx::query_as::<_, StockAlert>(query)
         .bind(threshold)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
 }
@@ -1687,9 +1704,10 @@ pub struct RecentActivity {
 
 #[tauri::command]
 pub async fn get_recent_activity(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     limit: i32,
 ) -> Result<Vec<RecentActivity>, String> {
+    let pool = registry.active_pool().await?;
     let query = "
         SELECT
             v.id as voucher_id,
@@ -1707,7 +1725,7 @@ pub async fn get_recent_activity(
 
     sqlx::query_as::<_, RecentActivity>(query)
         .bind(limit)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
 }
@@ -1721,8 +1739,9 @@ pub struct ProductGroupData {
 
 #[tauri::command]
 pub async fn get_product_groups_distribution(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<Vec<ProductGroupData>, String> {
+    let pool = registry.active_pool().await?;
     let query = "
         SELECT 
             COALESCE(pg.name, 'Ungrouped') as group_name,
@@ -1745,7 +1764,7 @@ pub async fn get_product_groups_distribution(
     ";
 
     sqlx::query_as::<_, ProductGroupData>(query)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
 }

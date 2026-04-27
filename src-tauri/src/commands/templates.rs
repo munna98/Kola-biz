@@ -1,5 +1,4 @@
-use crate::commands::company::get_company_profile;
-use crate::commands::entries::{PaymentVoucher, ReceiptVoucher};
+﻿use crate::commands::entries::{PaymentVoucher, ReceiptVoucher};
 use crate::commands::tax_utils;
 use crate::template_engine::TemplateEngine;
 use once_cell::sync::Lazy;
@@ -7,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::SqlitePool;
 use std::sync::Mutex;
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 
 // ============= INVOICE TEMPLATE STRUCT =============
@@ -60,22 +61,24 @@ static TEMPLATE_ENGINE: Lazy<Mutex<TemplateEngine>> =
 
 #[tauri::command]
 pub async fn get_invoice_templates(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<Vec<InvoiceTemplate>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, InvoiceTemplate>(
         "SELECT * FROM invoice_templates WHERE is_active = 1 ORDER BY voucher_type, name",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn set_default_template(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     template_id: String,
     voucher_type: String,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // 1. Unset default for all templates of this type
@@ -114,10 +117,11 @@ pub struct TemplateSettingsUpdate {
 
 #[tauri::command]
 pub async fn update_template_settings(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     template_id: String,
     settings: TemplateSettingsUpdate,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut query_builder = sqlx::QueryBuilder::new("UPDATE invoice_templates SET ");
     let mut separated = query_builder.separated(", ");
 
@@ -174,7 +178,7 @@ pub async fn update_template_settings(
 
     let query = query_builder.build();
     query
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -183,22 +187,23 @@ pub async fn update_template_settings(
 
 #[tauri::command]
 pub async fn render_invoice(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     voucher_id: String,
     voucher_type: String,
     template_id: Option<String>,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     // 1. Get template
     let template = if let Some(tid) = template_id {
         sqlx::query_as::<_, InvoiceTemplate>(
             "SELECT * FROM invoice_templates WHERE id = ? AND is_active = 1",
         )
         .bind(tid)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())?
     } else {
-        get_template_by_voucher_type(pool.clone(), voucher_type.clone())
+        get_template_by_voucher_type(&pool, voucher_type.clone())
             .await?
             .ok_or_else(|| "No template found for voucher type".to_string())?
     };
@@ -228,16 +233,16 @@ pub async fn render_invoice(
     }
 
     // 2. Get company profile
-    let company = get_company_profile(pool.clone())
+    let company = crate::commands::company::get_company_profile_with_pool(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
     // 3. Get voucher data
     let voucher_data = match voucher_type.as_str() {
-        "purchase_invoice" => get_purchase_invoice_data(pool.clone(), voucher_id).await?,
-        "sales_invoice" => get_sales_invoice_data(pool.clone(), voucher_id).await?,
-        "payment" => get_payment_data(pool.clone(), voucher_id).await?,
-        "receipt" => get_receipt_data(pool.clone(), voucher_id).await?,
+        "purchase_invoice" => get_purchase_invoice_data(&pool, voucher_id).await?,
+        "sales_invoice" => get_sales_invoice_data(&pool, voucher_id).await?,
+        "payment" => get_payment_data(&pool, voucher_id).await?,
+        "receipt" => get_receipt_data(&pool, voucher_id).await?,
         _ => return Err("Unsupported voucher type".to_string()),
     };
 
@@ -292,9 +297,10 @@ pub struct DesignerTemplateData {
 
 #[tauri::command]
 pub async fn get_designer_template(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     template_id: String,
 ) -> Result<DesignerTemplateData, String> {
+    let pool = registry.active_pool().await?;
     let row = sqlx::query_as::<
         _,
         (
@@ -319,7 +325,7 @@ pub async fn get_designer_template(
          FROM invoice_templates WHERE id = ?",
     )
     .bind(&template_id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| format!("Template not found: {}", e))?;
 
@@ -342,7 +348,7 @@ pub async fn get_designer_template(
 
 #[tauri::command]
 pub async fn save_designer_template(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     template_id: Option<String>,
     name: String,
     voucher_type: String,
@@ -352,6 +358,7 @@ pub async fn save_designer_template(
     footer_html: String,
     styles_css: String,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     if let Some(tid) = template_id {
         // Update existing template â€” designer is the source of truth
         sqlx::query(
@@ -368,7 +375,7 @@ pub async fn save_designer_template(
         .bind(&footer_html)
         .bind(&styles_css)
         .bind(&tid)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -395,7 +402,7 @@ pub async fn save_designer_template(
         .bind(&body_html)
         .bind(&footer_html)
         .bind(&styles_css)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -405,16 +412,17 @@ pub async fn save_designer_template(
 
 #[tauri::command]
 pub async fn reset_template_to_default(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     template_id: String,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     // Reset design_mode and layout_config so the seed can restore original HTML on next restart
     // Also re-apply the seed HTML immediately based on template_number
     let row: Option<(String, String)> = sqlx::query_as(
         "SELECT template_number, template_format FROM invoice_templates WHERE id = ?",
     )
     .bind(&template_id)
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -433,7 +441,7 @@ pub async fn reset_template_to_default(
     )
     .bind(original_mode)
     .bind(&template_id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -486,7 +494,7 @@ pub async fn reset_template_to_default(
     .bind(&footer)
     .bind(css)
     .bind(&template_id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -494,30 +502,30 @@ pub async fn reset_template_to_default(
 }
 
 async fn get_template_by_voucher_type(
-    pool: State<'_, SqlitePool>,
+    pool: &SqlitePool,
     voucher_type: String,
 ) -> Result<Option<InvoiceTemplate>, String> {
     sqlx::query_as::<_, InvoiceTemplate>(
         "SELECT * FROM invoice_templates WHERE voucher_type = ? AND is_active = 1 ORDER BY is_default DESC LIMIT 1"
     )
     .bind(voucher_type)
-    .fetch_optional(pool.inner())
+    .fetch_optional(pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 // Data getters - reusing existing commands
 async fn get_purchase_invoice_data(
-    pool: State<'_, SqlitePool>,
+    pool: &SqlitePool,
     id: String,
 ) -> Result<serde_json::Value, String> {
-    let invoice = crate::commands::invoices::get_purchase_invoice(pool.clone(), id.clone()).await?;
+    let invoice = crate::commands::invoices::get_purchase_invoice_with_pool(pool, &id).await?;
     let items =
-        crate::commands::invoices::get_purchase_invoice_items(pool.clone(), id.clone()).await?;
+        crate::commands::invoices::get_purchase_invoice_items_with_pool(pool, &id).await?;
 
     // Fetch supplier details
     let supplier =
-        crate::commands::parties::get_supplier(pool.clone(), invoice.supplier_id.clone())
+        crate::commands::parties::get_supplier_with_pool(pool, &invoice.supplier_id)
             .await
             .ok();
 
@@ -527,12 +535,12 @@ async fn get_purchase_invoice_data(
             "SELECT gstin, address_line_1, state, city, postal_code FROM suppliers WHERE id = ?",
         )
         .bind(&invoice.supplier_id)
-        .fetch_optional(pool.inner())
+        .fetch_optional(pool)
         .await
         .unwrap_or(None);
 
     // Fetch company profile and state for inter-state detection
-    let company = crate::commands::company::get_company_profile(pool.clone()).await.ok();
+    let company = crate::commands::company::get_company_profile_with_pool(pool).await.ok();
     let company_state = company.as_ref().and_then(|c| c.state.clone()).unwrap_or_default();
     let company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
 
@@ -552,7 +560,7 @@ async fn get_purchase_invoice_data(
     .bind(&invoice.voucher_date)
     .bind(&invoice.voucher_date)
     .bind(&id)
-    .fetch_one(pool.inner())
+    .fetch_one(pool)
     .await
     .unwrap_or((0.0, 0.0));
 
@@ -563,7 +571,7 @@ async fn get_purchase_invoice_data(
         "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
     .bind(&id)
-    .fetch_one(pool.inner())
+    .fetch_one(pool)
     .await
     .unwrap_or(0.0);
 
@@ -581,7 +589,7 @@ async fn get_purchase_invoice_data(
          WHERE vi.voucher_id = ?",
     )
     .bind(&id)
-    .fetch_all(pool.inner())
+    .fetch_all(pool)
     .await
     .unwrap_or_default();
 
@@ -765,7 +773,7 @@ async fn get_purchase_invoice_data(
                 Some(&company_state),
                 Some(&party_state),
             );
-            inject_gst_context(obj, pool.inner(), &id, &formatted_items, inter_state).await;
+            inject_gst_context(obj, &pool, &id, &formatted_items, inter_state).await;
         }
         Ok(invoice_val)
     } else {
@@ -775,16 +783,16 @@ async fn get_purchase_invoice_data(
 
 
 async fn get_sales_invoice_data(
-    pool: State<'_, SqlitePool>,
+    pool: &SqlitePool,
     id: String,
 ) -> Result<serde_json::Value, String> {
-    let invoice = crate::commands::invoices::get_sales_invoice(pool.clone(), id.clone()).await?;
+    let invoice = crate::commands::invoices::get_sales_invoice_with_pool(pool, &id).await?;
     let items =
-        crate::commands::invoices::get_sales_invoice_items(pool.clone(), id.clone()).await?;
+        crate::commands::invoices::get_sales_invoice_items_with_pool(pool, &id).await?;
 
     // Fetch customer details (basic struct)
     let customer =
-        crate::commands::parties::get_customer(pool.clone(), invoice.customer_id.clone())
+        crate::commands::parties::get_customer_with_pool(pool, &invoice.customer_id)
             .await
             .ok();
 
@@ -794,12 +802,12 @@ async fn get_sales_invoice_data(
             "SELECT gstin, address_line_1, state, city, postal_code FROM customers WHERE id = ?",
         )
         .bind(&invoice.customer_id)
-        .fetch_optional(pool.inner())
+        .fetch_optional(pool)
         .await
         .unwrap_or(None);
 
     // Fetch company profile and state for inter-state detection
-    let company = crate::commands::company::get_company_profile(pool.clone()).await.ok();
+    let company = crate::commands::company::get_company_profile_with_pool(pool).await.ok();
     let company_state = company.as_ref().and_then(|c| c.state.clone()).unwrap_or_default();
     let company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
 
@@ -819,7 +827,7 @@ async fn get_sales_invoice_data(
     .bind(&invoice.voucher_date)
     .bind(&invoice.voucher_date)
     .bind(&id)
-    .fetch_one(pool.inner())
+    .fetch_one(pool)
     .await
     .unwrap_or((0.0, 0.0));
 
@@ -830,7 +838,7 @@ async fn get_sales_invoice_data(
         "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
     .bind(&id)
-    .fetch_one(pool.inner())
+    .fetch_one(pool)
     .await
     .unwrap_or(0.0);
 
@@ -848,7 +856,7 @@ async fn get_sales_invoice_data(
          WHERE vi.voucher_id = ?",
     )
     .bind(&id)
-    .fetch_all(pool.inner())
+    .fetch_all(pool)
     .await
     .unwrap_or_default();
 
@@ -1036,7 +1044,7 @@ async fn get_sales_invoice_data(
                 Some(&company_state),
                 Some(&party_state),
             );
-            inject_gst_context(obj, pool.inner(), &id, &formatted_items, inter_state).await;
+            inject_gst_context(obj, &pool, &id, &formatted_items, inter_state).await;
         }
         Ok(invoice_val)
     } else {
@@ -1046,7 +1054,7 @@ async fn get_sales_invoice_data(
 
 
 async fn get_payment_data(
-    pool: State<'_, SqlitePool>,
+    pool: &SqlitePool,
     id: String,
 ) -> Result<serde_json::Value, String> {
     // Custom query to fetch single payment
@@ -1091,11 +1099,11 @@ async fn get_payment_data(
         GROUP BY v.id",
     )
     .bind(id.clone())
-    .fetch_one(pool.inner())
+    .fetch_one(pool)
     .await
     .map_err(|e| e.to_string())?;
 
-    let items = crate::commands::entries::get_payment_items(pool.clone(), id).await?;
+    let items = crate::commands::entries::get_payment_items_with_pool(pool, &id).await?;
 
     let mut val = serde_json::to_value(voucher).map_err(|e| e.to_string())?;
     if let Some(obj) = val.as_object_mut() {
@@ -1108,7 +1116,7 @@ async fn get_payment_data(
 }
 
 async fn get_receipt_data(
-    pool: State<'_, SqlitePool>,
+    pool: &SqlitePool,
     id: String,
 ) -> Result<serde_json::Value, String> {
     // Custom query to fetch single receipt
@@ -1153,11 +1161,11 @@ async fn get_receipt_data(
         GROUP BY v.id",
     )
     .bind(id.clone())
-    .fetch_one(pool.inner())
+    .fetch_one(pool)
     .await
     .map_err(|e| e.to_string())?;
 
-    let items = crate::commands::entries::get_receipt_items(pool.clone(), id).await?;
+    let items = crate::commands::entries::get_receipt_items_with_pool(pool, &id).await?;
 
     let mut val = serde_json::to_value(voucher).map_err(|e| e.to_string())?;
     if let Some(obj) = val.as_object_mut() {

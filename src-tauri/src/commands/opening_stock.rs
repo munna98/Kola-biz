@@ -1,5 +1,7 @@
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -75,7 +77,8 @@ async fn get_next_voucher_number(pool: &SqlitePool, voucher_type: &str) -> Resul
 }
 
 #[tauri::command]
-pub async fn get_opening_stocks(pool: State<'_, SqlitePool>) -> Result<Vec<OpeningStock>, String> {
+pub async fn get_opening_stocks(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<OpeningStock>, String> {
+    let pool = registry.active_pool().await?;
     let stocks = sqlx::query_as::<_, OpeningStock>(
         "SELECT 
             v.id,
@@ -90,7 +93,7 @@ pub async fn get_opening_stocks(pool: State<'_, SqlitePool>) -> Result<Vec<Openi
         WHERE v.voucher_type = 'opening_stock' AND v.deleted_at IS NULL
         ORDER BY v.voucher_date DESC, v.id DESC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -99,9 +102,10 @@ pub async fn get_opening_stocks(pool: State<'_, SqlitePool>) -> Result<Vec<Openi
 
 #[tauri::command]
 pub async fn get_opening_stock(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
 ) -> Result<OpeningStock, String> {
+    let pool = registry.active_pool().await?;
     let stock = sqlx::query_as::<_, OpeningStock>(
         "SELECT 
             v.id,
@@ -116,7 +120,7 @@ pub async fn get_opening_stock(
         WHERE v.id = ? AND v.voucher_type = 'opening_stock' AND v.deleted_at IS NULL",
     )
     .bind(id)
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?
     .ok_or_else(|| "Opening stock entry not found".to_string())?;
@@ -126,9 +130,10 @@ pub async fn get_opening_stock(
 
 #[tauri::command]
 pub async fn get_opening_stock_items(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     voucher_id: String,
 ) -> Result<Vec<OpeningStockItem>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, OpeningStockItem>(
         "SELECT 
             vi.id,
@@ -146,20 +151,21 @@ pub async fn get_opening_stock_items(
          WHERE vi.voucher_id = ?",
     )
     .bind(voucher_id)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn create_opening_stock(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     data: CreateOpeningStock,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Generate voucher number
-    let voucher_no = get_next_voucher_number(pool.inner(), "opening_stock").await?;
+    let voucher_no = get_next_voucher_number(&pool, "opening_stock").await?;
 
     // Calculate total
     let mut total_amount = 0.0;
@@ -285,10 +291,11 @@ pub async fn create_opening_stock(
 
 #[tauri::command]
 pub async fn update_opening_stock(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     data: CreateOpeningStock,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Calculate total
@@ -430,7 +437,8 @@ pub async fn update_opening_stock(
 }
 
 #[tauri::command]
-pub async fn delete_opening_stock(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn delete_opening_stock(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Delete related data

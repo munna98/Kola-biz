@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -79,9 +81,10 @@ pub struct CreatePayment {
 
 #[tauri::command]
 pub async fn create_payment(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     payment: CreatePayment,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Generate voucher number
@@ -277,7 +280,8 @@ pub async fn create_payment(
 }
 
 #[tauri::command]
-pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVoucher>, String> {
+pub async fn get_payments(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<PaymentVoucher>, String> {
+    let pool = registry.active_pool().await?;
     let payments = sqlx::query_as::<_, PaymentVoucher>(
         "SELECT 
             v.id,
@@ -322,7 +326,7 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
         GROUP BY v.id
         ORDER BY v.voucher_date DESC, v.id DESC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -331,9 +335,10 @@ pub async fn get_payments(pool: State<'_, SqlitePool>) -> Result<Vec<PaymentVouc
 
 #[tauri::command]
 pub async fn get_payment(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
 ) -> Result<PaymentVoucher, String> {
+    let pool = registry.active_pool().await?;
     let payment = sqlx::query_as::<_, PaymentVoucher>(
         "SELECT 
             v.id,
@@ -378,7 +383,7 @@ pub async fn get_payment(
         GROUP BY v.id",
     )
     .bind(id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -387,9 +392,15 @@ pub async fn get_payment(
 
 #[tauri::command]
 pub async fn get_payment_items(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     voucher_id: String,
 ) -> Result<Vec<PaymentItem>, String> {
+    let pool = registry.active_pool().await?;
+    get_payment_items_with_pool(&pool, &voucher_id).await
+}
+
+/// Internal version for use by other modules (e.g., templates.rs)
+pub(crate) async fn get_payment_items_with_pool(pool: &SqlitePool, voucher_id: &str) -> Result<Vec<PaymentItem>, String> {
     let items = sqlx::query_as::<_, PaymentItem>(
         "SELECT 
             vi.id,
@@ -409,7 +420,7 @@ pub async fn get_payment_items(
         WHERE vi.voucher_id = ?",
     )
     .bind(voucher_id)
-    .fetch_all(pool.inner())
+    .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -417,7 +428,8 @@ pub async fn get_payment_items(
 }
 
 #[tauri::command]
-pub async fn delete_payment(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn delete_payment(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get affected invoices before deleting allocations
@@ -488,10 +500,11 @@ pub async fn delete_payment(pool: State<'_, SqlitePool>, id: String) -> Result<(
 
 #[tauri::command]
 pub async fn update_payment(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     payment: CreatePayment,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // 1. Calculate totals
@@ -809,9 +822,10 @@ pub struct CreateReceipt {
 
 #[tauri::command]
 pub async fn create_receipt(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     receipt: CreateReceipt,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Generate voucher number
@@ -1007,7 +1021,8 @@ pub async fn create_receipt(
 }
 
 #[tauri::command]
-pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVoucher>, String> {
+pub async fn get_receipts(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<ReceiptVoucher>, String> {
+    let pool = registry.active_pool().await?;
     let receipts = sqlx::query_as::<_, ReceiptVoucher>(
         "SELECT 
             v.id,
@@ -1052,7 +1067,7 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
         GROUP BY v.id
         ORDER BY v.voucher_date DESC, v.id DESC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1061,9 +1076,10 @@ pub async fn get_receipts(pool: State<'_, SqlitePool>) -> Result<Vec<ReceiptVouc
 
 #[tauri::command]
 pub async fn get_receipt(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
 ) -> Result<ReceiptVoucher, String> {
+    let pool = registry.active_pool().await?;
     let receipt = sqlx::query_as::<_, ReceiptVoucher>(
         "SELECT 
             v.id,
@@ -1108,7 +1124,7 @@ pub async fn get_receipt(
         GROUP BY v.id",
     )
     .bind(id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1117,9 +1133,15 @@ pub async fn get_receipt(
 
 #[tauri::command]
 pub async fn get_receipt_items(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     voucher_id: String,
 ) -> Result<Vec<ReceiptItem>, String> {
+    let pool = registry.active_pool().await?;
+    get_receipt_items_with_pool(&pool, &voucher_id).await
+}
+
+/// Internal version for use by other modules (e.g., templates.rs)
+pub(crate) async fn get_receipt_items_with_pool(pool: &SqlitePool, voucher_id: &str) -> Result<Vec<ReceiptItem>, String> {
     let items = sqlx::query_as::<_, ReceiptItem>(
         "SELECT 
             vi.id,
@@ -1139,7 +1161,7 @@ pub async fn get_receipt_items(
         WHERE vi.voucher_id = ?",
     )
     .bind(voucher_id)
-    .fetch_all(pool.inner())
+    .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1147,7 +1169,8 @@ pub async fn get_receipt_items(
 }
 
 #[tauri::command]
-pub async fn delete_receipt(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn delete_receipt(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get affected invoices before deleting allocations
@@ -1218,10 +1241,11 @@ pub async fn delete_receipt(pool: State<'_, SqlitePool>, id: String) -> Result<(
 
 #[tauri::command]
 pub async fn update_receipt(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     receipt: CreateReceipt,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // 1. Calculate totals
@@ -1527,9 +1551,10 @@ pub struct CreateJournalEntry {
 
 #[tauri::command]
 pub async fn create_journal_entry(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     entry: CreateJournalEntry,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Generate voucher number
@@ -1597,7 +1622,8 @@ pub async fn create_journal_entry(
 }
 
 #[tauri::command]
-pub async fn get_journal_entries(pool: State<'_, SqlitePool>) -> Result<Vec<JournalEntry>, String> {
+pub async fn get_journal_entries(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<JournalEntry>, String> {
+    let pool = registry.active_pool().await?;
     let entries = sqlx::query_as::<_, JournalEntry>(
         "SELECT 
             v.id,
@@ -1618,7 +1644,7 @@ pub async fn get_journal_entries(pool: State<'_, SqlitePool>) -> Result<Vec<Jour
         GROUP BY v.id, u.full_name
         ORDER BY v.voucher_date DESC, v.created_at DESC, v.id DESC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1627,9 +1653,10 @@ pub async fn get_journal_entries(pool: State<'_, SqlitePool>) -> Result<Vec<Jour
 
 #[tauri::command]
 pub async fn get_journal_entry(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
 ) -> Result<JournalEntry, String> {
+    let pool = registry.active_pool().await?;
     let entry = sqlx::query_as::<_, JournalEntry>(
         "SELECT 
             v.id,
@@ -1650,7 +1677,7 @@ pub async fn get_journal_entry(
         GROUP BY v.id",
     )
     .bind(id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1659,9 +1686,10 @@ pub async fn get_journal_entry(
 
 #[tauri::command]
 pub async fn get_journal_entry_lines(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     voucher_id: String,
 ) -> Result<Vec<JournalEntryLine>, String> {
+    let pool = registry.active_pool().await?;
     let lines = sqlx::query_as::<_, JournalEntryLine>(
         "SELECT 
             je.id,
@@ -1677,7 +1705,7 @@ pub async fn get_journal_entry_lines(
         ORDER BY je.id ASC",
     )
     .bind(voucher_id)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1685,11 +1713,12 @@ pub async fn get_journal_entry_lines(
 }
 
 #[tauri::command]
-pub async fn delete_journal_entry(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn delete_journal_entry(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     // Check if this is a manual journal entry
     let voucher_type: String = sqlx::query_scalar("SELECT voucher_type FROM vouchers WHERE id = ?")
         .bind(&id)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1700,7 +1729,7 @@ pub async fn delete_journal_entry(pool: State<'_, SqlitePool>, id: String) -> Re
     // Soft delete voucher
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(&id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1726,9 +1755,10 @@ pub struct CreateOpeningBalance {
 
 #[tauri::command]
 pub async fn create_opening_balance(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     entry: CreateOpeningBalance,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get next voucher number
@@ -1812,22 +1842,24 @@ pub async fn create_opening_balance(
 
 #[tauri::command]
 pub async fn get_opening_balances(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<Vec<serde_json::Value>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, (String, String)>(
         "SELECT v.id, v.voucher_no FROM vouchers v WHERE v.voucher_type = 'opening_balance' AND v.deleted_at IS NULL ORDER BY v.voucher_date DESC"
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map(|rows| rows.into_iter().map(|(id, no)| serde_json::json!({"id": id, "voucher_no": no})).collect())
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn delete_opening_balance(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn delete_opening_balance(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'opening_balance'")
         .bind(id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1836,9 +1868,10 @@ pub async fn delete_opening_balance(pool: State<'_, SqlitePool>, id: String) -> 
 
 #[tauri::command]
 pub async fn get_account_balance(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     account_id: String,
 ) -> Result<f64, String> {
+    let pool = registry.active_pool().await?;
     let result = sqlx::query_as::<_, (f64, f64)>(
         "SELECT 
             COALESCE(SUM(debit), 0.0) as total_debit, 
@@ -1847,7 +1880,7 @@ pub async fn get_account_balance(
          WHERE account_id = ?",
     )
     .bind(account_id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1861,9 +1894,10 @@ pub async fn get_account_balance(
 
 #[tauri::command]
 pub async fn get_pending_invoices(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     account_id: String,
 ) -> Result<Vec<PendingInvoice>, String> {
+    let pool = registry.active_pool().await?;
     // Fetch pending invoices for the party.
     let invoices = sqlx::query_as::<_, PendingInvoice>(
         "SELECT 
@@ -1887,7 +1921,7 @@ pub async fn get_pending_invoices(
          ORDER BY v.voucher_date ASC",
     )
     .bind(account_id)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -1896,10 +1930,11 @@ pub async fn get_pending_invoices(
 
 #[tauri::command]
 pub async fn update_journal_entry(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     entry: CreateJournalEntry,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Check if this is a manual journal entry
@@ -1983,16 +2018,17 @@ pub async fn update_journal_entry(
 
 #[tauri::command]
 pub async fn get_opening_balance(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
 ) -> Result<serde_json::Value, String> {
+    let pool = registry.active_pool().await?;
     let voucher = sqlx::query_as::<_, (String, String, String, Option<String>, Option<String>)>(
         "SELECT id, voucher_no, voucher_date, reference, narration 
          FROM vouchers 
          WHERE id = ? AND voucher_type = 'opening_balance' AND deleted_at IS NULL",
     )
     .bind(id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -2007,16 +2043,17 @@ pub async fn get_opening_balance(
 
 #[tauri::command]
 pub async fn get_opening_balance_lines(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     voucher_id: String,
 ) -> Result<Vec<OpeningBalanceLine>, String> {
+    let pool = registry.active_pool().await?;
     // Only fetch the user-facing entries (not the auto-balancing ones)
     // The auto-balancing entry has account_id 3004.
 
     // Find Opening Balance Adjustment account id
     let ob_account_id: String =
         sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '3004' LIMIT 1")
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .unwrap_or("".to_string()); // empty string won't match anything valid
 
@@ -2034,7 +2071,7 @@ pub async fn get_opening_balance_lines(
     )
     .bind(voucher_id)
     .bind(ob_account_id)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -2054,10 +2091,11 @@ pub async fn get_opening_balance_lines(
 
 #[tauri::command]
 pub async fn update_opening_balance(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     entry: CreateOpeningBalance,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Check voucher type

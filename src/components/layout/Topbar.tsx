@@ -1,7 +1,10 @@
-import { IconMoon, IconSun, IconSettings } from '@tabler/icons-react';
+import { IconMoon, IconSun, IconSettings, IconBuilding, IconChevronDown } from '@tabler/icons-react';
 import { useTheme } from '../theme-provider';
 import { useDispatch, useSelector } from 'react-redux';
-import { setActiveSection, RootState } from '../../store';
+import { setActiveSection, RootState, logout } from '../../store';
+import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
+import { CompanySwitcherModal } from '../dialogs/CompanySwitcherModal';
 import {
     Menubar,
     MenubarContent,
@@ -35,6 +38,33 @@ export default function Topbar() {
 
     // Display user's full name if available, otherwise username
     const displayName = user?.full_name || user?.username || 'User';
+
+    // Active company display
+    const [companyName, setCompanyName] = useState<string>('');
+    const [switcherOpen, setSwitcherOpen] = useState(false);
+
+    const fetchCompanyName = () => {
+        invoke<any>('get_active_company')
+            .then((c) => {
+                if (c?.name) {
+                    setCompanyName(c.name);
+                } else {
+                    // Fallback to company profile name
+                    invoke<any>('get_company_profile')
+                        .then((p) => setCompanyName(p?.company_name || ''))
+                        .catch(() => setCompanyName(''));
+                }
+            })
+            .catch(() => setCompanyName(''));
+    };
+
+    useEffect(() => { fetchCompanyName(); }, []);
+
+    const handleSwitched = () => {
+        // Force re-login after company switch
+        localStorage.removeItem('auth_token');
+        dispatch(logout());
+    };
 
     return (
         <header className="bg-card border-b h-14 flex items-center px-6 gap-4 relative z-50">
@@ -119,7 +149,14 @@ export default function Topbar() {
                         Settings
                     </MenubarTrigger>
                     <MenubarContent>
-                        <MenubarItem onClick={() => handleNavigation('company_profile')}>Company Profile</MenubarItem>
+                        <MenubarSub>
+                            <MenubarSubTrigger>Company Settings</MenubarSubTrigger>
+                            <MenubarSubContent>
+                                <MenubarItem onClick={() => setSwitcherOpen(true)}>Manage Companies</MenubarItem>
+                                <MenubarItem onClick={() => handleNavigation('company_profile')}>Company Profile</MenubarItem>
+                            </MenubarSubContent>
+                        </MenubarSub>
+                        <MenubarSeparator />
                         <MenubarItem onClick={() => handleNavigation('invoice_settings')}>Invoice Settings</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('voucher_settings')}>Voucher Settings</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('voucher_sequences')}>Voucher Numbering</MenubarItem>
@@ -135,11 +172,32 @@ export default function Topbar() {
             </Menubar>
 
             <div className="ml-auto flex items-center gap-3">
+                {/* Company switcher */}
+                {companyName && (
+                    <button
+                        id="company-switcher-btn"
+                        onClick={() => setSwitcherOpen(true)}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm font-medium
+                                   bg-primary/8 border border-primary/20 hover:bg-primary/15 transition-colors
+                                   text-foreground max-w-[200px]"
+                        title="Switch company"
+                    >
+                        <IconBuilding size={14} className="text-primary shrink-0" />
+                        <span className="truncate">{companyName}</span>
+                        <IconChevronDown size={12} className="text-muted-foreground shrink-0" />
+                    </button>
+                )}
                 <ThemeToggle />
                 <div className="text-sm font-medium text-muted-foreground" title={user?.username}>
                     {displayName}
                 </div>
             </div>
+
+            <CompanySwitcherModal
+                open={switcherOpen}
+                onClose={() => setSwitcherOpen(false)}
+                onSwitched={handleSwitched}
+            />
         </header>
     );
 }

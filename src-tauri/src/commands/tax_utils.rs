@@ -1,4 +1,4 @@
-/// GST Calculation Utilities
+﻿/// GST Calculation Utilities
 ///
 /// This module provides slab-based GST resolution for invoice line items.
 /// It handles both fixed-rate and price-threshold dynamic slabs (e.g. 5/12% @1000).

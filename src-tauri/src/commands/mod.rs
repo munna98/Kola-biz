@@ -1,7 +1,8 @@
-pub mod accounts;
+﻿pub mod accounts;
 pub mod allocations;
 pub mod auth;
 pub mod company;
+pub mod company_cmds;
 pub mod employees;
 pub mod entries;
 pub mod invoice_splits;
@@ -26,6 +27,7 @@ pub use accounts::*;
 pub use allocations::*;
 pub use auth::*;
 pub use company::*;
+pub use company_cmds::*;
 pub use employees::*;
 pub use entries::*;
 pub use invoice_splits::*;

@@ -37,6 +37,7 @@ export interface TableConfig {
     headerColor?: string;
     headerFontSize?: number;
     bodyFontSize?: number;
+    bodyFontBold?: boolean;
     stripedRows?: boolean;
     stripedColor?: string;
     borderStyle?: 'full' | 'horizontal' | 'none';

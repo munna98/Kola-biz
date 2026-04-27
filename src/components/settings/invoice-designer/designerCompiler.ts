@@ -141,6 +141,7 @@ function renderThermalTable(el: DesignerElement): string {
 
     const fontSize = config.bodyFontSize || 9;
     const headerFontSize = config.headerFontSize || fontSize;
+    const bodyBold = config.bodyFontBold !== false;  // default true for thermal
 
     let html = `<table style="width:100%;border-collapse:collapse;font-size:${fontSize}pt;color:#000;">`;
 
@@ -170,7 +171,7 @@ function renderThermalTable(el: DesignerElement): string {
         } else {
             cellContent = `{{${col.key}}}`;
         }
-        html += `<td style="padding:4px 2px;text-align:${col.align};font-size:${fontSize}pt;color:#000;font-weight:bold;">${cellContent}</td>`;
+        html += `<td style="padding:4px 2px;text-align:${col.align};font-size:${fontSize}pt;color:#000;${bodyBold ? 'font-weight:bold;' : ''}">${cellContent}</td>`;
     }
     html += '</tr>{{/each}}</tbody>';
     html += '</table>';
@@ -369,7 +370,8 @@ function renderA4TableElement(el: DesignerElement): string {
         } else {
             cellContent = `{{${col.key}}}`;
         }
-        html += `<td style="padding:4px 6px;${borderStyle}text-align:${col.align};">${cellContent}</td>`;
+        const a4BodyBold = config.bodyFontBold ? 'font-weight:bold;' : '';
+        html += `<td style="padding:4px 6px;${borderStyle}text-align:${col.align};${a4BodyBold}">${cellContent}</td>`;
     }
     html += '</tr>{{/each}}</tbody>';
     html += '</table></div>';

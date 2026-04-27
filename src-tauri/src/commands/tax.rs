@@ -6,7 +6,8 @@
 use crate::commands::tax_utils::GstTaxSlab;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::SqlitePool;
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -14,15 +15,16 @@ use uuid::Uuid;
 
 #[tauri::command]
 pub async fn get_gst_tax_slabs(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<Vec<GstTaxSlab>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, GstTaxSlab>(
         "SELECT id, name, is_dynamic, fixed_rate, threshold, below_rate, above_rate, is_active
          FROM gst_tax_slabs
          WHERE is_active = 1
          ORDER BY is_dynamic ASC, fixed_rate ASC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
@@ -39,9 +41,10 @@ pub struct CreateGstSlabInput {
 
 #[tauri::command]
 pub async fn create_gst_tax_slab(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     input: CreateGstSlabInput,
 ) -> Result<GstTaxSlab, String> {
+    let pool = registry.active_pool().await?;
     let id = Uuid::now_v7().to_string();
     sqlx::query(
         "INSERT INTO gst_tax_slabs (id, name, is_dynamic, fixed_rate, threshold, below_rate, above_rate)
@@ -54,7 +57,7 @@ pub async fn create_gst_tax_slab(
     .bind(input.threshold.unwrap_or(0.0))
     .bind(input.below_rate.unwrap_or(0.0))
     .bind(input.above_rate.unwrap_or(0.0))
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -63,7 +66,7 @@ pub async fn create_gst_tax_slab(
          FROM gst_tax_slabs WHERE id = ?",
     )
     .bind(&id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())
 }
@@ -81,9 +84,10 @@ pub struct UpdateGstSlabInput {
 
 #[tauri::command]
 pub async fn update_gst_tax_slab(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     input: UpdateGstSlabInput,
 ) -> Result<GstTaxSlab, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query(
         "UPDATE gst_tax_slabs
          SET name = ?, is_dynamic = ?, fixed_rate = ?, threshold = ?, below_rate = ?, above_rate = ?
@@ -96,7 +100,7 @@ pub async fn update_gst_tax_slab(
     .bind(input.below_rate.unwrap_or(0.0))
     .bind(input.above_rate.unwrap_or(0.0))
     .bind(&input.id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -105,22 +109,23 @@ pub async fn update_gst_tax_slab(
          FROM gst_tax_slabs WHERE id = ?",
     )
     .bind(&input.id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn delete_gst_tax_slab(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     slab_id: String,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     // Prevent deletion if this slab is used by any product
     let usage: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM products WHERE gst_slab_id = ?",
     )
     .bind(&slab_id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .unwrap_or(0);
 
@@ -134,7 +139,7 @@ pub async fn delete_gst_tax_slab(
     // Soft-delete (deactivate)
     sqlx::query("UPDATE gst_tax_slabs SET is_active = 0 WHERE id = ?")
         .bind(&slab_id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -152,10 +157,11 @@ pub struct GstSettings {
 
 #[tauri::command]
 pub async fn get_gst_settings(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<GstSettings, String> {
+    let pool = registry.active_pool().await?;
     let read = |key: &'static str| {
-        let pool = pool.inner().clone();
+        let pool = pool.clone();
         async move {
             sqlx::query_scalar::<_, String>(
                 "SELECT setting_value FROM app_settings WHERE setting_key = ?",
@@ -186,9 +192,10 @@ pub async fn get_gst_settings(
 
 #[tauri::command]
 pub async fn save_gst_settings(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     settings: GstSettings,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let pairs: Vec<(&str, String)> = vec![
         ("gst_enabled",            settings.gst_enabled.to_string()),
         ("gst_registration_type",  settings.gst_registration_type.clone()),
@@ -205,7 +212,7 @@ pub async fn save_gst_settings(
         .bind(Uuid::now_v7().to_string())
         .bind(key)
         .bind(value)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
     }
@@ -218,10 +225,11 @@ pub async fn save_gst_settings(
 /// GSTR-1: Outward supply summary grouped by HSN/SAC + description + unit + resolved GST rate.
 #[tauri::command]
 pub async fn get_gstr1_summary(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     from_date: String,
     to_date: String,
 ) -> Result<serde_json::Value, String> {
+    let pool = registry.active_pool().await?;
     // Each tuple: (description, hsn, uqc, gst_rate, taxable, cgst, sgst, igst, tax, total)
     let rows: Vec<(String, String, String, f64, f64, f64, f64, f64, f64, f64)> = sqlx::query_as(
         "SELECT
@@ -247,7 +255,7 @@ pub async fn get_gstr1_summary(
     )
     .bind(&from_date)
     .bind(&to_date)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -277,10 +285,11 @@ pub async fn get_gstr1_summary(
 /// GSTR-3B: Net output liability vs input credit for the period.
 #[tauri::command]
 pub async fn get_gstr3b_summary(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     from_date: String,
     to_date: String,
 ) -> Result<serde_json::Value, String> {
+    let pool = registry.active_pool().await?;
     // Outward supplies (sales)
     let out: (f64, f64, f64, f64) = sqlx::query_as(
         "SELECT
@@ -296,7 +305,7 @@ pub async fn get_gstr3b_summary(
     )
     .bind(&from_date)
     .bind(&to_date)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .unwrap_or((0.0, 0.0, 0.0, 0.0));
 
@@ -315,7 +324,7 @@ pub async fn get_gstr3b_summary(
     )
     .bind(&from_date)
     .bind(&to_date)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .unwrap_or((0.0, 0.0, 0.0, 0.0));
 

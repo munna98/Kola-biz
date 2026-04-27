@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+﻿use serde::{Deserialize, Serialize};
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -25,8 +26,9 @@ struct JournalEntryRow {
 #[tauri::command]
 pub async fn get_cash_invoice_splits(
     invoice_id: String,
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<Vec<PaymentLine>, String> {
+    let pool = registry.active_pool().await?;
     // A sales invoice debits Cash/Bank.
     // A purchase invoice credits Cash/Bank.
     // We fetch any entries for this invoice that touch a Cash or Bank Account.
@@ -45,7 +47,7 @@ pub async fn get_cash_invoice_splits(
         "#,
     )
     .bind(&invoice_id)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -75,8 +77,9 @@ pub async fn get_cash_invoice_splits(
 pub async fn adjust_cash_invoice_splits(
     invoice_id: String,
     splits: Vec<PaymentLine>,
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Validate that the invoice actually exists

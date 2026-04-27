@@ -1,8 +1,9 @@
 use bcrypt::{hash, verify, DEFAULT_COST};
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -75,9 +76,10 @@ pub struct SessionCheckResponse {
 
 // Check if any users exist in the database
 #[tauri::command]
-pub async fn check_if_users_exist(pool: State<'_, SqlitePool>) -> Result<bool, String> {
+pub async fn check_if_users_exist(registry: State<'_, Arc<DbRegistry>>) -> Result<bool, String> {
+    let pool = registry.active_pool().await?;
     let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE is_active = 1")
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .map_err(|e| format!("Database error: {}", e))?;
 
@@ -87,13 +89,18 @@ pub async fn check_if_users_exist(pool: State<'_, SqlitePool>) -> Result<bool, S
 // Create initial admin user
 #[tauri::command]
 pub async fn create_initial_user(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     username: String,
     password: String,
     full_name: String,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     // Check if users already exist
-    let users_exist = check_if_users_exist(pool.clone()).await?;
+    let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM users WHERE is_active = 1")
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| format!("Database error: {}", e))?;
+    let users_exist = count.0 > 0;
     if users_exist {
         return Err("Users already exist. Cannot create initial user.".to_string());
     }
@@ -122,7 +129,7 @@ pub async fn create_initial_user(
     .bind(username.trim())
     .bind(password_hash)
     .bind(full_name.trim())
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| format!("Failed to create user: {}", e))?;
 
@@ -130,23 +137,25 @@ pub async fn create_initial_user(
 }
 
 #[tauri::command]
-pub async fn get_users(pool: State<'_, SqlitePool>) -> Result<Vec<User>, String> {
+pub async fn get_users(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<User>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, User>(
         "SELECT id, username, full_name, role, is_active FROM users ORDER BY username",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| format!("Failed to fetch users: {}", e))
 }
 
 #[tauri::command]
 pub async fn create_user(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     username: String,
     password: String,
     full_name: String,
     role: String,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     // Validate input
     if username.trim().is_empty() {
         return Err("Username cannot be empty".to_string());
@@ -170,7 +179,7 @@ pub async fn create_user(
     .bind(password_hash)
     .bind(full_name.trim())
     .bind(role)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| format!("Failed to create user: {}", e))?;
 
@@ -179,9 +188,10 @@ pub async fn create_user(
 
 #[tauri::command]
 pub async fn update_user(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     data: UpdateUserRequest,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query(
         "UPDATE users SET full_name = ?, role = ?, is_active = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     )
@@ -189,7 +199,7 @@ pub async fn update_user(
     .bind(data.role)
     .bind(data.is_active)
     .bind(data.id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| format!("Failed to update user: {}", e))?;
 
@@ -197,20 +207,21 @@ pub async fn update_user(
 }
 
 #[tauri::command]
-pub async fn delete_user(pool: State<'_, SqlitePool>, id: String) -> Result<String, String> {
+pub async fn delete_user(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     // We'll do a soft delete by setting is_active = 0 for now,
     // or just delete if it's not the last admin?
     // Let's just delete for now but prevent deleting the last admin.
 
     let admin_count: (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM users WHERE role = 'admin' AND is_active = 1")
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
     let user_to_delete: (String,) = sqlx::query_as("SELECT role FROM users WHERE id = ?")
         .bind(&id)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -220,7 +231,7 @@ pub async fn delete_user(pool: State<'_, SqlitePool>, id: String) -> Result<Stri
 
     sqlx::query("DELETE FROM users WHERE id = ?")
         .bind(id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| format!("Failed to delete user: {}", e))?;
 
@@ -229,9 +240,10 @@ pub async fn delete_user(pool: State<'_, SqlitePool>, id: String) -> Result<Stri
 
 #[tauri::command]
 pub async fn reset_user_password(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     data: ResetPasswordRequest,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     if data.password.len() < 4 {
         return Err("Password must be at least 4 characters".to_string());
     }
@@ -242,7 +254,7 @@ pub async fn reset_user_password(
     sqlx::query("UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(password_hash)
         .bind(data.id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| format!("Failed to reset password: {}", e))?;
 
@@ -252,11 +264,12 @@ pub async fn reset_user_password(
 // Login command
 #[tauri::command]
 pub async fn login(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     session_store: State<'_, SessionStore>,
     username: String,
     password: String,
 ) -> Result<LoginResponse, String> {
+    let pool = registry.active_pool().await?;
     // Fetch user from database
     let user_result: Result<(String, String, String, Option<String>, String, i64), sqlx::Error> =
         sqlx::query_as(
@@ -264,7 +277,7 @@ pub async fn login(
              FROM users WHERE username = ?",
         )
         .bind(username.trim())
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await;
 
     match user_result {
@@ -296,7 +309,7 @@ pub async fn login(
             // Update last login time
             let _ = sqlx::query("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?")
                 .bind(&id)
-                .execute(pool.inner())
+                .execute(&pool)
                 .await;
 
             // Create session
@@ -345,10 +358,11 @@ pub async fn logout(
 // Check session validity
 #[tauri::command]
 pub async fn check_session(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     session_store: State<'_, SessionStore>,
     token: String,
 ) -> Result<SessionCheckResponse, String> {
+    let pool = registry.active_pool().await?;
     match session_store.get_user_id(&token) {
         Some(user_id) => {
             // Fetch user details
@@ -358,7 +372,7 @@ pub async fn check_session(
                      FROM users WHERE id = ?",
                 )
                 .bind(user_id)
-                .fetch_one(pool.inner())
+                .fetch_one(&pool)
                 .await;
 
             match user_result {

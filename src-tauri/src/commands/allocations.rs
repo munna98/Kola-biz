@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+﻿use serde::{Deserialize, Serialize};
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -39,10 +40,11 @@ pub struct OutstandingInvoice {
 // Get outstanding invoices for a party
 #[tauri::command]
 pub async fn get_outstanding_invoices(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     party_id: String,
     voucher_type: String, // 'sales_invoice' or 'purchase_invoice'
 ) -> Result<Vec<OutstandingInvoice>, String> {
+    let pool = registry.active_pool().await?;
     let invoices = sqlx::query_as::<_, OutstandingInvoice>(
         "SELECT 
             v.id,
@@ -76,7 +78,7 @@ pub async fn get_outstanding_invoices(
     )
     .bind(&voucher_type)
     .bind(party_id)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -86,9 +88,10 @@ pub async fn get_outstanding_invoices(
 // Create allocation
 #[tauri::command]
 pub async fn create_allocation(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     allocation: CreateAllocation,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get party info from invoice
@@ -162,14 +165,15 @@ pub async fn create_allocation(
 // Get allocations for a payment/receipt
 #[tauri::command]
 pub async fn get_payment_allocations(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     payment_voucher_id: String,
 ) -> Result<Vec<PaymentAllocation>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, PaymentAllocation>(
         "SELECT * FROM payment_allocations WHERE payment_voucher_id = ? ORDER BY allocation_date",
     )
     .bind(payment_voucher_id)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
@@ -177,14 +181,15 @@ pub async fn get_payment_allocations(
 // Get allocations for an invoice
 #[tauri::command]
 pub async fn get_invoice_allocations(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     invoice_voucher_id: String,
 ) -> Result<Vec<PaymentAllocation>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, PaymentAllocation>(
         "SELECT * FROM payment_allocations WHERE invoice_voucher_id = ? ORDER BY allocation_date",
     )
     .bind(invoice_voucher_id)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
@@ -206,9 +211,10 @@ pub struct AllocationWithDetails {
 // Get allocations with payment voucher details
 #[tauri::command]
 pub async fn get_invoice_allocations_with_details(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     invoice_voucher_id: String,
 ) -> Result<Vec<AllocationWithDetails>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, AllocationWithDetails>(
         "SELECT 
             pa.id,
@@ -232,14 +238,15 @@ pub async fn get_invoice_allocations_with_details(
         ORDER BY pa.allocation_date DESC, pa.id DESC",
     )
     .bind(invoice_voucher_id)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 // Delete allocation
 #[tauri::command]
-pub async fn delete_allocation(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn delete_allocation(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice_id before deleting
@@ -312,9 +319,10 @@ pub struct QuickPayment {
 
 #[tauri::command]
 pub async fn create_quick_payment(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     payment: QuickPayment,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details
@@ -538,9 +546,10 @@ pub struct UpdateQuickPayment {
 
 #[tauri::command]
 pub async fn update_quick_payment(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     payment: UpdateQuickPayment,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details for party info

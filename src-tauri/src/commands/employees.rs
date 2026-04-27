@@ -1,5 +1,7 @@
-use serde::{Deserialize, Serialize};
-use sqlx::{Row, SqlitePool};
+﻿use serde::{Deserialize, Serialize};
+use sqlx::Row;
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -57,9 +59,10 @@ pub struct UpdateEmployeeRequest {
 
 #[tauri::command]
 pub async fn create_employee(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     data: CreateEmployeeRequest,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     let employee_id = Uuid::now_v7().to_string();
@@ -136,7 +139,8 @@ pub async fn create_employee(
 }
 
 #[tauri::command]
-pub async fn get_employees(pool: State<'_, SqlitePool>) -> Result<Vec<Employee>, String> {
+pub async fn get_employees(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Employee>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Employee>(
         r#"SELECT 
             id, user_id, account_id, code, name, designation, phone, email, address, 
@@ -146,16 +150,17 @@ pub async fn get_employees(pool: State<'_, SqlitePool>) -> Result<Vec<Employee>,
         WHERE deleted_at IS NULL 
         ORDER BY name"#,
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn update_employee(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     data: UpdateEmployeeRequest,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // 1. Update Employee
@@ -286,11 +291,12 @@ pub async fn update_employee(
 }
 
 #[tauri::command]
-pub async fn delete_employee(pool: State<'_, SqlitePool>, id: String) -> Result<String, String> {
+pub async fn delete_employee(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     // Soft delete
     sqlx::query("UPDATE employees SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 

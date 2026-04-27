@@ -1,5 +1,6 @@
-use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+﻿use serde::{Deserialize, Serialize};
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -91,7 +92,8 @@ pub struct CreateSalesReturn {
 }
 
 #[tauri::command]
-pub async fn get_sales_returns(pool: State<'_, SqlitePool>) -> Result<Vec<SalesReturn>, String> {
+pub async fn get_sales_returns(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<SalesReturn>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, SalesReturn>(
         "SELECT 
             v.id,
@@ -118,16 +120,17 @@ pub async fn get_sales_returns(pool: State<'_, SqlitePool>) -> Result<Vec<SalesR
          GROUP BY v.id
          ORDER BY v.voucher_date DESC, v.id DESC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn get_sales_return(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
 ) -> Result<SalesReturn, String> {
+    let pool = registry.active_pool().await?;
     let invoice = sqlx::query_as::<_, SalesReturn>(
         "SELECT 
             v.id,
@@ -154,7 +157,7 @@ pub async fn get_sales_return(
          GROUP BY v.id",
     )
     .bind(id)
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?
     .ok_or_else(|| "Sales return not found".to_string())?;
@@ -164,9 +167,10 @@ pub async fn get_sales_return(
 
 #[tauri::command]
 pub async fn get_sales_return_items(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     voucher_id: String,
 ) -> Result<Vec<SalesReturnItem>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, SalesReturnItem>(
         "SELECT vi.*, p.name as product_name
          FROM voucher_items vi
@@ -174,19 +178,20 @@ pub async fn get_sales_return_items(
          WHERE vi.voucher_id = ?",
     )
     .bind(voucher_id)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn create_sales_return(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     invoice: CreateSalesReturn,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    let voucher_no = get_next_voucher_number(pool.inner(), "sales_return").await?;
+    let voucher_no = get_next_voucher_number(&pool, "sales_return").await?;
     let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
         .fetch_optional(&mut *tx)
         .await
@@ -207,7 +212,7 @@ pub async fn create_sales_return(
         prepared_lines.push(
             prepare_voucher_line(
                 &mut tx,
-                pool.inner(),
+                &pool,
                 "sale",
                 &item.product_id,
                 item.unit_id.as_deref(),
@@ -405,10 +410,11 @@ pub async fn create_sales_return(
 
 #[tauri::command]
 pub async fn update_sales_return(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     invoice: CreateSalesReturn,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
         .fetch_optional(&mut *tx)
@@ -430,7 +436,7 @@ pub async fn update_sales_return(
         prepared_lines.push(
             prepare_voucher_line(
                 &mut tx,
-                pool.inner(),
+                &pool,
                 "sale",
                 &item.product_id,
                 item.unit_id.as_deref(),
@@ -643,7 +649,8 @@ pub async fn update_sales_return(
 }
 
 #[tauri::command]
-pub async fn delete_sales_return(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn delete_sales_return(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")

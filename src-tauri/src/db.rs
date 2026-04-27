@@ -1,21 +1,8 @@
-use sqlx::{migrate::MigrateDatabase, sqlite::SqlitePool, Sqlite};
-use tauri::Manager;
+use sqlx::sqlite::SqlitePool;
 
-pub async fn init_db(
-    app_handle: &tauri::AppHandle,
-) -> Result<SqlitePool, Box<dyn std::error::Error>> {
-    let app_dir = app_handle.path().app_data_dir()?;
-    std::fs::create_dir_all(&app_dir)?;
-
-    let db_path = app_dir.join("erp.db");
-    let db_url = format!("sqlite:{}", db_path.display());
-
-    if !Sqlite::database_exists(&db_url).await? {
-        Sqlite::create_database(&db_url).await?;
-    }
-
-    let pool = SqlitePool::connect(&db_url).await?;
-    println!("DB: Connected successfully");
+/// Initialize the schema (tables + migrations) on an already-connected pool.
+/// Called by DbRegistry when opening or creating a company database.
+pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
 
     // ==================== CORE TABLES ====================
 
@@ -34,11 +21,11 @@ pub async fn init_db(
             last_login DATETIME
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)")
-        .execute(&pool)
+        .execute(pool)
         .await?;
     println!("DB: Users table created/checked");
 
@@ -51,7 +38,7 @@ pub async fn init_db(
             code TEXT UNIQUE NOT NULL
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Units
@@ -65,11 +52,11 @@ pub async fn init_db(
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     let _ = sqlx::query("ALTER TABLE units ADD COLUMN is_default INTEGER DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     sqlx::query(
@@ -80,7 +67,7 @@ pub async fn init_db(
          END
          WHERE EXISTS (SELECT 1 FROM units)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // ==================== PRODUCT MODULE ====================
@@ -97,7 +84,7 @@ pub async fn init_db(
             deleted_at DATETIME
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Products
@@ -121,11 +108,11 @@ pub async fn init_db(
             FOREIGN KEY (unit_id) REFERENCES units(id)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     let _ = sqlx::query("ALTER TABLE products ADD COLUMN barcode TEXT")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // ==================== ACCOUNTING MODULE ====================
@@ -141,7 +128,7 @@ pub async fn init_db(
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Chart of Accounts (Parties & Ledgers)
@@ -164,7 +151,7 @@ pub async fn init_db(
             deleted_at DATETIME
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Customers (Legacy - maintained for compatibility if needed, but logic uses chart_of_accounts)
@@ -182,7 +169,7 @@ pub async fn init_db(
             deleted_at DATETIME
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Suppliers (Legacy)
@@ -200,7 +187,7 @@ pub async fn init_db(
             deleted_at DATETIME
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Opening Balances
@@ -216,7 +203,7 @@ pub async fn init_db(
             FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // ==================== TRANSACTION MODULE ====================
@@ -248,44 +235,44 @@ pub async fn init_db(
             deleted_at DATETIME
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Migration: Add show_less_column if not exists
     let _ =
         sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_less_column INTEGER DEFAULT 1")
-            .execute(&pool)
+            .execute(pool)
             .await;
 
     // Migration: Add salesperson_id to vouchers if not exists
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN salesperson_id TEXT")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // Migration: Add created_by to vouchers if not exists
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN created_by TEXT")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // Migration: Add tax_inclusive to vouchers if not exists
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN tax_inclusive INTEGER NOT NULL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // Migration: Add GST split columns to vouchers if not exists
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN cgst_amount REAL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN sgst_amount REAL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN igst_amount REAL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // Migration: Add grand_total to vouchers if not exists
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN grand_total REAL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // Data fix: Backfill grand_total for payment/receipt vouchers where it was never stored (still 0).
@@ -303,7 +290,7 @@ pub async fn init_db(
            AND total_amount > 0
            AND deleted_at IS NULL"
     )
-    .execute(&pool)
+    .execute(pool)
     .await;
 
     let _ = sqlx::query(
@@ -320,7 +307,7 @@ pub async fn init_db(
            AND total_amount > 0
            AND deleted_at IS NULL"
     )
-    .execute(&pool)
+    .execute(pool)
     .await;
 
     // Simpler fallback: if journal approach gives NULL, just copy total_amount
@@ -332,21 +319,21 @@ pub async fn init_db(
            AND total_amount > 0
            AND deleted_at IS NULL"
     )
-    .execute(&pool)
+    .execute(pool)
     .await;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_salesperson ON vouchers(salesperson_id)")
-        .execute(&pool)
+        .execute(pool)
         .await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_type ON vouchers(voucher_type)")
-        .execute(&pool)
+        .execute(pool)
         .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_date ON vouchers(voucher_date)")
-        .execute(&pool)
+        .execute(pool)
         .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_party ON vouchers(party_id, party_type)")
-        .execute(&pool)
+        .execute(pool)
         .await?;
 
     // Voucher Items (Invoice Line Items)
@@ -373,7 +360,7 @@ pub async fn init_db(
             FOREIGN KEY (product_id) REFERENCES products(id)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     sqlx::query(
@@ -394,25 +381,25 @@ pub async fn init_db(
             FOREIGN KEY (unit_id) REFERENCES units(id)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_product_unit_conversions_product
          ON product_unit_conversions(product_id)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_product_unit_conversions_unit
          ON product_unit_conversions(unit_id)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
     let _ = sqlx::query("ALTER TABLE product_unit_conversions ADD COLUMN purchase_rate REAL NOT NULL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
     let _ = sqlx::query("ALTER TABLE product_unit_conversions ADD COLUMN sales_rate REAL NOT NULL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // Migration: ensure every product has at least a base unit conversion
@@ -422,7 +409,7 @@ pub async fn init_db(
          LEFT JOIN product_unit_conversions puc ON p.id = puc.product_id
          WHERE puc.id IS NULL"
     )
-    .fetch_all(&pool)
+    .fetch_all(pool)
     .await;
 
     if let Ok(products) = unmapped_products {
@@ -438,37 +425,37 @@ pub async fn init_db(
             .bind(unit_id)
             .bind(purchase_rate)
             .bind(sales_rate)
-            .execute(&pool)
+            .execute(pool)
             .await;
         }
     }
 
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN unit_id TEXT")
-        .execute(&pool)
+        .execute(pool)
         .await;
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN base_quantity REAL")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_voucher_items_voucher ON voucher_items(voucher_id)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_voucher_items_product ON voucher_items(product_id)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Migration: Add discount_percent to voucher_items if not exists
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN discount_percent REAL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // Migration: Add discount_amount to voucher_items if not exists
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN discount_amount REAL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // Journal Entries (Ledger Postings)
@@ -486,14 +473,14 @@ pub async fn init_db(
             FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_voucher ON journal_entries(voucher_id)")
-        .execute(&pool)
+        .execute(pool)
         .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_account ON journal_entries(account_id)")
-        .execute(&pool)
+        .execute(pool)
         .await?;
 
     // Stock Movements
@@ -512,18 +499,18 @@ pub async fn init_db(
             FOREIGN KEY (product_id) REFERENCES products(id)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_stock_movements_voucher ON stock_movements(voucher_id)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Payment/Receipt Allocations
@@ -542,12 +529,12 @@ pub async fn init_db(
             FOREIGN KEY (invoice_voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_payment ON payment_allocations(payment_voucher_id)").execute(&pool).await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_invoice ON payment_allocations(invoice_voucher_id)").execute(&pool).await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_party ON payment_allocations(party_id, party_type)").execute(&pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_payment ON payment_allocations(payment_voucher_id)").execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_invoice ON payment_allocations(invoice_voucher_id)").execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_party ON payment_allocations(party_id, party_type)").execute(pool).await?;
 
     // ==================== SETTINGS & CONFIG ====================
 
@@ -585,34 +572,34 @@ pub async fn init_db(
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Migration: Add show_less_column if not exists
     let _ =
         sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_less_column INTEGER DEFAULT 1")
-            .execute(&pool)
+            .execute(pool)
             .await;
 
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_voucher_items_voucher ON voucher_items(voucher_id)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_voucher_items_product ON voucher_items(product_id)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Migration: Add discount_percent to voucher_items if not exists
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN discount_percent REAL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // Migration: Add discount_amount to voucher_items if not exists
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN discount_amount REAL DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // Journal Entries (Ledger Postings)
@@ -630,14 +617,14 @@ pub async fn init_db(
             FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_voucher ON journal_entries(voucher_id)")
-        .execute(&pool)
+        .execute(pool)
         .await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_account ON journal_entries(account_id)")
-        .execute(&pool)
+        .execute(pool)
         .await?;
 
     // Stock Movements
@@ -656,18 +643,18 @@ pub async fn init_db(
             FOREIGN KEY (product_id) REFERENCES products(id)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_stock_movements_voucher ON stock_movements(voucher_id)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Payment/Receipt Allocations
@@ -686,12 +673,12 @@ pub async fn init_db(
             FOREIGN KEY (invoice_voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_payment ON payment_allocations(payment_voucher_id)").execute(&pool).await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_invoice ON payment_allocations(invoice_voucher_id)").execute(&pool).await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_party ON payment_allocations(party_id, party_type)").execute(&pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_payment ON payment_allocations(payment_voucher_id)").execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_invoice ON payment_allocations(invoice_voucher_id)").execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_party ON payment_allocations(party_id, party_type)").execute(pool).await?;
 
     // ==================== SETTINGS & CONFIG ====================
 
@@ -729,13 +716,13 @@ pub async fn init_db(
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Migration: Add show_less_column if not exists
     let _ =
         sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_less_column INTEGER DEFAULT 1")
-            .execute(&pool)
+            .execute(pool)
             .await;
 
     // Voucher Sequences
@@ -752,21 +739,21 @@ pub async fn init_db(
             reset_yearly INTEGER DEFAULT 0
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Migrations: add new columns to voucher_sequences if not exists
     let _ = sqlx::query("ALTER TABLE voucher_sequences ADD COLUMN suffix TEXT NOT NULL DEFAULT ''")
-        .execute(&pool)
+        .execute(pool)
         .await;
     let _ = sqlx::query("ALTER TABLE voucher_sequences ADD COLUMN separator TEXT NOT NULL DEFAULT '-'")
-        .execute(&pool)
+        .execute(pool)
         .await;
     let _ = sqlx::query("ALTER TABLE voucher_sequences ADD COLUMN include_financial_year INTEGER DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
     let _ = sqlx::query("ALTER TABLE voucher_sequences ADD COLUMN reset_yearly INTEGER DEFAULT 0")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     sqlx::query(
@@ -784,7 +771,7 @@ pub async fn init_db(
         ('vs_' || hex(randomblob(16)), 'opening_stock', 'OS'),
         ('vs_' || hex(randomblob(16)), 'stock_journal', 'STJ')",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Company Profile & Other Global Settings
@@ -816,7 +803,7 @@ pub async fn init_db(
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Voucher Settings
@@ -827,7 +814,7 @@ pub async fn init_db(
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     sqlx::query(
@@ -838,7 +825,7 @@ pub async fn init_db(
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // ==================== HR & PAYROLL MODULE ====================
@@ -864,11 +851,11 @@ pub async fn init_db(
             FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_employees_user ON employees(user_id)")
-        .execute(&pool)
+        .execute(pool)
         .await?;
 
     // ==================== GST MODULE ====================
@@ -887,7 +874,7 @@ pub async fn init_db(
             created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // Seed default GST slabs
@@ -898,14 +885,14 @@ pub async fn init_db(
         ('gst_18',  'GST 18%',  0, 18),
         ('gst_28',  'GST 28%',  0, 28)",
     )
-    .execute(&pool)
+    .execute(pool)
     .await?;
 
     // ==================== GST MODULE MIGRATIONS ====================
 
     // Migration: rename GST 0% to NIL
     let _ = sqlx::query("UPDATE gst_tax_slabs SET name = 'NIL' WHERE id = 'gst_0' AND name != 'NIL'")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // Migration: update apparel slab for existing databases
@@ -914,89 +901,89 @@ pub async fn init_db(
          SET name = 'GST 5/18% @2500', threshold = 2500.0, above_rate = 18.0
          WHERE id = 'gst_apparel' AND (name = 'GST 5/12% @1000' OR above_rate = 12.0)"
     )
-    .execute(&pool)
+    .execute(pool)
     .await;
 
     // Migration: retire GST 12% fixed slab
     let _ = sqlx::query("UPDATE gst_tax_slabs SET is_active = 0 WHERE id = 'gst_12'")
-    .execute(&pool)
+    .execute(pool)
     .await;
 
     // Migration: Add GST columns to products
     let _ = sqlx::query("ALTER TABLE products ADD COLUMN hsn_sac_code TEXT")
-        .execute(&pool)
+        .execute(pool)
         .await;
     let _ = sqlx::query("ALTER TABLE products ADD COLUMN gst_slab_id TEXT REFERENCES gst_tax_slabs(id)")
-        .execute(&pool)
+        .execute(pool)
         .await;
 
     // Migration: Add GST columns to customers
-    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN gstin TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN address_line_1 TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN address_line_2 TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN address_line_3 TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN state TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN city TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN postal_code TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN country TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN gstin TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN address_line_1 TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN address_line_2 TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN address_line_3 TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN state TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN city TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN postal_code TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN country TEXT").execute(pool).await;
 
     // Migration: Move legacy address to address_line_1 and drop address column
-    let _ = sqlx::query("UPDATE customers SET address_line_1 = address WHERE address_line_1 IS NULL OR address_line_1 = ''").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE customers DROP COLUMN address").execute(&pool).await;
+    let _ = sqlx::query("UPDATE customers SET address_line_1 = address WHERE address_line_1 IS NULL OR address_line_1 = ''").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE customers DROP COLUMN address").execute(pool).await;
 
     // Migration: Add GST columns to suppliers
-    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN gstin TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN address_line_1 TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN address_line_2 TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN address_line_3 TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN state TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN city TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN postal_code TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN country TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN gstin TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN address_line_1 TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN address_line_2 TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN address_line_3 TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN state TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN city TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN postal_code TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN country TEXT").execute(pool).await;
 
     // Migration: Move legacy address to address_line_1 and drop address column
-    let _ = sqlx::query("UPDATE suppliers SET address_line_1 = address WHERE address_line_1 IS NULL OR address_line_1 = ''").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE suppliers DROP COLUMN address").execute(&pool).await;
+    let _ = sqlx::query("UPDATE suppliers SET address_line_1 = address WHERE address_line_1 IS NULL OR address_line_1 = ''").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers DROP COLUMN address").execute(pool).await;
 
     // Migration: Add GST columns to chart_of_accounts
-    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN gstin TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN address_line_1 TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN address_line_2 TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN state TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN city TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN postal_code TEXT").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN gstin TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN address_line_1 TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN address_line_2 TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN state TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN city TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN postal_code TEXT").execute(pool).await;
 
     // Migration: Add GST split columns to voucher_items
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN cgst_rate REAL DEFAULT 0").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN sgst_rate REAL DEFAULT 0").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN igst_rate REAL DEFAULT 0").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN cgst_amount REAL DEFAULT 0").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN sgst_amount REAL DEFAULT 0").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN igst_amount REAL DEFAULT 0").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN hsn_sac_code TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN gst_slab_id TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN resolved_gst_rate REAL DEFAULT 0").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN original_amount REAL DEFAULT 0").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN invoice_discount_amount REAL DEFAULT 0").execute(&pool).await;
-    let _ = sqlx::query("UPDATE voucher_items SET original_amount = amount WHERE COALESCE(original_amount, 0) = 0").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN cgst_rate REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN sgst_rate REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN igst_rate REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN cgst_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN sgst_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN igst_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN hsn_sac_code TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN gst_slab_id TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN resolved_gst_rate REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN original_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN invoice_discount_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("UPDATE voucher_items SET original_amount = amount WHERE COALESCE(original_amount, 0) = 0").execute(pool).await;
 
     // Migration: Add net_amount column (new semantic - amount after invoice discount)
     // amount now stores the gross (original) amount; net_amount stores amount minus invoice discount
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN net_amount REAL DEFAULT 0").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN net_amount REAL DEFAULT 0").execute(pool).await;
     // Backfill: net_amount gets the old "amount" value (which was the net-after-discount)
-    let _ = sqlx::query("UPDATE voucher_items SET net_amount = amount WHERE COALESCE(net_amount, 0) = 0").execute(&pool).await;
+    let _ = sqlx::query("UPDATE voucher_items SET net_amount = amount WHERE COALESCE(net_amount, 0) = 0").execute(pool).await;
     // Promote original_amount into amount so amount = gross; only where original_amount has meaningful data
-    let _ = sqlx::query("UPDATE voucher_items SET amount = original_amount WHERE original_amount > 0").execute(&pool).await;
+    let _ = sqlx::query("UPDATE voucher_items SET amount = original_amount WHERE original_amount > 0").execute(pool).await;
 
     // Migration: Add e-Invoice columns to vouchers
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN irn TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN ack_no TEXT").execute(&pool).await;
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN ack_date DATE").execute(&pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN irn TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN ack_no TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN ack_date DATE").execute(pool).await;
 
     // ==================== SEEDING ====================
 
-    crate::seeds::seed_initial_data(&pool).await?;
-    crate::seeds::seed_handlebars_templates(&pool).await?;
+    crate::seeds::seed_initial_data(pool).await?;
+    crate::seeds::seed_handlebars_templates(pool).await?;
 
-    Ok(pool)
+    Ok(())
 }

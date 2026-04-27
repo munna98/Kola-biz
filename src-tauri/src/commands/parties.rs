@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -41,20 +43,22 @@ pub struct CreateCustomer {
 }
 
 #[tauri::command]
-pub async fn get_customers(pool: State<'_, SqlitePool>) -> Result<Vec<Customer>, String> {
+pub async fn get_customers(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Customer>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Customer>(
         "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE deleted_at IS NULL ORDER BY name ASC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_customer(pool: State<'_, SqlitePool>, id: String) -> Result<Customer, String> {
+pub async fn get_customer(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<Customer, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE id = ?")
         .bind(id)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())
 }
@@ -76,24 +80,26 @@ async fn generate_customer_code(pool: &SqlitePool) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn get_next_customer_code(pool: State<'_, SqlitePool>) -> Result<String, String> {
-    generate_customer_code(pool.inner()).await
+pub async fn get_next_customer_code(registry: State<'_, Arc<DbRegistry>>) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
+    generate_customer_code(&pool).await
 }
 
 #[tauri::command]
 pub async fn create_customer(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     customer: CreateCustomer,
 ) -> Result<Customer, String> {
+    let pool = registry.active_pool().await?;
     let id = Uuid::now_v7().to_string();
     let code = if let Some(c) = &customer.code {
         if c.trim().is_empty() {
-            generate_customer_code(pool.inner()).await?
+            generate_customer_code(&pool).await?
         } else {
             c.clone()
         }
     } else {
-        generate_customer_code(pool.inner()).await?
+        generate_customer_code(&pool).await?
     };
 
     let _ = sqlx::query(
@@ -112,7 +118,7 @@ pub async fn create_customer(
     .bind(&customer.postal_code)
     .bind(&customer.country)
     .bind(&customer.gstin)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -132,23 +138,24 @@ pub async fn create_customer(
     .bind("Customer account")
     .bind(&id)
     .bind("customer")
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
     sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE id = ?")
         .bind(id)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn update_customer(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     customer: CreateCustomer,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     sqlx::query(
         "UPDATE customers SET name = ?, email = ?, phone = ?, address_line_1 = ?, address_line_2 = ?, address_line_3 = ?, city = ?, state = ?, postal_code = ?, country = ?, gstin = ? WHERE id = ?"
     )
@@ -164,7 +171,7 @@ pub async fn update_customer(
     .bind(&customer.country)
     .bind(&customer.gstin)
     .bind(&id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -180,7 +187,7 @@ pub async fn update_customer(
     .bind(&customer.postal_code)
     .bind(&customer.gstin)
     .bind(&id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -188,12 +195,13 @@ pub async fn update_customer(
 }
 
 #[tauri::command]
-pub async fn delete_customer(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn delete_customer(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     // Check for references in vouchers
     let voucher_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM vouchers WHERE party_id = ? AND party_type = 'customer' AND deleted_at IS NULL")
             .bind(&id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -206,7 +214,7 @@ pub async fn delete_customer(pool: State<'_, SqlitePool>, id: String) -> Result<
         "SELECT COUNT(*) FROM journal_entries WHERE account_id = (SELECT id FROM chart_of_accounts WHERE party_id = ?)",
     )
     .bind(&id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -216,7 +224,7 @@ pub async fn delete_customer(pool: State<'_, SqlitePool>, id: String) -> Result<
 
     sqlx::query("UPDATE customers SET is_active = 0, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(&id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -226,7 +234,7 @@ pub async fn delete_customer(pool: State<'_, SqlitePool>, id: String) -> Result<
         "UPDATE chart_of_accounts SET is_active = 0, deleted_at = CURRENT_TIMESTAMP WHERE party_id = ?",
     )
     .bind(&id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -234,26 +242,28 @@ pub async fn delete_customer(pool: State<'_, SqlitePool>, id: String) -> Result<
 }
 
 #[tauri::command]
-pub async fn get_deleted_customers(pool: State<'_, SqlitePool>) -> Result<Vec<Customer>, String> {
+pub async fn get_deleted_customers(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Customer>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Customer>(
         "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn restore_customer(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn restore_customer(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     sqlx::query("UPDATE customers SET is_active = 1, deleted_at = NULL WHERE id = ?")
         .bind(&id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
     sqlx::query("UPDATE chart_of_accounts SET is_active = 1, deleted_at = NULL WHERE party_id = ?")
         .bind(&id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -261,12 +271,13 @@ pub async fn restore_customer(pool: State<'_, SqlitePool>, id: String) -> Result
 }
 
 #[tauri::command]
-pub async fn hard_delete_customer(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn hard_delete_customer(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     // Reference checks (same as soft delete)
     let voucher_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM vouchers WHERE party_id = ? AND party_type = 'customer' AND deleted_at IS NULL")
             .bind(&id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -280,7 +291,7 @@ pub async fn hard_delete_customer(pool: State<'_, SqlitePool>, id: String) -> Re
         "SELECT COUNT(*) FROM journal_entries WHERE account_id = (SELECT id FROM chart_of_accounts WHERE party_id = ?)",
     )
     .bind(&id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -347,20 +358,36 @@ pub struct CreateSupplier {
 }
 
 #[tauri::command]
-pub async fn get_suppliers(pool: State<'_, SqlitePool>) -> Result<Vec<Supplier>, String> {
+pub async fn get_suppliers(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Supplier>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Supplier>(
         "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE deleted_at IS NULL ORDER BY name ASC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_supplier(pool: State<'_, SqlitePool>, id: String) -> Result<Supplier, String> {
+pub async fn get_supplier(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<Supplier, String> {
+    let pool = registry.active_pool().await?;
+    get_supplier_with_pool(&pool, &id).await
+}
+
+/// Internal version for use by other modules (e.g., templates.rs)
+pub(crate) async fn get_supplier_with_pool(pool: &SqlitePool, id: &str) -> Result<Supplier, String> {
     sqlx::query_as::<_, Supplier>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE id = ?")
         .bind(id)
-        .fetch_one(pool.inner())
+        .fetch_one(pool)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+/// Internal version for use by other modules (e.g., templates.rs)
+pub(crate) async fn get_customer_with_pool(pool: &SqlitePool, id: &str) -> Result<Customer, String> {
+    sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
         .await
         .map_err(|e| e.to_string())
 }
@@ -382,24 +409,26 @@ async fn generate_supplier_code(pool: &SqlitePool) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn get_next_supplier_code(pool: State<'_, SqlitePool>) -> Result<String, String> {
-    generate_supplier_code(pool.inner()).await
+pub async fn get_next_supplier_code(registry: State<'_, Arc<DbRegistry>>) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
+    generate_supplier_code(&pool).await
 }
 
 #[tauri::command]
 pub async fn create_supplier(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     supplier: CreateSupplier,
 ) -> Result<Supplier, String> {
+    let pool = registry.active_pool().await?;
     let id = Uuid::now_v7().to_string();
     let code = if let Some(c) = &supplier.code {
         if c.trim().is_empty() {
-            generate_supplier_code(pool.inner()).await?
+            generate_supplier_code(&pool).await?
         } else {
             c.clone()
         }
     } else {
-        generate_supplier_code(pool.inner()).await?
+        generate_supplier_code(&pool).await?
     };
 
     let _ = sqlx::query(
@@ -418,7 +447,7 @@ pub async fn create_supplier(
     .bind(&supplier.postal_code)
     .bind(&supplier.country)
     .bind(&supplier.gstin)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -438,23 +467,24 @@ pub async fn create_supplier(
     .bind("Supplier account")
     .bind(&id)
     .bind("supplier")
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
     sqlx::query_as::<_, Supplier>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE id = ?")
         .bind(id)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn update_supplier(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     supplier: CreateSupplier,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     sqlx::query(
         "UPDATE suppliers SET name = ?, email = ?, phone = ?, address_line_1 = ?, address_line_2 = ?, address_line_3 = ?, city = ?, state = ?, postal_code = ?, country = ?, gstin = ? WHERE id = ?"
     )
@@ -470,7 +500,7 @@ pub async fn update_supplier(
     .bind(&supplier.country)
     .bind(&supplier.gstin)
     .bind(&id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -486,7 +516,7 @@ pub async fn update_supplier(
     .bind(&supplier.postal_code)
     .bind(&supplier.gstin)
     .bind(&id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -494,12 +524,13 @@ pub async fn update_supplier(
 }
 
 #[tauri::command]
-pub async fn delete_supplier(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn delete_supplier(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     // Check for references in vouchers
     let voucher_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM vouchers WHERE party_id = ? AND party_type = 'supplier' AND deleted_at IS NULL")
             .bind(&id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -512,7 +543,7 @@ pub async fn delete_supplier(pool: State<'_, SqlitePool>, id: String) -> Result<
         "SELECT COUNT(*) FROM journal_entries WHERE account_id = (SELECT id FROM chart_of_accounts WHERE party_id = ?)",
     )
     .bind(&id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -522,7 +553,7 @@ pub async fn delete_supplier(pool: State<'_, SqlitePool>, id: String) -> Result<
 
     sqlx::query("UPDATE suppliers SET is_active = 0, deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(&id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -532,7 +563,7 @@ pub async fn delete_supplier(pool: State<'_, SqlitePool>, id: String) -> Result<
         "UPDATE chart_of_accounts SET is_active = 0, deleted_at = CURRENT_TIMESTAMP WHERE party_id = ?",
     )
     .bind(&id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -540,26 +571,28 @@ pub async fn delete_supplier(pool: State<'_, SqlitePool>, id: String) -> Result<
 }
 
 #[tauri::command]
-pub async fn get_deleted_suppliers(pool: State<'_, SqlitePool>) -> Result<Vec<Supplier>, String> {
+pub async fn get_deleted_suppliers(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Supplier>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Supplier>(
         "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn restore_supplier(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn restore_supplier(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     sqlx::query("UPDATE suppliers SET is_active = 1, deleted_at = NULL WHERE id = ?")
         .bind(&id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
     sqlx::query("UPDATE chart_of_accounts SET is_active = 1, deleted_at = NULL WHERE party_id = ?")
         .bind(&id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -567,12 +600,13 @@ pub async fn restore_supplier(pool: State<'_, SqlitePool>, id: String) -> Result
 }
 
 #[tauri::command]
-pub async fn hard_delete_supplier(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn hard_delete_supplier(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     // Reference checks (same as soft delete)
     let voucher_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM vouchers WHERE party_id = ? AND party_type = 'supplier' AND deleted_at IS NULL")
             .bind(&id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -586,7 +620,7 @@ pub async fn hard_delete_supplier(pool: State<'_, SqlitePool>, id: String) -> Re
         "SELECT COUNT(*) FROM journal_entries WHERE account_id = (SELECT id FROM chart_of_accounts WHERE party_id = ?)",
     )
     .bind(&id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -624,7 +658,8 @@ pub struct Party {
 }
 
 #[tauri::command]
-pub async fn get_all_parties(pool: State<'_, SqlitePool>) -> Result<Vec<Party>, String> {
+pub async fn get_all_parties(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Party>, String> {
+    let pool = registry.active_pool().await?;
     let query = "
         SELECT id, account_name as party_name, party_type 
         FROM chart_of_accounts 
@@ -633,7 +668,7 @@ pub async fn get_all_parties(pool: State<'_, SqlitePool>) -> Result<Vec<Party>, 
     ";
 
     sqlx::query_as::<_, Party>(query)
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
 }

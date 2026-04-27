@@ -426,6 +426,14 @@ export default function PropertiesPanel({
                                     <ColorInput label="Header Text" value={el.tableConfig.headerColor} onChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, headerColor: v } })} />
                                     <NumberInput label="Header Font" value={el.tableConfig.headerFontSize} onChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, headerFontSize: v } })} min={6} max={16} unit="pt" />
                                     <NumberInput label="Body Font" value={el.tableConfig.bodyFontSize} onChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, bodyFontSize: v } })} min={6} max={16} unit="pt" />
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-[11px]">Body Bold</Label>
+                                        <Switch
+                                            checked={el.tableConfig.bodyFontBold ?? true}
+                                            onCheckedChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, bodyFontBold: v } })}
+                                            className="h-4 w-7"
+                                        />
+                                    </div>
 
                                     <SectionHeader title="Columns" />
                                     <div className="space-y-1.5 max-h-[300px] overflow-y-auto">

@@ -1,5 +1,6 @@
 ﻿use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -134,9 +135,10 @@ async fn insert_stock_journal_items(
 
 #[tauri::command]
 pub async fn get_stock_journal(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
 ) -> Result<StockJournal, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, StockJournal>(
         "SELECT
             v.id,
@@ -151,7 +153,7 @@ pub async fn get_stock_journal(
          WHERE v.id = ? AND v.voucher_type = 'stock_journal' AND v.deleted_at IS NULL",
     )
     .bind(id)
-    .fetch_optional(pool.inner())
+    .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())?
     .ok_or_else(|| "Stock journal not found".to_string())
@@ -159,9 +161,10 @@ pub async fn get_stock_journal(
 
 #[tauri::command]
 pub async fn get_stock_journal_items(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     voucher_id: String,
 ) -> Result<Vec<StockJournalItem>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, StockJournalItem>(
         "SELECT
             vi.id,
@@ -188,16 +191,17 @@ pub async fn get_stock_journal_items(
             vi.id ASC",
     )
     .bind(voucher_id)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn create_stock_journal(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     data: CreateStockJournal,
 ) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
     validate_items(&data.source_items, "source")?;
     validate_items(&data.destination_items, "destination")?;
 
@@ -210,7 +214,7 @@ pub async fn create_stock_journal(
     }
 
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    let voucher_no = get_next_voucher_number(pool.inner(), "stock_journal").await?;
+    let voucher_no = get_next_voucher_number(&pool, "stock_journal").await?;
     let voucher_id = Uuid::now_v7().to_string();
 
     sqlx::query(
@@ -243,10 +247,11 @@ pub async fn create_stock_journal(
 
 #[tauri::command]
 pub async fn update_stock_journal(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     data: CreateStockJournal,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     validate_items(&data.source_items, "source")?;
     validate_items(&data.destination_items, "destination")?;
 
@@ -300,7 +305,8 @@ pub async fn update_stock_journal(
 }
 
 #[tauri::command]
-pub async fn delete_stock_journal(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn delete_stock_journal(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")

@@ -1,4 +1,4 @@
-use crate::license::{self, LicenseStatus};
+﻿use crate::license::{self, LicenseStatus};
 use tauri::command;
 
 #[command]

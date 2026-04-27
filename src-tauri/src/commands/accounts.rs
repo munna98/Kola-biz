@@ -1,5 +1,7 @@
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 
 use uuid::Uuid;
@@ -61,21 +63,23 @@ async fn get_next_voucher_number(pool: &SqlitePool, voucher_type: &str) -> Resul
 
 #[tauri::command]
 pub async fn get_chart_of_accounts(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<Vec<ChartOfAccount>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, ChartOfAccount>(
         "SELECT id, account_code, account_name, account_type, account_group, description, CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, is_active, is_system, party_id, deleted_at, created_at, updated_at FROM chart_of_accounts WHERE deleted_at IS NULL ORDER BY account_code ASC"
     )
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn get_accounts_by_groups(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     groups: Vec<String>,
 ) -> Result<Vec<ChartOfAccount>, String> {
+    let pool = registry.active_pool().await?;
     if groups.is_empty() {
         return Ok(Vec::new());
     }
@@ -97,16 +101,17 @@ pub async fn get_accounts_by_groups(
     }
 
     query
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn create_chart_of_account(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     account: CreateChartOfAccount,
 ) -> Result<ChartOfAccount, String> {
+    let pool = registry.active_pool().await?;
     let opening_balance = account.opening_balance.unwrap_or(0.0);
     let opening_balance_type = account
         .opening_balance_type
@@ -126,7 +131,7 @@ pub async fn create_chart_of_account(
     .bind(&account.description)
     .bind(opening_balance)
     .bind(&opening_balance_type)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -236,17 +241,18 @@ pub async fn create_chart_of_account(
 
     sqlx::query_as::<_, ChartOfAccount>("SELECT * FROM chart_of_accounts WHERE id = ?")
         .bind(id)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn update_chart_of_account(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     account: CreateChartOfAccount,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let new_opening_balance = account.opening_balance.unwrap_or(0.0);
     let opening_balance_type = account
         .opening_balance_type
@@ -435,14 +441,15 @@ pub async fn update_chart_of_account(
 
 #[tauri::command]
 pub async fn delete_chart_of_account(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     // Get the account to check if it's a default account
     let account =
         sqlx::query_as::<_, ChartOfAccount>("SELECT id, account_code, account_name, account_type, account_group, description, CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, is_active, is_system, party_id, deleted_at, created_at, updated_at FROM chart_of_accounts WHERE id = ?")
             .bind(&id)
-            .fetch_optional(pool.inner())
+            .fetch_optional(&pool)
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Account not found".to_string())?;
@@ -457,7 +464,7 @@ pub async fn delete_chart_of_account(
     let journal_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE account_id = ?")
             .bind(&id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -469,7 +476,7 @@ pub async fn delete_chart_of_account(
     let ob_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM opening_balances WHERE account_id = ?")
             .bind(&id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -484,7 +491,7 @@ pub async fn delete_chart_of_account(
             let customer_exists: i64 =
                 sqlx::query_scalar("SELECT COUNT(*) FROM customers WHERE id = ? AND is_active = 1")
                     .bind(party_id)
-                    .fetch_one(pool.inner())
+                    .fetch_one(&pool)
                     .await
                     .map_err(|e| e.to_string())?;
 
@@ -496,7 +503,7 @@ pub async fn delete_chart_of_account(
             let supplier_exists: i64 =
                 sqlx::query_scalar("SELECT COUNT(*) FROM suppliers WHERE id = ? AND is_active = 1")
                     .bind(party_id)
-                    .fetch_one(pool.inner())
+                    .fetch_one(&pool)
                     .await
                     .map_err(|e| e.to_string())?;
 
@@ -510,7 +517,7 @@ pub async fn delete_chart_of_account(
         "UPDATE chart_of_accounts SET is_active = 0, deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
     )
     .bind(id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -519,21 +526,23 @@ pub async fn delete_chart_of_account(
 
 #[tauri::command]
 pub async fn get_deleted_chart_of_accounts(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<Vec<ChartOfAccount>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, ChartOfAccount>(
         "SELECT * FROM chart_of_accounts WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn restore_chart_of_account(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+pub async fn restore_chart_of_account(registry: State<'_, Arc<DbRegistry>>, id: i64) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     sqlx::query("UPDATE chart_of_accounts SET is_active = 1, deleted_at = NULL WHERE id = ?")
         .bind(id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -542,14 +551,15 @@ pub async fn restore_chart_of_account(pool: State<'_, SqlitePool>, id: i64) -> R
 
 #[tauri::command]
 pub async fn hard_delete_chart_of_account(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: i64,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     // Reference checks (same as soft delete)
     let account =
         sqlx::query_as::<_, ChartOfAccount>("SELECT id, account_code, account_name, account_type, account_group, description, CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, is_active, is_system, party_id, deleted_at, created_at, updated_at FROM chart_of_accounts WHERE id = ?")
             .bind(id)
-            .fetch_optional(pool.inner())
+            .fetch_optional(&pool)
             .await
             .map_err(|e| e.to_string())?
             .ok_or_else(|| "Account not found".to_string())?;
@@ -561,7 +571,7 @@ pub async fn hard_delete_chart_of_account(
     let journal_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE account_id = ?")
             .bind(id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -574,7 +584,7 @@ pub async fn hard_delete_chart_of_account(
     let ob_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM opening_balances WHERE account_id = ?")
             .bind(id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -586,7 +596,7 @@ pub async fn hard_delete_chart_of_account(
 
     sqlx::query("DELETE FROM chart_of_accounts WHERE id = ?")
         .bind(id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -605,11 +615,12 @@ pub async fn get_account_types() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-pub async fn get_account_groups(pool: State<'_, SqlitePool>) -> Result<Vec<String>, String> {
+pub async fn get_account_groups(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<String>, String> {
+    let pool = registry.active_pool().await?;
     let groups = sqlx::query_scalar::<_, String>(
         "SELECT name FROM account_groups WHERE is_active = 1 ORDER BY account_type, name ASC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -634,42 +645,45 @@ pub struct CreateAccountGroup {
 
 #[tauri::command]
 pub async fn get_all_account_groups(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<Vec<AccountGroup>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, AccountGroup>(
         "SELECT * FROM account_groups WHERE is_active = 1 ORDER BY account_type, name ASC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn create_account_group(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     group: CreateAccountGroup,
 ) -> Result<AccountGroup, String> {
+    let pool = registry.active_pool().await?;
     let id = Uuid::now_v7().to_string();
     sqlx::query("INSERT INTO account_groups (id, name, account_type) VALUES (?, ?, ?)")
         .bind(&id)
         .bind(&group.name)
         .bind(&group.account_type)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
     sqlx::query_as::<_, AccountGroup>("SELECT * FROM account_groups WHERE id = ?")
         .bind(id)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn delete_account_group(pool: State<'_, SqlitePool>, id: i64) -> Result<(), String> {
+pub async fn delete_account_group(registry: State<'_, Arc<DbRegistry>>, id: i64) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     sqlx::query("UPDATE account_groups SET is_active = 0 WHERE id = ?")
         .bind(id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -686,12 +700,13 @@ pub struct CashBankAccount {
 
 #[tauri::command]
 pub async fn get_cash_bank_accounts(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<Vec<CashBankAccount>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, CashBankAccount>(
         "SELECT id, account_name as name, account_group FROM chart_of_accounts WHERE is_active = 1 AND (account_group = 'Cash' OR account_group = 'Bank Account') ORDER BY account_code ASC"
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }

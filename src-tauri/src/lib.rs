@@ -1,4 +1,5 @@
 mod commands;
+mod company_db;
 mod db;
 pub mod license;
 mod seeds;
@@ -13,8 +14,21 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            let pool = tauri::async_runtime::block_on(async { db::init_db(app.handle()).await })?;
-            app.manage(pool);
+            // Initialize the DbRegistry (master.db + company pool management)
+            let registry = tauri::async_runtime::block_on(async {
+                company_db::init_registry(app.handle()).await
+            })?;
+
+            // Auto-activate the primary company on startup (if one is set)
+            let handle = app.handle().clone();
+            let reg_clone = registry.clone();
+            tauri::async_runtime::block_on(async move {
+                if let Some(primary_id) = reg_clone.get_primary_company_id().await {
+                    let _ = reg_clone.set_active_company(&primary_id, &handle).await;
+                }
+            });
+
+            app.manage(registry);
 
             // Initialize session store for authentication
             let session_store = commands::auth::SessionStore::new();
@@ -23,6 +37,17 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // ---- Company Management ----
+            list_companies,
+            get_active_company,
+            switch_company,
+            create_company,
+            rename_company,
+            soft_delete_company,
+            hard_delete_company,
+            set_primary_company,
+            set_secondary_company,
+            sync_secondary_to_primary,
             // Units
             get_units,
             create_unit,
@@ -144,7 +169,6 @@ pub fn run() {
             get_party_outstanding,
             get_party_invoice_details,
             get_stock_report,
-            get_stock_movements,
             get_stock_movements,
             get_transaction_report,
             commands::parties::get_all_parties,

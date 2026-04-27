@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 
 // ============= COUNTRIES =============
@@ -11,9 +13,10 @@ pub struct Country {
 }
 
 #[tauri::command]
-pub async fn get_countries(pool: State<'_, SqlitePool>) -> Result<Vec<Country>, String> {
+pub async fn get_countries(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Country>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Country>("SELECT * FROM countries ORDER BY name")
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
 }
@@ -73,9 +76,15 @@ pub struct UpdateCompanyProfile {
 }
 
 #[tauri::command]
-pub async fn get_company_profile(pool: State<'_, SqlitePool>) -> Result<CompanyProfile, String> {
+pub async fn get_company_profile(registry: State<'_, Arc<DbRegistry>>) -> Result<CompanyProfile, String> {
+    let pool = registry.active_pool().await?;
+    get_company_profile_with_pool(&pool).await
+}
+
+/// Internal version for use by other modules (e.g., templates.rs)
+pub(crate) async fn get_company_profile_with_pool(pool: &SqlitePool) -> Result<CompanyProfile, String> {
     let profile = sqlx::query_as::<_, CompanyProfile>("SELECT * FROM company_profile LIMIT 1")
-        .fetch_optional(pool.inner())
+        .fetch_optional(pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -84,12 +93,12 @@ pub async fn get_company_profile(pool: State<'_, SqlitePool>) -> Result<CompanyP
         None => {
             // Auto-create default profile if missing
             sqlx::query("INSERT INTO company_profile (company_name) VALUES ('My Company')")
-                .execute(pool.inner())
+                .execute(pool)
                 .await
                 .map_err(|e| e.to_string())?;
 
             sqlx::query_as::<_, CompanyProfile>("SELECT * FROM company_profile LIMIT 1")
-                .fetch_one(pool.inner())
+                .fetch_one(pool)
                 .await
                 .map_err(|e| e.to_string())
         }
@@ -98,9 +107,10 @@ pub async fn get_company_profile(pool: State<'_, SqlitePool>) -> Result<CompanyP
 
 #[tauri::command]
 pub async fn update_company_profile(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     profile: UpdateCompanyProfile,
 ) -> Result<CompanyProfile, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query(
         "UPDATE company_profile SET 
             company_name = ?,
@@ -148,9 +158,9 @@ pub async fn update_company_profile(
     .bind(&profile.bank_ifsc)
     .bind(&profile.bank_branch)
     .bind(&profile.terms_and_conditions)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
-    get_company_profile(pool).await
+    get_company_profile_with_pool(&pool).await
 }

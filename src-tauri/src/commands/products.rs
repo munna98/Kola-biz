@@ -1,6 +1,8 @@
-use serde::{Deserialize, Serialize};
+﻿use serde::{Deserialize, Serialize};
 use sqlx::{Sqlite, SqlitePool, Transaction};
 
+use crate::company_db::DbRegistry;
+use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
@@ -34,31 +36,34 @@ async fn generate_product_code(pool: &SqlitePool) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn get_next_product_code(pool: State<'_, SqlitePool>) -> Result<String, String> {
-    generate_product_code(pool.inner()).await
+pub async fn get_next_product_code(registry: State<'_, Arc<DbRegistry>>) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
+    generate_product_code(&pool).await
 }
 
 #[tauri::command]
-pub async fn get_product_groups(pool: State<'_, SqlitePool>) -> Result<Vec<ProductGroup>, String> {
+pub async fn get_product_groups(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<ProductGroup>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, ProductGroup>(
         "SELECT id, name, description, is_active, created_at FROM product_groups WHERE deleted_at IS NULL ORDER BY name ASC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn create_product_group(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     group: CreateProductGroup,
 ) -> Result<ProductGroup, String> {
+    let pool = registry.active_pool().await?;
     let id = Uuid::now_v7().to_string();
     sqlx::query("INSERT INTO product_groups (id, name, description) VALUES (?, ?, ?)")
         .bind(&id)
         .bind(&group.name)
         .bind(&group.description)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -66,22 +71,23 @@ pub async fn create_product_group(
         "SELECT id, name, description, is_active, created_at FROM product_groups WHERE id = ?",
     )
     .bind(id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn update_product_group(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     group: CreateProductGroup,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     sqlx::query("UPDATE product_groups SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(&group.name)
         .bind(&group.description)
         .bind(id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -89,12 +95,13 @@ pub async fn update_product_group(
 }
 
 #[tauri::command]
-pub async fn delete_product_group(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn delete_product_group(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     // Check if any product is using this group
     let count: (i64,) =
         sqlx::query_as("SELECT COUNT(*) FROM products WHERE group_id = ? AND deleted_at IS NULL")
             .bind(&id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -106,7 +113,7 @@ pub async fn delete_product_group(pool: State<'_, SqlitePool>, id: String) -> Re
         "UPDATE product_groups SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, is_active = 0 WHERE id = ?",
     )
     .bind(id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -132,15 +139,17 @@ pub struct CreateUnit {
 }
 
 #[tauri::command]
-pub async fn get_units(pool: State<'_, SqlitePool>) -> Result<Vec<Unit>, String> {
+pub async fn get_units(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Unit>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Unit>("SELECT * FROM units ORDER BY is_default DESC, name ASC")
-        .fetch_all(pool.inner())
+        .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn create_unit(pool: State<'_, SqlitePool>, unit: CreateUnit) -> Result<Unit, String> {
+pub async fn create_unit(registry: State<'_, Arc<DbRegistry>>, unit: CreateUnit) -> Result<Unit, String> {
+    let pool = registry.active_pool().await?;
     let id = Uuid::now_v7().to_string();
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let has_units = has_any_units(&mut tx).await?;
@@ -163,17 +172,18 @@ pub async fn create_unit(pool: State<'_, SqlitePool>, unit: CreateUnit) -> Resul
 
     sqlx::query_as::<_, Unit>("SELECT * FROM units WHERE id = ?")
         .bind(id)
-        .fetch_one(pool.inner())
+        .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn update_unit(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     unit: CreateUnit,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     if unit.is_default {
@@ -198,7 +208,8 @@ pub async fn update_unit(
 }
 
 #[tauri::command]
-pub async fn delete_unit(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn delete_unit(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     sqlx::query("DELETE FROM units WHERE id = ?")
@@ -451,8 +462,9 @@ async fn replace_product_unit_conversions(
 
 #[tauri::command]
 pub async fn get_all_product_unit_conversions(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
 ) -> Result<Vec<ProductUnitConversion>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, ProductUnitConversion>(
         "SELECT
             puc.id,
@@ -470,16 +482,17 @@ pub async fn get_all_product_unit_conversions(
          JOIN units u ON puc.unit_id = u.id
          ORDER BY puc.product_id, puc.factor_to_base ASC, u.name ASC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn get_product_unit_conversions(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     product_id: String,
 ) -> Result<Vec<ProductUnitConversion>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, ProductUnitConversion>(
         "SELECT
             puc.id,
@@ -499,13 +512,14 @@ pub async fn get_product_unit_conversions(
          ORDER BY puc.factor_to_base ASC, u.name ASC",
     )
     .bind(product_id)
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn get_products(pool: State<'_, SqlitePool>) -> Result<Vec<Product>, String> {
+pub async fn get_products(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Product>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Product>(
         "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, is_active, created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
@@ -514,16 +528,17 @@ pub async fn get_products(pool: State<'_, SqlitePool>) -> Result<Vec<Product>, S
          WHERE deleted_at IS NULL 
          ORDER BY created_at DESC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn create_product(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     product: CreateProduct,
 ) -> Result<Product, String> {
+    let pool = registry.active_pool().await?;
     let id = Uuid::now_v7().to_string();
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     sqlx::query(
@@ -532,7 +547,7 @@ pub async fn create_product(
     )
     .bind(&id)
     .bind(if product.code.is_empty() {
-        generate_product_code(pool.inner()).await?
+        generate_product_code(&pool).await?
     } else {
         product.code
     })
@@ -568,21 +583,22 @@ pub async fn create_product(
          FROM products WHERE id = ?",
     )
     .bind(id)
-    .fetch_one(pool.inner())
+    .fetch_one(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn update_product(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     product: CreateProduct,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     let existing_unit_id: Option<String> =
         sqlx::query_scalar("SELECT unit_id FROM products WHERE id = ?")
             .bind(&id)
-            .fetch_optional(pool.inner())
+            .fetch_optional(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -591,7 +607,7 @@ pub async fn update_product(
             let ref_count: i64 =
                 sqlx::query_scalar("SELECT COUNT(*) FROM voucher_items WHERE product_id = ?")
                     .bind(&id)
-                    .fetch_one(pool.inner())
+                    .fetch_one(&pool)
                     .await
                     .map_err(|e| e.to_string())?;
 
@@ -643,15 +659,16 @@ pub async fn update_product(
 
 #[tauri::command]
 pub async fn delete_product(
-    pool: State<'_, SqlitePool>,
+    registry: State<'_, Arc<DbRegistry>>,
     id: String,
     deleted_by: String,
 ) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     // Check for references in voucher_items
     let ref_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM voucher_items WHERE product_id = ?")
             .bind(&id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -663,7 +680,7 @@ pub async fn delete_product(
     let stock_ref_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM stock_movements WHERE product_id = ?")
             .bind(&id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -678,7 +695,7 @@ pub async fn delete_product(
     )
     .bind(deleted_by)
     .bind(id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -686,7 +703,8 @@ pub async fn delete_product(
 }
 
 #[tauri::command]
-pub async fn get_deleted_products(pool: State<'_, SqlitePool>) -> Result<Vec<Product>, String> {
+pub async fn get_deleted_products(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Product>, String> {
+    let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Product>(
         "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, is_active, created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
@@ -695,20 +713,21 @@ pub async fn get_deleted_products(pool: State<'_, SqlitePool>) -> Result<Vec<Pro
          WHERE deleted_at IS NOT NULL 
          ORDER BY deleted_at DESC",
     )
-    .fetch_all(pool.inner())
+    .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn restore_product(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn restore_product(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     sqlx::query(
         "UPDATE products 
          SET deleted_at = NULL, deleted_by = NULL, is_active = 1, updated_at = CURRENT_TIMESTAMP 
          WHERE id = ?",
     )
     .bind(id)
-    .execute(pool.inner())
+    .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -716,12 +735,13 @@ pub async fn restore_product(pool: State<'_, SqlitePool>, id: String) -> Result<
 }
 
 #[tauri::command]
-pub async fn hard_delete_product(pool: State<'_, SqlitePool>, id: String) -> Result<(), String> {
+pub async fn hard_delete_product(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
     // Reference checks (same as soft delete)
     let ref_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM voucher_items WHERE product_id = ?")
             .bind(&id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -734,7 +754,7 @@ pub async fn hard_delete_product(pool: State<'_, SqlitePool>, id: String) -> Res
     let stock_ref_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM stock_movements WHERE product_id = ?")
             .bind(&id)
-            .fetch_one(pool.inner())
+            .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
 
@@ -746,7 +766,7 @@ pub async fn hard_delete_product(pool: State<'_, SqlitePool>, id: String) -> Res
 
     sqlx::query("DELETE FROM products WHERE id = ?")
         .bind(id)
-        .execute(pool.inner())
+        .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
