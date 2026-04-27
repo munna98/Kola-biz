@@ -32,7 +32,10 @@ import { Combobox } from '@/components/ui/combobox';
 import {
   IconCheck,
   IconX,
+  IconSettings2,
 } from '@tabler/icons-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Switch } from '@/components/ui/switch';
 
 // Global Voucher Components & Hooks
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
@@ -80,6 +83,7 @@ export default function PurchaseInvoicePage() {
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, taxInclusive?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
+  const [gstDisabled, setGstDisabled] = useState(false);
 
   const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
   const [showCreateProduct, setShowCreateProduct] = useState(false);
@@ -1064,7 +1068,7 @@ export default function PurchaseInvoicePage() {
               }, 50);
             }}
             defaultUnitKind="purchase"
-            gstSlabs={gstSlabs}
+            gstSlabs={gstDisabled ? [] : gstSlabs}
             fullProducts={products as any}
             taxInclusive={voucherSettings?.taxInclusive}
             footerRightContent={
@@ -1072,6 +1076,43 @@ export default function PurchaseInvoicePage() {
                 <div className={`text-xs font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   Balance: ₹ {Math.abs(partyBalance).toLocaleString()} {partyBalance >= 0 ? 'Dr' : 'Cr'}
                 </div>
+              ) : null
+            }
+            footerLeftContent={
+              !isReadOnly && gstSlabs.length > 0 ? (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      title="GST Settings"
+                      className={`h-7 w-7 flex items-center justify-center rounded-md transition-colors border ${
+                        gstDisabled
+                          ? 'bg-amber-100 border-amber-400 text-amber-700 dark:bg-amber-900/30 dark:border-amber-600 dark:text-amber-400'
+                          : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'
+                      }`}
+                    >
+                      <IconSettings2 size={14} />
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent side="top" align="start" className="w-56 p-3">
+                    <p className="text-xs font-semibold mb-2 text-foreground">GST Options</p>
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-xs text-muted-foreground cursor-pointer select-none" htmlFor="purchase-gst-disable-switch">
+                        Disable GST for this voucher
+                      </label>
+                      <Switch
+                        id="purchase-gst-disable-switch"
+                        checked={gstDisabled}
+                        onCheckedChange={setGstDisabled}
+                      />
+                    </div>
+                    {gstDisabled && (
+                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                        GST columns hidden. Invoice will be saved without tax.
+                      </p>
+                    )}
+                  </PopoverContent>
+                </Popover>
               ) : null
             }
           />

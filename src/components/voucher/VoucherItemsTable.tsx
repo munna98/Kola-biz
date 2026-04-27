@@ -12,6 +12,7 @@ interface VoucherItemsTableProps {
     className?: string;
     height?: string | number;
     footerRightContent?: ReactNode;
+    footerLeftContent?: ReactNode;
 }
 
 export function VoucherItemsTable({
@@ -22,7 +23,8 @@ export function VoucherItemsTable({
     disableAdd = false,
     className,
     height,
-    footerRightContent
+    footerRightContent,
+    footerLeftContent,
 }: VoucherItemsTableProps) {
     return (
         <div
@@ -46,21 +48,27 @@ export function VoucherItemsTable({
             {/* Add Item Button */}
             {!disableAdd && (
                 <div className="bg-muted/30 border-t px-3 py-2 shrink-0 flex justify-between items-center">
-                    <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onAddItem()}
-                        className="text-xs h-7"
-                    >
-                        <IconPlus size={14} />
-                        {addItemLabel}
-                    </Button>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onAddItem()}
+                            className="text-xs h-7"
+                        >
+                            <IconPlus size={14} />
+                            {addItemLabel}
+                        </Button>
+                        {footerLeftContent}
+                    </div>
                     {footerRightContent}
                 </div>
             )}
-            {disableAdd && footerRightContent && (
-                <div className="bg-muted/30 border-t px-3 py-2 shrink-0 flex justify-end items-center">
+            {disableAdd && (footerRightContent || footerLeftContent) && (
+                <div className="bg-muted/30 border-t px-3 py-2 shrink-0 flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                        {footerLeftContent}
+                    </div>
                     {footerRightContent}
                 </div>
             )}

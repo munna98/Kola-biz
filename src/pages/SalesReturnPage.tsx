@@ -30,7 +30,10 @@ import { Combobox } from '@/components/ui/combobox';
 import {
     IconCheck,
     IconX,
+    IconSettings2,
 } from '@tabler/icons-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Switch } from '@/components/ui/switch';
 
 
 // Global Voucher Components & Hooks
@@ -42,7 +45,7 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
-import { Product, ProductUnitConversion, Unit, GstTaxSlab } from '@/lib/tauri';
+import { Product, ProductUnitConversion, Unit, GstTaxSlab, api } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
 
@@ -60,6 +63,7 @@ export default function SalesReturnPage() {
     const [units, setUnits] = useState<Unit[]>([]);
     const [parties, setParties] = useState<Party[]>([]);
     const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
+    const [gstDisabled, setGstDisabled] = useState(false);
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
@@ -78,18 +82,21 @@ export default function SalesReturnPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, gstSlabsData] = await Promise.all([
+                const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, gstSettings, slabsData] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
                     invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
                     invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable', 'Cash', 'Bank Account'] }),
                     invoke<any>('get_voucher_settings', { voucherType: 'sales_return' }),
-                    invoke<GstTaxSlab[]>('get_gst_tax_slabs'),
+                    api.gst.getSettings().catch(() => null),
+                    api.gst.getSlabs().catch(() => [] as GstTaxSlab[]),
                 ]);
                 setProducts(productsData);
                 setUnits(unitsData);
                 setProductUnitConversions(productUnitConversionsData);
-                setGstSlabs(gstSlabsData);
+                if (gstSettings?.gst_enabled) {
+                    setGstSlabs(slabsData);
+                }
                 if (settingsData) setVoucherSettings(settingsData);
 
                 const combinedParties = accountsData.map(acc => ({
@@ -727,9 +734,46 @@ export default function SalesReturnPage() {
                                 document.getElementById('voucher-discount-amount')?.focus();
                             }, 50);
                         }}
-                        gstSlabs={gstSlabs}
+                        gstSlabs={gstDisabled ? [] : gstSlabs}
                         fullProducts={products as any}
                         taxInclusive={voucherSettings?.taxInclusive}
+                        footerLeftContent={
+                          !isReadOnly && gstSlabs.length > 0 ? (
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <button
+                                  type="button"
+                                  title="GST Settings"
+                                  className={`h-7 w-7 flex items-center justify-center rounded-md transition-colors border ${
+                                    gstDisabled
+                                      ? 'bg-amber-100 border-amber-400 text-amber-700 dark:bg-amber-900/30 dark:border-amber-600 dark:text-amber-400'
+                                      : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'
+                                  }`}
+                                >
+                                  <IconSettings2 size={14} />
+                                </button>
+                              </PopoverTrigger>
+                              <PopoverContent side="top" align="start" className="w-56 p-3">
+                                <p className="text-xs font-semibold mb-2 text-foreground">GST Options</p>
+                                <div className="flex items-center justify-between gap-2">
+                                  <label className="text-xs text-muted-foreground cursor-pointer select-none" htmlFor="sales-return-gst-disable-switch">
+                                    Disable GST for this voucher
+                                  </label>
+                                  <Switch
+                                    id="sales-return-gst-disable-switch"
+                                    checked={gstDisabled}
+                                    onCheckedChange={setGstDisabled}
+                                  />
+                                </div>
+                                {gstDisabled && (
+                                  <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                                    GST columns hidden. Return will be saved without tax.
+                                  </p>
+                                )}
+                              </PopoverContent>
+                            </Popover>
+                          ) : null
+                        }
                     />
 
                     {/* Totals and Notes */}

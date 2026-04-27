@@ -41,7 +41,7 @@ export default function LoginPage() {
     const [companiesLoading, setCompaniesLoading] = useState(true);
     const [selectedCompanyId, setSelectedCompanyId] = useState<string>('');
     const [showCompanyPicker, setShowCompanyPicker] = useState(false);
-    const [switching, setSwitching] = useState(false);
+    const [, setSwitching] = useState(false);
 
     // New company mini-form
     const [showCreate, setShowCreate] = useState(false);

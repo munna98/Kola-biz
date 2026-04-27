@@ -237,6 +237,7 @@ export interface VoucherItemsSectionProps {
     disableAdd?: boolean;
     settings?: { columns: ColumnSettings[], skipToNextRowAfterQty?: boolean };
     footerRightContent?: React.ReactNode;
+    footerLeftContent?: React.ReactNode;
     onProductCreate?: (name: string, rowIndex: number) => void;
     onSectionExit?: () => void;
     defaultUnitKind?: ProductUnitDefaultKind;
@@ -279,6 +280,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     disableAdd,
     settings,
     footerRightContent,
+    footerLeftContent,
     onProductCreate,
     onSectionExit,
     defaultUnitKind = 'sale',
@@ -419,6 +421,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
             addItemLabel={addItemLabel}
             disableAdd={disableAdd ?? isReadOnly}
             footerRightContent={footerRightContent}
+            footerLeftContent={footerLeftContent}
         >
             {items.map((item, idx) => {
                 const calc = getItemAmount(item);
