@@ -149,22 +149,6 @@ export function VoucherPageHeader({
                 <div className="flex items-center gap-2">
                     {customActionsPrefix}
 
-                    {mode === 'new' && (
-                        <>
-                            {onListView && (
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={onListView}
-                                    className="h-8 text-xs gap-2"
-                                >
-                                    <IconList size={14} />
-                                    List View
-                                </Button>
-                            )}
-                        </>
-                    )}
-
                     {mode === 'viewing' && (
                         <>
                             <div className="flex items-center gap-1 border-r pr-2 mr-2">
@@ -269,6 +253,18 @@ export function VoucherPageHeader({
                                 Save Changes
                             </Button>
                         </>
+                    )}
+
+                    {onListView && (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={onListView}
+                            className="h-8 text-xs gap-2"
+                        >
+                            <IconList size={14} />
+                            List View
+                        </Button>
                     )}
 
                     <Button
