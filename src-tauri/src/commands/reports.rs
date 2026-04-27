@@ -779,7 +779,19 @@ pub async fn get_transaction_report(
             v.voucher_type,
             v.voucher_date,
             v.party_id,
-            coa.account_name as party_name,
+            CASE
+                WHEN v.voucher_type IN ('payment', 'receipt') THEN (
+                    SELECT CASE
+                        WHEN COUNT(vi.id) = 1
+                            THEN (SELECT coa2.account_name FROM chart_of_accounts coa2 WHERE coa2.id = (SELECT vi2.ledger_id FROM voucher_items vi2 WHERE vi2.voucher_id = v.id LIMIT 1))
+                        WHEN COUNT(vi.id) > 1
+                            THEN 'Multiple Parties'
+                        ELSE coa.account_name
+                    END
+                    FROM voucher_items vi WHERE vi.voucher_id = v.id
+                )
+                ELSE coa.account_name
+            END as party_name,
             COALESCE(v.grand_total, v.total_amount, 0.0) as amount,
             v.narration,
             v.created_at

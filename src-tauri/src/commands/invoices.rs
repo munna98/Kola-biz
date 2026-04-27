@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use tauri::State;
 
@@ -1436,7 +1436,19 @@ pub async fn list_vouchers(
             v.id,
             v.voucher_no,
             v.voucher_date,
-            COALESCE(coa.account_name, CASE WHEN v.voucher_type = 'journal' THEN 'Journal Entry' WHEN v.voucher_type = 'opening_balance' THEN 'Opening Balance' WHEN v.voucher_type = 'opening_stock' THEN 'Opening Stock' WHEN v.voucher_type = 'stock_journal' THEN 'Stock Journal' ELSE 'N/A' END) as party_name,
+            CASE
+                WHEN v.voucher_type IN ('payment', 'receipt') THEN (
+                    SELECT CASE
+                        WHEN COUNT(vi.id) = 1
+                            THEN (SELECT coa2.account_name FROM chart_of_accounts coa2 WHERE coa2.id = (SELECT vi2.ledger_id FROM voucher_items vi2 WHERE vi2.voucher_id = v.id LIMIT 1))
+                        WHEN COUNT(vi.id) > 1
+                            THEN 'Multiple Parties'
+                        ELSE COALESCE(coa.account_name, 'N/A')
+                    END
+                    FROM voucher_items vi WHERE vi.voucher_id = v.id
+                )
+                ELSE COALESCE(coa.account_name, CASE WHEN v.voucher_type = 'journal' THEN 'Journal Entry' WHEN v.voucher_type = 'opening_balance' THEN 'Opening Balance' WHEN v.voucher_type = 'opening_stock' THEN 'Opening Stock' WHEN v.voucher_type = 'stock_journal' THEN 'Stock Journal' ELSE 'N/A' END)
+            END as party_name,
             ROUND(
                 CASE
                     WHEN v.voucher_type IN ('sales_invoice', 'purchase_invoice', 'sales_return', 'purchase_return')

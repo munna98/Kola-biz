@@ -101,8 +101,8 @@ pub async fn create_payment(
 
     // Create voucher
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, account_id, created_by)
-         VALUES (?, ?, 'payment', ?, ?, 'account', ?, ?, ?, ?, 'posted', ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, grand_total, metadata, narration, status, account_id, created_by)
+         VALUES (?, ?, 'payment', ?, ?, 'account', ?, ?, ?, ?, ?, 'posted', ?, ?)"
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -110,6 +110,7 @@ pub async fn create_payment(
     .bind(&payment.account_id)
     .bind(&payment.reference_number)
     .bind(total_amount)
+    .bind(grand_total)
     .bind(&payment.payment_method)
     .bind(&payment.narration)
     .bind(&payment.account_id)
@@ -510,6 +511,7 @@ pub async fn update_payment(
             party_id = ?, 
             reference = ?, 
             total_amount = ?, 
+            grand_total = ?,
             metadata = ?, 
             narration = ?,
             account_id = ?
@@ -519,6 +521,7 @@ pub async fn update_payment(
     .bind(&payment.account_id)
     .bind(&payment.reference_number)
     .bind(total_amount)
+    .bind(grand_total)
     .bind(&payment.payment_method)
     .bind(&payment.narration)
     .bind(&payment.account_id)
@@ -828,8 +831,8 @@ pub async fn create_receipt(
 
     // Create voucher
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, account_id, created_by)
-         VALUES (?, ?, 'receipt', ?, ?, 'account', ?, ?, ?, ?, 'posted', ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, grand_total, metadata, narration, status, account_id, created_by)
+         VALUES (?, ?, 'receipt', ?, ?, 'account', ?, ?, ?, ?, ?, 'posted', ?, ?)"
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -837,6 +840,7 @@ pub async fn create_receipt(
     .bind(&receipt.account_id)
     .bind(&receipt.reference_number)
     .bind(total_amount)
+    .bind(grand_total)
     .bind(&receipt.receipt_method)
     .bind(&receipt.narration)
     .bind(&receipt.account_id)
@@ -1237,6 +1241,7 @@ pub async fn update_receipt(
             party_id = ?, 
             reference = ?, 
             total_amount = ?, 
+            grand_total = ?,
             metadata = ?, 
             narration = ?,
             account_id = ?
@@ -1246,6 +1251,7 @@ pub async fn update_receipt(
     .bind(&receipt.account_id)
     .bind(&receipt.reference_number)
     .bind(total_amount)
+    .bind(grand_total)
     .bind(&receipt.receipt_method)
     .bind(&receipt.narration)
     .bind(&receipt.account_id)

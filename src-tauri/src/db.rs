@@ -288,6 +288,53 @@ pub async fn init_db(
         .execute(&pool)
         .await;
 
+    // Data fix: Backfill grand_total for payment/receipt vouchers where it was never stored (still 0).
+    // We derive grand_total from the journal credit (payment) or debit (receipt) side which was
+    // always correctly recorded. Falls back to total_amount if no journal entries exist.
+    let _ = sqlx::query(
+        "UPDATE vouchers
+         SET grand_total = (
+             SELECT COALESCE(SUM(je.credit), vouchers.total_amount, 0)
+             FROM journal_entries je
+             WHERE je.voucher_id = vouchers.id AND je.credit > 0
+         )
+         WHERE voucher_type = 'payment'
+           AND grand_total = 0
+           AND total_amount > 0
+           AND deleted_at IS NULL"
+    )
+    .execute(&pool)
+    .await;
+
+    let _ = sqlx::query(
+        "UPDATE vouchers
+         SET grand_total = (
+             SELECT COALESCE(SUM(je.debit), vouchers.total_amount, 0)
+             FROM journal_entries je
+             WHERE je.voucher_id = vouchers.id AND je.debit > 0
+             -- Only the single cash/bank debit entry represents the total received
+             LIMIT 1
+         )
+         WHERE voucher_type = 'receipt'
+           AND grand_total = 0
+           AND total_amount > 0
+           AND deleted_at IS NULL"
+    )
+    .execute(&pool)
+    .await;
+
+    // Simpler fallback: if journal approach gives NULL, just copy total_amount
+    let _ = sqlx::query(
+        "UPDATE vouchers
+         SET grand_total = total_amount
+         WHERE voucher_type IN ('payment', 'receipt')
+           AND grand_total = 0
+           AND total_amount > 0
+           AND deleted_at IS NULL"
+    )
+    .execute(&pool)
+    .await;
+
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_vouchers_salesperson ON vouchers(salesperson_id)")
         .execute(&pool)
         .await?;

@@ -203,15 +203,17 @@ function generateThermalDesign(
     elements.push(makeDivider(ml, y, contentWidth, 'dashed', elements.length));
     y += 3;
 
-    // ── Items Table: Item | Qty | [Less] | Rate | Amt ──
+    // ── Items Table: Item | Qty | Count | [Less] | F.Qty | Rate | Amt ──
     const tableColumns: TableColumn[] = [
-        { key: 'product_name', label: 'Item', width: features.show_less_column ? 35 : 40, align: 'left' },
-        { key: 'initial_quantity', label: 'Qty', width: 15, align: 'right' },
+        { key: 'product_name', label: 'Item', width: features.show_less_column ? 20 : 25, align: 'left' },
+        { key: 'initial_quantity', label: 'Qty', width: 10, align: 'right' },
+        { key: 'count', label: 'Count', width: 10, align: 'right' },
     ];
     if (features.show_less_column) {
         tableColumns.push({ key: 'less_quantity', label: 'Less', width: 10, align: 'right' });
     }
     tableColumns.push(
+        { key: 'final_quantity', label: 'F.Qty', width: 10, align: 'right' },
         { key: 'rate', label: 'Rate', width: 20, align: 'right' },
         { key: 'total', label: 'Amt', width: features.show_less_column ? 20 : 25, align: 'right' },
     );
