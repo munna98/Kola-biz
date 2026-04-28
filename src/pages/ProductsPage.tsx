@@ -5,7 +5,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
 import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode } from '@tabler/icons-react';
-import { api, Product, Unit, ProductGroup } from '@/lib/tauri';
+import { api, Product, Unit, ProductGroup, GstTaxSlab } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { toast } from 'sonner';
@@ -19,6 +19,8 @@ export default function ProductsPage() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [groups, setGroups] = useState<ProductGroup[]>([]);
   const [loading, setLoading] = useState(true);
+  const [gstEnabled, setGstEnabled] = useState(false);
+  const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [open, setOpen] = useState(false);
   const [unitsOpen, setUnitsOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
@@ -32,14 +34,18 @@ export default function ProductsPage() {
   const load = async () => {
     try {
       setLoading(true);
-      const [p, u, g] = await Promise.all([
+      const [p, u, g, gstSettings, slabs] = await Promise.all([
         showDeleted ? api.products.listDeleted() : api.products.list(),
         api.units.list(),
-        api.productGroups.list()
+        api.productGroups.list(),
+        api.gst.getSettings(),
+        api.gst.getSlabs()
       ]);
       setProducts(p);
       setUnits(u);
       setGroups(g);
+      setGstEnabled(gstSettings.gst_enabled);
+      setGstSlabs(slabs);
     } catch (error) {
       toast.error('Failed to load data');
       console.error('Load error:', error);
@@ -184,12 +190,13 @@ export default function ProductsPage() {
                 <th className="p-3 w-12">S.No</th>
                 <th className="p-3">Code</th>
                 <th className="p-3">Name</th>
+                <th className="p-3">HSN Code</th>
                 <th className="p-3">Group</th>
                 <th className="p-3">Unit</th>
                 <th className="p-3">Purchase</th>
                 <th className="p-3">Sales</th>
                 <th className="p-3">MRP</th>
-                <th className="p-3">Active</th>
+                {gstEnabled && <th className="p-3">Tax Slab</th>}
                 <th className="p-3">Actions</th>
               </tr>
             </thead>
@@ -216,16 +223,17 @@ export default function ProductsPage() {
                     <td className="p-3 text-sm text-muted-foreground">{index + 1}</td>
                     <td className="p-3 font-mono text-sm">{p.code}</td>
                     <td className="p-3">{p.name}</td>
+                    <td className="p-3 text-sm">{p.hsn_sac_code || '-'}</td>
                     <td className="p-3 text-sm">{groups.find(g => g.id === p.group_id)?.name || '-'}</td>
                     <td className="p-3">{units.find(u => u.id === p.unit_id)?.symbol || '-'}</td>
                     <td className="p-3">₹{p.purchase_rate.toFixed(2)}</td>
                     <td className="p-3">₹{p.sales_rate.toFixed(2)}</td>
                     <td className="p-3">₹{p.mrp.toFixed(2)}</td>
-                    <td className="p-3">
-                      <Badge variant={p.is_active ? 'default' : 'secondary'}>
-                        {p.is_active ? 'Active' : 'Inactive'}
-                      </Badge>
-                    </td>
+                    {gstEnabled && (
+                      <td className="p-3 text-sm">
+                        {gstSlabs.find(s => s.id === p.gst_slab_id)?.name || '-'}
+                      </td>
+                    )}
                     <td className="p-3 flex gap-2">
                       {!showDeleted ? (
                         <>
