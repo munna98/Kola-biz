@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use crate::company_db::DbRegistry;
 use std::sync::Arc;
 use tauri::State;
@@ -89,6 +89,7 @@ pub struct CreatePurchaseReturn {
     pub discount_amount: Option<f64>,
     pub items: Vec<CreatePurchaseReturnItem>,
     pub tax_inclusive: Option<bool>,
+    pub gst_disabled: Option<bool>,
 }
 
 #[tauri::command]
@@ -208,6 +209,7 @@ pub async fn create_purchase_return(
     let is_inter_state =
         crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
+    let gst_disabled = invoice.gst_disabled.unwrap_or(false);
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
@@ -228,6 +230,7 @@ pub async fn create_purchase_return(
                 item.discount_amount,
                 item.remarks.clone(),
                 tax_inclusive,
+                gst_disabled,
             )
             .await?,
         );
@@ -432,6 +435,7 @@ pub async fn update_purchase_return(
     let is_inter_state =
         crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
+    let gst_disabled = invoice.gst_disabled.unwrap_or(false);
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
@@ -452,6 +456,7 @@ pub async fn update_purchase_return(
                 item.discount_amount,
                 item.remarks.clone(),
                 tax_inclusive,
+                gst_disabled,
             )
             .await?,
         );

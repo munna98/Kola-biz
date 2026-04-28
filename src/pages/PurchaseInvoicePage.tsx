@@ -532,6 +532,7 @@ export default function PurchaseInvoicePage() {
               tax_rate: item.tax_rate
             })),
             tax_inclusive: voucherSettings?.taxInclusive ?? false,
+            gst_disabled: gstDisabled,
           },
         });
 
@@ -598,6 +599,7 @@ export default function PurchaseInvoicePage() {
             })),
             user_id: user?.id.toString(),
             tax_inclusive: voucherSettings?.taxInclusive ?? false,
+            gst_disabled: gstDisabled,
           },
         });
         toast.success('Purchase invoice created successfully');

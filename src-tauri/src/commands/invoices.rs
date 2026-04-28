@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use crate::company_db::DbRegistry;
 use std::sync::Arc;
@@ -196,6 +196,7 @@ pub(crate) async fn prepare_voucher_line(
     discount_amount: Option<f64>,
     remarks: Option<String>,
     tax_inclusive: bool,
+    gst_disabled: bool,
 ) -> Result<PreparedVoucherLine, String> {
     let final_quantity = initial_quantity - (count as f64 * deduction_per_unit);
     let unit_snapshot =
@@ -209,10 +210,12 @@ pub(crate) async fn prepare_voucher_line(
             .unwrap_or(None);
     let (hsn_sac_code, gst_slab_id) = product.unwrap_or((None, None));
 
-    let mut effective_rate = tax_rate;
-    if let Some(ref slab_id) = gst_slab_id {
-        if let Some(slab) = crate::commands::tax_utils::get_slab(pool, slab_id).await {
-            effective_rate = crate::commands::tax_utils::resolve_effective_rate(rate, &slab);
+    let mut effective_rate = if gst_disabled { 0.0 } else { tax_rate };
+    if !gst_disabled {
+        if let Some(ref slab_id) = gst_slab_id {
+            if let Some(slab) = crate::commands::tax_utils::get_slab(pool, slab_id).await {
+                effective_rate = crate::commands::tax_utils::resolve_effective_rate(rate, &slab);
+            }
         }
     }
 
@@ -398,6 +401,7 @@ pub struct CreatePurchaseInvoice {
     pub items: Vec<CreatePurchaseInvoiceItem>,
     pub user_id: Option<String>,
     pub tax_inclusive: Option<bool>,
+    pub gst_disabled: Option<bool>,
 }
 
 
@@ -566,6 +570,7 @@ pub async fn create_purchase_invoice(
     let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.supplier_id).fetch_optional(&mut *tx).await.ok().flatten();
     let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
+    let gst_disabled = invoice.gst_disabled.unwrap_or(false);
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
@@ -586,6 +591,7 @@ pub async fn create_purchase_invoice(
                 item.discount_amount,
                 item.remarks.clone(),
                 tax_inclusive,
+                gst_disabled,
             )
             .await?,
         );
@@ -631,6 +637,20 @@ pub async fn create_purchase_invoice(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+    }
+
+    // ============= INSERT STOCK MOVEMENTS (IN) =============
+    for item in &processed_items {
+        let sm_id = Uuid::now_v7().to_string();
+        let qty = item.base_quantity;
+        let rate = item.rate;
+        let amount = qty * rate;
+        sqlx::query(
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?)"
+        )
+        .bind(&sm_id).bind(&voucher_id).bind(&item.product_id)
+        .bind(qty).bind(item.count).bind(rate).bind(amount)
+        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
     // ============= CREATE JOURNAL ENTRIES =============
@@ -792,6 +812,7 @@ pub async fn update_purchase_invoice(
     let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.supplier_id).fetch_optional(&mut *tx).await.ok().flatten();
     let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
+    let gst_disabled = invoice.gst_disabled.unwrap_or(false);
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
@@ -812,6 +833,7 @@ pub async fn update_purchase_invoice(
                 item.discount_amount,
                 item.remarks.clone(),
                 tax_inclusive,
+                gst_disabled,
             )
             .await?,
         );
@@ -863,6 +885,22 @@ pub async fn update_purchase_invoice(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+    }
+
+    // ============= DELETE + REINSERT STOCK MOVEMENTS (IN) =============
+    sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
+        .bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    for item in &processed_items {
+        let sm_id = Uuid::now_v7().to_string();
+        let qty = item.base_quantity;
+        let rate = item.rate;
+        let amount = qty * rate;
+        sqlx::query(
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?)"
+        )
+        .bind(&sm_id).bind(&voucher_id).bind(&item.product_id)
+        .bind(qty).bind(item.count).bind(rate).bind(amount)
+        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
     // ============= CREATE JOURNAL ENTRIES =============
@@ -1008,6 +1046,7 @@ pub struct CreateSalesInvoice {
     pub items: Vec<CreateSalesInvoiceItem>,
     pub user_id: Option<String>,
     pub tax_inclusive: Option<bool>,
+    pub gst_disabled: Option<bool>,
 }
 
 #[tauri::command]
@@ -1173,6 +1212,7 @@ pub async fn create_sales_invoice(
     let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.customer_id).fetch_optional(&mut *tx).await.ok().flatten();
     let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
+    let gst_disabled = invoice.gst_disabled.unwrap_or(false);
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
@@ -1193,6 +1233,7 @@ pub async fn create_sales_invoice(
                 item.discount_amount,
                 item.remarks.clone(),
                 tax_inclusive,
+                gst_disabled,
             )
             .await?,
         );
@@ -1238,6 +1279,20 @@ pub async fn create_sales_invoice(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+    }
+
+    // ============= INSERT STOCK MOVEMENTS (OUT) =============
+    for item in &processed_items {
+        let sm_id = Uuid::now_v7().to_string();
+        let qty = item.base_quantity;
+        let rate = item.rate;
+        let amount = qty * rate;
+        sqlx::query(
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount) VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)"
+        )
+        .bind(&sm_id).bind(&voucher_id).bind(&item.product_id)
+        .bind(qty).bind(item.count).bind(rate).bind(amount)
+        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
     // ============= CREATE JOURNAL ENTRIES =============
@@ -1396,6 +1451,7 @@ pub async fn update_sales_invoice(
     let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.customer_id).fetch_optional(&mut *tx).await.ok().flatten();
     let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
+    let gst_disabled = invoice.gst_disabled.unwrap_or(false);
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
@@ -1416,6 +1472,7 @@ pub async fn update_sales_invoice(
                 item.discount_amount,
                 item.remarks.clone(),
                 tax_inclusive,
+                gst_disabled,
             )
             .await?,
         );
@@ -1467,6 +1524,22 @@ pub async fn update_sales_invoice(
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+    }
+
+    // ============= DELETE + REINSERT STOCK MOVEMENTS (OUT) =============
+    sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
+        .bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    for item in &processed_items {
+        let sm_id = Uuid::now_v7().to_string();
+        let qty = item.base_quantity;
+        let rate = item.rate;
+        let amount = qty * rate;
+        sqlx::query(
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount) VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)"
+        )
+        .bind(&sm_id).bind(&voucher_id).bind(&item.product_id)
+        .bind(qty).bind(item.count).bind(rate).bind(amount)
+        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
     // ============= CREATE JOURNAL ENTRIES =============

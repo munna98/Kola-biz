@@ -375,6 +375,7 @@ export default function PurchaseReturnPage() {
                             discount_percent: item.discount_percent || 0,
                             discount_amount: item.discount_amount || 0,
                         })),
+                        gst_disabled: gstDisabled,
                     },
                 });
                 toast.success('Purchase return updated successfully');
@@ -400,6 +401,7 @@ export default function PurchaseReturnPage() {
                             discount_percent: item.discount_percent || 0,
                             discount_amount: item.discount_amount || 0,
                         })),
+                        gst_disabled: gstDisabled,
                     },
                 });
                 toast.success('Purchase return created successfully');

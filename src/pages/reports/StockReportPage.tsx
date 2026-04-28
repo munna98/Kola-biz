@@ -24,7 +24,7 @@ import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 
 interface StockSummary {
-    product_id: number;
+    product_id: string;
     product_code: string;
     product_name: string;
     group_name: string | null;

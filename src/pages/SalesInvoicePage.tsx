@@ -451,6 +451,7 @@ export default function SalesInvoicePage() {
               tax_rate: item.tax_rate
             })),
             tax_inclusive: isTaxInclusive,
+            gst_disabled: gstDisabled,
           },
         });
         toast.success('Sales invoice updated successfully');
@@ -498,6 +499,7 @@ export default function SalesInvoicePage() {
             })),
             user_id: user?.id.toString(),
             tax_inclusive: isTaxInclusive,
+            gst_disabled: gstDisabled,
           },
         });
         toast.success('Sales invoice created successfully');

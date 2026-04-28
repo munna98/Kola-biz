@@ -1,4 +1,4 @@
-﻿use chrono;
+use chrono;
 use serde::{Deserialize, Serialize};
 use crate::company_db::DbRegistry;
 use std::sync::Arc;
@@ -1345,18 +1345,25 @@ pub async fn get_dashboard_metrics(
     let total_revenue = revenue.unwrap_or(0.0);
     let total_expenses = expenses.unwrap_or(0.0);
 
-    // Get stock value
+    // Get stock value using weighted average purchase rate (same as Stock Report)
     let stock_value: Option<f64> = sqlx::query_scalar(
         "SELECT CAST(COALESCE(SUM(
-            (SELECT COALESCE(SUM(quantity), 0) FROM stock_movements sm
-             JOIN vouchers v ON sm.voucher_id = v.id
-             WHERE sm.product_id = p.id AND sm.movement_type = 'IN'
-             AND v.deleted_at IS NULL) -
-            (SELECT COALESCE(SUM(quantity), 0) FROM stock_movements sm
-             JOIN vouchers v ON sm.voucher_id = v.id
-             WHERE sm.product_id = p.id AND sm.movement_type = 'OUT'
-             AND v.deleted_at IS NULL)
-        ) * p.sales_rate, 0) AS REAL)
+            -- current stock qty
+            COALESCE((
+                SELECT SUM(CASE WHEN sm.movement_type = 'IN' THEN sm.quantity ELSE -sm.quantity END)
+                FROM stock_movements sm
+                JOIN vouchers v ON sm.voucher_id = v.id
+                WHERE sm.product_id = p.id AND v.deleted_at IS NULL
+            ), 0)
+            *
+            -- weighted average purchase rate
+            COALESCE((
+                SELECT SUM(sm.rate * sm.quantity) / NULLIF(SUM(sm.quantity), 0)
+                FROM stock_movements sm
+                JOIN vouchers v ON sm.voucher_id = v.id
+                WHERE sm.product_id = p.id AND sm.movement_type = 'IN' AND v.deleted_at IS NULL
+            ), 0)
+        ), 0) AS REAL)
          FROM products p WHERE p.deleted_at IS NULL",
     )
     .fetch_optional(&pool)
