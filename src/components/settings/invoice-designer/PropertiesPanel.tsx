@@ -138,7 +138,7 @@ export default function PropertiesPanel({
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto">
-                <div className="p-3 space-y-1">
+                <div className="p-3 pb-24 space-y-1">
                     {activeTab === 'page' ? (
                         // ===== PAGE TAB =====
                         <>
@@ -431,6 +431,14 @@ export default function PropertiesPanel({
                                         <Switch
                                             checked={el.tableConfig.bodyFontBold ?? true}
                                             onCheckedChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, bodyFontBold: v } })}
+                                            className="h-4 w-7"
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-[11px]">Two-Row Layout (Thermal)</Label>
+                                        <Switch
+                                            checked={el.tableConfig.twoRowLayout ?? false}
+                                            onCheckedChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, twoRowLayout: v } })}
                                             className="h-4 w-7"
                                         />
                                     </div>

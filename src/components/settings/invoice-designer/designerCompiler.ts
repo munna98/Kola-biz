@@ -56,6 +56,16 @@ export function compileDesign(design: TemplateDesign): {
         bodyHtml = renderThermalElements(bodyElements);
         footerHtml = renderThermalElements(footerElements);
         stylesCss = generateThermalCSS(design);
+
+        // Backward compatibility fallback for existing thermal templates without balance section
+        const hasOldBalance = design.elements.some(el => 
+            (el.type === 'totals' && el.totalsConfig?.rows.some(r => r.field === 'old_balance')) ||
+            (el.type === 'field' && el.fieldBinding === 'old_balance') ||
+            (el.type === 'table' && el.tableConfig?.columns.some(c => c.key === 'old_balance'))
+        );
+        if (!hasOldBalance) {
+            bodyHtml += `\n<!-- Account Summary -->\n<div style="border-top:1px dashed #000;margin:10px 0;padding:5px 0;font-size:10pt;color:#000;">\n    <div style="display:flex;justify-content:space-between;"><span>Old Bal:</span><span>{{abs_format_number old_balance 2}}</span></div>\n    <div style="display:flex;justify-content:space-between;"><span>Bill Amt:</span><span>{{format_number grand_total 2}}</span></div>\n    <div style="display:flex;justify-content:space-between;"><span>Paid Amt:</span><span>{{format_number paid_amount 2}}</span></div>\n    <div style="display:flex;justify-content:space-between;font-weight:bold;border-top:1px dotted #000;padding-top:2px;margin-top:2px;font-size:11pt;"><span>Bal Due:</span><span>{{abs_format_number balance_due 2}}</span></div>\n</div>`;
+        }
     } else {
         headerHtml = renderAbsoluteElements(headerElements);
         bodyHtml = renderAbsoluteElements(bodyElements);
@@ -145,7 +155,54 @@ function renderThermalTable(el: DesignerElement): string {
 
     let html = `<table style="width:100%;border-collapse:collapse;font-size:${fontSize}pt;color:#000;">`;
 
-    // Header
+    if (config.twoRowLayout) {
+        const row1Cols = config.columns.filter(c => c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
+        const row2Cols = config.columns.filter(c => c.key !== 'product_name' && c.key !== 'description' && c.key !== 'serial_no');
+        const totalCols = row2Cols.length || 1;
+
+        // Header for both rows
+        if (config.showHeader) {
+            html += '<thead>';
+            const bgStyle = config.headerBg && config.headerBg !== '#f0f0f0' ? `background:${config.headerBg};` : '';
+            const row1Label = row1Cols.map(c => c.label).join(' / ') || 'Item';
+            html += `<tr><th colspan="${totalCols}" style="text-align:left;padding:4px 2px 0 2px;font-size:${headerFontSize}pt;color:#000;${bgStyle}">${escapeHtml(row1Label)}</th></tr>`;
+            
+            html += '<tr>';
+            for (const col of row2Cols) {
+                html += `<th style="text-align:${col.align};padding:0 2px 4px 2px;font-size:${headerFontSize}pt;border-bottom:1px solid #000;font-weight:bold;color:#000;width:${col.width}%;${bgStyle}">${escapeHtml(col.label)}</th>`;
+            }
+            html += '</tr></thead>';
+        }
+
+        html += '<tbody>{{#each items}}';
+        
+        // Row 1
+        html += `<tr><td colspan="${totalCols}" style="padding:4px 2px 0 2px;text-align:left;font-size:${fontSize}pt;color:#000;${bodyBold ? 'font-weight:bold;' : ''}">`;
+        if (row1Cols.find(c => c.key === 'serial_no')) html += '{{increment @index}}. ';
+        if (row1Cols.find(c => c.key === 'product_name')) html += '{{product_name}} ';
+        if (row1Cols.find(c => c.key === 'description')) html += '{{#if description}}<br/><span style="font-size:${fontSize - 1}pt;font-weight:normal;">{{description}}</span>{{/if}}';
+        html += `</td></tr>`;
+
+        // Row 2
+        html += `<tr>`;
+        for (const col of row2Cols) {
+            let cellContent: string;
+            if (col.format === 'currency' || col.format === 'number') {
+                cellContent = `{{format_number ${col.key} 2}}`;
+            } else if (col.format === 'date') {
+                cellContent = `{{format_date ${col.key}}}`;
+            } else {
+                cellContent = `{{${col.key}}}`;
+            }
+            html += `<td style="padding:0 2px 4px 2px;text-align:${col.align};font-size:${fontSize}pt;color:#000;border-bottom:1px dotted #ccc;">${cellContent}</td>`;
+        }
+        html += `</tr>`;
+        
+        html += '{{/each}}</tbody></table>';
+        return html;
+    }
+
+    // Default single-row layout
     if (config.showHeader) {
         html += '<thead><tr>';
         for (const col of config.columns) {
@@ -156,7 +213,6 @@ function renderThermalTable(el: DesignerElement): string {
         html += '</tr></thead>';
     }
 
-    // Body
     html += '<tbody>{{#each items}}<tr>';
     for (const col of config.columns) {
         let cellContent: string;
@@ -212,17 +268,6 @@ function renderThermalTotals(el: DesignerElement): string {
 
         html += `<div style="display:flex;justify-content:space-between;padding:2px 0;color:#000;${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>`;
     }
-
-    html += '</div>';
-
-    // Account Summary section (old balance, bill amount, paid amount, balance due)
-    html += `
-<div style="border-top:1px dashed #000;margin:10px 0;padding:5px 0;font-size:11px;color:#000;">
-    <div style="display:flex;justify-content:space-between;"><span>Old Bal:</span><span>{{abs_format_number old_balance 2}}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span>Bill Amt:</span><span>{{format_number grand_total 2}}</span></div>
-    <div style="display:flex;justify-content:space-between;"><span>Paid Amt:</span><span>{{format_number paid_amount 2}}</span></div>
-    <div style="display:flex;justify-content:space-between;font-weight:bold;border-top:1px dotted #000;padding-top:2px;margin-top:2px;font-size:12px;"><span>Bal Due:</span><span>{{abs_format_number balance_due 2}}</span></div>
-</div>`;
 
     return html;
 }

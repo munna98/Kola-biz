@@ -114,6 +114,7 @@ pub struct SyncResult {
     pub employees: u64,
     pub ledgers: u64,
     pub products: u64,
+    pub unit_conversions: u64,
 }
 
 /// Sync master data from the secondary company DB into the primary company DB.
@@ -333,6 +334,33 @@ pub async fn sync_secondary_to_primary(
     .map_err(|e| format!("Product sync failed: {}", e))?
     .rows_affected();
 
+    // ── 11. PRODUCT UNIT CONVERSIONS ──────────────────────────────────────────
+    // Match by secondary ID and ensure unit_id references are resolved to primary IDs by name.
+    let unit_conversions = sqlx::query(
+        "INSERT OR IGNORE INTO product_unit_conversions
+            (id, product_id, unit_id, factor_to_base, purchase_rate, sales_rate,
+             is_default_sale, is_default_purchase, is_default_report, created_at, updated_at)
+         SELECT
+             s.id, s.product_id,
+             -- resolve unit: prefer primary's ID matched by name, else secondary's ID
+             COALESCE(
+                 (SELECT p_u.id FROM units p_u
+                  JOIN sec.units s_u ON s_u.id = s.unit_id
+                  WHERE p_u.name = s_u.name LIMIT 1),
+                 s.unit_id
+             ),
+             s.factor_to_base, s.purchase_rate, s.sales_rate,
+             s.is_default_sale, s.is_default_purchase, s.is_default_report,
+             s.created_at, s.updated_at
+         FROM sec.product_unit_conversions s
+         WHERE s.product_id IN (SELECT id FROM products)
+           AND s.id NOT IN (SELECT id FROM product_unit_conversions)",
+    )
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("Product unit conversion sync failed: {}", e))?
+    .rows_affected();
+
     // ── 9. Re-enable FK checks & detach ──────────────────────────────────────
     let _ = sqlx::query("PRAGMA foreign_keys = ON").execute(&pool).await;
     let _ = sqlx::query("DETACH DATABASE sec").execute(&pool).await;
@@ -346,5 +374,6 @@ pub async fn sync_secondary_to_primary(
         employees,
         ledgers,
         products,
+        unit_conversions,
     })
 }

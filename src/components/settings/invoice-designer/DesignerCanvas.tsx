@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import React, { useRef, useCallback } from 'react';
 import { Rnd } from 'react-rnd';
 import { DesignerElement as DesignerElementType } from './types';
 import { getFieldByKey } from './DataFieldCatalog';
@@ -96,6 +96,55 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
         case 'table': {
             const config = element.tableConfig;
             if (!config) return <div style={effectiveStyles}>Table</div>;
+
+            if (config.twoRowLayout) {
+                const row1Cols = config.columns.filter(c => c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
+                const row2Cols = config.columns.filter(c => c.key !== 'product_name' && c.key !== 'description' && c.key !== 'serial_no');
+                const totalCols = row2Cols.length || 1;
+
+                return (
+                    <div style={{ ...effectiveStyles, padding: 0, overflow: 'hidden' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `${config.headerFontSize || 8}pt` }}>
+                            {config.showHeader && (
+                                <thead>
+                                    <tr>
+                                        <th colSpan={totalCols} style={{ backgroundColor: config.headerBg || '#f0f0f0', color: config.headerColor || '#000', padding: '2px 3px 0 3px', textAlign: 'left', fontSize: `${config.headerFontSize || 8}pt` }}>
+                                            {row1Cols.map(c => c.label).join(' / ') || 'Item'}
+                                        </th>
+                                    </tr>
+                                    <tr>
+                                        {row2Cols.map((col, i) => (
+                                            <th key={i} style={{ backgroundColor: config.headerBg || '#f0f0f0', color: config.headerColor || '#000', padding: '0 3px 2px 3px', borderBottom: '1px solid #000', textAlign: col.align, width: `${col.width}%`, fontSize: `${config.headerFontSize || 8}pt` }}>
+                                                {col.label}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                            )}
+                            <tbody>
+                                {[1, 2, 3].map(row => (
+                                    <React.Fragment key={row}>
+                                        <tr>
+                                            <td colSpan={totalCols} style={{ padding: '2px 3px 0 3px', textAlign: 'left', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', fontSize: `${config.bodyFontSize || 8}pt`, color: '#666' }}>
+                                                {row1Cols.find(c => c.key === 'serial_no') ? `${row}. ` : ''}
+                                                {row1Cols.find(c => c.key === 'product_name') ? `{{product_name}}` : ''}
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            {row2Cols.map((col, i) => (
+                                                <td key={i} style={{ padding: '0 3px 2px 3px', textAlign: col.align, fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: '1px dotted #ccc' }}>
+                                                    {`{{${col.key}}}`}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    </React.Fragment>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                );
+            }
+
             return (
                 <div style={{ ...effectiveStyles, padding: 0, overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `${config.headerFontSize || 8}pt` }}>

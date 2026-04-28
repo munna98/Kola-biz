@@ -42,6 +42,7 @@ export interface TableConfig {
     stripedColor?: string;
     borderStyle?: 'full' | 'horizontal' | 'none';
     rowHeight?: number;       // mm
+    twoRowLayout?: boolean;   // Split items into 2 rows for thermal
 }
 
 export interface TotalsConfig {

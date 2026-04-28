@@ -271,6 +271,32 @@ function generateThermalDesign(
     });
     y += 32;
 
+    // ── Balance Section (Account Summary) ──
+    elements.push({
+        id: genId(),
+        type: 'totals',
+        x: ml,
+        y,
+        width: contentWidth,
+        height: 25,
+        styles: { fontSize: 9, lineHeight: 1.3, border: '1px dashed #000', padding: 2 },
+        label: 'Account Summary',
+        totalsConfig: {
+            rows: [
+                { label: 'Old Bal', field: 'old_balance', format: 'currency', bold: false },
+                { label: 'Bill Amt', field: 'grand_total', format: 'currency', bold: false },
+                { label: 'Paid Amt', field: 'paid_amount', format: 'currency', bold: false },
+                { label: 'Bal Due', field: 'balance_due', format: 'currency', bold: true },
+            ],
+            labelAlign: 'left',
+            showBorder: true,
+        },
+        visible: true,
+        zIndex: elements.length + 1,
+    });
+    y += 27;
+
+
     // ── Separator (dashed) ──
     elements.push(makeDivider(ml, y, contentWidth, 'dashed', elements.length));
     y += 3;

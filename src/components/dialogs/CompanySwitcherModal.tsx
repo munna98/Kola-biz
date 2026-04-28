@@ -106,7 +106,8 @@ export function CompanySwitcherModal({ open, onClose, onSwitched }: CompanySwitc
                 `${result.suppliers} suppliers, ` +
                 `${result.employees} employees, ` +
                 `${result.ledgers} ledgers, ` +
-                `${result.products} products copied to primary.`
+                `${result.products} products, ` +
+                `${result.unit_conversions} unit conversions copied to primary.`
             );
         } catch (e: any) {
             toast.error(`Sync failed: ${e}`);
