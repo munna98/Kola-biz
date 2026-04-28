@@ -255,10 +255,12 @@ const purchaseInvoiceSlice = createSlice({
     },
     addItem: (state, action: PayloadAction<PurchaseInvoiceItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
+      // Preserve existing id (from a loaded voucher); only generate temp id for new blank items
+      const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
       if (insertAt !== undefined) {
-        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+        state.items.splice(insertAt, 0, itemWithId as any);
       } else {
-        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+        state.items.push(itemWithId as any);
       }
     },
     updateItem: (state, action: PayloadAction<{ index: number; data: Partial<PurchaseInvoiceItem> }>) => {
@@ -419,9 +421,11 @@ const paymentSlice = createSlice({
     addPaymentItem: (state, action: PayloadAction<PaymentItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
-        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.splice(insertAt, 0, itemWithId as any);
       } else {
-        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.push(itemWithId as any);
       }
     },
     updatePaymentItem: (state, action: PayloadAction<{ index: number; data: Partial<PaymentItem> }>) => {
@@ -555,9 +559,11 @@ const receiptSlice = createSlice({
     addReceiptItem: (state, action: PayloadAction<ReceiptItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
-        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.splice(insertAt, 0, itemWithId as any);
       } else {
-        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.push(itemWithId as any);
       }
     },
     updateReceiptItem: (state, action: PayloadAction<{ index: number; data: Partial<ReceiptItem> }>) => {
@@ -721,9 +727,11 @@ const journalEntrySlice = createSlice({
     addJournalLine: (state, action: PayloadAction<JournalEntryLine & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
-        state.lines.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.lines.splice(insertAt, 0, itemWithId as any);
       } else {
-        state.lines.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.lines.push(itemWithId as any);
       }
     },
     updateJournalLine: (state, action: PayloadAction<{ index: number; data: Partial<JournalEntryLine> }>) => {
@@ -849,9 +857,11 @@ const openingBalanceSlice = createSlice({
     addOpeningBalanceLine: (state, action: PayloadAction<OpeningBalanceLine & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
-        state.lines.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.lines.splice(insertAt, 0, itemWithId as any);
       } else {
-        state.lines.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.lines.push(itemWithId as any);
       }
     },
     updateOpeningBalanceLine: (state, action: PayloadAction<{ index: number; data: Partial<OpeningBalanceLine> }>) => {
@@ -1035,9 +1045,11 @@ const salesInvoiceSlice = createSlice({
     addSalesItem: (state, action: PayloadAction<SalesInvoiceItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
-        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.splice(insertAt, 0, itemWithId as any);
       } else {
-        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.push(itemWithId as any);
       }
     },
     updateSalesItem: (state, action: PayloadAction<{ index: number; data: Partial<SalesInvoiceItem> }>) => {
@@ -1391,9 +1403,11 @@ const purchaseReturnSlice = createSlice({
     addPurchaseReturnItem: (state, action: PayloadAction<PurchaseReturnItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
-        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.splice(insertAt, 0, itemWithId as any);
       } else {
-        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.push(itemWithId as any);
       }
     },
     updatePurchaseReturnItem: (state, action: PayloadAction<{ index: number; data: Partial<PurchaseReturnItem> }>) => {
@@ -1567,9 +1581,11 @@ const salesReturnSlice = createSlice({
     addSalesReturnItem: (state, action: PayloadAction<SalesReturnItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
-        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.splice(insertAt, 0, itemWithId as any);
       } else {
-        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.push(itemWithId as any);
       }
     },
     updateSalesReturnItem: (state, action: PayloadAction<{ index: number; data: Partial<SalesReturnItem> }>) => {
@@ -1697,9 +1713,11 @@ const openingStockSlice = createSlice({
     addOpeningStockItem: (state, action: PayloadAction<OpeningStockItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
-        state.items.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.splice(insertAt, 0, itemWithId as any);
       } else {
-        state.items.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.push(itemWithId as any);
       }
     },
     updateOpeningStockItem: (state, action: PayloadAction<{ index: number; data: Partial<OpeningStockItem> }>) => {
@@ -1826,9 +1844,11 @@ const stockJournalSlice = createSlice({
     addStockJournalSourceItem: (state, action: PayloadAction<StockJournalItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
-        state.sourceItems.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.sourceItems.splice(insertAt, 0, itemWithId as any);
       } else {
-        state.sourceItems.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.sourceItems.push(itemWithId as any);
       }
     },
     updateStockJournalSourceItem: (state, action: PayloadAction<{ index: number; data: Partial<StockJournalItem> }>) => {
@@ -1843,9 +1863,11 @@ const stockJournalSlice = createSlice({
     addStockJournalDestinationItem: (state, action: PayloadAction<StockJournalItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
-        state.destinationItems.splice(insertAt, 0, { ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.destinationItems.splice(insertAt, 0, itemWithId as any);
       } else {
-        state.destinationItems.push({ ...itemData, id: `temp-${Date.now()}` } as any);
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.destinationItems.push(itemWithId as any);
       }
     },
     updateStockJournalDestinationItem: (state, action: PayloadAction<{ index: number; data: Partial<StockJournalItem> }>) => {
