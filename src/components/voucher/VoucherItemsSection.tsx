@@ -94,9 +94,16 @@ const RateCell = React.forwardRef<HTMLInputElement, RateCellProps>(({ rate, exTa
     const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
         setIsFocused(true);
         setLocalValue(rate ? String(rate) : '');
-        // Defer select() so it runs after React re-renders the inclusive rate value
+        // Defer select() so it runs after React re-renders the inclusive rate value.
+        // Guard: only call select() if the rate input is still the focused element —
+        // prevents a stale RAF from stealing focus back from the quantity input when
+        // focusFirstEditableAfterProduct() redirects focus after product selection.
         const el = e.currentTarget;
-        requestAnimationFrame(() => el.select());
+        requestAnimationFrame(() => {
+            if (document.activeElement === el) {
+                el.select();
+            }
+        });
     };
 
     const handleBlur = () => {

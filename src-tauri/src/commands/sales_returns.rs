@@ -207,7 +207,11 @@ pub async fn create_sales_return(
     let is_inter_state =
         crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
-    let gst_disabled = invoice.gst_disabled.unwrap_or(false);
+    let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
+    let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
+    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+    let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
@@ -438,7 +442,11 @@ pub async fn update_sales_return(
     let is_inter_state =
         crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
-    let gst_disabled = invoice.gst_disabled.unwrap_or(false);
+    let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
+    let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
+    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+    let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {

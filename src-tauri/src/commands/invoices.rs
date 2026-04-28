@@ -570,7 +570,11 @@ pub async fn create_purchase_invoice(
     let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.supplier_id).fetch_optional(&mut *tx).await.ok().flatten();
     let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
-    let gst_disabled = invoice.gst_disabled.unwrap_or(false);
+    let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
+    let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
+    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+    let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
@@ -814,7 +818,11 @@ pub async fn update_purchase_invoice(
     let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.supplier_id).fetch_optional(&mut *tx).await.ok().flatten();
     let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
-    let gst_disabled = invoice.gst_disabled.unwrap_or(false);
+    let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
+    let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
+    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+    let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
@@ -1159,6 +1167,7 @@ pub(crate) async fn get_sales_invoice_with_pool(pool: &SqlitePool, id: &str) -> 
             v.voucher_date,
             v.party_id as customer_id,
             coa.account_name as customer_name,
+            v.salesperson_id,
             v.party_type,
             v.reference,
             v.total_amount,
@@ -1215,7 +1224,11 @@ pub async fn create_sales_invoice(
     let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.customer_id).fetch_optional(&mut *tx).await.ok().flatten();
     let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
-    let gst_disabled = invoice.gst_disabled.unwrap_or(false);
+    let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
+    let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
+    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+    let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
@@ -1455,7 +1468,11 @@ pub async fn update_sales_invoice(
     let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.customer_id).fetch_optional(&mut *tx).await.ok().flatten();
     let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
-    let gst_disabled = invoice.gst_disabled.unwrap_or(false);
+    let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
+    let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
+    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+    let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
