@@ -278,6 +278,7 @@ export default function PurchaseReturnPage() {
         products.forEach(p => { productMap[String(p.id)] = p; });
 
         const resolveItemGstRate = (item: typeof purchaseReturnState.items[number]) => {
+            if (gstDisabled) return 0;
             if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
                 return item.resolved_gst_rate;
             }

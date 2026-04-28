@@ -436,6 +436,7 @@ export default function PurchaseInvoicePage() {
     gstSlabs.forEach(s => { slabMap[s.id] = s; });
 
     const resolveItemGstRate = (item: any) => {
+      if (gstDisabled) return 0;
       if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
         return item.resolved_gst_rate;
       }

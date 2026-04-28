@@ -391,6 +391,11 @@ pub async fn create_sales_return(
     .map_err(|e| e.to_string())?;
 
     for item in items_for_stock {
+        // item.1 = base_quantity, item.3 = rate (per selected unit), item.4 = amount
+        // Derive per-base-unit rate to correctly compute stock value
+        let base_qty = item.1;
+        let rate_per_base = if base_qty > 0.0 { item.4 / base_qty } else { item.3 };
+        let amount = base_qty * rate_per_base;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
              VALUES (?, ?, ?, 'IN', ?, ?, ?, ?)",
@@ -398,10 +403,10 @@ pub async fn create_sales_return(
         .bind(Uuid::now_v7().to_string())
         .bind(&voucher_id)
         .bind(&item.0)
-        .bind(item.1)
+        .bind(base_qty)
         .bind(item.2)
-        .bind(item.3)
-        .bind(item.4)
+        .bind(rate_per_base)
+        .bind(amount)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -633,6 +638,10 @@ pub async fn update_sales_return(
         )
         .await?;
 
+        // Derive per-base-unit rate from amount / base_quantity
+        let base_qty = unit_snapshot.base_quantity;
+        let amount_for_item = final_qty * item.rate;
+        let rate_per_base = if base_qty > 0.0 { amount_for_item / base_qty } else { item.rate };
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
              VALUES (?, ?, ?, 'IN', ?, ?, ?, ?)",
@@ -640,10 +649,10 @@ pub async fn update_sales_return(
         .bind(Uuid::now_v7().to_string())
         .bind(&id)
         .bind(&item.product_id)
-        .bind(unit_snapshot.base_quantity)
+        .bind(base_qty)
         .bind(item.count)
-        .bind(item.rate)
-        .bind(final_qty * item.rate)
+        .bind(rate_per_base)
+        .bind(base_qty * rate_per_base)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;

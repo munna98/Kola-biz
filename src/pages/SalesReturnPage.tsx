@@ -278,6 +278,7 @@ export default function SalesReturnPage() {
         products.forEach(p => { productMap[String(p.id)] = p; });
 
         const resolveItemGstRate = (item: typeof salesReturnState.items[number]) => {
+            if (gstDisabled) return 0;
             if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
                 return item.resolved_gst_rate;
             }

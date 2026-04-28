@@ -643,13 +643,15 @@ pub async fn create_purchase_invoice(
     for item in &processed_items {
         let sm_id = Uuid::now_v7().to_string();
         let qty = item.base_quantity;
-        let rate = item.rate;
-        let amount = qty * rate;
+        // Use per-base-unit rate: amount / base_quantity handles multi-unit correctly
+        // (item.rate is per selected unit; amount/base_quantity = rate/factor_to_base)
+        let rate_per_base = if qty > 0.0 { item.amount / qty } else { item.rate };
+        let amount = qty * rate_per_base;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?)"
         )
         .bind(&sm_id).bind(&voucher_id).bind(&item.product_id)
-        .bind(qty).bind(item.count).bind(rate).bind(amount)
+        .bind(qty).bind(item.count).bind(rate_per_base).bind(amount)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
@@ -893,13 +895,14 @@ pub async fn update_purchase_invoice(
     for item in &processed_items {
         let sm_id = Uuid::now_v7().to_string();
         let qty = item.base_quantity;
-        let rate = item.rate;
-        let amount = qty * rate;
+        // Use per-base-unit rate: amount / base_quantity handles multi-unit correctly
+        let rate_per_base = if qty > 0.0 { item.amount / qty } else { item.rate };
+        let amount = qty * rate_per_base;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?)"
         )
         .bind(&sm_id).bind(&voucher_id).bind(&item.product_id)
-        .bind(qty).bind(item.count).bind(rate).bind(amount)
+        .bind(qty).bind(item.count).bind(rate_per_base).bind(amount)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
@@ -1285,13 +1288,14 @@ pub async fn create_sales_invoice(
     for item in &processed_items {
         let sm_id = Uuid::now_v7().to_string();
         let qty = item.base_quantity;
-        let rate = item.rate;
-        let amount = qty * rate;
+        // Use per-base-unit rate: amount / base_quantity handles multi-unit correctly
+        let rate_per_base = if qty > 0.0 { item.amount / qty } else { item.rate };
+        let amount = qty * rate_per_base;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount) VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)"
         )
         .bind(&sm_id).bind(&voucher_id).bind(&item.product_id)
-        .bind(qty).bind(item.count).bind(rate).bind(amount)
+        .bind(qty).bind(item.count).bind(rate_per_base).bind(amount)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
@@ -1532,13 +1536,14 @@ pub async fn update_sales_invoice(
     for item in &processed_items {
         let sm_id = Uuid::now_v7().to_string();
         let qty = item.base_quantity;
-        let rate = item.rate;
-        let amount = qty * rate;
+        // Use per-base-unit rate: amount / base_quantity handles multi-unit correctly
+        let rate_per_base = if qty > 0.0 { item.amount / qty } else { item.rate };
+        let amount = qty * rate_per_base;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount) VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)"
         )
         .bind(&sm_id).bind(&voucher_id).bind(&item.product_id)
-        .bind(qty).bind(item.count).bind(rate).bind(amount)
+        .bind(qty).bind(item.count).bind(rate_per_base).bind(amount)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 

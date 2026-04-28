@@ -60,7 +60,7 @@ export default function StockReportPage() {
     const [asOnDate, setAsOnDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedGroup, setSelectedGroup] = useState<string>('all');
     const [searchQuery, setSearchQuery] = useState('');
-    const [expandedProduct, setExpandedProduct] = useState<number | null>(null);
+    const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
     const [movements, setMovements] = useState<StockMovement[]>([]);
     const [movementsLoading, setMovementsLoading] = useState(false);
 
@@ -95,7 +95,7 @@ export default function StockReportPage() {
         }
     };
 
-    const loadMovements = async (productId: number) => {
+    const loadMovements = async (productId: string) => {
         try {
             setMovementsLoading(true);
             const data = await invoke<StockMovement[]>('get_stock_movements', {
@@ -112,7 +112,7 @@ export default function StockReportPage() {
         }
     };
 
-    const handleProductClick = (productId: number) => {
+    const handleProductClick = (productId: string) => {
         if (expandedProduct === productId) {
             setExpandedProduct(null);
         } else {
