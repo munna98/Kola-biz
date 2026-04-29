@@ -1783,3 +1783,133 @@ pub async fn get_voucher_by_id(
         Err("Voucher not found".to_string())
     }
 }
+
+// ============= WHATSAPP SEND =============
+
+#[tauri::command]
+pub async fn get_party_phone_for_voucher(
+    registry: State<'_, Arc<DbRegistry>>,
+    voucher_id: String,
+) -> Result<Option<String>, String> {
+    let pool = registry.active_pool().await?;
+    // Walk: vouchers.party_id → chart_of_accounts.party_id → customers.phone
+    let phone = sqlx::query_scalar::<_, Option<String>>(
+        r#"
+        SELECT c.phone
+        FROM vouchers v
+        JOIN chart_of_accounts coa ON coa.id = v.party_id
+        JOIN customers c ON c.id = coa.party_id
+        WHERE v.id = ?
+        LIMIT 1
+        "#,
+    )
+    .bind(&voucher_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .flatten();
+    Ok(phone)
+}
+
+#[tauri::command]
+pub async fn open_whatsapp_url(
+    app: tauri::AppHandle,
+    phone: String,
+    message: String,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    // Percent-encode the message text
+    let encoded = message
+        .replace('%', "%25")
+        .replace('&', "%26")
+        .replace('+', "%2B")
+        .replace('#', "%23")
+        .replace(' ', "%20")
+        .replace('\n', "%0A")
+        .replace('\r', "")
+        .replace('"', "%22")
+        .replace('\'', "%27");
+
+    // Use wa.me which is the universal WhatsApp link format.
+    // It opens WhatsApp Desktop if installed, otherwise WhatsApp Web.
+    // Phone must be in E.164 format without the '+' (e.g. 918086046399).
+    let url = if phone.trim().is_empty() {
+        // No phone: open WhatsApp for user to pick contact
+        format!("https://api.whatsapp.com/send?text={}", encoded)
+    } else {
+        format!("https://wa.me/{}?text={}", phone.trim(), encoded)
+    };
+
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn save_invoice_pdf(
+    html: String,
+    file_name: String,
+) -> Result<String, String> {
+    use std::process::Command;
+
+    // Sanitise file name
+    let safe_name: String = file_name
+        .chars()
+        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .collect();
+
+    // 1. Write HTML to a temp file
+    let temp_dir = std::env::temp_dir();
+    let temp_html = temp_dir.join(format!("kola_invoice_{}.html", safe_name));
+    std::fs::write(&temp_html, &html).map_err(|e| e.to_string())?;
+
+    // 2. Output PDF path in Downloads
+    let downloads = dirs::download_dir()
+        .ok_or_else(|| "Could not find Downloads folder".to_string())?;
+    let pdf_path = downloads.join(format!("Invoice_{}.pdf", safe_name));
+
+    // 3. Find Edge (always present on Windows 10/11 — Tauri uses WebView2/Edge)
+    let edge_candidates = [
+        r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+        r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    ];
+    let edge_exe = edge_candidates
+        .iter()
+        .find(|p| std::path::Path::new(p).exists())
+        .copied()
+        .ok_or_else(|| {
+            "Microsoft Edge not found. Please install Microsoft Edge to enable PDF export.".to_string()
+        })?;
+
+    // 4. Build file:/// URL for the temp HTML (Edge requires forward slashes)
+    let html_url = format!(
+        "file:///{}",
+        temp_html.to_string_lossy().replace('\\', "/")
+    );
+
+    // 5. Run Edge headless — prints the page as PDF
+    let _output = Command::new(edge_exe)
+        .args([
+            "--headless",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--run-all-compositor-stages-before-draw",
+            &format!("--print-to-pdf={}", pdf_path.to_string_lossy()),
+            "--no-pdf-header-footer",
+            &html_url,
+        ])
+        .output()
+        .map_err(|e| format!("Failed to launch Edge: {}", e))?;
+
+    // Small safety margin for file flush
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+
+    // 6. Clean up temp HTML
+    let _ = std::fs::remove_file(&temp_html);
+
+    if pdf_path.exists() {
+        Ok(pdf_path.to_string_lossy().to_string())
+    } else {
+        Err("PDF generation failed. Try updating Microsoft Edge.".to_string())
+    }
+}

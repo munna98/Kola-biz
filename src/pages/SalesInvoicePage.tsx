@@ -102,6 +102,7 @@ export default function SalesInvoicePage() {
   const [gstDisabled, setGstDisabled] = useState(false);
 
 
+
   const productUnitsByProduct = useMemo(
     () => buildProductUnitMap(productUnitConversions),
     [productUnitConversions]
@@ -712,6 +713,73 @@ export default function SalesInvoicePage() {
     printVoucher({ voucherId: salesState.currentVoucherId, voucherType: 'sales_invoice' });
   };
 
+  const handleSend = async () => {
+    if (!salesState.currentVoucherId) {
+      toast.error('Save the invoice before sending');
+      return;
+    }
+    try {
+      // 1. Fetch party phone
+      const phone = await invoke<string | null>('get_party_phone_for_voucher', {
+        voucherId: salesState.currentVoucherId,
+      });
+
+      // Normalise: strip non-digits, prepend 91 if 10-digit Indian number
+      let normPhone = '';
+      if (phone && phone.trim() !== '') {
+        const digits = phone.replace(/\D/g, '');
+        normPhone = digits.length === 10 ? `91${digits}` : digits;
+      }
+
+      // 2. Build pre-filled WhatsApp message
+      const customerName = parties.find(p => p.id === salesState.form.customer_id)?.name || '';
+      const invoiceNo    = salesState.currentVoucherNo || '';
+      const amount       = salesState.totals.grandTotal;
+      const dateStr      = salesState.form.voucher_date
+        ? new Date(salesState.form.voucher_date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+        : '';
+
+      const lines: string[] = [];
+      if (customerName && customerName.toLowerCase() !== 'cash') {
+        lines.push(`Dear ${customerName},`);
+        lines.push('');
+      }
+      lines.push(
+        `Your invoice *${invoiceNo}*${dateStr ? ` dated ${dateStr}` : ''} for *\u20B9${amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}* is ready.`
+      );
+      lines.push('');
+      lines.push('Thank you for your business!');
+      const message = lines.join('\n');
+
+      // 3. Render invoice HTML and save to Downloads (user attaches in WhatsApp)
+      try {
+        const html = await invoke<string>('render_invoice', {
+          voucherId: salesState.currentVoucherId,
+          voucherType: 'sales_invoice',
+          templateId: null,
+        });
+        const savedPath = await invoke<string>('save_invoice_pdf', {
+          html,
+          fileName: invoiceNo || salesState.currentVoucherId,
+        });
+        // 4. Open WhatsApp
+        await invoke('open_whatsapp_url', { phone: normPhone, message });
+        toast.success(
+          `WhatsApp opened! Invoice saved to:\n${savedPath}\nAttach it in the chat.`,
+          { duration: 6000 }
+        );
+      } catch {
+        // Still open WhatsApp even if PDF save fails
+        await invoke('open_whatsapp_url', { phone: normPhone, message });
+        toast.success('Opening WhatsApp…');
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error('Failed to open WhatsApp');
+    }
+  };
+
+
 
   // Global keyboard shortcuts hook
   useVoucherShortcuts({
@@ -927,6 +995,7 @@ export default function SalesInvoicePage() {
         onCancel={handleCancel}
         onDelete={handleDeleteVoucher}
         onPrint={handlePrint}
+        onSend={salesState.mode === 'viewing' ? handleSend : undefined}
         onNew={handleNew}
         onListView={() => setShowListView(true)}
         onManagePayments={salesState.mode !== 'new' ? () => setShowQuickPayment(true) : undefined}
@@ -1036,6 +1105,8 @@ export default function SalesInvoicePage() {
         onSuccess={handleCreateProductSave}
         product={undefined} // Always new
       />
+
+
       {/* Form Content */}
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <form ref={formRef} onSubmit={handleSubmit} className="flex-1 min-h-0 p-5 max-w-7xl mx-auto flex flex-col gap-4">

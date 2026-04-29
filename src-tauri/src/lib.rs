@@ -124,6 +124,8 @@ pub fn run() {
             create_sales_invoice,
             update_sales_invoice,
             delete_sales_invoice,
+            get_party_phone_for_voucher,
+            open_whatsapp_url,
             // Sales Returns
             get_sales_returns,
             get_sales_return,
@@ -221,6 +223,7 @@ pub fn run() {
             // PDF Export
             generate_ledger_pdf,
             get_downloads_path,
+            save_invoice_pdf,
             // Employees
             create_employee,
             get_employees,
