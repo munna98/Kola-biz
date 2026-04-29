@@ -10,6 +10,7 @@ interface LedgerAccount {
     id: number;
     account_name: string;
     account_code: string;
+    address_line_1?: string;
 }
 
 export interface VoucherJournalSectionProps {
@@ -90,7 +91,8 @@ export function VoucherJournalSection({
                             value={line.account_id}
                             options={accounts.map(a => ({
                                 value: a.id,
-                                label: `${a.account_code || ''} - ${a.account_name}`.replace(/^- /, '') // Handle optional code
+                                label: `${a.account_code || ''} - ${a.account_name}`.replace(/^- /, ''), // Handle optional code
+                                subLabel: a.address_line_1 || undefined
                             }))}
                             onChange={(val) => onUpdateLine(index, 'account_id', val)}
                             placeholder="Select Account"

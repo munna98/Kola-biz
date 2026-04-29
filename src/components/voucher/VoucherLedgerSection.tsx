@@ -9,6 +9,7 @@ import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 interface LedgerAccount {
     id: number;
     account_name: string;
+    address_line_1?: string;
 }
 
 export interface VoucherLedgerSectionProps {
@@ -96,7 +97,7 @@ export function VoucherLedgerSection({
                     <div className="flex gap-1 items-center" onFocus={() => onFocusRow?.(index)}>
                         <Combobox
                             value={item.description}
-                            options={ledgers.map(l => ({ value: l.account_name, label: l.account_name }))}
+                            options={ledgers.map(l => ({ value: l.account_name, label: l.account_name, subLabel: l.address_line_1 || undefined }))}
                             onChange={(val) => onUpdateItem(index, 'description', val)}
                             placeholder="Select Ledger"
                             searchPlaceholder="Search ledgers..."

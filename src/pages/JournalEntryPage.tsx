@@ -47,7 +47,7 @@ interface LedgerAccount {
     id: number;
     account_name: string;
     account_code: string;
-    account_type: string;
+    account_type: string; address_line_1?: string;
 }
 
 export default function JournalEntryPage() {

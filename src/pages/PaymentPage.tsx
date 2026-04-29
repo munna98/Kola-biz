@@ -52,6 +52,7 @@ interface AccountData {
 interface LedgerAccount {
     id: number;
     account_name: string;
+    address_line_1?: string;
 }
 
 export default function PaymentPage() {

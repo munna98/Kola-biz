@@ -59,6 +59,7 @@ interface Party {
   name: string;
   type: 'customer' | 'supplier';
   group: string;
+  address_line_1?: string;
 }
 
 export default function PurchaseInvoicePage() {
@@ -144,7 +145,8 @@ export default function PurchaseInvoicePage() {
           id: acc.id,
           name: acc.account_name,
           type: acc.account_group === 'Accounts Payable' ? 'supplier' as const : 'customer' as const,
-          group: acc.account_group as string
+          group: acc.account_group as string,
+          address_line_1: acc.address_line_1 as string | undefined,
         }));
         setParties(combinedParties);
       } catch (error) {
@@ -760,7 +762,8 @@ export default function PurchaseInvoicePage() {
         id: acc.id,
         name: acc.account_name,
         type: acc.account_group === 'Accounts Payable' ? 'supplier' as const : 'customer' as const,
-        group: acc.account_group as string
+        group: acc.account_group as string,
+        address_line_1: acc.address_line_1 as string | undefined,
       }));
       setParties(combinedParties);
 
@@ -990,7 +993,8 @@ export default function PurchaseInvoicePage() {
                 <Combobox
                   options={parties.map(p => ({
                     value: p.id,
-                    label: p.name
+                    label: p.name,
+                    subLabel: p.address_line_1 || undefined,
                   }))}
                   value={purchaseState.form.supplier_id}
                   onChange={(value) => {

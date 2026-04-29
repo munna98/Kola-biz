@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
 use crate::company_db::DbRegistry;
 use std::sync::Arc;
@@ -20,6 +20,7 @@ pub struct ChartOfAccount {
     pub is_active: i64,
     pub is_system: i64,
     pub party_id: Option<String>,
+    pub address_line_1: Option<String>,
     pub deleted_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -67,7 +68,7 @@ pub async fn get_chart_of_accounts(
 ) -> Result<Vec<ChartOfAccount>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, ChartOfAccount>(
-        "SELECT id, account_code, account_name, account_type, account_group, description, CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, is_active, is_system, party_id, deleted_at, created_at, updated_at FROM chart_of_accounts WHERE deleted_at IS NULL ORDER BY account_code ASC"
+        "SELECT id, account_code, account_name, account_type, account_group, description, CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, is_active, is_system, party_id, address_line_1, deleted_at, created_at, updated_at FROM chart_of_accounts WHERE deleted_at IS NULL ORDER BY account_code ASC"
     )
         .fetch_all(&pool)
         .await
@@ -88,7 +89,7 @@ pub async fn get_accounts_by_groups(
     let query_str = format!(
         "SELECT id, account_code, account_name, account_type, account_group, description, 
                 CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, 
-                is_active, is_system, party_id, deleted_at, created_at, updated_at 
+                is_active, is_system, party_id, address_line_1, deleted_at, created_at, updated_at 
          FROM chart_of_accounts 
          WHERE deleted_at IS NULL AND account_group IN ({}) 
          ORDER BY account_name ASC",

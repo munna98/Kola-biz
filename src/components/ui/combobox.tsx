@@ -20,6 +20,7 @@ interface ComboboxOption {
   value: string | number
   label: string
   searchString?: string
+  subLabel?: string
 }
 
 interface ComboboxProps {
@@ -191,11 +192,14 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
                 >
                   <Check
                     className={cn(
-                      "mr-2 h-4 w-4",
+                      "mr-2 h-4 w-4 shrink-0",
                       value === option.value ? "opacity-100" : "opacity-0"
                     )}
                   />
-                  {option.label}
+                  <span className="flex-1 truncate">{option.label}</span>
+                  {option.subLabel && (
+                    <span className="ml-3 text-xs text-muted-foreground font-normal truncate max-w-[40%]">{option.subLabel}</span>
+                  )}
                 </CommandItem>
               ))}
             </CommandGroup>

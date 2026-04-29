@@ -67,6 +67,7 @@ interface Party {
   name: string;
   type: 'customer' | 'supplier';
   group: string;
+  address_line_1?: string;
 }
 
 export default function SalesInvoicePage() {
@@ -149,7 +150,8 @@ export default function SalesInvoicePage() {
           id: acc.id,
           name: acc.account_name,
           type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const,
-          group: acc.account_group as string
+          group: acc.account_group as string,
+          address_line_1: acc.address_line_1 as string | undefined,
         }));
         setParties(combinedParties);
       } catch (error) {
@@ -771,7 +773,8 @@ export default function SalesInvoicePage() {
         id: acc.id,
         name: acc.account_name,
         type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const,
-        group: acc.account_group as string
+        group: acc.account_group as string,
+        address_line_1: acc.address_line_1 as string | undefined,
       }));
       setParties(combinedParties);
 
@@ -1045,7 +1048,8 @@ export default function SalesInvoicePage() {
                 <Combobox
                   options={parties.map(p => ({
                     value: p.id,
-                    label: p.name
+                    label: p.name,
+                    subLabel: p.address_line_1 || undefined,
                   }))}
                   value={salesState.form.customer_id}
                   onChange={(value) => {

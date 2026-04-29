@@ -53,6 +53,7 @@ interface Party {
     id: number;
     name: string;
     type: 'customer' | 'supplier';
+    address_line_1?: string;
 }
 
 export default function PurchaseReturnPage() {
@@ -102,7 +103,8 @@ export default function PurchaseReturnPage() {
                 const combinedParties = accountsData.map(acc => ({
                     id: acc.id,
                     name: acc.account_name,
-                    type: acc.account_group === 'Accounts Payable' ? 'supplier' as const : 'customer' as const
+                    type: acc.account_group === 'Accounts Payable' ? 'supplier' as const : 'customer' as const,
+                    address_line_1: acc.address_line_1 as string | undefined,
                 }));
                 setParties(combinedParties);
 
@@ -670,7 +672,8 @@ export default function PurchaseReturnPage() {
                                 <Combobox
                                     options={parties.map(p => ({
                                         value: p.id,
-                                        label: `${p.name} (${p.type === 'supplier' ? 'Supplier' : 'Customer'})`
+                                        label: `${p.name} (${p.type === 'supplier' ? 'Supplier' : 'Customer'})`,
+                                        subLabel: p.address_line_1 || undefined,
                                     }))}
                                     value={purchaseReturnState.form.supplier_id}
                                     onChange={(value) => {
