@@ -1,50 +1,14 @@
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, toggleSidebar, setActiveSection } from '../../store';
-import {
-    IconPackage,
-    IconUserDown,
-    IconTruck,
-    IconUserUp,
-    IconShoppingBag,
-    IconCashBanknoteMoveBack,
-    IconCashBanknoteMove,
-    IconLayoutSidebar,
-    IconLayoutSidebarLeftCollapse,
-    IconNotebook,
-    IconReportAnalytics,
-    IconCalendarStats,
-    IconReceiptRefund,
-    IconLayoutDashboard,
-    IconHistory,
-    IconBriefcase,
-} from '@tabler/icons-react';
-
-interface MenuItem {
-    id: string;
-    label: string;
-    icon: React.ElementType;
-}
-
-const menuItems: MenuItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: IconLayoutDashboard },
-    { id: 'products', label: 'Products', icon: IconPackage },
-    { id: 'customers', label: 'Customers', icon: IconUserDown },
-    { id: 'suppliers', label: 'Suppliers', icon: IconUserUp },
-    { id: 'employees', label: 'Employees', icon: IconBriefcase },
-    { id: 'purchase', label: 'Purchase', icon: IconTruck },
-    { id: 'sales', label: 'Sales', icon: IconShoppingBag },
-    { id: 'payments', label: 'Payments', icon: IconCashBanknoteMove },
-    { id: 'receipts', label: 'Receipts', icon: IconCashBanknoteMoveBack },
-    { id: 'journal', label: 'Journal Entry', icon: IconNotebook },
-    { id: 'stock_report', label: 'Stock Report', icon: IconReportAnalytics },
-    { id: 'transactions', label: 'Transaction Report', icon: IconHistory },
-    { id: 'day_book', label: 'Day Book', icon: IconCalendarStats },
-    { id: 'outstanding', label: 'Party Outstanding', icon: IconReceiptRefund },
-];
+import { IconLayoutSidebar, IconLayoutSidebarLeftCollapse } from '@tabler/icons-react';
+import { ALL_MENU_ITEMS } from '../../lib/menu-items';
 
 export default function Sidebar() {
     const dispatch = useDispatch();
-    const { sidebarCollapsed, activeSection } = useSelector((state: RootState) => state.app);
+    const { sidebarCollapsed, activeSection, sidebarItems } = useSelector((state: RootState) => state.app);
+    
+    // Create the final list of items based on enabled IDs and ensure we preserve the master order
+    const visibleMenuItems = ALL_MENU_ITEMS.filter(item => sidebarItems.includes(item.id));
 
     return (
         <aside className={`bg-card border-r transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-56'}`}>
@@ -64,7 +28,7 @@ export default function Sidebar() {
                 </button>
             </div>
             <nav className="p-2">
-                {menuItems.map(item => (
+                {visibleMenuItems.map(item => (
                     <button
                         key={item.id}
                         onClick={() => dispatch(setActiveSection(item.id))}

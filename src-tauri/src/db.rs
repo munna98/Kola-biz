@@ -115,6 +115,28 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         .execute(pool)
         .await;
 
+    // Services
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS services (
+            id            TEXT PRIMARY KEY,
+            code          TEXT UNIQUE NOT NULL,
+            name          TEXT NOT NULL,
+            description   TEXT,
+            unit_id       TEXT,
+            hsn_sac_code  TEXT,
+            gst_slab_id   TEXT,
+            sales_rate    REAL DEFAULT 0,
+            purchase_rate REAL DEFAULT 0,
+            is_active     INTEGER DEFAULT 1,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at    DATETIME,
+            FOREIGN KEY (unit_id) REFERENCES units(id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+
     // ==================== ACCOUNTING MODULE ====================
 
     // Account Groups
@@ -455,6 +477,16 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
 
     // Migration: Add discount_amount to voucher_items if not exists
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN discount_amount REAL DEFAULT 0")
+        .execute(pool)
+        .await;
+
+    // Migration: Add item_type discriminator (default 'product' for all existing rows)
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN item_type TEXT DEFAULT 'product'")
+        .execute(pool)
+        .await;
+
+    // Migration: Add service_id FK for service line items
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN service_id TEXT REFERENCES services(id)")
         .execute(pool)
         .await;
 

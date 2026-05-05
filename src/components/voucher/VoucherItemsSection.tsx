@@ -207,6 +207,14 @@ interface Product {
     sales_rate?: number;
 }
 
+interface Service {
+    id: string;
+    code: string;
+    name: string;
+    unit_id?: string;
+    hsn_sac_code?: string;
+}
+
 interface Unit {
     id: string;
     name: string;
@@ -232,6 +240,7 @@ export interface ColumnSettings {
 export interface VoucherItemsSectionProps {
     items: any[];
     products: Product[];
+    services?: Service[];               // NEW: list of services for service rows
     productUnitsByProduct?: Record<string, any[]>;
     units: Unit[];
     isReadOnly: boolean;
@@ -246,6 +255,7 @@ export interface VoucherItemsSectionProps {
     footerRightContent?: React.ReactNode;
     footerLeftContent?: React.ReactNode;
     onProductCreate?: (name: string, rowIndex: number) => void;
+    onServiceCreate?: (name: string, rowIndex: number) => void; // NEW
     onSectionExit?: () => void;
     defaultUnitKind?: ProductUnitDefaultKind;
     gstSlabs?: GstTaxSlab[];
@@ -258,7 +268,7 @@ export interface VoucherItemsSectionRef {
 
 const DEFAULT_COLUMNS: ColumnSettings[] = [
     { id: 'sl_no', label: '#', visible: true, order: -1 },
-    { id: 'product', label: 'Product', visible: true, order: 0 },
+    { id: 'product', label: 'Item', visible: true, order: 0 },
     { id: 'quantity', label: 'Qty', visible: true, order: 1 },
     { id: 'unit', label: 'Unit', visible: true, order: 2 },
     { id: 'rate', label: 'Rate', visible: true, order: 3 },
@@ -275,6 +285,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     {
     items,
     products,
+    services = [],
     productUnitsByProduct,
     units,
     isReadOnly,
@@ -490,25 +501,45 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     {idx + 1}
                                 </div>
                             );
-                        case 'product':
+                        case 'product': {
+                            const productOptions = products.map(p => ({
+                                value: `p:${p.id}`,
+                                label: `${p.code} - ${p.name}`,
+                                searchString: p.barcode ? `${p.code} - ${p.name} ${p.barcode}` : undefined,
+                            }));
+                            const serviceOptions = (services ?? []).map(s => ({
+                                value: `s:${s.id}`,
+                                label: `${s.code} - ${s.name}`,
+                            }));
+                            const allOptions = [...productOptions, ...serviceOptions];
+                            const currentValue = item.item_type === 'service' && item.service_id
+                                ? `s:${item.service_id}`
+                                : item.product_id
+                                    ? `p:${item.product_id}`
+                                    : null;
                             return (
                                 <Combobox
                                     key={col.id}
                                     ref={idx === 0 ? firstProductRef : undefined}
-                                    options={products.map(p => ({ 
-                                        value: p.id, 
-                                        label: `${p.code} - ${p.name}`,
-                                        searchString: p.barcode ? `${p.code} - ${p.name} ${p.barcode}` : undefined
-                                    }))}
-                                    value={item.product_id}
+                                    options={allOptions}
+                                    value={currentValue ?? undefined}
                                     onChange={(value) => {
-                                        onUpdateItem(idx, 'product_id', value);
-
-                                        // Auto-focus the first editable field after 'product'
-                                        // in the order defined by settings (not always quantity)
-                                        setTimeout(() => {
-                                            focusFirstEditableAfterProduct(idx);
-                                        }, 100);
+                                        if (!value) return;
+                                        const strVal = String(value);
+                                        if (strVal.startsWith('s:')) {
+                                            const svcId = strVal.slice(2);
+                                            const svc = (services ?? []).find(s => s.id === svcId);
+                                            onUpdateItem(idx, 'item_type', 'service');
+                                            onUpdateItem(idx, 'service_id', svcId);
+                                            onUpdateItem(idx, 'product_id', null);
+                                            if (svc?.unit_id) onUpdateItem(idx, 'unit_id', svc.unit_id);
+                                        } else {
+                                            const prodId = strVal.slice(2);
+                                            onUpdateItem(idx, 'item_type', 'product');
+                                            onUpdateItem(idx, 'product_id', prodId);
+                                            onUpdateItem(idx, 'service_id', null);
+                                        }
+                                        setTimeout(() => focusFirstEditableAfterProduct(idx), 100);
                                     }}
                                     placeholder="Select product"
                                     searchPlaceholder="Search products..."
@@ -516,14 +547,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     onActionClick={() => onProductCreate?.('', idx)}
                                     onCreate={(name) => onProductCreate?.(name, idx)}
                                     onEmptyEnter={() => {
-                                        // If it's not the first row, remove it and exit section
-                                        if (idx > 0) {
-                                            onRemoveItem(idx);
-                                            onSectionExit?.();
-                                        }
+                                        if (idx > 0) { onRemoveItem(idx); onSectionExit?.(); }
                                     }}
                                 />
                             );
+                        }
                         case 'quantity':
                             return (
                                 <QuantityInput

@@ -162,6 +162,7 @@ export default function Topbar() {
                         <MenubarItem onClick={() => handleNavigation('voucher_sequences')}>Voucher Numbering</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('barcode_settings')}>Barcode Settings</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('tax_settings')}>Tax Settings</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('sidebar_settings')}>Sidebar Settings</MenubarItem>
                         <MenubarSeparator />
                         <MenubarItem onClick={() => handleNavigation('users')}>Users</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('license')}>License</MenubarItem>

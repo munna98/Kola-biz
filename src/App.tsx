@@ -4,6 +4,7 @@ import { store, RootState } from './store';
 import { setAuthLoading, setNeedsCompanySetup, loginSuccess } from './store';
 import { invoke } from '@tauri-apps/api/core';
 import ProductsPage from './pages/ProductsPage';
+import ServicesPage from './pages/ServicesPage';
 import CustomersPage from './pages/CustomersPage';
 import SuppliersPage from './pages/SuppliersPage';
 import EmployeesPage from './pages/EmployeesPage';
@@ -44,6 +45,7 @@ import { InvoiceTemplatesPage } from './pages/settings/InvoiceTemplatesPage';
 import BarcodeSettingsPage from './pages/settings/BarcodeSettingsPage';
 import DbSettingsPage from './pages/settings/DbSettingsPage';
 import TaxSettingsPage from './pages/settings/TaxSettingsPage';
+import SidebarSettingsPage from './pages/settings/SidebarSettingsPage';
 import Gstr1ReportPage from './pages/reports/Gstr1ReportPage';
 import Gstr3bReportPage from './pages/reports/Gstr3bReportPage';
 import DashboardPage from './pages/DashboardPage';
@@ -158,6 +160,7 @@ function AppContent() {
     switch (activeSection) {
       case 'dashboard': return <DashboardPage />;
       case 'products': return <ProductsPage key={productPageKey} />;
+      case 'services': return <ServicesPage />;
       case 'customers': return <CustomersPage />;
       case 'suppliers': return <SuppliersPage />;
       case 'employees': return <EmployeesPage />;
@@ -189,6 +192,7 @@ function AppContent() {
       case 'users': return <UsersPage />;
       case 'barcode_settings': return <BarcodeSettingsPage />;
       case 'db_settings': return <DbSettingsPage />;
+      case 'sidebar_settings': return <SidebarSettingsPage />;
       case 'invoice_designer': return <InvoiceDesigner templateId={activeSectionParams?.templateId} voucherType={activeSectionParams?.voucherType} onBack={() => dispatch({ type: 'app/setActiveSection', payload: 'invoice_settings' })} />;
 
       case 'tax_settings': return <TaxSettingsPage />;

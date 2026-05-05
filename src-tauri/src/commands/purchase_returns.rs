@@ -34,8 +34,10 @@ pub struct PurchaseReturn {
 pub struct PurchaseReturnItem {
     pub id: String,
     pub voucher_id: String,
-    pub product_id: String,
-    pub product_name: String,
+    pub item_type: Option<String>,
+    pub product_id: Option<String>,
+    pub service_id: Option<String>,
+    pub product_name: Option<String>,
     pub description: Option<String>,
     pub initial_quantity: f64,
     pub count: i64,
@@ -65,7 +67,10 @@ pub struct PurchaseReturnItem {
 
 #[derive(Deserialize)]
 pub struct CreatePurchaseReturnItem {
-    pub product_id: String,
+    #[serde(default = "default_item_type")]
+    pub item_type: String,
+    pub product_id: Option<String>,
+    pub service_id: Option<String>,
     pub unit_id: Option<String>,
     pub description: Option<String>,
     pub initial_quantity: f64,
@@ -77,6 +82,8 @@ pub struct CreatePurchaseReturnItem {
     pub discount_amount: Option<f64>,
     pub remarks: Option<String>,
 }
+
+fn default_item_type() -> String { "product".to_string() }
 
 #[derive(Deserialize)]
 pub struct CreatePurchaseReturn {
@@ -175,9 +182,11 @@ pub async fn get_purchase_return_items(
 ) -> Result<Vec<PurchaseReturnItem>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, PurchaseReturnItem>(
-        "SELECT vi.*, p.name as product_name
+        "SELECT vi.*,
+                COALESCE(p.name, s.name) as product_name
          FROM voucher_items vi
-         JOIN products p ON vi.product_id = p.id
+         LEFT JOIN products p ON vi.product_id = p.id
+         LEFT JOIN services s ON vi.service_id = s.id
          WHERE vi.voucher_id = ?",
     )
     .bind(voucher_id)
@@ -217,12 +226,18 @@ pub async fn create_purchase_return(
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
+        let item_id = if item.item_type == "service" {
+            item.service_id.as_deref().unwrap_or("")
+        } else {
+            item.product_id.as_deref().unwrap_or("")
+        };
         prepared_lines.push(
             prepare_voucher_line(
                 &mut tx,
                 &pool,
                 "purchase",
-                &item.product_id,
+                &item.item_type,
+                item_id,
                 item.unit_id.as_deref(),
                 item.description.clone(),
                 item.initial_quantity,
@@ -277,12 +292,14 @@ pub async fn create_purchase_return(
 
     for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO voucher_items (id, voucher_id, item_type, product_id, service_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&item.id)
         .bind(&voucher_id)
+        .bind(&item.item_type)
         .bind(&item.product_id)
+        .bind(&item.service_id)
         .bind(&item.description)
         .bind(item.initial_quantity)
         .bind(item.count)
@@ -388,8 +405,8 @@ pub async fn create_purchase_return(
         .map_err(|e| e.to_string())?;
     }
 
-    let items_for_stock: Vec<(String, f64, i64, f64, f64)> = sqlx::query_as(
-        "SELECT product_id, base_quantity, count, rate, amount FROM voucher_items WHERE voucher_id = ?",
+    let items_for_stock: Vec<(Option<String>, Option<String>, f64, i64, f64, f64)> = sqlx::query_as(
+        "SELECT item_type, product_id, base_quantity, count, rate, amount FROM voucher_items WHERE voucher_id = ?",
     )
     .bind(&voucher_id)
     .fetch_all(&mut *tx)
@@ -397,10 +414,9 @@ pub async fn create_purchase_return(
     .map_err(|e| e.to_string())?;
 
     for item in items_for_stock {
-        // item.1 = base_quantity, item.3 = rate (per selected unit), item.4 = amount
-        // Derive per-base-unit rate to correctly compute stock value
-        let base_qty = item.1;
-        let rate_per_base = if base_qty > 0.0 { item.4 / base_qty } else { item.3 };
+        if item.0.as_deref() == Some("service") { continue; } // skip services
+        let base_qty = item.2;
+        let rate_per_base = if base_qty > 0.0 { item.5 / base_qty } else { item.4 };
         let amount = base_qty * rate_per_base;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
@@ -408,9 +424,9 @@ pub async fn create_purchase_return(
         )
         .bind(Uuid::now_v7().to_string())
         .bind(&voucher_id)
-        .bind(&item.0)
+        .bind(&item.1)
         .bind(base_qty)
-        .bind(item.2)
+        .bind(item.3)
         .bind(rate_per_base)
         .bind(amount)
         .execute(&mut *tx)
@@ -452,12 +468,18 @@ pub async fn update_purchase_return(
 
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
+        let item_id = if item.item_type == "service" {
+            item.service_id.as_deref().unwrap_or("")
+        } else {
+            item.product_id.as_deref().unwrap_or("")
+        };
         prepared_lines.push(
             prepare_voucher_line(
                 &mut tx,
                 &pool,
                 "purchase",
-                &item.product_id,
+                &item.item_type,
+                item_id,
                 item.unit_id.as_deref(),
                 item.description.clone(),
                 item.initial_quantity,
@@ -527,12 +549,14 @@ pub async fn update_purchase_return(
 
     for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, product_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO voucher_items (id, voucher_id, item_type, product_id, service_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&item.id)
         .bind(&id)
+        .bind(&item.item_type)
         .bind(&item.product_id)
+        .bind(&item.service_id)
         .bind(&item.description)
         .bind(item.initial_quantity)
         .bind(item.count)
@@ -638,17 +662,18 @@ pub async fn update_purchase_return(
     }
 
     for item in &invoice.items {
+        if item.item_type == "service" { continue; } // Services have no stock
         let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
+        let item_id = item.product_id.as_deref().unwrap_or("");
         let unit_snapshot = resolve_voucher_line_unit(
             &mut tx,
-            &item.product_id,
+            item_id,
             item.unit_id.as_deref(),
             "purchase",
             final_qty,
         )
         .await?;
 
-        // Derive per-base-unit rate from amount / base_quantity
         let base_qty = unit_snapshot.base_quantity;
         let amount_for_item = final_qty * item.rate;
         let rate_per_base = if base_qty > 0.0 { amount_for_item / base_qty } else { item.rate };

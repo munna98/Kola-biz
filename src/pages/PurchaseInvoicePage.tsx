@@ -85,6 +85,7 @@ export default function PurchaseInvoicePage() {
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [gstDisabled, setGstDisabled] = useState(false);
+  const [services, setServices] = useState<any[]>([]);
 
   const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
   const [showCreateProduct, setShowCreateProduct] = useState(false);
@@ -119,7 +120,7 @@ export default function PurchaseInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, gstSettings, slabsData] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, gstSettings, slabsData, servicesData] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -128,6 +129,7 @@ export default function PurchaseInvoicePage() {
           invoke<ProductGroup[]>('get_product_groups'),
           api.gst.getSettings().catch(() => null),
           api.gst.getSlabs().catch(() => [] as GstTaxSlab[]),
+          invoke<any[]>('get_services').catch(() => []),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
@@ -136,6 +138,7 @@ export default function PurchaseInvoicePage() {
           setVoucherSettings(settingsData);
         }
         setProductGroups(groupsData);
+        setServices(servicesData);
         // Only show GST columns if GST is enabled in settings
         if (gstSettings?.gst_enabled) {
           setGstSlabs(slabsData);
@@ -497,12 +500,14 @@ export default function PurchaseInvoicePage() {
 
     // Validate each item
     const hasInvalidItems = purchaseState.items.some(item => {
+      const isService = item.item_type === 'service';
       const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
+      if (isService) return !item.service_id || finalQty <= 0 || item.rate <= 0;
       return !item.product_id || finalQty <= 0 || item.rate <= 0;
     });
 
     if (hasInvalidItems) {
-      toast.error('All items must have a product selected, a positive final quantity, and a non-zero rate');
+      toast.error('All items must have a product/service selected, a positive final quantity, and a non-zero rate');
       return;
     }
 
@@ -525,14 +530,18 @@ export default function PurchaseInvoicePage() {
             discount_rate: purchaseState.form.discount_rate || null,
             discount_amount: purchaseState.form.discount_amount || null,
             items: purchaseState.items.map(item => ({
-              product_id: item.product_id,
+              item_type: item.item_type || 'product',
+              product_id: item.item_type === 'service' ? null : (item.product_id || null),
+              service_id: item.item_type === 'service' ? (item.service_id || null) : null,
               unit_id: item.unit_id || null,
               description: item.description,
               initial_quantity: item.initial_quantity,
               count: item.count,
               deduction_per_unit: item.deduction_per_unit,
               rate: item.rate,
-              tax_rate: item.tax_rate
+              tax_rate: item.tax_rate,
+              discount_percent: item.discount_percent || null,
+              discount_amount: item.discount_amount || null,
             })),
             tax_inclusive: voucherSettings?.taxInclusive ?? false,
             gst_disabled: gstDisabled,
@@ -591,14 +600,18 @@ export default function PurchaseInvoicePage() {
             discount_rate: purchaseState.form.discount_rate || null,
             discount_amount: purchaseState.form.discount_amount || null,
             items: purchaseState.items.map(item => ({
-              product_id: item.product_id,
+              item_type: item.item_type || 'product',
+              product_id: item.item_type === 'service' ? null : (item.product_id || null),
+              service_id: item.item_type === 'service' ? (item.service_id || null) : null,
               unit_id: item.unit_id || null,
               description: item.description,
               initial_quantity: item.initial_quantity,
               count: item.count,
               deduction_per_unit: item.deduction_per_unit,
               rate: item.rate,
-              tax_rate: item.tax_rate
+              tax_rate: item.tax_rate,
+              discount_percent: item.discount_percent || null,
+              discount_amount: item.discount_amount || null,
             })),
             user_id: user?.id.toString(),
             tax_inclusive: voucherSettings?.taxInclusive ?? false,
@@ -1068,6 +1081,8 @@ export default function PurchaseInvoicePage() {
             disableAdd={isReadOnly}
             settings={voucherSettings}
             onProductCreate={handleProductCreate}
+            services={services}
+            onServiceCreate={(_name, _idx) => { /* TODO: service quick-create */ }}
             onSectionExit={() => {
               // Focus discount amount input
               setTimeout(() => {

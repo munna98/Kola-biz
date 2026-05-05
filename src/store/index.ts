@@ -5,6 +5,7 @@ interface AppState {
   activeSection: string;
   activeSectionParams?: Record<string, any>;
   currentUser: string;
+  sidebarItems: string[];
 }
 
 export interface VoucherNavigationState {
@@ -31,11 +32,18 @@ const initialNavigationState: VoucherNavigationState = {
   },
 };
 
+const savedSidebarItems = JSON.parse(localStorage.getItem('sidebar_items') || 'null') || [
+  'dashboard', 'products', 'customers', 'suppliers', 'employees',
+  'purchase', 'sales', 'payments', 'receipts', 'journal',
+  'stock_report', 'transactions', 'day_book', 'outstanding'
+];
+
 const initialState: AppState = {
   sidebarCollapsed: false,
-  activeSection: 'dashboard',
+  activeSection: savedSidebarItems.includes('dashboard') ? 'dashboard' : 'products',
   activeSectionParams: undefined,
   currentUser: 'Admin',
+  sidebarItems: savedSidebarItems,
 };
 
 // ========== AUTH SLICE ==========
@@ -130,6 +138,15 @@ const appSlice = createSlice({
       state.activeSection = action.payload.section;
       state.activeSectionParams = action.payload.params;
     },
+    setSidebarItems: (state, action: PayloadAction<string[]>) => {
+      state.sidebarItems = action.payload;
+      localStorage.setItem('sidebar_items', JSON.stringify(action.payload));
+      
+      // Fallback to products if dashboard is disabled while it was active
+      if (state.activeSection === 'dashboard' && !action.payload.includes('dashboard')) {
+        state.activeSection = 'products';
+      }
+    },
   },
 });
 
@@ -137,6 +154,8 @@ const appSlice = createSlice({
 export interface PurchaseInvoiceItem {
   id?: string;
   product_id: number;
+  service_id?: string | null;
+  item_type?: 'product' | 'service';
   product_name?: string;
   unit_id?: string;
   base_quantity?: number;
@@ -641,7 +660,7 @@ export const {
   setReceiptLoading,
 } = receiptSlice.actions;
 
-export const { toggleSidebar, setActiveSection, setActiveSectionWithParams } = appSlice.actions;
+export const { toggleSidebar, setActiveSection, setActiveSectionWithParams, setSidebarItems } = appSlice.actions;
 
 // ========== JOURNAL ENTRY SLICE ==========
 export interface JournalEntryLine {
@@ -913,6 +932,8 @@ export const {
 export interface SalesInvoiceItem {
   id?: string;
   product_id: number;
+  service_id?: string | null;
+  item_type?: 'product' | 'service';
   product_name?: string;
   unit_id?: string;
   base_quantity?: number;

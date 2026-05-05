@@ -69,6 +69,12 @@ pub fn run() {
             restore_product,
             hard_delete_product,
             get_next_product_code,
+            // Services
+            get_next_service_code,
+            get_services,
+            create_service,
+            update_service,
+            delete_service,
             // Customers
             get_customers,
             create_customer,
