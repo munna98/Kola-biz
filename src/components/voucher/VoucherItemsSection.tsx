@@ -528,16 +528,10 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                         const strVal = String(value);
                                         if (strVal.startsWith('s:')) {
                                             const svcId = strVal.slice(2);
-                                            const svc = (services ?? []).find(s => s.id === svcId);
-                                            onUpdateItem(idx, 'item_type', 'service');
                                             onUpdateItem(idx, 'service_id', svcId);
-                                            onUpdateItem(idx, 'product_id', null);
-                                            if (svc?.unit_id) onUpdateItem(idx, 'unit_id', svc.unit_id);
                                         } else {
                                             const prodId = strVal.slice(2);
-                                            onUpdateItem(idx, 'item_type', 'product');
                                             onUpdateItem(idx, 'product_id', prodId);
-                                            onUpdateItem(idx, 'service_id', null);
                                         }
                                         setTimeout(() => focusFirstEditableAfterProduct(idx), 100);
                                     }}

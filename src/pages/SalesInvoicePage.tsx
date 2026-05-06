@@ -278,7 +278,9 @@ export default function SalesInvoicePage() {
         const updatedItems = [...salesState.items];
         updatedItems[index] = {
           ...updatedItems[index],
+          item_type: 'product',
           product_id: value,
+          service_id: null,
           product_name: product.name,
           unit_id: defaultUnitId,
           rate,
@@ -287,10 +289,45 @@ export default function SalesInvoicePage() {
           updateSalesItem({
             index,
             data: {
+              item_type: 'product',
               product_id: value,
+              service_id: null,
               product_name: product.name,
               unit_id: defaultUnitId,
               rate,
+            },
+          })
+        );
+        updateTotalsWithItems(updatedItems);
+        dispatch(setSalesHasUnsavedChanges(true));
+        return;
+      }
+    }
+
+    if (field === 'service_id') {
+      const service = services.find((s) => String(s.id) === String(value));
+      if (service) {
+        finalValue = value;
+        const updatedItems = [...salesState.items];
+        updatedItems[index] = {
+          ...updatedItems[index],
+          item_type: 'service',
+          service_id: value,
+          product_id: null,
+          product_name: service.name,
+          unit_id: service.unit_id || null,
+          rate: 0,
+        };
+        dispatch(
+          updateSalesItem({
+            index,
+            data: {
+              item_type: 'service',
+              service_id: value,
+              product_id: null,
+              product_name: service.name,
+              unit_id: service.unit_id || null,
+              rate: 0,
             },
           })
         );

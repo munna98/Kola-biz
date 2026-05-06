@@ -365,19 +365,56 @@ export default function PurchaseInvoicePage() {
         const updatedItems = [...purchaseState.items];
         updatedItems[index] = {
           ...updatedItems[index],
-            product_id: value,
-            product_name: product.name,
-            unit_id: defaultUnitId,
-            rate,
-          };
+          item_type: 'product',
+          product_id: value,
+          service_id: null,
+          product_name: product.name,
+          unit_id: defaultUnitId,
+          rate,
+        };
         dispatch(
           updateItem({
             index,
             data: {
+              item_type: 'product',
               product_id: value,
+              service_id: null,
               product_name: product.name,
               unit_id: defaultUnitId,
               rate,
+            },
+          })
+        );
+        updateTotalsWithItems(updatedItems);
+        markUnsaved();
+        return;
+      }
+    }
+
+    if (field === 'service_id') {
+      const service = services.find((s) => String(s.id) === String(value));
+      if (service) {
+        finalValue = value;
+        const updatedItems = [...purchaseState.items];
+        updatedItems[index] = {
+          ...updatedItems[index],
+          item_type: 'service',
+          service_id: value,
+          product_id: null,
+          product_name: service.name,
+          unit_id: service.unit_id || null,
+          rate: 0,
+        };
+        dispatch(
+          updateItem({
+            index,
+            data: {
+              item_type: 'service',
+              service_id: value,
+              product_id: null,
+              product_name: service.name,
+              unit_id: service.unit_id || null,
+              rate: 0,
             },
           })
         );
