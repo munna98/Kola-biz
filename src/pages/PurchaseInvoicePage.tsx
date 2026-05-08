@@ -400,7 +400,7 @@ export default function PurchaseInvoicePage() {
           ...updatedItems[index],
           item_type: 'service',
           service_id: value,
-          product_id: null,
+          product_id: 0,
           product_name: service.name,
           unit_id: service.unit_id || null,
           rate: 0,
@@ -411,7 +411,7 @@ export default function PurchaseInvoicePage() {
             data: {
               item_type: 'service',
               service_id: value,
-              product_id: null,
+              product_id: 0,
               product_name: service.name,
               unit_id: service.unit_id || null,
               rate: 0,

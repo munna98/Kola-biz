@@ -1874,10 +1874,11 @@ pub async fn get_account_balance(
     let pool = registry.active_pool().await?;
     let result = sqlx::query_as::<_, (f64, f64)>(
         "SELECT 
-            COALESCE(SUM(debit), 0.0) as total_debit, 
-            COALESCE(SUM(credit), 0.0) as total_credit 
-         FROM journal_entries 
-         WHERE account_id = ?",
+            COALESCE(SUM(je.debit), 0.0) as total_debit, 
+            COALESCE(SUM(je.credit), 0.0) as total_credit 
+         FROM journal_entries je
+         JOIN vouchers v ON je.voucher_id = v.id
+         WHERE je.account_id = ? AND v.deleted_at IS NULL",
     )
     .bind(account_id)
     .fetch_one(&pool)

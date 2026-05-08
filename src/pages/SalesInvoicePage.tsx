@@ -313,7 +313,7 @@ export default function SalesInvoicePage() {
           ...updatedItems[index],
           item_type: 'service',
           service_id: value,
-          product_id: null,
+          product_id: 0,
           product_name: service.name,
           unit_id: service.unit_id || null,
           rate: 0,
@@ -324,7 +324,7 @@ export default function SalesInvoicePage() {
             data: {
               item_type: 'service',
               service_id: value,
-              product_id: null,
+              product_id: 0,
               product_name: service.name,
               unit_id: service.unit_id || null,
               rate: 0,
