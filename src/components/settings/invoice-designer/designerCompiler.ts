@@ -203,9 +203,10 @@ function renderThermalTable(el: DesignerElement): string {
     }
 
     // Default single-row layout
+    const visibleColumns = config.columns.filter(c => !c.hidden);
     if (config.showHeader) {
         html += '<thead><tr>';
-        for (const col of config.columns) {
+        for (const col of visibleColumns) {
             const bgStyle = config.headerBg && config.headerBg !== '#f0f0f0'
                 ? `background:${config.headerBg};` : '';
             html += `<th style="text-align:${col.align};padding:4px 2px;font-size:${headerFontSize}pt;border-bottom:1px solid #000;font-weight:bold;color:#000;${bgStyle}">${escapeHtml(col.label)}</th>`;
@@ -214,7 +215,7 @@ function renderThermalTable(el: DesignerElement): string {
     }
 
     html += '<tbody>{{#each items}}<tr>';
-    for (const col of config.columns) {
+    for (const col of visibleColumns) {
         let cellContent: string;
         if (col.key === 'serial_no') {
             cellContent = '{{increment @index}}';
@@ -393,16 +394,17 @@ function renderA4TableElement(el: DesignerElement): string {
     let html = `<div class="de de-table" style="${style}">`;
     html += `<table style="width:100%;border-collapse:collapse;font-size:${config.bodyFontSize || 9}pt;">`;
 
+    const visibleCols = config.columns.filter(c => !c.hidden);
     if (config.showHeader) {
         html += '<thead><tr>';
-        for (const col of config.columns) {
+        for (const col of visibleCols) {
             html += `<th style="background:${config.headerBg || '#f0f0f0'};color:${config.headerColor || '#000'};padding:4px 6px;${borderStyle}text-align:${col.align};width:${col.width}%;font-size:${config.headerFontSize || 9}pt;">${escapeHtml(col.label)}</th>`;
         }
         html += '</tr></thead>';
     }
 
     html += '<tbody>{{#each items}}<tr>';
-    for (const col of config.columns) {
+    for (const col of visibleCols) {
         let cellContent: string;
         if (col.key === 'serial_no') {
             cellContent = '{{increment @index}}';

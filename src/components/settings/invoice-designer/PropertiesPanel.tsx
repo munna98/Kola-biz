@@ -25,6 +25,8 @@ import {
     IconLock,
     IconLockOpen,
     IconTextSize,
+    IconEye,
+    IconEyeOff,
 } from '@tabler/icons-react';
 import {
     DesignerElement,
@@ -446,7 +448,7 @@ export default function PropertiesPanel({
                                     <SectionHeader title="Columns" />
                                     <div className="space-y-1.5 max-h-[300px] overflow-y-auto">
                                         {el.tableConfig.columns.map((col, index) => (
-                                            <div key={index} className="flex items-center gap-1 text-[10px]">
+                                            <div key={index} className={`flex items-center gap-1 text-[10px] ${col.hidden ? 'opacity-40' : ''}`}>
                                                 <div className="flex flex-col">
                                                     <button
                                                         className="h-3 w-4 flex items-center justify-center text-muted-foreground hover:text-foreground disabled:opacity-30"
@@ -489,16 +491,19 @@ export default function PropertiesPanel({
                                                     max={50}
                                                 />
                                                 <span className="text-muted-foreground">%</span>
+                                                {/* Hide/Show toggle instead of delete */}
                                                 <Button
                                                     variant="ghost"
                                                     size="icon"
-                                                    className="h-5 w-5 text-destructive"
+                                                    className={`h-5 w-5 ${col.hidden ? 'text-muted-foreground' : 'text-foreground'}`}
+                                                    title={col.hidden ? 'Show column' : 'Hide column'}
                                                     onClick={() => {
-                                                        const newCols = el.tableConfig!.columns.filter((_, i) => i !== index);
+                                                        const newCols = [...el.tableConfig!.columns];
+                                                        newCols[index] = { ...newCols[index], hidden: !newCols[index].hidden };
                                                         onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, columns: newCols } });
                                                     }}
                                                 >
-                                                    <IconTrash size={10} />
+                                                    {col.hidden ? <IconEyeOff size={10} /> : <IconEye size={10} />}
                                                 </Button>
                                             </div>
                                         ))}

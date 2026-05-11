@@ -266,6 +266,16 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             .execute(pool)
             .await;
 
+    // Migration: Add balance section style columns if not exists
+    let _ =
+        sqlx::query("ALTER TABLE invoice_templates ADD COLUMN balance_font_size INTEGER DEFAULT 10")
+            .execute(pool)
+            .await;
+    let _ =
+        sqlx::query("ALTER TABLE invoice_templates ADD COLUMN balance_bold INTEGER DEFAULT 0")
+            .execute(pool)
+            .await;
+
     // Migration: Add salesperson_id to vouchers if not exists
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN salesperson_id TEXT")
         .execute(pool)

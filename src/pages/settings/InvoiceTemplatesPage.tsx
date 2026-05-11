@@ -53,6 +53,9 @@ interface InvoiceTemplate {
     show_signature: number;
     show_terms: number;
     show_less_column: number;
+    // Balance section style (thermal only)
+    balance_font_size: number;
+    balance_bold: number;
 }
 
 const FEATURE_LABELS: Record<string, string> = {
@@ -164,7 +167,6 @@ export function InvoiceTemplatesPage() {
                 templateId,
                 settings: { [feature]: checked },
             });
-            // Update local state
             setTemplates((prev) =>
                 prev.map((t) =>
                     t.id === templateId ? { ...t, [feature]: checked ? 1 : 0 } : t
@@ -174,6 +176,7 @@ export function InvoiceTemplatesPage() {
             toast.error('Failed to update setting');
         }
     };
+
 
     const handlePreview = (template: InvoiceTemplate) => {
         // Use dummy ID "1" for preview - backend should handle with sample data
@@ -360,11 +363,8 @@ export function InvoiceTemplatesPage() {
                                             </p>
                                             <div className="grid grid-cols-2 gap-x-2 gap-y-3">
                                                 {Object.entries(FEATURE_LABELS).map(([key, label]) => {
-                                                    // Only show toggles relevant to the template (if they exist in DB column)
-                                                    // Assuming all columns exist on struct, we just iterate
                                                     const val = (template as any)[key];
                                                     if (val === undefined || val === null) return null;
-
                                                     return (
                                                         <div key={key} className="flex items-center space-x-2">
                                                             <Switch
@@ -383,7 +383,8 @@ export function InvoiceTemplatesPage() {
                                                     )
                                                 })}
                                             </div>
-                                        </div>
+                                            </div>
+
                                     </div>
                                 ))}
                             </div>

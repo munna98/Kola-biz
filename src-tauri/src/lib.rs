@@ -64,6 +64,7 @@ pub fn run() {
             get_product_unit_conversions,
             create_product,
             update_product,
+            update_multiple_product_rates,
             delete_product,
             get_deleted_products,
             restore_product,

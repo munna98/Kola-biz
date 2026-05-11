@@ -81,7 +81,7 @@ export default function PurchaseInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, taxInclusive?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [gstDisabled, setGstDisabled] = useState(false);
@@ -264,6 +264,8 @@ export default function PurchaseInvoicePage() {
         tax_rate: item.tax_rate,
         discount_percent: item.discount_percent || 0,
         discount_amount: item.discount_amount || 0,
+        sales_rate: item.sales_rate, // NOTE: backend currently doesn't return this in invoice item so it might be undefined initially, but that's fine
+        mrp: item.mrp,
         id: item.id.toString() // Ensure ID is string for UI
       }));
 
@@ -371,6 +373,8 @@ export default function PurchaseInvoicePage() {
           product_name: product.name,
           unit_id: defaultUnitId,
           rate,
+          sales_rate: product.sales_rate,
+          mrp: product.mrp,
         };
         dispatch(
           updateItem({
@@ -382,6 +386,8 @@ export default function PurchaseInvoicePage() {
               product_name: product.name,
               unit_id: defaultUnitId,
               rate,
+              sales_rate: product.sales_rate,
+              mrp: product.mrp,
             },
           })
         );
@@ -587,6 +593,24 @@ export default function PurchaseInvoicePage() {
 
         toast.success('Purchase invoice updated successfully');
 
+        if (voucherSettings?.updateRatesOnPurchase) {
+          const ratesToUpdate = purchaseState.items
+            .filter(item => item.product_id && item.item_type !== 'service')
+            .map(item => {
+              const product = products.find(p => String(p.id) === String(item.product_id));
+              return {
+                id: item.product_id?.toString() || '',
+                purchase_rate: item.rate,
+                sales_rate: item.sales_rate !== undefined ? item.sales_rate : product?.sales_rate || 0,
+                mrp: item.mrp !== undefined ? item.mrp : product?.mrp || 0,
+              };
+            });
+          
+          if (ratesToUpdate.length > 0) {
+            await invoke('update_multiple_product_rates', { rates: ratesToUpdate }).catch(console.error);
+          }
+        }
+
         // Prepare state for Payment Dialog & Print (persist before reset)
         setSavedInvoiceId(purchaseState.currentVoucherId);
         setSavedInvoiceNo(purchaseState.currentVoucherNo);
@@ -674,6 +698,24 @@ export default function PurchaseInvoicePage() {
         // Check if party is a Cash or Bank account
         const isCashBankParty = supplier?.group === 'Cash' || supplier?.group === 'Bank Account';
         setSavedIsCashBankParty(isCashBankParty);
+
+        if (voucherSettings?.updateRatesOnPurchase) {
+          const ratesToUpdate = purchaseState.items
+            .filter(item => item.product_id && item.item_type !== 'service')
+            .map(item => {
+              const product = products.find(p => String(p.id) === String(item.product_id));
+              return {
+                id: item.product_id?.toString() || '',
+                purchase_rate: item.rate,
+                sales_rate: item.sales_rate !== undefined ? item.sales_rate : product?.sales_rate || 0,
+                mrp: item.mrp !== undefined ? item.mrp : product?.mrp || 0,
+              };
+            });
+          
+          if (ratesToUpdate.length > 0) {
+            await invoke('update_multiple_product_rates', { rates: ratesToUpdate }).catch(console.error);
+          }
+        }
 
         if (isCashBankParty) {
           const shouldShowPaymentModal = voucherSettings?.showPaymentModal !== false;

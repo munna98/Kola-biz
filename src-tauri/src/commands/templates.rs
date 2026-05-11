@@ -1,4 +1,4 @@
-﻿use crate::commands::entries::{PaymentVoucher, ReceiptVoucher};
+use crate::commands::entries::{PaymentVoucher, ReceiptVoucher};
 use crate::commands::tax_utils;
 use crate::template_engine::TemplateEngine;
 use once_cell::sync::Lazy;
@@ -42,6 +42,8 @@ pub struct InvoiceTemplate {
     pub show_signature: Option<i64>,
     pub show_terms: Option<i64>,
     pub show_less_column: Option<i64>,
+    pub balance_font_size: Option<i64>,  // pt — applies to balance section in thermal templates
+    pub balance_bold: Option<i64>,        // 0 = normal, 1 = bold
 
     // Print Settings
     pub auto_print: Option<i64>,
@@ -113,6 +115,8 @@ pub struct TemplateSettingsUpdate {
     pub show_signature: Option<bool>,
     pub show_terms: Option<bool>,
     pub show_less_column: Option<bool>,
+    pub balance_font_size: Option<i64>,
+    pub balance_bold: Option<bool>,
 }
 
 #[tauri::command]
@@ -167,6 +171,14 @@ pub async fn update_template_settings(
     }
     if let Some(val) = settings.show_less_column {
         separated.push("show_less_column = ");
+        separated.push_bind_unseparated(if val { 1 } else { 0 });
+    }
+    if let Some(val) = settings.balance_font_size {
+        separated.push("balance_font_size = ");
+        separated.push_bind_unseparated(val);
+    }
+    if let Some(val) = settings.balance_bold {
+        separated.push("balance_bold = ");
         separated.push_bind_unseparated(if val { 1 } else { 0 });
     }
 

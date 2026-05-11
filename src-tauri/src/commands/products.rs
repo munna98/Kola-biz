@@ -1,4 +1,4 @@
-﻿use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use sqlx::{Sqlite, SqlitePool, Transaction};
 
 use crate::company_db::DbRegistry;
@@ -651,6 +651,55 @@ pub async fn update_product(
         &product.conversions,
     )
     .await?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct UpdateProductRates {
+    pub id: String,
+    pub purchase_rate: f64,
+    pub sales_rate: f64,
+    pub mrp: f64,
+}
+
+#[tauri::command]
+pub async fn update_multiple_product_rates(
+    registry: State<'_, Arc<DbRegistry>>,
+    rates: Vec<UpdateProductRates>,
+) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    for rate in rates {
+        sqlx::query(
+            "UPDATE products 
+             SET purchase_rate = ?, sales_rate = ?, mrp = ?, updated_at = CURRENT_TIMESTAMP 
+             WHERE id = ?",
+        )
+        .bind(rate.purchase_rate)
+        .bind(rate.sales_rate)
+        .bind(rate.mrp)
+        .bind(&rate.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Update the base unit conversion too since that's where the rate gets picked up sometimes
+        sqlx::query(
+            "UPDATE product_unit_conversions
+             SET purchase_rate = ?, sales_rate = ?
+             WHERE product_id = ? AND factor_to_base = 1.0"
+        )
+        .bind(rate.purchase_rate)
+        .bind(rate.sales_rate)
+        .bind(&rate.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
 
     tx.commit().await.map_err(|e| e.to_string())?;
 

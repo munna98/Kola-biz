@@ -24,6 +24,7 @@ interface VoucherSettings {
     enableBarcodePrinting?: boolean; // Show barcode print button in print preview
     skipToNextRowAfterQty?: boolean; // Skip to next row on enter after quantity
     taxInclusive?: boolean; // Treat item rates as inclusive of GST
+    updateRatesOnPurchase?: boolean; // Update product sales_rate & mrp at master level when saving purchase invoice
 }
 
 const AVAILABLE_COLUMNS = [
@@ -43,7 +44,9 @@ const AVAILABLE_COLUMNS = [
     { id: 'sgst', label: 'SGST ₹', defaultVisible: false },
     { id: 'igst', label: 'IGST ₹', defaultVisible: false },
     { id: 'total', label: 'Total', defaultVisible: true },
-];
+    { id: 'sales_rate', label: 'Sales Rate', defaultVisible: false, purchaseOnly: true },
+    { id: 'mrp', label: 'MRP', defaultVisible: false, purchaseOnly: true },
+] as const;
 
 const VOUCHER_TYPES = [
     { value: 'sales_invoice', label: 'Sales Invoice' },
@@ -60,6 +63,7 @@ export default function VoucherSettingsPage() {
     const [enableBarcodePrinting, setEnableBarcodePrinting] = useState(false);
     const [skipToNextRowAfterQty, setSkipToNextRowAfterQty] = useState(false);
     const [taxInclusive, setTaxInclusive] = useState(false);
+    const [updateRatesOnPurchase, setUpdateRatesOnPurchase] = useState(false);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -81,6 +85,11 @@ export default function VoucherSettingsPage() {
 
             let initialColumns: ColumnSettings[] = [];
 
+            // Columns available for the current voucher type
+            const availableCols = AVAILABLE_COLUMNS.filter(
+                col => !('purchaseOnly' in col && col.purchaseOnly) || voucherType === 'purchase_invoice'
+            );
+
             if (savedSettings && savedSettings.columns) {
                 // Set Auto Print and Payment Modal
                 setAutoPrint(savedSettings.autoPrint || false);
@@ -88,14 +97,15 @@ export default function VoucherSettingsPage() {
                 setEnableBarcodePrinting(savedSettings.enableBarcodePrinting || false);
                 setSkipToNextRowAfterQty(savedSettings.skipToNextRowAfterQty || false);
                 setTaxInclusive(savedSettings.taxInclusive || false);
+                setUpdateRatesOnPurchase(savedSettings.updateRatesOnPurchase || false);
 
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
                 const savedMap = new Map(savedSettings.columns.map(c => [c.id, c]));
 
-                // 1. Add saved columns that still exist in AVAILABLE_COLUMNS
+                // 1. Add saved columns that still exist in availableCols
                 savedSettings.columns.forEach(savedCol => {
-                    const baseCol = AVAILABLE_COLUMNS.find(c => c.id === savedCol.id);
+                    const baseCol = availableCols.find(c => c.id === savedCol.id);
                     if (baseCol) {
                         initialColumns.push({
                             ...savedCol,
@@ -107,8 +117,8 @@ export default function VoucherSettingsPage() {
                     }
                 });
 
-                // 2. Add any new columns from AVAILABLE_COLUMNS that weren't in saved settings
-                AVAILABLE_COLUMNS.forEach(col => {
+                // 2. Add any new columns from availableCols that weren't in saved settings
+                availableCols.forEach(col => {
                     if (!savedMap.has(col.id)) {
                         initialColumns.push({
                             id: col.id,
@@ -126,7 +136,8 @@ export default function VoucherSettingsPage() {
                 setEnableBarcodePrinting(false);
                 setSkipToNextRowAfterQty(false);
                 setTaxInclusive(false);
-                initialColumns = AVAILABLE_COLUMNS.map((col, index) => ({
+                setUpdateRatesOnPurchase(false);
+                initialColumns = availableCols.map((col, index) => ({
                     id: col.id,
                     label: col.label,
                     visible: col.defaultVisible,
@@ -153,7 +164,8 @@ export default function VoucherSettingsPage() {
                 showPaymentModal: showPaymentModal,
                 enableBarcodePrinting: enableBarcodePrinting,
                 skipToNextRowAfterQty: skipToNextRowAfterQty,
-                taxInclusive: taxInclusive
+                taxInclusive: taxInclusive,
+                updateRatesOnPurchase: updateRatesOnPurchase,
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -271,24 +283,45 @@ export default function VoucherSettingsPage() {
                         </div>
 
                         {selectedVoucher === 'purchase_invoice' && (
-                            <div className="flex items-center gap-4 mb-6">
-                                <Checkbox
-                                    id="enable-barcode"
-                                    checked={enableBarcodePrinting}
-                                    onCheckedChange={(checked) => setEnableBarcodePrinting(checked as boolean)}
-                                />
-                                <div className="grid gap-1.5 leading-none">
-                                    <label
-                                        htmlFor="enable-barcode"
-                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                    >
-                                        Enable Barcode Printing
-                                    </label>
-                                    <p className="text-sm text-muted-foreground">
-                                        Show "Print Labels" button in print preview for this voucher type.
-                                    </p>
+                            <>
+                                <div className="flex items-center gap-4 mb-6">
+                                    <Checkbox
+                                        id="enable-barcode"
+                                        checked={enableBarcodePrinting}
+                                        onCheckedChange={(checked) => setEnableBarcodePrinting(checked as boolean)}
+                                    />
+                                    <div className="grid gap-1.5 leading-none">
+                                        <label
+                                            htmlFor="enable-barcode"
+                                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                        >
+                                            Enable Barcode Printing
+                                        </label>
+                                        <p className="text-sm text-muted-foreground">
+                                            Show "Print Labels" button in print preview for this voucher type.
+                                        </p>
+                                    </div>
                                 </div>
-                            </div>
+
+                                <div className="flex items-center gap-4 mb-6">
+                                    <Checkbox
+                                        id="update-rates-on-purchase"
+                                        checked={updateRatesOnPurchase}
+                                        onCheckedChange={(checked) => setUpdateRatesOnPurchase(checked as boolean)}
+                                    />
+                                    <div className="grid gap-1.5 leading-none">
+                                        <label
+                                            htmlFor="update-rates-on-purchase"
+                                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                        >
+                                            Update Rates on Purchase
+                                        </label>
+                                        <p className="text-sm text-muted-foreground">
+                                            When saving a purchase invoice, automatically update each product's Sales Rate and MRP at the master level.
+                                        </p>
+                                    </div>
+                                </div>
+                            </>
                         )}
 
                         <div className="flex items-center gap-4 mb-6">

@@ -205,6 +205,7 @@ interface Product {
     unit_id: string;
     purchase_rate?: number;
     sales_rate?: number;
+    mrp?: number;
 }
 
 interface Service {
@@ -251,7 +252,7 @@ export interface VoucherItemsSectionProps {
     header?: React.ReactNode;
     addItemLabel?: string;
     disableAdd?: boolean;
-    settings?: { columns: ColumnSettings[], skipToNextRowAfterQty?: boolean };
+    settings?: { columns: ColumnSettings[], skipToNextRowAfterQty?: boolean, updateRatesOnPurchase?: boolean };
     footerRightContent?: React.ReactNode;
     footerLeftContent?: React.ReactNode;
     onProductCreate?: (name: string, rowIndex: number) => void;
@@ -381,7 +382,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
             if (col.id === 'sl_no') return '24px';
             if (col.id === 'product') return '3fr';
             if (['cgst', 'sgst', 'igst'].includes(col.id)) return '0.8fr';
-            if (['deduction', 'amount', 'discount_percent', 'discount_amount', 'tax_rate', 'gst_rate'].includes(col.id)) return '0.6fr';
+            if (['deduction', 'amount', 'discount_percent', 'discount_amount', 'tax_rate', 'gst_rate', 'sales_rate', 'mrp'].includes(col.id)) return '0.6fr';
             return '1fr';
         }).join(' ') + ' 64px';
     };
@@ -764,6 +765,48 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     ₹{calc.total.toFixed(2)}
                                 </div>
                             );
+                        case 'sales_rate': {
+                            const isEditable = settings?.updateRatesOnPurchase && !isReadOnly;
+                            const value = item.sales_rate !== undefined ? item.sales_rate : product?.sales_rate || 0;
+                            return (
+                                isEditable ? (
+                                    <FormattedNumberInput
+                                        key={col.id}
+                                        data-field="sales_rate"
+                                        value={value}
+                                        onChangeValue={(val) => handleNumberChange('sales_rate', val)}
+                                        className="h-7 text-xs text-right font-mono"
+                                        placeholder="0.00"
+                                        step="0.01"
+                                    />
+                                ) : (
+                                    <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-medium font-mono" title="Current sales rate from product master">
+                                        {value ? `₹${value.toFixed(2)}` : '-'}
+                                    </div>
+                                )
+                            );
+                        }
+                        case 'mrp': {
+                            const isEditable = settings?.updateRatesOnPurchase && !isReadOnly;
+                            const value = item.mrp !== undefined ? item.mrp : product?.mrp || 0;
+                            return (
+                                isEditable ? (
+                                    <FormattedNumberInput
+                                        key={col.id}
+                                        data-field="mrp"
+                                        value={value}
+                                        onChangeValue={(val) => handleNumberChange('mrp', val)}
+                                        className="h-7 text-xs text-right font-mono"
+                                        placeholder="0.00"
+                                        step="0.01"
+                                    />
+                                ) : (
+                                    <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-medium font-mono" title="Current MRP from product master">
+                                        {value ? `₹${value.toFixed(2)}` : '-'}
+                                    </div>
+                                )
+                            );
+                        }
                         default:
                             return <div key={col.id}></div>;
                     }

@@ -27,6 +27,7 @@ export interface TableColumn {
     width: number;            // percentage width
     align: 'left' | 'center' | 'right';
     format?: 'text' | 'currency' | 'number' | 'date';
+    hidden?: boolean;         // if true, column is excluded from rendered output
 }
 
 export interface TableConfig {
