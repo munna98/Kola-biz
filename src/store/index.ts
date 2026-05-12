@@ -175,6 +175,8 @@ export interface PurchaseInvoiceItem {
   count: number;
   deduction_per_unit: number;
   rate: number;
+  sales_rate?: number;
+  mrp?: number;
   tax_rate: number;
   discount_percent: number;
   discount_amount: number;

@@ -1,4 +1,4 @@
-import { IconMoon, IconSun, IconSettings, IconBuilding, IconChevronDown } from '@tabler/icons-react';
+import { IconMoon, IconSun, IconSettings, IconBuilding } from '@tabler/icons-react';
 import { useTheme } from '../theme-provider';
 import { useDispatch, useSelector } from 'react-redux';
 import { setActiveSection, RootState, logout } from '../../store';
@@ -173,20 +173,16 @@ export default function Topbar() {
             </Menubar>
 
             <div className="ml-auto flex items-center gap-3">
-                {/* Company switcher */}
+                {/* Company display */}
                 {companyName && (
-                    <button
-                        id="company-switcher-btn"
-                        onClick={() => setSwitcherOpen(true)}
+                    <div
                         className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm font-medium
-                                   bg-primary/8 border border-primary/20 hover:bg-primary/15 transition-colors
-                                   text-foreground max-w-[200px]"
-                        title="Switch company"
+                                   bg-primary/8 border border-primary/20 text-foreground max-w-[200px]"
+                        title={companyName}
                     >
                         <IconBuilding size={14} className="text-primary shrink-0" />
                         <span className="truncate">{companyName}</span>
-                        <IconChevronDown size={12} className="text-muted-foreground shrink-0" />
-                    </button>
+                    </div>
                 )}
                 <ThemeToggle />
                 <div className="text-sm font-medium text-muted-foreground" title={user?.username}>
