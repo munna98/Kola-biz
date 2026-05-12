@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { IconDeviceFloppy } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconPackages } from '@tabler/icons-react';
 
 export interface BarcodeSettings {
     companyName: string;
@@ -44,10 +45,15 @@ export default function BarcodeSettingsPage() {
     const [settings, setSettings] = useState<BarcodeSettings>(DEFAULT_SETTINGS);
     const [loading, setLoading] = useState(false);
     const [printers, setPrinters] = useState<string[]>([]);
+    const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
+    const [savingMaster, setSavingMaster] = useState(false);
 
     useEffect(() => {
         loadSettings();
         loadPrinters();
+        invoke<string | null>('get_app_setting', { key: 'enable_master_products' })
+            .then(v => setMasterProductsEnabled(v === 'true'))
+            .catch(console.error);
     }, []);
 
     const loadPrinters = async () => {
@@ -90,6 +96,22 @@ export default function BarcodeSettingsPage() {
         }
     };
 
+    const handleToggleMasterProducts = async (enabled: boolean) => {
+        setSavingMaster(true);
+        try {
+            await invoke('set_app_setting', {
+                key: 'enable_master_products',
+                value: enabled ? 'true' : 'false',
+            });
+            setMasterProductsEnabled(enabled);
+            toast.success(enabled ? 'Master Products enabled' : 'Master Products disabled');
+        } catch (error) {
+            toast.error('Failed to update setting');
+        } finally {
+            setSavingMaster(false);
+        }
+    };
+
     const updateSetting = <K extends keyof BarcodeSettings>(key: K, value: BarcodeSettings[K]) => {
         setSettings(prev => ({ ...prev, [key]: value }));
     };
@@ -111,6 +133,41 @@ export default function BarcodeSettingsPage() {
 
             <div className="flex-1 overflow-auto p-6">
                 <div className="max-w-2xl mx-auto space-y-6">
+
+                    {/* ── Master Products Feature Flag ── */}
+                    <div className="bg-card border rounded-lg p-6 space-y-4">
+                        <div className="flex items-center gap-3">
+                            <IconPackages size={20} className="text-amber-600 dark:text-amber-400" />
+                            <h3 className="text-lg font-medium">Master Products</h3>
+                            <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                                Textile / Apparel
+                            </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                            Enable this for retail textile businesses. When a master product (e.g. "Shirt") is
+                            added to a purchase invoice, the system automatically creates a child batch with a
+                            unique sequential item code per purchase line — ready for barcode label printing.
+                        </p>
+                        <div className="flex items-center gap-3 pt-1">
+                            <Switch
+                                id="enable-master-products"
+                                checked={masterProductsEnabled}
+                                onCheckedChange={handleToggleMasterProducts}
+                                disabled={savingMaster}
+                            />
+                            <Label htmlFor="enable-master-products" className="cursor-pointer">
+                                {masterProductsEnabled ? 'Master Products Enabled' : 'Master Products Disabled'}
+                            </Label>
+                        </div>
+                        {masterProductsEnabled && (
+                            <div className="rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 p-3 text-xs text-amber-800 dark:text-amber-300 space-y-1">
+                                <p>✓ &quot;Is Master Product&quot; toggle visible in the Add Product form.</p>
+                                <p>✓ Sales Rate &amp; MRP columns shown in Purchase Invoice for master items.</p>
+                                <p>✓ Master / Child Batch filters shown in the Products list.</p>
+                            </div>
+                        )}
+                    </div>
+
                     <div className="bg-card border rounded-lg p-6 space-y-6">
                         <h3 className="text-lg font-medium">Label Content</h3>
 

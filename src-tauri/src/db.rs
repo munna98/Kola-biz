@@ -1022,6 +1022,25 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN ack_no TEXT").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN ack_date DATE").execute(pool).await;
 
+    // ==================== MASTER PRODUCT MIGRATIONS ====================
+
+    // Migration: Add is_master flag (1 = template/master, 0 = regular or child batch)
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN is_master INTEGER NOT NULL DEFAULT 0")
+        .execute(pool)
+        .await;
+
+    // Migration: Add parent_product_id FK (non-null = child batch of a master)
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN parent_product_id TEXT REFERENCES products(id)")
+        .execute(pool)
+        .await;
+
+    // Index for efficient child batch lookups
+    let _ = sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_products_parent ON products(parent_product_id)",
+    )
+    .execute(pool)
+    .await;
+
     // ==================== SEEDING ====================
 
     crate::seeds::seed_initial_data(pool).await?;

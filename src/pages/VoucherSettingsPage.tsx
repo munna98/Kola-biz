@@ -23,8 +23,13 @@ interface VoucherSettings {
     showPaymentModal?: boolean; // Default true - when false, Cash Sale auto-pays, others stay unpaid
     enableBarcodePrinting?: boolean; // Show barcode print button in print preview
     skipToNextRowAfterQty?: boolean; // Skip to next row on enter after quantity
+    skipToNextRowAfterProduct?: boolean; // After product selected, set qty=1 and jump to next row
+    incrementQtyOnDuplicate?: boolean; // If same product is entered again, add 1 to existing row qty
     taxInclusive?: boolean; // Treat item rates as inclusive of GST
     updateRatesOnPurchase?: boolean; // Update product sales_rate & mrp at master level when saving purchase invoice
+    updatePurchaseRate?: boolean;
+    updateSalesRate?: boolean;
+    updateMrp?: boolean;
 }
 
 const AVAILABLE_COLUMNS = [
@@ -62,8 +67,13 @@ export default function VoucherSettingsPage() {
     const [showPaymentModal, setShowPaymentModal] = useState(true);
     const [enableBarcodePrinting, setEnableBarcodePrinting] = useState(false);
     const [skipToNextRowAfterQty, setSkipToNextRowAfterQty] = useState(false);
+    const [skipToNextRowAfterProduct, setSkipToNextRowAfterProduct] = useState(false);
+    const [incrementQtyOnDuplicate, setIncrementQtyOnDuplicate] = useState(false);
     const [taxInclusive, setTaxInclusive] = useState(false);
     const [updateRatesOnPurchase, setUpdateRatesOnPurchase] = useState(false);
+    const [updatePurchaseRate, setUpdatePurchaseRate] = useState(true);
+    const [updateSalesRate, setUpdateSalesRate] = useState(true);
+    const [updateMrp, setUpdateMrp] = useState(true);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -96,8 +106,13 @@ export default function VoucherSettingsPage() {
                 setShowPaymentModal(savedSettings.showPaymentModal !== false); // Default true
                 setEnableBarcodePrinting(savedSettings.enableBarcodePrinting || false);
                 setSkipToNextRowAfterQty(savedSettings.skipToNextRowAfterQty || false);
+                setSkipToNextRowAfterProduct(savedSettings.skipToNextRowAfterProduct || false);
+                setIncrementQtyOnDuplicate(savedSettings.incrementQtyOnDuplicate || false);
                 setTaxInclusive(savedSettings.taxInclusive || false);
                 setUpdateRatesOnPurchase(savedSettings.updateRatesOnPurchase || false);
+                setUpdatePurchaseRate(savedSettings.updatePurchaseRate !== false);
+                setUpdateSalesRate(savedSettings.updateSalesRate !== false);
+                setUpdateMrp(savedSettings.updateMrp !== false);
 
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
@@ -135,8 +150,13 @@ export default function VoucherSettingsPage() {
                 setShowPaymentModal(true);
                 setEnableBarcodePrinting(false);
                 setSkipToNextRowAfterQty(false);
+                setSkipToNextRowAfterProduct(false);
+                setIncrementQtyOnDuplicate(false);
                 setTaxInclusive(false);
                 setUpdateRatesOnPurchase(false);
+                setUpdatePurchaseRate(true);
+                setUpdateSalesRate(true);
+                setUpdateMrp(true);
                 initialColumns = availableCols.map((col, index) => ({
                     id: col.id,
                     label: col.label,
@@ -164,8 +184,13 @@ export default function VoucherSettingsPage() {
                 showPaymentModal: showPaymentModal,
                 enableBarcodePrinting: enableBarcodePrinting,
                 skipToNextRowAfterQty: skipToNextRowAfterQty,
+                skipToNextRowAfterProduct: skipToNextRowAfterProduct,
+                incrementQtyOnDuplicate: incrementQtyOnDuplicate,
                 taxInclusive: taxInclusive,
                 updateRatesOnPurchase: updateRatesOnPurchase,
+                updatePurchaseRate: updatePurchaseRate,
+                updateSalesRate: updateSalesRate,
+                updateMrp: updateMrp,
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -303,13 +328,14 @@ export default function VoucherSettingsPage() {
                                     </div>
                                 </div>
 
-                                <div className="flex items-center gap-4 mb-6">
+                                <div className="flex items-start gap-4 mb-6">
                                     <Checkbox
                                         id="update-rates-on-purchase"
                                         checked={updateRatesOnPurchase}
                                         onCheckedChange={(checked) => setUpdateRatesOnPurchase(checked as boolean)}
+                                        className="mt-1"
                                     />
-                                    <div className="grid gap-1.5 leading-none">
+                                    <div className="grid gap-1.5 leading-none w-full">
                                         <label
                                             htmlFor="update-rates-on-purchase"
                                             className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
@@ -317,28 +343,101 @@ export default function VoucherSettingsPage() {
                                             Update Rates on Purchase
                                         </label>
                                         <p className="text-sm text-muted-foreground">
-                                            When saving a purchase invoice, automatically update each product's Sales Rate and MRP at the master level.
+                                            When saving a purchase invoice, automatically update product rates at the master level.
                                         </p>
+
+                                        {updateRatesOnPurchase && (
+                                            <div className="flex flex-col gap-3 mt-3 ml-1 p-3 bg-muted/30 rounded-md border">
+                                                <div className="flex items-center gap-3">
+                                                    <Checkbox
+                                                        id="update-purchase-rate"
+                                                        checked={updatePurchaseRate}
+                                                        onCheckedChange={(checked) => setUpdatePurchaseRate(checked as boolean)}
+                                                    />
+                                                    <label htmlFor="update-purchase-rate" className="text-sm font-medium cursor-pointer leading-none">
+                                                        Update Purchase Rate
+                                                    </label>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <Checkbox
+                                                        id="update-sales-rate"
+                                                        checked={updateSalesRate}
+                                                        onCheckedChange={(checked) => setUpdateSalesRate(checked as boolean)}
+                                                    />
+                                                    <label htmlFor="update-sales-rate" className="text-sm font-medium cursor-pointer leading-none">
+                                                        Update Sales Rate
+                                                    </label>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <Checkbox
+                                                        id="update-mrp"
+                                                        checked={updateMrp}
+                                                        onCheckedChange={(checked) => setUpdateMrp(checked as boolean)}
+                                                    />
+                                                    <label htmlFor="update-mrp" className="text-sm font-medium cursor-pointer leading-none">
+                                                        Update MRP
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                             </>
                         )}
 
-                        <div className="flex items-center gap-4 mb-6">
+                        <div className="flex items-center gap-4 mb-4">
                             <Checkbox
-                                id="skip-next-row"
+                                id="skip-next-row-qty"
                                 checked={skipToNextRowAfterQty}
                                 onCheckedChange={(checked) => setSkipToNextRowAfterQty(checked as boolean)}
                             />
                             <div className="grid gap-1.5 leading-none">
                                 <label
-                                    htmlFor="skip-next-row"
+                                    htmlFor="skip-next-row-qty"
                                     className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                                 >
                                     Skip to Next Row After Quantity
                                 </label>
                                 <p className="text-sm text-muted-foreground">
                                     Pressing Enter on the Quantity field will immediately add/jump to the next row.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 mb-4">
+                            <Checkbox
+                                id="skip-next-row-product"
+                                checked={skipToNextRowAfterProduct}
+                                onCheckedChange={(checked) => setSkipToNextRowAfterProduct(checked as boolean)}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                                <label
+                                    htmlFor="skip-next-row-product"
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                    Skip to Next Row After Product
+                                </label>
+                                <p className="text-sm text-muted-foreground">
+                                    After selecting a product, automatically set Qty to 1 and jump to the next row (ideal for barcode scanning workflows).
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 mb-6">
+                            <Checkbox
+                                id="increment-qty-duplicate"
+                                checked={incrementQtyOnDuplicate}
+                                onCheckedChange={(checked) => setIncrementQtyOnDuplicate(checked as boolean)}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                                <label
+                                    htmlFor="increment-qty-duplicate"
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                    Increment Qty on Duplicate Item
+                                </label>
+                                <p className="text-sm text-muted-foreground">
+                                    If the same product is selected again (e.g. via barcode scan), add 1 to the existing row's quantity instead of creating a new row.
                                 </p>
                             </div>
                         </div>

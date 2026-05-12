@@ -406,7 +406,7 @@ pub(crate) fn finalize_processed_items(
     )
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct CreatePurchaseInvoiceItem {
     #[serde(default = "default_item_type")]
     pub item_type: String,           // "product" | "service"
@@ -422,6 +422,10 @@ pub struct CreatePurchaseInvoiceItem {
     pub discount_percent: Option<f64>,
     pub discount_amount: Option<f64>,
     pub remarks: Option<String>,
+    /// Sales rate to assign to the auto-created child product (master product lines only)
+    pub sales_rate: Option<f64>,
+    /// MRP to assign to the auto-created child product (master product lines only)
+    pub mrp: Option<f64>,
 }
 
 fn default_item_type() -> String { "product".to_string() }
@@ -620,11 +624,50 @@ pub async fn create_purchase_invoice(
     let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
+
+    // ============= MASTER PRODUCT RESOLUTION =============
+    // For each product line, check if the selected product is a master (is_master=1).
+    // If so, automatically create a child batch product inside this transaction and
+    // use the child's ID for all downstream processing (stock, journal, voucher items).
+    let mut resolved_product_ids: Vec<Option<String>> = Vec::new();
     for item in &invoice.items {
+        if item.item_type == "service" {
+            resolved_product_ids.push(None);
+            continue;
+        }
+        let product_id = item.product_id.as_deref().unwrap_or("");
+        if product_id.is_empty() {
+            resolved_product_ids.push(item.product_id.clone());
+            continue;
+        }
+        let is_master: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(is_master, 0) FROM products WHERE id = ?"
+        )
+        .bind(product_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or(0);
+
+        if is_master == 1 {
+            let child_id = crate::commands::products::create_child_product_in_tx(
+                &mut tx,
+                product_id,
+                item.rate,
+                item.sales_rate.unwrap_or(0.0),
+                item.mrp.unwrap_or(0.0),
+            ).await?;
+            resolved_product_ids.push(Some(child_id));
+        } else {
+            resolved_product_ids.push(item.product_id.clone());
+        }
+    }
+
+    for (i, item) in invoice.items.iter().enumerate() {
         let item_id = if item.item_type == "service" {
             item.service_id.as_deref().unwrap_or("")
         } else {
-            item.product_id.as_deref().unwrap_or("")
+            resolved_product_ids[i].as_deref().unwrap_or("")
         };
         prepared_lines.push(
             prepare_voucher_line(
@@ -894,11 +937,47 @@ pub async fn update_purchase_invoice(
     let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
+
+    // ============= MASTER PRODUCT RESOLUTION (update path) =============
+    let mut resolved_product_ids: Vec<Option<String>> = Vec::new();
     for item in &invoice.items {
+        if item.item_type == "service" {
+            resolved_product_ids.push(None);
+            continue;
+        }
+        let product_id = item.product_id.as_deref().unwrap_or("");
+        if product_id.is_empty() {
+            resolved_product_ids.push(item.product_id.clone());
+            continue;
+        }
+        let is_master: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(is_master, 0) FROM products WHERE id = ?"
+        )
+        .bind(product_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or(0);
+
+        if is_master == 1 {
+            let child_id = crate::commands::products::create_child_product_in_tx(
+                &mut tx,
+                product_id,
+                item.rate,
+                item.sales_rate.unwrap_or(0.0),
+                item.mrp.unwrap_or(0.0),
+            ).await?;
+            resolved_product_ids.push(Some(child_id));
+        } else {
+            resolved_product_ids.push(item.product_id.clone());
+        }
+    }
+
+    for (i, item) in invoice.items.iter().enumerate() {
         let item_id = if item.item_type == "service" {
             item.service_id.as_deref().unwrap_or("")
         } else {
-            item.product_id.as_deref().unwrap_or("")
+            resolved_product_ids[i].as_deref().unwrap_or("")
         };
         prepared_lines.push(
             prepare_voucher_line(

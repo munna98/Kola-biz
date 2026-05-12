@@ -247,12 +247,12 @@ export interface VoucherItemsSectionProps {
     isReadOnly: boolean;
     onAddItem: (index?: number) => void;
     onRemoveItem: (index: number) => void;
-    onUpdateItem: (index: number, field: string, value: any) => void;
+    onUpdateItem: (index: number, field: string, value: any, options?: { initialQuantity?: number }) => void;
     getItemAmount: (item: any) => ItemAmount;
     header?: React.ReactNode;
     addItemLabel?: string;
     disableAdd?: boolean;
-    settings?: { columns: ColumnSettings[], skipToNextRowAfterQty?: boolean, updateRatesOnPurchase?: boolean };
+    settings?: { columns: ColumnSettings[], skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, updateRatesOnPurchase?: boolean };
     footerRightContent?: React.ReactNode;
     footerLeftContent?: React.ReactNode;
     onProductCreate?: (name: string, rowIndex: number) => void;
@@ -527,14 +527,69 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     onChange={(value) => {
                                         if (!value) return;
                                         const strVal = String(value);
-                                        if (strVal.startsWith('s:')) {
+
+                                        if (strVal.startsWith('p:')) {
+                                            const prodId = strVal.slice(2);
+
+                                            // --- Increment Qty on Duplicate ---
+                                            if (settings?.incrementQtyOnDuplicate) {
+                                                const existingIdx = items.findIndex(
+                                                    (it, i) => i !== idx && String(it.product_id) === prodId
+                                                );
+                                                if (existingIdx !== -1) {
+                                                    const existingQty = items[existingIdx].initial_quantity || 0;
+                                                    onUpdateItem(existingIdx, 'initial_quantity', existingQty + 1);
+                                                    // Remove current (new/empty) row if it has no product yet
+                                                    if (!items[idx].product_id) {
+                                                        onRemoveItem(idx);
+                                                    }
+                                                    // Focus the incremented row's quantity field
+                                                    setTimeout(() => {
+                                                        const targetRow = document.querySelector(`[data-row-index="${existingIdx}"]`);
+                                                        const qtyInput = targetRow?.querySelector('[data-field="quantity"]') as HTMLElement | null;
+                                                        qtyInput?.focus();
+                                                        if (qtyInput instanceof HTMLInputElement) qtyInput.select();
+                                                    }, 50);
+                                                    return;
+                                                }
+                                            }
+
+                                            // --- Skip to Next Row After Product ---
+                                            if (settings?.skipToNextRowAfterProduct) {
+                                                onUpdateItem(idx, 'product_id', prodId, { initialQuantity: 1 });
+                                                // Jump to next row (add new if needed)
+                                                setTimeout(() => {
+                                                    const currentRow = document.querySelector(`[data-row-index="${idx}"]`);
+                                                    if (currentRow) {
+                                                        const nextRow = currentRow.nextElementSibling;
+                                                        if (nextRow) {
+                                                            const firstInput = nextRow.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
+                                                            if (firstInput) {
+                                                                firstInput.focus();
+                                                                if (firstInput instanceof HTMLButtonElement) firstInput.click();
+                                                            }
+                                                        } else {
+                                                            onAddItem();
+                                                            setTimeout(() => {
+                                                                const newRow = currentRow.parentElement?.lastElementChild;
+                                                                const firstInput = newRow?.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
+                                                                if (firstInput) {
+                                                                    firstInput.focus();
+                                                                    if (firstInput instanceof HTMLButtonElement) firstInput.click();
+                                                                }
+                                                            }, 50);
+                                                        }
+                                                    }
+                                                }, 100);
+                                            } else {
+                                                onUpdateItem(idx, 'product_id', prodId);
+                                                setTimeout(() => focusFirstEditableAfterProduct(idx), 100);
+                                            }
+                                        } else if (strVal.startsWith('s:')) {
                                             const svcId = strVal.slice(2);
                                             onUpdateItem(idx, 'service_id', svcId);
-                                        } else {
-                                            const prodId = strVal.slice(2);
-                                            onUpdateItem(idx, 'product_id', prodId);
+                                            setTimeout(() => focusFirstEditableAfterProduct(idx), 100);
                                         }
-                                        setTimeout(() => focusFirstEditableAfterProduct(idx), 100);
                                     }}
                                     placeholder="Select product"
                                     searchPlaceholder="Search products..."
@@ -766,7 +821,8 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 </div>
                             );
                         case 'sales_rate': {
-                            const isEditable = settings?.updateRatesOnPurchase && !isReadOnly;
+                            const isMasterRow = (fullProduct as any)?.is_master === 1;
+                            const isEditable = (settings?.updateRatesOnPurchase || isMasterRow) && !isReadOnly;
                             const value = item.sales_rate !== undefined ? item.sales_rate : product?.sales_rate || 0;
                             return (
                                 isEditable ? (
@@ -787,7 +843,8 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             );
                         }
                         case 'mrp': {
-                            const isEditable = settings?.updateRatesOnPurchase && !isReadOnly;
+                            const isMasterRow = (fullProduct as any)?.is_master === 1;
+                            const isEditable = (settings?.updateRatesOnPurchase || isMasterRow) && !isReadOnly;
                             const value = item.mrp !== undefined ? item.mrp : product?.mrp || 0;
                             return (
                                 isEditable ? (

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode } from '@tabler/icons-react';
 import { api, Product, Unit, ProductGroup, GstTaxSlab } from '@/lib/tauri';
@@ -12,6 +13,9 @@ import ProductDialog from '@/components/dialogs/ProductDialog';
 import UnitsDialog from '@/components/dialogs/UnitsDialog';
 import ProductGroupsDialog from '@/components/dialogs/ProductGroupsDialog';
 import BarcodeLabelDialog from '@/components/dialogs/BarcodeLabelDialog';
+import { invoke } from '@tauri-apps/api/core';
+
+type ProductFilter = 'all' | 'master' | 'child';
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -20,6 +24,8 @@ export default function ProductsPage() {
   const [loading, setLoading] = useState(true);
   const [gstEnabled, setGstEnabled] = useState(false);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
+  const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
+  const [productFilter, setProductFilter] = useState<ProductFilter>('all');
   const [open, setOpen] = useState(false);
   const [unitsOpen, setUnitsOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
@@ -33,18 +39,20 @@ export default function ProductsPage() {
   const load = async () => {
     try {
       setLoading(true);
-      const [p, u, g, gstSettings, slabs] = await Promise.all([
+      const [p, u, g, gstSettings, slabs, masterSetting] = await Promise.all([
         showDeleted ? api.products.listDeleted() : api.products.list(),
         api.units.list(),
         api.productGroups.list(),
         api.gst.getSettings(),
-        api.gst.getSlabs()
+        api.gst.getSlabs(),
+        invoke<string | null>('get_app_setting', { key: 'enable_master_products' }),
       ]);
       setProducts(p);
       setUnits(u);
       setGroups(g);
       setGstEnabled(gstSettings.gst_enabled);
       setGstSlabs(slabs);
+      setMasterProductsEnabled(masterSetting === 'true');
     } catch (error) {
       toast.error('Failed to load data');
       console.error('Load error:', error);
@@ -104,15 +112,22 @@ export default function ProductsPage() {
     setEditingProduct(undefined);
   };
 
-  const handleUnitsChange = () => {
-    // Reload units when they change in the dialog
-    load();
-  };
+  const handleUnitsChange = () => load();
+  const handleGroupsChange = () => load();
 
-  const handleGroupsChange = () => {
-    // Reload groups when they change in the dialog
-    load();
-  };
+  // Apply search + category filter
+  const filteredProducts = products.filter(p => {
+    const matchesSearch =
+      p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (groups.find(g => g.id === p.group_id)?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+
+    if (!matchesSearch) return false;
+
+    if (masterProductsEnabled && productFilter === 'master') return p.is_master === 1;
+    if (masterProductsEnabled && productFilter === 'child') return !!p.parent_product_id;
+    return true;
+  });
 
   if (loading) {
     return (
@@ -162,7 +177,7 @@ export default function ProductsPage() {
                       <IconCategory size={16} />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Manage  Groups</TooltipContent>
+                  <TooltipContent>Manage Groups</TooltipContent>
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -180,6 +195,29 @@ export default function ProductsPage() {
           </TooltipProvider>
         </div>
       </div>
+
+      {/* Filter tabs — only shown when Master Products feature is enabled */}
+      {masterProductsEnabled && !showDeleted && (
+        <div className="flex gap-1 border-b pb-0">
+          {(['all', 'master', 'child'] as ProductFilter[]).map(f => (
+            <button
+              key={f}
+              onClick={() => setProductFilter(f)}
+              className={[
+                'px-4 py-1.5 text-sm font-medium border-b-2 transition-colors -mb-px',
+                productFilter === f
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              ].join(' ')}
+            >
+              {f === 'all' ? 'All Products' : f === 'master' ? '⬡ Masters' : '◆ Child Batches'}
+            </button>
+          ))}
+          <span className="ml-auto text-xs text-muted-foreground self-center pr-1">
+            {filteredProducts.length} result{filteredProducts.length !== 1 ? 's' : ''}
+          </span>
+        </div>
+      )}
 
       <Card>
         <CardContent className="p-0">
@@ -200,61 +238,76 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {(() => {
-                const filteredProducts = products.filter(p =>
-                  p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  (groups.find(g => g.id === p.group_id)?.name || '').toLowerCase().includes(searchTerm.toLowerCase())
-                );
+              {filteredProducts.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="p-4 text-center text-muted-foreground">
+                    {searchTerm ? 'No products match your search.' : 'No products found. Add your first product to get started.'}
+                  </td>
+                </tr>
+              ) : (
+                filteredProducts.map((p, index) => {
+                  const isMaster = p.is_master === 1;
+                  const isChild = !!p.parent_product_id;
 
-                if (filteredProducts.length === 0) {
                   return (
-                    <tr>
-                      <td colSpan={10} className="p-4 text-center text-muted-foreground">
-                        {searchTerm ? 'No products match your search.' : 'No products found. Add your first product to get started.'}
+                    <tr
+                      key={p.id}
+                      className={[
+                        'border-b hover:bg-muted/30',
+                        isChild ? 'bg-blue-50/30 dark:bg-blue-950/10' : '',
+                      ].join(' ')}
+                    >
+                      <td className="p-3 text-sm text-muted-foreground">{index + 1}</td>
+                      <td className="p-3 font-mono text-sm">{p.code}</td>
+                      <td className="p-3">
+                        <div className="flex items-center gap-1.5">
+                          {p.name}
+                          {masterProductsEnabled && isMaster && (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 border-amber-400 text-amber-700 dark:text-amber-400">
+                              Master
+                            </Badge>
+                          )}
+                          {masterProductsEnabled && isChild && (
+                            <Badge variant="outline" className="text-[10px] px-1 py-0 border-blue-400 text-blue-700 dark:text-blue-400">
+                              Batch
+                            </Badge>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-3 text-sm">{p.hsn_sac_code || '-'}</td>
+                      <td className="p-3 text-sm">{groups.find(g => g.id === p.group_id)?.name || '-'}</td>
+                      <td className="p-3">{units.find(u => u.id === p.unit_id)?.symbol || '-'}</td>
+                      <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : `₹${p.purchase_rate.toFixed(2)}`}</td>
+                      <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : `₹${p.sales_rate.toFixed(2)}`}</td>
+                      <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : `₹${p.mrp.toFixed(2)}`}</td>
+                      {gstEnabled && (
+                        <td className="p-3 text-sm">
+                          {gstSlabs.find(s => s.id === p.gst_slab_id)?.name || '-'}
+                        </td>
+                      )}
+                      <td className="p-3 flex gap-2">
+                        {!showDeleted ? (
+                          <>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button size="sm" variant="ghost" onClick={() => { setBarcodeProduct(p); setBarcodeDialogOpen(true); }}><IconBarcode size={16} /></Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Print Barcode</TooltipContent>
+                            </Tooltip>
+                            <Button size="sm" variant="ghost" onClick={() => handleEdit(p)}><IconEdit size={16} /></Button>
+                            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.id)}><IconTrash size={16} /></Button>
+                          </>
+                        ) : (
+                          <>
+                            <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-700" onClick={() => handleRestore(p.id)}><IconRefresh size={16} /></Button>
+                            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleHardDelete(p.id)}><IconTrashFilled size={16} /></Button>
+                          </>
+                        )}
                       </td>
                     </tr>
                   );
-                }
-
-                return filteredProducts.map((p, index) => (
-                  <tr key={p.id} className="border-b hover:bg-muted/30">
-                    <td className="p-3 text-sm text-muted-foreground">{index + 1}</td>
-                    <td className="p-3 font-mono text-sm">{p.code}</td>
-                    <td className="p-3">{p.name}</td>
-                    <td className="p-3 text-sm">{p.hsn_sac_code || '-'}</td>
-                    <td className="p-3 text-sm">{groups.find(g => g.id === p.group_id)?.name || '-'}</td>
-                    <td className="p-3">{units.find(u => u.id === p.unit_id)?.symbol || '-'}</td>
-                    <td className="p-3">₹{p.purchase_rate.toFixed(2)}</td>
-                    <td className="p-3">₹{p.sales_rate.toFixed(2)}</td>
-                    <td className="p-3">₹{p.mrp.toFixed(2)}</td>
-                    {gstEnabled && (
-                      <td className="p-3 text-sm">
-                        {gstSlabs.find(s => s.id === p.gst_slab_id)?.name || '-'}
-                      </td>
-                    )}
-                    <td className="p-3 flex gap-2">
-                      {!showDeleted ? (
-                        <>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <Button size="sm" variant="ghost" onClick={() => { setBarcodeProduct(p); setBarcodeDialogOpen(true); }}><IconBarcode size={16} /></Button>
-                            </TooltipTrigger>
-                            <TooltipContent>Print Barcode</TooltipContent>
-                          </Tooltip>
-                          <Button size="sm" variant="ghost" onClick={() => handleEdit(p)}><IconEdit size={16} /></Button>
-                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.id)}><IconTrash size={16} /></Button>
-                        </>
-                      ) : (
-                        <>
-                          <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-700" onClick={() => handleRestore(p.id)}><IconRefresh size={16} /></Button>
-                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleHardDelete(p.id)}><IconTrashFilled size={16} /></Button>
-                        </>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              })()}
+                })
+              )}
             </tbody>
           </table>
         </CardContent>

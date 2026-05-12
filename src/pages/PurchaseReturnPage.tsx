@@ -68,7 +68,7 @@ export default function PurchaseReturnPage() {
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
-    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, skipToNextRowAfterQty?: boolean, taxInclusive?: boolean } | undefined>(undefined);
+    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean } | undefined>(undefined);
     const { print } = usePrint();
     const productUnitsByProduct = useMemo(
         () => buildProductUnitMap(productUnitConversions),
@@ -183,7 +183,7 @@ export default function PurchaseReturnPage() {
         dispatch(setPurchaseReturnHasUnsavedChanges(true));
     };
 
-    const handleUpdateItem = (index: number, field: string, value: any) => {
+    const handleUpdateItem = (index: number, field: string, value: any, options?: { initialQuantity?: number }) => {
         let finalValue = value;
 
         if (field === 'product_id') {
@@ -208,6 +208,7 @@ export default function PurchaseReturnPage() {
                     product_name: product.name,
                     unit_id: defaultUnitId,
                     rate,
+                    ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
                 };
                 dispatch(
                     updatePurchaseReturnItem({
@@ -217,6 +218,7 @@ export default function PurchaseReturnPage() {
                             product_name: product.name,
                             unit_id: defaultUnitId,
                             rate,
+                            ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
                         },
                     })
                 );

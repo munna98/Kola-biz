@@ -22,7 +22,7 @@ pub struct CreateProductGroup {
     pub description: Option<String>,
 }
 
-async fn generate_product_code(pool: &SqlitePool) -> Result<String, String> {
+pub(crate) async fn generate_product_code(pool: &SqlitePool) -> Result<String, String> {
     let last_code: Option<i64> = sqlx::query_scalar(
         "SELECT MAX(CAST(code AS INTEGER)) FROM products WHERE code GLOB '[0-9]*'",
     )
@@ -33,6 +33,92 @@ async fn generate_product_code(pool: &SqlitePool) -> Result<String, String> {
 
     let next_code = last_code.unwrap_or(100) + 1;
     Ok(next_code.to_string())
+}
+
+/// Like generate_product_code but runs inside a transaction so it sees
+/// uncommitted inserts made earlier in the same tx (prevents duplicate codes
+/// when multiple master-product lines are in one purchase invoice).
+pub(crate) async fn generate_product_code_in_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+) -> Result<String, String> {
+    let last_code: Option<i64> = sqlx::query_scalar(
+        "SELECT MAX(CAST(code AS INTEGER)) FROM products WHERE code GLOB '[0-9]*'",
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?
+    .flatten();
+
+    let next_code = last_code.unwrap_or(100) + 1;
+    Ok(next_code.to_string())
+}
+
+/// Create a child product (batch) inside an existing transaction.
+/// Inherits name/group/unit/GST from the master and uses the supplied rates.
+/// Returns the new child product's ID.
+pub(crate) async fn create_child_product_in_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    master_product_id: &str,
+    purchase_rate: f64,
+    sales_rate: f64,
+    mrp: f64,
+) -> Result<String, String> {
+    // Fetch master fields needed for the child
+    let master: Option<(String, Option<String>, String, Option<String>, Option<String>)> =
+        sqlx::query_as(
+            "SELECT name, group_id, unit_id, hsn_sac_code, gst_slab_id FROM products WHERE id = ?",
+        )
+        .bind(master_product_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let (name, group_id, unit_id, hsn_sac_code, gst_slab_id) = master
+        .ok_or_else(|| format!("Master product '{}' not found", master_product_id))?;
+
+    // Generate next sequential code within the same transaction
+    let code = generate_product_code_in_tx(tx).await?;
+    let child_id = Uuid::now_v7().to_string();
+
+    sqlx::query(
+        "INSERT INTO products \
+         (id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, \
+          barcode, hsn_sac_code, gst_slab_id, is_master, parent_product_id, is_active) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0, ?, 1)",
+    )
+    .bind(&child_id)
+    .bind(&code)
+    .bind(&name)
+    .bind(&group_id)
+    .bind(&unit_id)
+    .bind(purchase_rate)
+    .bind(sales_rate)
+    .bind(mrp)
+    .bind(&hsn_sac_code)
+    .bind(&gst_slab_id)
+    .bind(master_product_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| format!("Failed to insert child product: {}", e))?;
+
+    // Insert base unit conversion row for the child
+    let puc_id = Uuid::now_v7().to_string();
+    sqlx::query(
+        "INSERT INTO product_unit_conversions \
+         (id, product_id, unit_id, factor_to_base, purchase_rate, sales_rate, \
+          is_default_sale, is_default_purchase, is_default_report) \
+         VALUES (?, ?, ?, 1.0, ?, ?, 1, 1, 1)",
+    )
+    .bind(&puc_id)
+    .bind(&child_id)
+    .bind(&unit_id)
+    .bind(purchase_rate)
+    .bind(sales_rate)
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| format!("Failed to insert child product unit conversion: {}", e))?;
+
+    Ok(child_id)
 }
 
 #[tauri::command]
@@ -279,6 +365,8 @@ pub struct Product {
     pub has_transactions: bool,
     pub hsn_sac_code: Option<String>,
     pub gst_slab_id: Option<String>,
+    pub is_master: i64,
+    pub parent_product_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow, Clone)]
@@ -326,6 +414,11 @@ pub struct CreateProduct {
     pub conversions: Vec<ProductUnitConversionInput>,
     pub hsn_sac_code: Option<String>,
     pub gst_slab_id: Option<String>,
+    /// When true, this product is a master/template. Its code must be set manually
+    /// (e.g. "SHIRT-M"). Auto-generation is blocked. Child batches are created
+    /// automatically during purchase entry.
+    #[serde(default)]
+    pub is_master: bool,
 }
 
 fn normalize_product_unit_conversions(
@@ -523,7 +616,9 @@ pub async fn get_products(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Pr
     sqlx::query_as::<_, Product>(
         "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, is_active, created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
-                hsn_sac_code, gst_slab_id
+                hsn_sac_code, gst_slab_id,
+                COALESCE(is_master, 0) as is_master,
+                parent_product_id
          FROM products
          WHERE deleted_at IS NULL 
          ORDER BY created_at DESC",
@@ -541,16 +636,25 @@ pub async fn create_product(
     let pool = registry.active_pool().await?;
     let id = Uuid::now_v7().to_string();
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    sqlx::query(
-        "INSERT INTO products (id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, hsn_sac_code, gst_slab_id) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-    )
-    .bind(&id)
-    .bind(if product.code.is_empty() {
+
+    // Master products MUST have a manually typed code — no auto-generation
+    let code = if product.is_master {
+        if product.code.trim().is_empty() {
+            return Err("Code is required for master products. Enter a unique alphanumeric code (e.g. SHIRT-M).".to_string());
+        }
+        product.code.clone()
+    } else if product.code.is_empty() {
         generate_product_code(&pool).await?
     } else {
-        product.code
-    })
+        product.code.clone()
+    };
+
+    sqlx::query(
+        "INSERT INTO products (id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, hsn_sac_code, gst_slab_id, is_master) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(&code)
     .bind(&product.name)
     .bind(product.group_id.clone())
     .bind(&product.unit_id)
@@ -560,6 +664,7 @@ pub async fn create_product(
     .bind(&product.barcode)
     .bind(&product.hsn_sac_code)
     .bind(&product.gst_slab_id)
+    .bind(if product.is_master { 1i64 } else { 0i64 })
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -579,7 +684,9 @@ pub async fn create_product(
     sqlx::query_as::<_, Product>(
         "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, is_active, created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
-                hsn_sac_code, gst_slab_id
+                hsn_sac_code, gst_slab_id,
+                COALESCE(is_master, 0) as is_master,
+                parent_product_id
          FROM products WHERE id = ?",
     )
     .bind(id)
@@ -624,7 +731,7 @@ pub async fn update_product(
     sqlx::query(
         "UPDATE products 
          SET code = ?, name = ?, group_id = ?, unit_id = ?, purchase_rate = ?, sales_rate = ?, mrp = ?,
-             barcode = ?, hsn_sac_code = ?, gst_slab_id = ?, updated_at = CURRENT_TIMESTAMP 
+             barcode = ?, hsn_sac_code = ?, gst_slab_id = ?, is_master = ?, updated_at = CURRENT_TIMESTAMP 
          WHERE id = ?",
     )
     .bind(&product.code)
@@ -637,6 +744,7 @@ pub async fn update_product(
     .bind(&product.barcode)
     .bind(&product.hsn_sac_code)
     .bind(&product.gst_slab_id)
+    .bind(if product.is_master { 1i64 } else { 0i64 })
     .bind(&id)
     .execute(&mut *tx)
     .await
@@ -757,7 +865,9 @@ pub async fn get_deleted_products(registry: State<'_, Arc<DbRegistry>>) -> Resul
     sqlx::query_as::<_, Product>(
         "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, is_active, created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
-                hsn_sac_code, gst_slab_id
+                hsn_sac_code, gst_slab_id,
+                COALESCE(is_master, 0) as is_master,
+                parent_product_id
          FROM products
          WHERE deleted_at IS NOT NULL 
          ORDER BY deleted_at DESC",

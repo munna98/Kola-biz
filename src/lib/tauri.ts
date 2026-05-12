@@ -105,6 +105,10 @@ export interface Product {
   has_transactions: boolean;
   hsn_sac_code?: string;
   gst_slab_id?: string;
+  /** 1 = master/template product, 0 = regular or child batch */
+  is_master: number;
+  /** Non-null means this is a child batch; value is the master product's ID */
+  parent_product_id?: string;
 }
 
 export interface ProductUnitConversion {
@@ -143,6 +147,8 @@ export interface CreateProduct {
   conversions?: CreateProductUnitConversion[];
   hsn_sac_code?: string;
   gst_slab_id?: string;
+  /** When true, this is a master template. Code must be manually entered. */
+  is_master?: boolean;
 }
 
 // ======= PARTIES =======

@@ -81,7 +81,7 @@ export default function PurchaseInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [gstDisabled, setGstDisabled] = useState(false);
@@ -91,6 +91,7 @@ export default function PurchaseInvoicePage() {
   const [showCreateProduct, setShowCreateProduct] = useState(false);
   const [newProductName, setNewProductName] = useState('');
   const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
+  const [, setMasterProductsEnabled] = useState(false);
 
   const { print: printVoucher } = usePrint();
 
@@ -120,7 +121,7 @@ export default function PurchaseInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, gstSettings, slabsData, servicesData] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, gstSettings, slabsData, servicesData, masterSettingVal] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -130,6 +131,7 @@ export default function PurchaseInvoicePage() {
           api.gst.getSettings().catch(() => null),
           api.gst.getSlabs().catch(() => [] as GstTaxSlab[]),
           invoke<any[]>('get_services').catch(() => []),
+          invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
@@ -139,6 +141,7 @@ export default function PurchaseInvoicePage() {
         }
         setProductGroups(groupsData);
         setServices(servicesData);
+        setMasterProductsEnabled(masterSettingVal === 'true');
         // Only show GST columns if GST is enabled in settings
         if (gstSettings?.gst_enabled) {
           setGstSlabs(slabsData);
@@ -191,12 +194,16 @@ export default function PurchaseInvoicePage() {
     }
   }, [purchaseState.mode, purchaseState.form.supplier_id, parties, dispatch]);
 
-  // Auto-add first line if empty and in new mode
+  // Auto-add first line if empty and in new mode.
+  // NOTE: we also guard on !isInitializing so that voucherSettings (column defaults)
+  // are guaranteed to be loaded before handleAddItem reads them. Without this guard,
+  // the effect fires as soon as products.length > 0 — before the settings are set —
+  // and the user's configured Count/Deduction defaults are silently ignored.
   useEffect(() => {
-    if (purchaseState.mode === 'new' && purchaseState.items.length === 0 && products.length > 0) {
+    if (!isInitializing && purchaseState.mode === 'new' && purchaseState.items.length === 0 && products.length > 0) {
       handleAddItem();
     }
-  }, [purchaseState.mode, products.length, purchaseState.items.length]);
+  }, [isInitializing, purchaseState.mode, products.length, purchaseState.items.length]);
 
   const markUnsaved = () => {
     if (!purchaseState.hasUnsavedChanges && purchaseState.mode !== 'viewing') {
@@ -300,20 +307,23 @@ export default function PurchaseInvoicePage() {
   });
 
   const handleAddItem = (insertAt?: number) => {
-    // Get defaults from settings
+    // Get defaults from settings.
+    // IMPORTANT: 0 is a valid user-configured default (e.g. no deduction).
+    // We only fall back to hardcoded values when the column has NO defaultValue set at all.
     const getDesc = (id: string) => {
       const col = voucherSettings?.columns.find(c => c.id === id);
-      if (col && col.defaultValue !== undefined && col.defaultValue !== "") {
+      if (col && col.defaultValue != null && col.defaultValue !== '') {
+        // User explicitly saved a value — use it even if it's 0
         return col.defaultValue;
       }
-      // Hardcoded defaults if not in settings or empty
+      // Hardcoded fallbacks when no setting exists
       if (id === 'count') return 1;
       if (id === 'deduction') return 1.5;
       return 0;
     };
 
     // Helper to safely parse
-    const parseNum = (val: string | number) => typeof val === 'string' ? parseFloat(val) || 0 : val;
+    const parseNum = (val: string | number) => typeof val === 'string' ? parseFloat(val) : val;
 
     dispatch(
       addItem({
@@ -322,7 +332,8 @@ export default function PurchaseInvoicePage() {
         product_name: '',
         description: '',
         initial_quantity: parseNum(getDesc('quantity') as string | number),
-        count: parseNum(getDesc('count') as string | number) || 1,
+        // No || 1 fallback — if the user set count=0 that is intentional
+        count: parseNum(getDesc('count') as string | number),
         deduction_per_unit: parseNum(getDesc('deduction') as string | number),
         rate: parseNum(getDesc('rate') as string | number),
         tax_rate: parseNum(getDesc('tax_rate') as string | number),
@@ -344,7 +355,7 @@ export default function PurchaseInvoicePage() {
     markUnsaved();
   };
 
-  const handleUpdateItem = (index: number, field: string, value: any) => {
+  const handleUpdateItem = (index: number, field: string, value: any, options?: { initialQuantity?: number }) => {
     let finalValue = value;
 
     if (field === 'product_id') {
@@ -375,6 +386,7 @@ export default function PurchaseInvoicePage() {
           rate,
           sales_rate: product.sales_rate,
           mrp: product.mrp,
+          ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
         };
         dispatch(
           updateItem({
@@ -388,6 +400,7 @@ export default function PurchaseInvoicePage() {
               rate,
               sales_rate: product.sales_rate,
               mrp: product.mrp,
+              ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
             },
           })
         );
@@ -585,6 +598,9 @@ export default function PurchaseInvoicePage() {
               tax_rate: item.tax_rate,
               discount_percent: item.discount_percent || null,
               discount_amount: item.discount_amount || null,
+              // Passed to backend for master product child creation
+              sales_rate: item.sales_rate !== undefined ? item.sales_rate : null,
+              mrp: item.mrp !== undefined ? item.mrp : null,
             })),
             tax_inclusive: voucherSettings?.taxInclusive ?? false,
             gst_disabled: gstDisabled,
@@ -600,9 +616,9 @@ export default function PurchaseInvoicePage() {
               const product = products.find(p => String(p.id) === String(item.product_id));
               return {
                 id: item.product_id?.toString() || '',
-                purchase_rate: item.rate,
-                sales_rate: item.sales_rate !== undefined ? item.sales_rate : product?.sales_rate || 0,
-                mrp: item.mrp !== undefined ? item.mrp : product?.mrp || 0,
+                purchase_rate: voucherSettings?.updatePurchaseRate !== false ? item.rate : (product?.purchase_rate || 0),
+                sales_rate: voucherSettings?.updateSalesRate !== false ? (item.sales_rate !== undefined ? item.sales_rate : product?.sales_rate || 0) : (product?.sales_rate || 0),
+                mrp: voucherSettings?.updateMrp !== false ? (item.mrp !== undefined ? item.mrp : product?.mrp || 0) : (product?.mrp || 0),
               };
             });
           
@@ -673,6 +689,9 @@ export default function PurchaseInvoicePage() {
               tax_rate: item.tax_rate,
               discount_percent: item.discount_percent || null,
               discount_amount: item.discount_amount || null,
+              // Passed to backend for master product child creation
+              sales_rate: item.sales_rate !== undefined ? item.sales_rate : null,
+              mrp: item.mrp !== undefined ? item.mrp : null,
             })),
             user_id: user?.id.toString(),
             tax_inclusive: voucherSettings?.taxInclusive ?? false,
@@ -706,9 +725,9 @@ export default function PurchaseInvoicePage() {
               const product = products.find(p => String(p.id) === String(item.product_id));
               return {
                 id: item.product_id?.toString() || '',
-                purchase_rate: item.rate,
-                sales_rate: item.sales_rate !== undefined ? item.sales_rate : product?.sales_rate || 0,
-                mrp: item.mrp !== undefined ? item.mrp : product?.mrp || 0,
+                purchase_rate: voucherSettings?.updatePurchaseRate !== false ? item.rate : (product?.purchase_rate || 0),
+                sales_rate: voucherSettings?.updateSalesRate !== false ? (item.sales_rate !== undefined ? item.sales_rate : product?.sales_rate || 0) : (product?.sales_rate || 0),
+                mrp: voucherSettings?.updateMrp !== false ? (item.mrp !== undefined ? item.mrp : product?.mrp || 0) : (product?.mrp || 0),
               };
             });
           

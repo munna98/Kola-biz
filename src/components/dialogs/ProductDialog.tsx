@@ -6,10 +6,12 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 import { IconCheck, IconCircleDashedPlus, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
 import { api, Product, CreateProduct, Unit, ProductGroup, CreateProductUnitConversion, GstTaxSlab } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { useDialog } from '@/hooks/use-dialog';
+import { invoke } from '@tauri-apps/api/core';
 
 interface ProductDialogProps {
   open: boolean;
@@ -111,6 +113,8 @@ export default function ProductDialog({
     hsn_sac_code: '',
     gst_slab_id: 'gst_0',
   });
+  const [isMaster, setIsMaster] = useState(false);
+  const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
   const [conversionRows, setConversionRows] = useState<ConversionRow[]>(defaultUnitId ? [createBaseRow(defaultUnitId)] : []);
   const [loading, setLoading] = useState(false);
   const [showUnitSection, setShowUnitSection] = useState(false);
@@ -128,6 +132,10 @@ export default function ProductDialog({
   // Load GST slabs once
   useEffect(() => {
     api.gst.getSlabs().then(setGstSlabs).catch(console.error);
+    // Load master product feature flag
+    invoke<string | null>('get_app_setting', { key: 'enable_master_products' })
+      .then(v => setMasterProductsEnabled(v === 'true'))
+      .catch(console.error);
   }, []);
 
   useEffect(() => {
@@ -140,6 +148,7 @@ export default function ProductDialog({
 
     const loadDialogData = async () => {
       if (product) {
+        setIsMaster(product.is_master === 1);
         setForm({
           code: product.code,
           name: product.name,
@@ -152,6 +161,7 @@ export default function ProductDialog({
           conversions: [],
           hsn_sac_code: product.hsn_sac_code || '',
           gst_slab_id: product.gst_slab_id,
+          is_master: product.is_master === 1,
         });
 
         try {
@@ -179,6 +189,7 @@ export default function ProductDialog({
           setConversionRows([createBaseRow(product.unit_id, product.purchase_rate, product.sales_rate)]);
         }
       } else {
+        setIsMaster(false);
         setForm({
           code: '',
           name: '',
@@ -191,6 +202,7 @@ export default function ProductDialog({
           conversions: [],
           hsn_sac_code: '',
           gst_slab_id: 'gst_0',
+          is_master: false,
         });
         setConversionRows(initialUnitId ? [createBaseRow(initialUnitId, initialPurchaseRate, initialSalesRate)] : []);
       }
@@ -201,11 +213,16 @@ export default function ProductDialog({
 
   useEffect(() => {
     if (open && !product) {
-      api.products.getNextCode().then((code) => {
-        setForm(prev => ({ ...prev, code }));
-      }).catch(console.error);
+      // Only auto-generate code for non-master products
+      if (!isMaster) {
+        api.products.getNextCode().then((code) => {
+          setForm(prev => ({ ...prev, code }));
+        }).catch(console.error);
+      } else {
+        setForm(prev => ({ ...prev, code: '' }));
+      }
     }
-  }, [open, product]);
+  }, [open, product, isMaster]);
 
   useEffect(() => {
     if (!open || !form.unit_id) return;
@@ -214,6 +231,7 @@ export default function ProductDialog({
 
   const resetForm = () => {
     const unitId = getDefaultUnitId(units);
+    setIsMaster(false);
     setForm({
       code: '',
       name: '',
@@ -226,6 +244,7 @@ export default function ProductDialog({
       conversions: [],
       hsn_sac_code: '',
       gst_slab_id: 'gst_0',
+      is_master: false,
     });
     setConversionRows(unitId ? [createBaseRow(unitId)] : []);
     setShowUnitSection(false);
@@ -262,7 +281,7 @@ export default function ProductDialog({
     e.preventDefault();
 
     if (!form.code.trim()) {
-      toast.error('Product code is required');
+      toast.error(isMaster ? 'Master products require a unique code (e.g. SHIRT-M).' : 'Product code is required');
       return;
     }
 
@@ -287,6 +306,7 @@ export default function ProductDialog({
       setLoading(true);
       const payload: CreateProduct = {
         ...form,
+        is_master: isMaster,
         conversions: normalizedConversions
       };
 
@@ -321,6 +341,53 @@ export default function ProductDialog({
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Master Product Toggle — only shown when feature is enabled */}
+          {masterProductsEnabled && !product?.parent_product_id && (
+            <div className="flex items-center gap-3 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/20 px-4 py-2.5">
+              <Switch
+                id="is-master-toggle"
+                checked={isMaster}
+                onCheckedChange={(checked) => {
+                  setIsMaster(checked);
+                  setForm(prev => ({
+                    ...prev,
+                    is_master: checked,
+                    // Clear code when switching to master so user types their own
+                    code: checked ? '' : prev.code,
+                  }));
+                  // When turning off master mode, re-fetch the next sequential code
+                  if (!checked && !product) {
+                    api.products.getNextCode().then(code => setForm(prev => ({ ...prev, code }))).catch(console.error);
+                  }
+                }}
+              />
+              <div>
+                <Label htmlFor="is-master-toggle" className="text-sm font-medium cursor-pointer">
+                  Master Product (Template)
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  {isMaster
+                    ? 'Child batches with auto-generated codes will be created per purchase line.'
+                    : 'Enable to use this product as a template for batch creation during purchase.'}
+                </p>
+              </div>
+              {isMaster && (
+                <Badge variant="secondary" className="ml-auto shrink-0 bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">
+                  Master
+                </Badge>
+              )}
+            </div>
+          )}
+
+          {/* Read-only child batch notice */}
+          {product?.parent_product_id && (
+            <div className="flex items-center gap-3 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-900/40 dark:bg-blue-950/20 px-4 py-2.5">
+              <Badge variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300">Batch</Badge>
+              <p className="text-xs text-muted-foreground">
+                This is a child batch. Name and tax fields are inherited from the master product.
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4">
             <div>
               <Label className="text-xs font-medium mb-1 block">Code *</Label>
