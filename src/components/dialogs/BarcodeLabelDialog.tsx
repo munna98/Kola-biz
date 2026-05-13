@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Checkbox } from '@/components/ui/checkbox';
 import { IconPrinter } from '@tabler/icons-react';
 import { invoke } from '@tauri-apps/api/core';
 import JsBarcode from 'jsbarcode';
@@ -40,20 +41,43 @@ export default function BarcodeLabelDialog({
     const [settings, setSettings] = useState<BarcodeDesignerSettings>(DEFAULT_DESIGNER_SETTINGS);
     const [productCounts, setProductCounts] = useState<Record<number, number>>({});
     const [selectedIndex, setSelectedIndex] = useState(0);
+    const [checkedProducts, setCheckedProducts] = useState<Set<number>>(new Set());
     const printRef = useRef<HTMLDivElement>(null);
 
-    // Initialize counts when products change
+    // Initialize counts and selection when products change
     useEffect(() => {
         if (open) {
             loadSettings();
             const counts: Record<number, number> = {};
+            const checked = new Set<number>();
             products.forEach((p, i) => {
                 counts[i] = p.quantity || 1;
+                checked.add(i);
             });
             setProductCounts(counts);
+            setCheckedProducts(checked);
             setSelectedIndex(0);
         }
     }, [open, products]);
+
+    const toggleProduct = (idx: number) => {
+        setCheckedProducts(prev => {
+            const next = new Set(prev);
+            if (next.has(idx)) next.delete(idx); else next.add(idx);
+            return next;
+        });
+    };
+
+    const toggleAll = (checked: boolean) => {
+        if (checked) {
+            setCheckedProducts(new Set(products.map((_, i) => i)));
+        } else {
+            setCheckedProducts(new Set());
+        }
+    };
+
+    const allChecked = products.length > 0 && checkedProducts.size === products.length;
+    const someChecked = checkedProducts.size > 0 && checkedProducts.size < products.length;
 
     const loadSettings = async () => {
         try {
@@ -71,7 +95,7 @@ export default function BarcodeLabelDialog({
         setProductCounts(prev => ({ ...prev, [index]: Math.max(1, value) }));
     };
 
-    const totalLabels = Object.values(productCounts).reduce((s, c) => s + c, 0);
+    const totalLabels = products.reduce((s, _, idx) => s + (checkedProducts.has(idx) ? (productCounts[idx] || 1) : 0), 0);
     const selectedProduct = products[selectedIndex] || products[0];
 
     const handlePrint = () => {
@@ -89,6 +113,7 @@ export default function BarcodeLabelDialog({
         // Build individual label HTML snippets
         const labelSnippets: string[] = [];
         products.forEach((product, idx) => {
+            if (!checkedProducts.has(idx)) return;
             const count = productCounts[idx] || 1;
             for (let i = 0; i < count; i++) {
                 let labelHtml = '';
@@ -211,67 +236,80 @@ export default function BarcodeLabelDialog({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
-                    {/* ── Left: Product List ── */}
-                    <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                        <div className="text-xs font-medium text-muted-foreground mb-2">Products</div>
-                        <div className="flex-1 overflow-auto border rounded-md">
-                            <table className="w-full text-sm">
-                                <thead className="bg-muted/50 sticky top-0">
-                                    <tr>
-                                        <th className="text-left px-3 py-1.5 text-xs font-medium">#</th>
-                                        <th className="text-left px-3 py-1.5 text-xs font-medium">Code</th>
-                                        <th className="text-left px-3 py-1.5 text-xs font-medium">Product</th>
-                                        <th className="text-center px-3 py-1.5 text-xs font-medium w-20">Qty</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {products.map((product, idx) => (
-                                        <tr
-                                            key={idx}
-                                            className={`cursor-pointer border-b transition-colors ${
-                                                idx === selectedIndex
-                                                    ? 'bg-primary/10'
-                                                    : 'hover:bg-muted/30'
-                                            }`}
-                                            onClick={() => setSelectedIndex(idx)}
-                                        >
-                                            <td className="px-3 py-1.5 text-xs text-muted-foreground">{idx + 1}</td>
-                                            <td className="px-3 py-1.5 text-xs font-mono">{product.code}</td>
-                                            <td className="px-3 py-1.5 text-xs truncate max-w-[150px]">{product.name}</td>
-                                            <td className="px-3 py-1.5 text-center">
-                                                <Input
-                                                    type="number"
-                                                    min={1}
-                                                    max={999}
-                                                    value={productCounts[idx] || 1}
-                                                    onChange={e => updateCount(idx, parseInt(e.target.value) || 1)}
-                                                    onClick={e => e.stopPropagation()}
-                                                    className="h-6 w-16 text-xs text-center mx-auto"
-                                                />
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                <div className="flex flex-col flex-1 min-h-0 overflow-hidden gap-3">
+                    {/* ── Top: Label Preview ── */}
+                    <div className="flex items-center justify-center bg-muted/30 rounded-md p-3 shrink-0">
+                        {selectedProduct && (
+                            <BarcodeLabel
+                                product={selectedProduct}
+                                settings={settings}
+                                scale={previewScale}
+                            />
+                        )}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground text-center -mt-2">
+                        {selectedProduct?.name} · {settings.labelWidth}×{settings.labelHeight}mm · ×{productCounts[selectedIndex] || 1}
                     </div>
 
-                    {/* ── Right: Single Label Preview ── */}
-                    <div className="shrink-0 flex flex-col items-center gap-2" style={{ width: `${settings.labelWidth * previewScale + 24}px` }}>
-                        <div className="text-xs font-medium text-muted-foreground">Preview ({settings.labelWidth}×{settings.labelHeight}mm)</div>
-                        <div className="flex-1 flex items-center justify-center bg-muted/30 rounded-md p-3 w-full">
-                            {selectedProduct && (
-                                <BarcodeLabel
-                                    product={selectedProduct}
-                                    settings={settings}
-                                    scale={previewScale}
-                                />
-                            )}
-                        </div>
-                        <div className="text-[10px] text-muted-foreground text-center">
-                            {selectedProduct?.code} · ×{productCounts[selectedIndex] || 1}
-                        </div>
+                    {/* ── Bottom: Product Table ── */}
+                    <div className="flex-1 min-h-0 overflow-auto border rounded-md">
+                        <table className="w-full text-sm">
+                            <thead className="bg-muted/50 sticky top-0">
+                                <tr>
+                                    <th className="px-2 py-1.5 w-8">
+                                        <div className="flex items-center justify-center h-full">
+                                            <Checkbox
+                                                checked={allChecked ? true : someChecked ? 'indeterminate' : false}
+                                                onCheckedChange={v => toggleAll(v as boolean)}
+                                                className="h-3.5 w-3.5"
+                                            />
+                                        </div>
+                                    </th>
+                                    <th className="text-left px-2 py-1.5 text-xs font-medium w-8">#</th>
+                                    <th className="text-left px-2 py-1.5 text-xs font-medium">Code</th>
+                                    <th className="text-left px-2 py-1.5 text-xs font-medium">Product</th>
+                                    <th className="text-center px-2 py-1.5 text-xs font-medium w-20">Qty</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {products.map((product, idx) => (
+                                    <tr
+                                        key={idx}
+                                        className={`cursor-pointer border-b transition-colors ${
+                                            idx === selectedIndex
+                                                ? 'bg-primary/10'
+                                                : 'hover:bg-muted/30'
+                                        }`}
+                                        onClick={() => setSelectedIndex(idx)}
+                                    >
+                                        <td className="px-2 py-1.5">
+                                            <div className="flex items-center justify-center h-full">
+                                                <Checkbox
+                                                    checked={checkedProducts.has(idx)}
+                                                    onCheckedChange={() => toggleProduct(idx)}
+                                                    onClick={e => e.stopPropagation()}
+                                                    className="h-3.5 w-3.5"
+                                                />
+                                            </div>
+                                        </td>
+                                        <td className="px-2 py-1.5 text-xs text-muted-foreground">{idx + 1}</td>
+                                        <td className="px-2 py-1.5 text-xs font-mono">{product.code}</td>
+                                        <td className="px-2 py-1.5 text-xs truncate max-w-[200px]">{product.name}</td>
+                                        <td className="px-2 py-1.5 text-center">
+                                            <Input
+                                                type="number"
+                                                min={1}
+                                                max={999}
+                                                value={productCounts[idx] || 1}
+                                                onChange={e => updateCount(idx, parseInt(e.target.value) || 1)}
+                                                onClick={e => e.stopPropagation()}
+                                                className="h-6 w-16 text-xs text-center mx-auto"
+                                            />
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
 
@@ -280,7 +318,7 @@ export default function BarcodeLabelDialog({
                     <div className="text-xs text-muted-foreground">
                         Total: {totalLabels} label(s) to print
                     </div>
-                    <Button onClick={handlePrint} disabled={products.length === 0}>
+                    <Button onClick={handlePrint} disabled={checkedProducts.size === 0}>
                         <IconPrinter size={16} className="mr-2" />
                         Print Labels
                     </Button>
