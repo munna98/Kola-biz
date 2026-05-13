@@ -261,8 +261,6 @@ export default function BarcodeLabelDesigner({ settings, onChange }: BarcodeLabe
                             element={el}
                             selected={el.id === selectedId}
                             scale={SCALE}
-                            canvasW={canvasW}
-                            canvasH={canvasH}
                             barcodeFormat={settings.barcodeFormat}
                             onSelect={() => setSelectedId(el.id)}
                             onUpdate={(updates) => updateElement(el.id, updates)}
@@ -485,14 +483,12 @@ interface DesignerElementProps {
     element: LabelElement;
     selected: boolean;
     scale: number;
-    canvasW: number;
-    canvasH: number;
     barcodeFormat: string;
     onSelect: () => void;
     onUpdate: (updates: Partial<LabelElement>) => void;
 }
 
-function DesignerElement({ element, selected, scale, canvasW, canvasH, barcodeFormat, onSelect, onUpdate }: DesignerElementProps) {
+function DesignerElement({ element, selected, scale, barcodeFormat, onSelect, onUpdate }: DesignerElementProps) {
     const svgRef = useRef<SVGSVGElement>(null);
 
     // Render barcode
