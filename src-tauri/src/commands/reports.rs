@@ -1050,6 +1050,35 @@ pub async fn get_party_invoice_details(
         .collect())
 }
 
+// ============= SINGLE PRODUCT STOCK QTY =============
+
+#[tauri::command]
+pub async fn get_product_stock_qty(
+    registry: State<'_, Arc<DbRegistry>>,
+    product_id: String,
+) -> Result<f64, String> {
+    let pool = registry.active_pool().await?;
+
+    let qty: Option<f64> = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(
+            CASE
+                WHEN sm.movement_type = 'IN' THEN sm.quantity
+                WHEN sm.movement_type = 'OUT' THEN -sm.quantity
+                ELSE 0
+            END
+        ), 0) AS REAL)
+         FROM stock_movements sm
+         JOIN vouchers v ON sm.voucher_id = v.id
+         WHERE sm.product_id = ? AND v.deleted_at IS NULL",
+    )
+    .bind(&product_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(qty.unwrap_or(0.0))
+}
+
 // ============= STOCK REPORT =============
 #[derive(Serialize, Deserialize)]
 pub struct StockSummary {

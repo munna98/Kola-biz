@@ -30,6 +30,7 @@ interface VoucherSettings {
     updatePurchaseRate?: boolean;
     updateSalesRate?: boolean;
     updateMrp?: boolean;
+    showProductInfoOnHover?: boolean; // Show Stock, P Rate, MRP on Sl No hover
 }
 
 const AVAILABLE_COLUMNS = [
@@ -74,6 +75,7 @@ export default function VoucherSettingsPage() {
     const [updatePurchaseRate, setUpdatePurchaseRate] = useState(true);
     const [updateSalesRate, setUpdateSalesRate] = useState(true);
     const [updateMrp, setUpdateMrp] = useState(true);
+    const [showProductInfoOnHover, setShowProductInfoOnHover] = useState(false);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
@@ -113,6 +115,7 @@ export default function VoucherSettingsPage() {
                 setUpdatePurchaseRate(savedSettings.updatePurchaseRate !== false);
                 setUpdateSalesRate(savedSettings.updateSalesRate !== false);
                 setUpdateMrp(savedSettings.updateMrp !== false);
+                setShowProductInfoOnHover(savedSettings.showProductInfoOnHover || false);
 
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
@@ -157,6 +160,7 @@ export default function VoucherSettingsPage() {
                 setUpdatePurchaseRate(true);
                 setUpdateSalesRate(true);
                 setUpdateMrp(true);
+                setShowProductInfoOnHover(false);
                 initialColumns = availableCols.map((col, index) => ({
                     id: col.id,
                     label: col.label,
@@ -191,6 +195,7 @@ export default function VoucherSettingsPage() {
                 updatePurchaseRate: updatePurchaseRate,
                 updateSalesRate: updateSalesRate,
                 updateMrp: updateMrp,
+                showProductInfoOnHover: showProductInfoOnHover,
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -457,6 +462,25 @@ export default function VoucherSettingsPage() {
                                 </label>
                                 <p className="text-sm text-muted-foreground">
                                     When enabled, item rates are treated as inclusive of tax. The system will reverse-calculate the base price.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 mb-6">
+                            <Checkbox
+                                id="show-product-info-hover"
+                                checked={showProductInfoOnHover}
+                                onCheckedChange={(checked) => setShowProductInfoOnHover(checked as boolean)}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                                <label
+                                    htmlFor="show-product-info-hover"
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                    Show Product Info on Sl No Hover
+                                </label>
+                                <p className="text-sm text-muted-foreground">
+                                    Hovering over the serial number will display Stock, Purchase Rate, and MRP for the product in that row.
                                 </p>
                             </div>
                         </div>

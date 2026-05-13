@@ -95,7 +95,7 @@ export default function SalesInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);

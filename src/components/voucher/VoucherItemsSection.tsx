@@ -1,14 +1,54 @@
 import React, { useMemo, useRef, useImperativeHandle } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { HoverCard, HoverCardContent, HoverCardTrigger } from '@/components/ui/hover-card';
 import { IconTrash, IconPlus } from '@tabler/icons-react';
 import { VoucherItemsTable } from '@/components/voucher/VoucherItemsTable';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { cn } from '@/lib/utils';
 import { getDefaultProductUnitId, type ProductUnitDefaultKind } from '@/lib/product-units';
 import type { GstTaxSlab, Product as TauriProduct } from '@/lib/tauri';
+
+/** Hover card content that lazily fetches stock qty for a product */
+const ProductHoverInfo = ({ productId, fullProducts }: { productId: string; fullProducts: TauriProduct[] }) => {
+    const [stockQty, setStockQty] = React.useState<number | null>(null);
+    const [loading, setLoading] = React.useState(true);
+    const product = fullProducts.find(p => String(p.id) === String(productId));
+
+    React.useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        invoke<number>('get_product_stock_qty', { productId })
+            .then(qty => { if (!cancelled) { setStockQty(qty); setLoading(false); } })
+            .catch(() => { if (!cancelled) { setStockQty(0); setLoading(false); } });
+        return () => { cancelled = true; };
+    }, [productId]);
+
+    if (!product) return <div className="text-xs text-muted-foreground">No product selected</div>;
+
+    return (
+        <div className="space-y-2">
+            <p className="text-xs font-semibold truncate" title={product.name}>{product.name}</p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                <span className="text-muted-foreground">Stock</span>
+                <span className="text-right font-mono font-medium">
+                    {loading ? '…' : stockQty?.toFixed(3)}
+                </span>
+                <span className="text-muted-foreground">P. Rate</span>
+                <span className="text-right font-mono font-medium">
+                    ₹{product.purchase_rate?.toFixed(2) ?? '0.00'}
+                </span>
+                <span className="text-muted-foreground">MRP</span>
+                <span className="text-right font-mono font-medium">
+                    ₹{product.mrp?.toFixed(2) ?? '0.00'}
+                </span>
+            </div>
+        </div>
+    );
+};
 
 const QuantityInput = React.forwardRef<HTMLInputElement, React.ComponentProps<typeof Input>>(({ value, onChange, onKeyDown, onBlur, onFocus, ...props }, ref) => {
     const [isFocused, setIsFocused] = React.useState(false);
@@ -252,7 +292,7 @@ export interface VoucherItemsSectionProps {
     header?: React.ReactNode;
     addItemLabel?: string;
     disableAdd?: boolean;
-    settings?: { columns: ColumnSettings[], skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, updateRatesOnPurchase?: boolean };
+    settings?: { columns: ColumnSettings[], skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, updateRatesOnPurchase?: boolean, showProductInfoOnHover?: boolean };
     footerRightContent?: React.ReactNode;
     footerLeftContent?: React.ReactNode;
     onProductCreate?: (name: string, rowIndex: number) => void;
@@ -497,7 +537,18 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                 const renderCell = (col: ColumnSettings) => {
                     switch (col.id) {
                         case 'sl_no':
-                            return (
+                            return (settings?.showProductInfoOnHover && item.product_id) ? (
+                                <HoverCard key={col.id} openDelay={300} closeDelay={100}>
+                                    <HoverCardTrigger asChild>
+                                        <div className="h-7 text-xs w-full flex items-center justify-center font-medium text-muted-foreground/70 cursor-default select-none pr-1 hover:text-foreground transition-colors">
+                                            {idx + 1}
+                                        </div>
+                                    </HoverCardTrigger>
+                                    <HoverCardContent side="right" align="start" className="w-52 p-3">
+                                        <ProductHoverInfo productId={item.product_id} fullProducts={fullProducts} />
+                                    </HoverCardContent>
+                                </HoverCard>
+                            ) : (
                                 <div key={col.id} className="h-7 text-xs w-full flex items-center justify-center font-medium text-muted-foreground/70 cursor-default select-none pr-1">
                                     {idx + 1}
                                 </div>

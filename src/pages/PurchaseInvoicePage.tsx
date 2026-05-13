@@ -33,6 +33,7 @@ import {
   IconCheck,
   IconX,
   IconSettings2,
+  IconBarcode,
 } from '@tabler/icons-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
@@ -81,7 +82,7 @@ export default function PurchaseInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean, showProductInfoOnHover?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [gstDisabled, setGstDisabled] = useState(false);
@@ -841,6 +842,22 @@ export default function PurchaseInvoicePage() {
     printVoucher({ voucherId: purchaseState.currentVoucherId, voucherType: 'purchase_invoice' });
   };
 
+  const handlePrintBarcodes = () => {
+    const items = purchaseState.items
+      .filter(item => item.product_id)
+      .map(item => {
+        const product = products.find(p => String(p.id) === String(item.product_id));
+        return {
+          code: product?.code || '',
+          name: product?.name || item.product_name || '',
+          salesRate: product?.sales_rate || item.rate || 0,
+          quantity: item.initial_quantity - item.count * item.deduction_per_unit,
+        };
+      });
+    setBarcodeProducts(items);
+    setShowBarcodeDialog(true);
+  };
+
   // Global keyboard shortcuts hook
   useVoucherShortcuts({
     onSave: () => formRef.current?.requestSubmit(),
@@ -1020,6 +1037,20 @@ export default function PurchaseInvoicePage() {
         onListView={() => setShowListView(true)}
         onManagePayments={purchaseState.mode !== 'new' ? () => setShowQuickPayment(true) : undefined}
         loading={purchaseState.loading}
+        customActionsPrefix={
+          voucherSettings?.enableBarcodePrinting && purchaseState.mode !== 'new' && purchaseState.currentVoucherId ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrintBarcodes}
+              className="h-8 text-xs gap-1.5"
+              title="Print Barcode Labels"
+            >
+              <IconBarcode size={14} />
+              Barcodes
+            </Button>
+          ) : undefined
+        }
       />
 
       <VoucherShortcutPanel
