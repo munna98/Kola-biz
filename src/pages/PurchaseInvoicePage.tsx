@@ -1198,7 +1198,7 @@ export default function PurchaseInvoicePage() {
           <VoucherItemsSection
             ref={voucherItemsRef}
             items={purchaseState.items}
-            products={products}
+            products={masterProductsEnabled ? products.filter(p => !p.parent_product_id) : products}
             units={units}
             productUnitsByProduct={productUnitsByProduct}
             isReadOnly={isReadOnly}

@@ -101,6 +101,7 @@ export default function SalesInvoicePage() {
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [gstDisabled, setGstDisabled] = useState(false);
   const [services, setServices] = useState<any[]>([]);
+  const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
 
 
 
@@ -123,7 +124,7 @@ export default function SalesInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData, servicesData] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData, servicesData, masterSettingVal] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -134,6 +135,7 @@ export default function SalesInvoicePage() {
           api.gst.getSettings().catch(() => null),
           api.gst.getSlabs().catch(() => [] as GstTaxSlab[]),
           invoke<any[]>('get_services').catch(() => []),
+          invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
@@ -145,6 +147,7 @@ export default function SalesInvoicePage() {
         setProductGroups(groupsData);
         setEmployees(employeesData.filter((e: Employee) => e.status === 'active'));
         setServices(servicesData);
+        setMasterProductsEnabled(masterSettingVal === 'true');
         // Only show GST columns if GST is enabled in settings
         if (gstSettings?.gst_enabled) {
           setGstSlabs(slabsData);
@@ -1259,7 +1262,7 @@ export default function SalesInvoicePage() {
           <VoucherItemsSection
             ref={voucherItemsRef}
             items={salesState.items}
-            products={products}
+            products={masterProductsEnabled ? products.filter(p => (p as any).is_master !== 1) : products}
             units={units}
             productUnitsByProduct={productUnitsByProduct}
             isReadOnly={isReadOnly}
