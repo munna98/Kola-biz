@@ -3,30 +3,18 @@ import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { IconDeviceFloppy, IconPackages } from '@tabler/icons-react';
+import BarcodeLabelDesigner, {
+    type BarcodeDesignerSettings,
+    DEFAULT_DESIGNER_SETTINGS,
+    migrateSettings,
+} from '@/components/barcode/BarcodeLabelDesigner';
 
-export interface BarcodeSettings {
-    companyName: string;
-    showProductName: boolean;
-    showSalesRate: boolean;
-    customText: string;
-    barcodeFormat: 'CODE128' | 'EAN13' | 'QR';
-    labelSize: '50x25' | '40x25' | '40x20' | '30x15';
-    barcodePrinter?: string;
-}
-
-const DEFAULT_SETTINGS: BarcodeSettings = {
-    companyName: '',
-    showProductName: true,
-    showSalesRate: true,
-    customText: '',
-    barcodeFormat: 'CODE128',
-    labelSize: '50x25',
-};
+// Re-export for backward compatibility with BarcodeLabelDialog
+export type { BarcodeDesignerSettings as BarcodeSettings } from '@/components/barcode/BarcodeLabelDesigner';
 
 const BARCODE_FORMATS = [
     { value: 'CODE128', label: 'CODE128 (Alphanumeric)' },
@@ -34,15 +22,8 @@ const BARCODE_FORMATS = [
     { value: 'QR', label: 'QR Code' },
 ];
 
-const LABEL_SIZES = [
-    { value: '50x25', label: '50 × 25 mm' },
-    { value: '40x25', label: '40 × 25 mm' },
-    { value: '40x20', label: '40 × 20 mm' },
-    { value: '30x15', label: '30 × 15 mm' },
-];
-
 export default function BarcodeSettingsPage() {
-    const [settings, setSettings] = useState<BarcodeSettings>(DEFAULT_SETTINGS);
+    const [settings, setSettings] = useState<BarcodeDesignerSettings>(DEFAULT_DESIGNER_SETTINGS);
     const [loading, setLoading] = useState(false);
     const [printers, setPrinters] = useState<string[]>([]);
     const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
@@ -71,7 +52,7 @@ export default function BarcodeSettingsPage() {
             const saved = await invoke<string | null>('get_app_setting', { key: 'barcode_settings' });
             if (saved) {
                 const parsed = JSON.parse(saved);
-                setSettings({ ...DEFAULT_SETTINGS, ...parsed });
+                setSettings(migrateSettings(parsed));
             }
         } catch (error) {
             console.error('Failed to load barcode settings:', error);
@@ -112,17 +93,13 @@ export default function BarcodeSettingsPage() {
         }
     };
 
-    const updateSetting = <K extends keyof BarcodeSettings>(key: K, value: BarcodeSettings[K]) => {
-        setSettings(prev => ({ ...prev, [key]: value }));
-    };
-
     return (
         <div className="h-full flex flex-col bg-background">
             <div className="flex justify-between items-center p-6 border-b shrink-0">
                 <div>
                     <h1 className="text-2xl font-bold text-foreground">Barcode Settings</h1>
                     <p className="text-sm text-muted-foreground mt-1">
-                        Configure barcode label appearance
+                        Design barcode label layout with drag-and-drop
                     </p>
                 </div>
                 <Button onClick={handleSave} disabled={loading}>
@@ -132,7 +109,7 @@ export default function BarcodeSettingsPage() {
             </div>
 
             <div className="flex-1 overflow-auto p-6">
-                <div className="max-w-2xl mx-auto space-y-6">
+                <div className="max-w-5xl mx-auto space-y-6">
 
                     {/* ── Master Products Feature Flag ── */}
                     <div className="bg-card border rounded-lg p-6 space-y-4">
@@ -144,7 +121,7 @@ export default function BarcodeSettingsPage() {
                             </span>
                         </div>
                         <p className="text-sm text-muted-foreground">
-                            Enable this for retail textile businesses. When a master product (e.g. "Shirt") is
+                            Enable this for retail textile businesses. When a master product (e.g. &quot;Shirt&quot;) is
                             added to a purchase invoice, the system automatically creates a child batch with a
                             unique sequential item code per purchase line — ready for barcode label printing.
                         </p>
@@ -168,140 +145,110 @@ export default function BarcodeSettingsPage() {
                         )}
                     </div>
 
-                    <div className="bg-card border rounded-lg p-6 space-y-6">
-                        <h3 className="text-lg font-medium">Label Content</h3>
-
-                        {/* Company Name */}
-                        <div className="space-y-2">
-                            <Label htmlFor="companyName">Company Name</Label>
-                            <Input
-                                id="companyName"
-                                value={settings.companyName}
-                                onChange={(e) => updateSetting('companyName', e.target.value)}
-                                placeholder="Enter company name to display on labels"
-                            />
-                            <p className="text-sm text-muted-foreground">
-                                Displayed at the top of each label
-                            </p>
-                        </div>
-
-                        {/* Show Product Name */}
-                        <div className="flex items-center gap-4">
-                            <Checkbox
-                                id="showProductName"
-                                checked={settings.showProductName}
-                                onCheckedChange={(checked) => updateSetting('showProductName', checked as boolean)}
-                            />
-                            <div className="grid gap-1.5 leading-none">
-                                <label htmlFor="showProductName" className="text-sm font-medium leading-none">
-                                    Show Product Name
-                                </label>
-                                <p className="text-sm text-muted-foreground">
-                                    Display product name below the barcode
+                    {/* ── Barcode Format + Printer ── */}
+                    <div className="bg-card border rounded-lg p-6">
+                        <div className="flex flex-wrap gap-6">
+                            {/* Barcode Format */}
+                            <div className="space-y-2">
+                                <Label>Barcode Format</Label>
+                                <Select
+                                    value={settings.barcodeFormat}
+                                    onValueChange={(value) => setSettings(prev => ({ ...prev, barcodeFormat: value as BarcodeDesignerSettings['barcodeFormat'] }))}
+                                >
+                                    <SelectTrigger className="w-[240px]">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {BARCODE_FORMATS.map(format => (
+                                            <SelectItem key={format.value} value={format.value}>
+                                                {format.label}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                    CODE128 works with any text. EAN-13 requires 12-13 digit numbers.
                                 </p>
                             </div>
-                        </div>
 
-                        {/* Show Sales Rate */}
-                        <div className="flex items-center gap-4">
-                            <Checkbox
-                                id="showSalesRate"
-                                checked={settings.showSalesRate}
-                                onCheckedChange={(checked) => updateSetting('showSalesRate', checked as boolean)}
-                            />
-                            <div className="grid gap-1.5 leading-none">
-                                <label htmlFor="showSalesRate" className="text-sm font-medium leading-none">
-                                    Show Sales Rate
-                                </label>
-                                <p className="text-sm text-muted-foreground">
-                                    Display price on the label
+                            {/* Barcode Printer */}
+                            <div className="space-y-2">
+                                <Label>Barcode Printer</Label>
+                                <Select
+                                    value={settings.barcodePrinter || ''}
+                                    onValueChange={(value) => setSettings(prev => ({ ...prev, barcodePrinter: value }))}
+                                    disabled={!printers.length}
+                                >
+                                    <SelectTrigger className="w-[240px]">
+                                        <SelectValue placeholder={printers.length ? "Select a barcode printer" : "No printers found"} />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {printers.map((printer) => (
+                                            <SelectItem key={printer} value={printer}>
+                                                {printer}
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
+                                <p className="text-xs text-muted-foreground">
+                                    Select the printer to use for barcode labels
                                 </p>
                             </div>
-                        </div>
-
-                        {/* Custom Text */}
-                        <div className="space-y-2">
-                            <Label htmlFor="customText">Custom Text</Label>
-                            <Input
-                                id="customText"
-                                value={settings.customText}
-                                onChange={(e) => updateSetting('customText', e.target.value)}
-                                placeholder="Optional additional text"
-                            />
-                            <p className="text-sm text-muted-foreground">
-                                Additional text displayed at the bottom of the label
-                            </p>
                         </div>
                     </div>
 
-                    <div className="bg-card border rounded-lg p-6 space-y-6">
-                        <h3 className="text-lg font-medium">Label Format</h3>
+                    {/* ── Label Designer ── */}
+                    <div className="bg-card border rounded-lg p-6">
+                        <h3 className="text-lg font-medium mb-4">Label Designer</h3>
+                        <BarcodeLabelDesigner
+                            settings={settings}
+                            onChange={setSettings}
+                        />
+                    </div>
 
-                        {/* Barcode Format */}
-                        <div className="space-y-2">
-                            <Label>Barcode Format</Label>
-                            <Select
-                                value={settings.barcodeFormat}
-                                onValueChange={(value) => updateSetting('barcodeFormat', value as BarcodeSettings['barcodeFormat'])}
-                            >
-                                <SelectTrigger className="w-[280px]">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {BARCODE_FORMATS.map(format => (
-                                        <SelectItem key={format.value} value={format.value}>
-                                            {format.label}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <p className="text-sm text-muted-foreground">
-                                CODE128 works with any text. EAN-13 requires 12-13 digit numbers.
-                            </p>
-                        </div>
-
-                        {/* Label Size */}
-                        <div className="space-y-2">
-                            <Label>Label Size</Label>
-                            <Select
-                                value={settings.labelSize}
-                                onValueChange={(value) => updateSetting('labelSize', value as BarcodeSettings['labelSize'])}
-                            >
-                                <SelectTrigger className="w-[280px]">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {LABEL_SIZES.map(size => (
-                                        <SelectItem key={size.value} value={size.value}>
-                                            {size.label}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {/* Barcode Printer */}
-                        <div className="space-y-2">
-                            <Label>Barcode Printer</Label>
-                            <Select
-                                value={settings.barcodePrinter || ''}
-                                onValueChange={(value) => updateSetting('barcodePrinter', value)}
-                                disabled={!printers.length}
-                            >
-                                <SelectTrigger className="w-[280px]">
-                                    <SelectValue placeholder={printers.length ? "Select a barcode printer" : "No printers found"} />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {printers.map((printer) => (
-                                        <SelectItem key={printer} value={printer}>
-                                            {printer}
-                                        </SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                            <p className="text-sm text-muted-foreground">
-                                Select the printer to use for barcode labels
-                            </p>
+                    {/* ── Roll / Sheet Layout ── */}
+                    <div className="bg-card border rounded-lg p-6">
+                        <h3 className="text-lg font-medium mb-1">Roll / Sheet Layout</h3>
+                        <p className="text-xs text-muted-foreground mb-4">
+                            If your roll is wider than one label, set columns &gt; 1 to print side by side.
+                        </p>
+                        <div className="flex flex-wrap gap-6">
+                            <div className="space-y-2">
+                                <Label>Columns per Row</Label>
+                                <Input
+                                    type="number" min={1} max={6} step={1}
+                                    value={settings.columnsPerRow}
+                                    onChange={e => setSettings(prev => ({ ...prev, columnsPerRow: Math.max(1, parseInt(e.target.value) || 1) }))}
+                                    className="w-20"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    How many labels fit across the roll width
+                                </p>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Horizontal Gap (mm)</Label>
+                                <Input
+                                    type="number" min={0} max={20} step={0.5}
+                                    value={settings.horizontalGap}
+                                    onChange={e => setSettings(prev => ({ ...prev, horizontalGap: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                                    className="w-20"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Gap between labels in same row
+                                </p>
+                            </div>
+                            <div className="space-y-2">
+                                <Label>Vertical Gap (mm)</Label>
+                                <Input
+                                    type="number" min={0} max={20} step={0.5}
+                                    value={settings.verticalGap}
+                                    onChange={e => setSettings(prev => ({ ...prev, verticalGap: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                                    className="w-20"
+                                />
+                                <p className="text-xs text-muted-foreground">
+                                    Gap between rows of labels
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>

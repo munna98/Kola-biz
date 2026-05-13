@@ -8,16 +8,21 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { IconPrinter } from '@tabler/icons-react';
 import { invoke } from '@tauri-apps/api/core';
 import JsBarcode from 'jsbarcode';
-import { BarcodeSettings } from '@/pages/settings/BarcodeSettingsPage';
+import {
+    type BarcodeDesignerSettings,
+    type LabelElement,
+    DEFAULT_DESIGNER_SETTINGS,
+    migrateSettings,
+} from '@/components/barcode/BarcodeLabelDesigner';
 
 interface Product {
     code: string;
     name: string;
     salesRate: number;
+    mrp?: number;
     quantity?: number;
 }
 
@@ -27,56 +32,115 @@ interface BarcodeLabelDialogProps {
     products: Product[];
 }
 
-const DEFAULT_SETTINGS: BarcodeSettings = {
-    companyName: '',
-    showProductName: true,
-    showSalesRate: true,
-    customText: '',
-    barcodeFormat: 'CODE128',
-    labelSize: '50x25',
-};
-
-const LABEL_DIMENSIONS: Record<string, { width: number; height: number }> = {
-    '50x25': { width: 50, height: 25 },
-    '40x25': { width: 40, height: 25 },
-    '40x20': { width: 40, height: 20 },
-    '30x15': { width: 30, height: 15 },
-};
-
 export default function BarcodeLabelDialog({
     open,
     onOpenChange,
     products,
 }: BarcodeLabelDialogProps) {
-    const [settings, setSettings] = useState<BarcodeSettings>(DEFAULT_SETTINGS);
-    const [copies, setCopies] = useState(1);
-    const [loading] = useState(false);
+    const [settings, setSettings] = useState<BarcodeDesignerSettings>(DEFAULT_DESIGNER_SETTINGS);
+    const [productCounts, setProductCounts] = useState<Record<number, number>>({});
+    const [selectedIndex, setSelectedIndex] = useState(0);
     const printRef = useRef<HTMLDivElement>(null);
-    const dims = LABEL_DIMENSIONS[settings.labelSize] || LABEL_DIMENSIONS['50x25'];
 
+    // Initialize counts when products change
     useEffect(() => {
         if (open) {
             loadSettings();
+            const counts: Record<number, number> = {};
+            products.forEach((p, i) => {
+                counts[i] = p.quantity || 1;
+            });
+            setProductCounts(counts);
+            setSelectedIndex(0);
         }
-    }, [open]);
+    }, [open, products]);
 
     const loadSettings = async () => {
         try {
             const saved = await invoke<string | null>('get_app_setting', { key: 'barcode_settings' });
             if (saved) {
                 const parsed = JSON.parse(saved);
-                setSettings({ ...DEFAULT_SETTINGS, ...parsed });
+                setSettings(migrateSettings(parsed));
             }
         } catch (error) {
             console.error('Failed to load barcode settings:', error);
         }
     };
 
+    const updateCount = (index: number, value: number) => {
+        setProductCounts(prev => ({ ...prev, [index]: Math.max(1, value) }));
+    };
+
+    const totalLabels = Object.values(productCounts).reduce((s, c) => s + c, 0);
+    const selectedProduct = products[selectedIndex] || products[0];
+
     const handlePrint = () => {
         if (!printRef.current) return;
 
-        const printContent = printRef.current.innerHTML;
-        const dims = LABEL_DIMENSIONS[settings.labelSize] || LABEL_DIMENSIONS['50x25'];
+        const { labelWidth, labelHeight, elements, barcodeFormat, columnsPerRow, horizontalGap, verticalGap } = settings;
+        const cols = columnsPerRow || 1;
+        const hGap = horizontalGap || 0;
+        const vGap = verticalGap || 0;
+
+        // Page size: full row width × label height
+        const pageWidth = cols * labelWidth + (cols - 1) * hGap;
+        const pageHeight = labelHeight;
+
+        // Build individual label HTML snippets
+        const labelSnippets: string[] = [];
+        products.forEach((product, idx) => {
+            const count = productCounts[idx] || 1;
+            for (let i = 0; i < count; i++) {
+                let labelHtml = '';
+                elements.filter(el => el.enabled).forEach(el => {
+                    const text = getElementText(el, product);
+                    if (el.type === 'barcode') {
+                        const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+                        try {
+                            JsBarcode(tempSvg, product.code, {
+                                format: barcodeFormat === 'EAN13' ? 'EAN13' : 'CODE128',
+                                width: el.barcodeLineWidth || 1.5,
+                                height: el.barcodeHeight || 30,
+                                displayValue: el.showBarcodeText || false,
+                                margin: 0,
+                                fontSize: (el.fontSize || 7) * 1.5,
+                            });
+                        } catch { /* ignore */ }
+                        const svgStr = new XMLSerializer().serializeToString(tempSvg);
+                        labelHtml += `<div style="
+                            position:absolute; left:${el.x}mm; top:${el.y}mm;
+                            width:${el.width}mm; height:${el.height}mm;
+                            display:flex; align-items:center;
+                            justify-content:${el.textAlign === 'left' ? 'flex-start' : el.textAlign === 'right' ? 'flex-end' : 'center'};
+                            overflow:hidden;
+                        ">${svgStr}</div>`;
+                    } else {
+                        labelHtml += `<div style="
+                            position:absolute; left:${el.x}mm; top:${el.y}mm;
+                            width:${el.width}mm; height:${el.height}mm;
+                            font-family:${el.fontFamily}; font-size:${el.fontSize}pt;
+                            font-weight:${el.fontWeight}; text-align:${el.textAlign};
+                            display:flex; align-items:center;
+                            justify-content:${el.textAlign === 'left' ? 'flex-start' : el.textAlign === 'right' ? 'flex-end' : 'center'};
+                            overflow:hidden; line-height:1.1;
+                        "><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;width:100%">${text}</span></div>`;
+                    }
+                });
+                labelSnippets.push(labelHtml);
+            }
+        });
+
+        // Group snippets into rows
+        let bodyHtml = '';
+        for (let i = 0; i < labelSnippets.length; i += cols) {
+            const rowLabels = labelSnippets.slice(i, i + cols);
+            bodyHtml += `<div class="label-row">`;
+            rowLabels.forEach((snippet, colIdx) => {
+                const marginLeft = colIdx > 0 ? `${hGap}mm` : '0';
+                bodyHtml += `<div class="label" style="margin-left:${marginLeft}">${snippet}</div>`;
+            });
+            bodyHtml += `</div>`;
+        }
 
         const htmlContent = `
             <!DOCTYPE html>
@@ -85,82 +149,36 @@ export default function BarcodeLabelDialog({
                 <title>Barcode Labels</title>
                 <style>
                     @page {
-                        size: ${dims.width}mm ${dims.height}mm;
+                        size: ${pageWidth}mm ${pageHeight}mm;
                         margin: 0;
                     }
-                    * {
-                        margin: 0;
-                        padding: 0;
-                        box-sizing: border-box;
-                    }
-                    body {
-                        font-family: Arial, sans-serif;
-                    }
-                    .label {
-                        width: ${dims.width}mm;
-                        height: ${dims.height}mm;
-                        padding: 1mm;
+                    * { margin: 0; padding: 0; box-sizing: border-box; }
+                    body { font-family: Arial, sans-serif; }
+                    .label-row {
                         display: flex;
-                        flex-direction: column;
-                        align-items: center;
-                        justify-content: center;
+                        width: ${pageWidth}mm;
+                        height: ${pageHeight}mm;
                         page-break-after: always;
-                        text-align: center;
+                        margin-bottom: ${vGap}mm;
                     }
-                    .label:last-child {
-                        page-break-after: avoid;
-                    }
-                    .company-name {
-                        font-size: 6pt;
-                        font-weight: bold;
-                        margin-bottom: 1mm;
-                    }
-                    .barcode-svg {
-                        max-width: 90%;
-                        height: auto;
-                    }
-                    .product-code {
-                        font-size: 7pt;
-                        font-weight: bold;
-                        margin-top: 1mm;
-                    }
-                    .product-name {
-                        font-size: 5pt;
-                        margin-top: 0.5mm;
+                    .label-row:last-child { page-break-after: avoid; margin-bottom: 0; }
+                    .label {
+                        width: ${labelWidth}mm;
+                        height: ${labelHeight}mm;
+                        position: relative;
                         overflow: hidden;
-                        text-overflow: ellipsis;
-                        white-space: nowrap;
-                        max-width: 95%;
+                        flex-shrink: 0;
                     }
-                    .sales-rate {
-                        font-size: 6pt;
-                        font-weight: bold;
-                        margin-top: 0.5mm;
-                    }
-                    .custom-text {
-                        font-size: 5pt;
-                        margin-top: 0.5mm;
-                    }
-                    @media print {
-                        body { -webkit-print-color-adjust: exact; }
-                    }
+                    svg { max-width: 100%; max-height: 100%; }
+                    @media print { body { -webkit-print-color-adjust: exact; } }
                 </style>
             </head>
-            <body>
-                ${printContent}
-            </body>
+            <body>${bodyHtml}</body>
             </html>
         `;
 
-        // Use hidden iframe for printing (window.open doesn't work in Tauri WebView)
         const iframe = document.createElement('iframe');
-        iframe.style.position = 'fixed';
-        iframe.style.right = '0';
-        iframe.style.bottom = '0';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = 'none';
-        iframe.style.visibility = 'hidden';
+        iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:none;visibility:hidden';
         document.body.appendChild(iframe);
 
         const iframeDoc = iframe.contentDocument || iframe.contentWindow?.document;
@@ -177,32 +195,11 @@ export default function BarcodeLabelDialog({
             } catch (e) {
                 console.error('Barcode print failed:', e);
             }
-            // Clean up iframe after printing
-            setTimeout(() => {
-                document.body.removeChild(iframe);
-            }, 1000);
+            setTimeout(() => document.body.removeChild(iframe), 1000);
         }, 500);
     };
 
-    // Generate labels for preview
-    const generateLabels = (): React.ReactNode[] => {
-        const labels: React.ReactElement[] = [];
-
-        products.forEach((product, productIndex) => {
-            const qty = product.quantity || copies;
-            for (let i = 0; i < qty; i++) {
-                labels.push(
-                    <BarcodeLabel
-                        key={`${productIndex}-${i}`}
-                        product={product}
-                        settings={settings}
-                    />
-                );
-            }
-        });
-
-        return labels;
-    };
+    const previewScale = 4;
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
@@ -210,95 +207,195 @@ export default function BarcodeLabelDialog({
                 <DialogHeader>
                     <DialogTitle>Print Barcode Labels</DialogTitle>
                     <DialogDescription>
-                        Preview and print barcode labels for {products.length} product(s)
+                        {products.length} product(s) · {totalLabels} label(s) total
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="flex items-center gap-4 py-2 border-b">
-                    <div className="flex items-center gap-2">
-                        <Label htmlFor="copies">Copies per product:</Label>
-                        <Input
-                            id="copies"
-                            type="number"
-                            min={1}
-                            max={100}
-                            value={copies}
-                            onChange={(e) => setCopies(Math.max(1, parseInt(e.target.value) || 1))}
-                            className="w-20"
-                        />
+                <div className="flex gap-4 flex-1 min-h-0 overflow-hidden">
+                    {/* ── Left: Product List ── */}
+                    <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                        <div className="text-xs font-medium text-muted-foreground mb-2">Products</div>
+                        <div className="flex-1 overflow-auto border rounded-md">
+                            <table className="w-full text-sm">
+                                <thead className="bg-muted/50 sticky top-0">
+                                    <tr>
+                                        <th className="text-left px-3 py-1.5 text-xs font-medium">#</th>
+                                        <th className="text-left px-3 py-1.5 text-xs font-medium">Code</th>
+                                        <th className="text-left px-3 py-1.5 text-xs font-medium">Product</th>
+                                        <th className="text-center px-3 py-1.5 text-xs font-medium w-20">Qty</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {products.map((product, idx) => (
+                                        <tr
+                                            key={idx}
+                                            className={`cursor-pointer border-b transition-colors ${
+                                                idx === selectedIndex
+                                                    ? 'bg-primary/10'
+                                                    : 'hover:bg-muted/30'
+                                            }`}
+                                            onClick={() => setSelectedIndex(idx)}
+                                        >
+                                            <td className="px-3 py-1.5 text-xs text-muted-foreground">{idx + 1}</td>
+                                            <td className="px-3 py-1.5 text-xs font-mono">{product.code}</td>
+                                            <td className="px-3 py-1.5 text-xs truncate max-w-[150px]">{product.name}</td>
+                                            <td className="px-3 py-1.5 text-center">
+                                                <Input
+                                                    type="number"
+                                                    min={1}
+                                                    max={999}
+                                                    value={productCounts[idx] || 1}
+                                                    onChange={e => updateCount(idx, parseInt(e.target.value) || 1)}
+                                                    onClick={e => e.stopPropagation()}
+                                                    className="h-6 w-16 text-xs text-center mx-auto"
+                                                />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                    <div className="flex-1" />
-                    <Button onClick={handlePrint} disabled={loading || products.length === 0}>
+
+                    {/* ── Right: Single Label Preview ── */}
+                    <div className="shrink-0 flex flex-col items-center gap-2" style={{ width: `${settings.labelWidth * previewScale + 24}px` }}>
+                        <div className="text-xs font-medium text-muted-foreground">Preview ({settings.labelWidth}×{settings.labelHeight}mm)</div>
+                        <div className="flex-1 flex items-center justify-center bg-muted/30 rounded-md p-3 w-full">
+                            {selectedProduct && (
+                                <BarcodeLabel
+                                    product={selectedProduct}
+                                    settings={settings}
+                                    scale={previewScale}
+                                />
+                            )}
+                        </div>
+                        <div className="text-[10px] text-muted-foreground text-center">
+                            {selectedProduct?.code} · ×{productCounts[selectedIndex] || 1}
+                        </div>
+                    </div>
+                </div>
+
+                {/* ── Footer ── */}
+                <div className="flex items-center justify-between pt-3 border-t">
+                    <div className="text-xs text-muted-foreground">
+                        Total: {totalLabels} label(s) to print
+                    </div>
+                    <Button onClick={handlePrint} disabled={products.length === 0}>
                         <IconPrinter size={16} className="mr-2" />
                         Print Labels
                     </Button>
                 </div>
 
-                <div className="flex-1 overflow-auto bg-muted/30 p-4 rounded-md">
-                    <div
-                        ref={printRef}
-                        className="grid gap-2 justify-center"
-                        style={{ gridTemplateColumns: `repeat(auto-fill, ${dims.width * 3}px)` }}
-                    >
-                        {generateLabels()}
-                    </div>
-                </div>
+                {/* Hidden ref for print - not used anymore since we build HTML directly */}
+                <div ref={printRef} className="hidden" />
             </DialogContent>
         </Dialog>
     );
 }
 
-// Individual barcode label component
-function BarcodeLabel({ product, settings }: { product: Product; settings: BarcodeSettings }) {
+// ── Helper: get display text for an element ──
+function getElementText(element: LabelElement, product: Product): string {
+    if (element.type === 'barcode') return '';
+    switch (element.dataField) {
+        case 'product.code': return product.code;
+        case 'product.name': return product.name;
+        case 'product.salesRate': return `₹ ${product.salesRate?.toFixed(2)}`;
+        case 'product.mrp': return `MRP ₹ ${(product.mrp || product.salesRate)?.toFixed(2)}`;
+        default: return element.content || '';
+    }
+}
+
+// ── Single barcode label preview ──
+
+function BarcodeLabel({ product, settings, scale }: { product: Product; settings: BarcodeDesignerSettings; scale: number }) {
+    const { labelWidth, labelHeight, elements, barcodeFormat } = settings;
+
+    return (
+        <div
+            className="bg-white border rounded shadow-sm relative text-black"
+            style={{
+                width: `${labelWidth * scale}px`,
+                height: `${labelHeight * scale}px`,
+                minWidth: `${labelWidth * scale}px`,
+            }}
+        >
+            {elements.filter(el => el.enabled).map(el => (
+                <LabelElementRenderer
+                    key={el.id}
+                    element={el}
+                    product={product}
+                    scale={scale}
+                    barcodeFormat={barcodeFormat}
+                />
+            ))}
+        </div>
+    );
+}
+
+// ── Renders a single element at absolute position (preview) ──
+
+function LabelElementRenderer({
+    element,
+    product,
+    scale,
+    barcodeFormat,
+}: {
+    element: LabelElement;
+    product: Product;
+    scale: number;
+    barcodeFormat: string;
+}) {
     const svgRef = useRef<SVGSVGElement>(null);
-    const dims = LABEL_DIMENSIONS[settings.labelSize] || LABEL_DIMENSIONS['50x25'];
 
     useEffect(() => {
-        if (svgRef.current && product.code) {
+        if (element.type === 'barcode' && svgRef.current && product.code) {
             try {
                 JsBarcode(svgRef.current, product.code, {
-                    format: settings.barcodeFormat === 'EAN13' ? 'EAN13' : 'CODE128',
-                    width: 1.5,
-                    height: 30,
-                    displayValue: false,
+                    format: barcodeFormat === 'EAN13' ? 'EAN13' : 'CODE128',
+                    width: element.barcodeLineWidth || 1.5,
+                    height: element.barcodeHeight || 30,
+                    displayValue: element.showBarcodeText || false,
                     margin: 0,
+                    fontSize: (element.fontSize || 7) * 1.5,
                 });
             } catch (error) {
                 console.error('Failed to generate barcode:', error);
             }
         }
-    }, [product.code, settings.barcodeFormat]);
+    }, [product.code, barcodeFormat, element]);
+
+    const displayText = getElementText(element, product);
 
     return (
         <div
-            className="label bg-white border rounded shadow-sm flex flex-col items-center justify-center p-2 text-black"
             style={{
-                width: `${dims.width * 3}px`,
-                height: `${dims.height * 3}px`,
-                minWidth: `${dims.width * 3}px`,
+                position: 'absolute',
+                left: `${element.x * scale}px`,
+                top: `${element.y * scale}px`,
+                width: `${element.width * scale}px`,
+                height: `${element.height * scale}px`,
+                fontFamily: element.fontFamily,
+                fontSize: `${element.fontSize * 1.3}px`,
+                fontWeight: element.fontWeight,
+                textAlign: element.textAlign,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: element.textAlign === 'left' ? 'flex-start' : element.textAlign === 'right' ? 'flex-end' : 'center',
+                overflow: 'hidden',
+                lineHeight: 1.1,
             }}
         >
-            {settings.companyName && (
-                <div className="company-name text-[8px] font-bold truncate max-w-full">
-                    {settings.companyName}
-                </div>
-            )}
-            <svg ref={svgRef} className="barcode-svg max-w-full" />
-            <div className="product-code text-[9px] font-bold">{product.code}</div>
-            {settings.showProductName && (
-                <div className="product-name text-[7px] truncate max-w-full">
-                    {product.name}
-                </div>
-            )}
-            {settings.showSalesRate && (
-                <div className="sales-rate text-[8px] font-bold">
-                    ₹ {product.salesRate?.toFixed(2)}
-                </div>
-            )}
-            {settings.customText && (
-                <div className="custom-text text-[6px] truncate max-w-full">
-                    {settings.customText}
-                </div>
+            {element.type === 'barcode' ? (
+                <svg ref={svgRef} style={{ maxWidth: '100%', maxHeight: '100%' }} />
+            ) : (
+                <span style={{
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                    width: '100%',
+                }}>
+                    {displayText}
+                </span>
             )}
         </div>
     );

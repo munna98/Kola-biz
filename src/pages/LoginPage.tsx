@@ -188,7 +188,7 @@ export default function LoginPage() {
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-muted/20 p-4">
             <Card className="w-full max-w-md shadow-lg">
                 <CardHeader className="space-y-2 text-center">
-                    <CardTitle className="text-3xl font-bold">Kol<span onDoubleClick={() => setShowCompanyPicker(!showCompanyPicker)} className="select-none">a</span> Biz</CardTitle>
+                    <CardTitle className="text-3xl font-bold">Kol<span onDoubleClick={() => setShowCompanyPicker(!showCompanyPicker)} className="select-none">a</span>Biz</CardTitle>
                     <CardDescription className="text-base">
                         {activeCompany
                             ? <span className="font-medium text-foreground/70">{activeCompany.name}</span>
@@ -197,7 +197,7 @@ export default function LoginPage() {
                     </CardDescription>
                 </CardHeader>
                 <CardContent>
-                    {/* Hidden Company List — revealed by double-clicking 'a' in "Kola Biz" */}
+                    {/* Hidden Company List — revealed by double-clicking 'a' in "KolaBiz" */}
                     {showCompanyPicker && (
                         <div className="mb-5">
                             {companiesLoading ? (
