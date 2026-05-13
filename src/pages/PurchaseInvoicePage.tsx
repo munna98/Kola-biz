@@ -92,7 +92,7 @@ export default function PurchaseInvoicePage() {
   const [showCreateProduct, setShowCreateProduct] = useState(false);
   const [newProductName, setNewProductName] = useState('');
   const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
-  const [, setMasterProductsEnabled] = useState(false);
+  const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
 
   const { print: printVoucher } = usePrint();
 
@@ -610,7 +610,7 @@ export default function PurchaseInvoicePage() {
 
         toast.success('Purchase invoice updated successfully');
 
-        if (voucherSettings?.updateRatesOnPurchase) {
+        if (voucherSettings?.updateRatesOnPurchase || masterProductsEnabled) {
           const ratesToUpdate = purchaseState.items
             .filter(item => item.product_id && item.item_type !== 'service')
             .map(item => {
@@ -719,7 +719,7 @@ export default function PurchaseInvoicePage() {
         const isCashBankParty = supplier?.group === 'Cash' || supplier?.group === 'Bank Account';
         setSavedIsCashBankParty(isCashBankParty);
 
-        if (voucherSettings?.updateRatesOnPurchase) {
+        if (voucherSettings?.updateRatesOnPurchase || masterProductsEnabled) {
           const ratesToUpdate = purchaseState.items
             .filter(item => item.product_id && item.item_type !== 'service')
             .map(item => {
@@ -799,7 +799,7 @@ export default function PurchaseInvoicePage() {
             return {
               code: product?.code || '',
               name: product?.name || item.product_name || '',
-              salesRate: product?.sales_rate || item.rate || 0,
+              salesRate: item.sales_rate !== undefined ? item.sales_rate : (product?.sales_rate || item.rate || 0),
               quantity: item.initial_quantity - item.count * item.deduction_per_unit,
             };
           });
@@ -850,7 +850,7 @@ export default function PurchaseInvoicePage() {
         return {
           code: product?.code || '',
           name: product?.name || item.product_name || '',
-          salesRate: product?.sales_rate || item.rate || 0,
+          salesRate: item.sales_rate !== undefined ? item.sales_rate : (product?.sales_rate || item.rate || 0),
           quantity: item.initial_quantity - item.count * item.deduction_per_unit,
         };
       });
@@ -1208,7 +1208,7 @@ export default function PurchaseInvoicePage() {
             getItemAmount={getItemAmount}
             addItemLabel="Add Item (Ctrl+N)"
             disableAdd={isReadOnly}
-            settings={voucherSettings}
+            settings={voucherSettings ? { ...voucherSettings, masterProductsEnabled } : undefined}
             onProductCreate={handleProductCreate}
             services={services}
             onServiceCreate={(_name, _idx) => { /* TODO: service quick-create */ }}

@@ -292,7 +292,7 @@ export interface VoucherItemsSectionProps {
     header?: React.ReactNode;
     addItemLabel?: string;
     disableAdd?: boolean;
-    settings?: { columns: ColumnSettings[], skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, updateRatesOnPurchase?: boolean, showProductInfoOnHover?: boolean };
+    settings?: { columns: ColumnSettings[], skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, updateRatesOnPurchase?: boolean, showProductInfoOnHover?: boolean, masterProductsEnabled?: boolean };
     footerRightContent?: React.ReactNode;
     footerLeftContent?: React.ReactNode;
     onProductCreate?: (name: string, rowIndex: number) => void;
@@ -872,8 +872,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 </div>
                             );
                         case 'sales_rate': {
-                            const isMasterRow = (fullProduct as any)?.is_master === 1;
-                            const isEditable = (settings?.updateRatesOnPurchase || isMasterRow) && !isReadOnly;
+                            const isEditable = (settings?.updateRatesOnPurchase || settings?.masterProductsEnabled) && !isReadOnly;
                             const value = item.sales_rate !== undefined ? item.sales_rate : product?.sales_rate || 0;
                             return (
                                 isEditable ? (
@@ -894,8 +893,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             );
                         }
                         case 'mrp': {
-                            const isMasterRow = (fullProduct as any)?.is_master === 1;
-                            const isEditable = (settings?.updateRatesOnPurchase || isMasterRow) && !isReadOnly;
+                            const isEditable = (settings?.updateRatesOnPurchase || settings?.masterProductsEnabled) && !isReadOnly;
                             const value = item.mrp !== undefined ? item.mrp : product?.mrp || 0;
                             return (
                                 isEditable ? (
