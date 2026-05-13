@@ -57,7 +57,7 @@ interface TaxLine {
 function resolveGstRate(slab: GstTaxSlab | undefined, ratePerUnit: number): number {
   if (!slab) return 0;
   if (slab.is_dynamic === 1) {
-    return ratePerUnit < slab.threshold ? slab.below_rate : slab.above_rate;
+    return ratePerUnit <= slab.threshold ? slab.below_rate : slab.above_rate;
   }
   return slab.fixed_rate;
 }

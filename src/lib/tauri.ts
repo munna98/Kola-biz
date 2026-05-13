@@ -467,9 +467,9 @@ export const api = {
   },
   gst: {
     getSlabs: () => invoke<GstTaxSlab[]>('get_gst_tax_slabs'),
-    createSlab: (slab: CreateGstTaxSlab) => invoke<GstTaxSlab>('create_gst_tax_slab', { slab }),
-    updateSlab: (id: string, slab: CreateGstTaxSlab) => invoke<void>('update_gst_tax_slab', { id, slab }),
-    deleteSlab: (id: string) => invoke<void>('delete_gst_tax_slab', { id }),
+    createSlab: (input: CreateGstTaxSlab) => invoke<GstTaxSlab>('create_gst_tax_slab', { input }),
+    updateSlab: (id: string, slab: CreateGstTaxSlab) => invoke<GstTaxSlab>('update_gst_tax_slab', { input: { id, ...slab } }),
+    deleteSlab: (slabId: string) => invoke<void>('delete_gst_tax_slab', { slabId }),
     getSettings: () => invoke<GstSettings>('get_gst_settings'),
     saveSettings: (settings: GstSettings) => invoke<void>('save_gst_settings', { settings }),
     getGstr1: (fromDate: string, toDate: string) => invoke<GstSummaryRow[]>('get_gstr1_summary', { fromDate, toDate }),

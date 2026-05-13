@@ -930,6 +930,15 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await?;
 
+    sqlx::query(
+        "INSERT OR IGNORE INTO gst_tax_slabs
+            (id, name, is_dynamic, fixed_rate, threshold, below_rate, above_rate, is_active)
+         VALUES
+            ('gst_apparel', 'GST 5/18 @2500', 1, 0, 2500.0, 5.0, 18.0, 1)",
+    )
+    .execute(pool)
+    .await?;
+
     // ==================== GST MODULE MIGRATIONS ====================
 
     // Migration: rename GST 0% to NIL
@@ -940,8 +949,14 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     // Migration: update apparel slab for existing databases
     let _ = sqlx::query(
         "UPDATE gst_tax_slabs
-         SET name = 'GST 5/18% @2500', threshold = 2500.0, above_rate = 18.0
-         WHERE id = 'gst_apparel' AND (name = 'GST 5/12% @1000' OR above_rate = 12.0)"
+         SET name = 'GST 5/18 @2500',
+             is_dynamic = 1,
+             fixed_rate = 0,
+             threshold = 2500.0,
+             below_rate = 5.0,
+             above_rate = 18.0,
+             is_active = 1
+         WHERE id = 'gst_apparel'"
     )
     .execute(pool)
     .await;

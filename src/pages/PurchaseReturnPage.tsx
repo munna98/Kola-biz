@@ -291,7 +291,7 @@ export default function PurchaseReturnPage() {
                 const savedSlab = slabMap[item.gst_slab_id];
                 if (savedSlab) {
                     return savedSlab.is_dynamic === 1
-                        ? (item.rate < savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
+                        ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
                         : savedSlab.fixed_rate;
                 }
             }
@@ -301,7 +301,7 @@ export default function PurchaseReturnPage() {
                 const slab = slabMap[product.gst_slab_id];
                 if (slab) {
                     return slab.is_dynamic === 1
-                        ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
+                        ? (item.rate <= slab.threshold ? slab.below_rate : slab.above_rate)
                         : slab.fixed_rate;
                 }
             }
@@ -594,7 +594,7 @@ export default function PurchaseReturnPage() {
             const savedSlab = gstSlabs.find(s => s.id === item.gst_slab_id);
             if (savedSlab) {
                 gstRate = savedSlab.is_dynamic === 1
-                    ? (item.rate < savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
+                    ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
                     : savedSlab.fixed_rate;
             }
         } else {
@@ -603,7 +603,7 @@ export default function PurchaseReturnPage() {
                 const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
                 if (slab) {
                     gstRate = slab.is_dynamic === 1
-                        ? (item.rate < slab.threshold ? slab.below_rate : slab.above_rate)
+                        ? (item.rate <= slab.threshold ? slab.below_rate : slab.above_rate)
                         : slab.fixed_rate;
                 }
             }

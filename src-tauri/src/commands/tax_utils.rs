@@ -1,7 +1,7 @@
 ﻿/// GST Calculation Utilities
 ///
 /// This module provides slab-based GST resolution for invoice line items.
-/// It handles both fixed-rate and price-threshold dynamic slabs (e.g. 5/12% @1000).
+/// It handles both fixed-rate and price-threshold dynamic slabs (e.g. 5/18 @2500).
 
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
@@ -50,7 +50,7 @@ pub fn calculate_gst(
 /// Resolve the effective GST rate from a slab and a unit price.
 pub fn resolve_effective_rate(unit_price: f64, slab: &GstTaxSlab) -> f64 {
     if slab.is_dynamic == 1 {
-        if unit_price < slab.threshold {
+        if unit_price <= slab.threshold {
             slab.below_rate
         } else {
             slab.above_rate
