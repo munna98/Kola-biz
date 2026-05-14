@@ -68,7 +68,8 @@
     <thead>
         <tr>
             <th style="width: 5%;">S.No</th>
-            <th style="width: 30%;">Description</th>
+            <th style="width: 10%;">Code</th>
+            <th style="width: 20%;">Description</th>
             <th style="width: 8%;">HSN/SAC</th>
             <th style="width: 8%;">Qty</th>
             {{#if show_less_column}}
@@ -84,6 +85,7 @@
         {{#each items}}
         <tr>
             <td class="center">{{increment @index}}</td>
+            <td>{{product_code}}</td>
             <td>
                 <strong>{{product_name}}</strong>
                 {{#if description}}

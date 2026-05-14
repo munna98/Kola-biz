@@ -274,6 +274,7 @@ export interface CreateSalesInvoiceItem {
 
 export interface SalesInvoiceItem {
   product_id: string;
+  product_code?: string;
   product_name?: string;
   description: string;
   initial_quantity: number;

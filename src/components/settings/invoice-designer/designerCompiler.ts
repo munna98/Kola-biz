@@ -156,8 +156,8 @@ function renderThermalTable(el: DesignerElement): string {
     let html = `<table style="width:100%;border-collapse:collapse;font-size:${fontSize}pt;color:#000;">`;
 
     if (config.twoRowLayout) {
-        const row1Cols = config.columns.filter(c => c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
-        const row2Cols = config.columns.filter(c => c.key !== 'product_name' && c.key !== 'description' && c.key !== 'serial_no');
+        const row1Cols = config.columns.filter(c => c.key === 'product_code' || c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
+        const row2Cols = config.columns.filter(c => c.key !== 'product_code' && c.key !== 'product_name' && c.key !== 'description' && c.key !== 'serial_no');
         const totalCols = row2Cols.length || 1;
 
         // Header for both rows
@@ -179,6 +179,7 @@ function renderThermalTable(el: DesignerElement): string {
         // Row 1
         html += `<tr><td colspan="${totalCols}" style="padding:4px 2px 0 2px;text-align:left;font-size:${fontSize}pt;color:#000;${bodyBold ? 'font-weight:bold;' : ''}">`;
         if (row1Cols.find(c => c.key === 'serial_no')) html += '{{increment @index}}. ';
+        if (row1Cols.find(c => c.key === 'product_code')) html += '{{product_code}} ';
         if (row1Cols.find(c => c.key === 'product_name')) html += '{{product_name}} ';
         if (row1Cols.find(c => c.key === 'description')) html += '{{#if description}}<br/><span style="font-size:${fontSize - 1}pt;font-weight:normal;">{{description}}</span>{{/if}}';
         html += `</td></tr>`;

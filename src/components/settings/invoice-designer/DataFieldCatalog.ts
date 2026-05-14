@@ -91,6 +91,7 @@ export const DATA_FIELD_CATALOG: DataFieldCategory[] = [
  */
 export const ITEM_TABLE_COLUMNS = [
     { key: 'serial_no', label: 'S.No', defaultWidth: 5, align: 'center' as const, format: 'text' as const },
+    { key: 'product_code', label: 'Product Code', defaultWidth: 12, align: 'left' as const, format: 'text' as const },
     { key: 'product_name', label: 'Product Name', defaultWidth: 25, align: 'left' as const, format: 'text' as const },
     { key: 'description', label: 'Description', defaultWidth: 15, align: 'left' as const, format: 'text' as const },
     { key: 'hsn_code', label: 'HSN/SAC', defaultWidth: 8, align: 'center' as const, format: 'text' as const },

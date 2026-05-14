@@ -156,6 +156,7 @@ export interface PurchaseInvoiceItem {
   product_id: number;
   service_id?: string | null;
   item_type?: 'product' | 'service';
+  product_code?: string;
   product_name?: string;
   unit_id?: string;
   base_quantity?: number;
@@ -936,6 +937,7 @@ export interface SalesInvoiceItem {
   product_id: number;
   service_id?: string | null;
   item_type?: 'product' | 'service';
+  product_code?: string;
   product_name?: string;
   unit_id?: string;
   base_quantity?: number;

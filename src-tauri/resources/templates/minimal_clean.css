@@ -155,8 +155,12 @@ body {
     width: 8%;
 }
 
+.col-code {
+    width: 12%;
+}
+
 .col-description {
-    width: 42%;
+    width: 30%;
 }
 
 .col-qty {

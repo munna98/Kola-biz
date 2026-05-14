@@ -69,7 +69,8 @@ function getDefaultTableConfig(): TableConfig {
     return {
         columns: [
             { key: 'serial_no', label: 'S.No', width: 6, align: 'center' },
-            { key: 'product_name', label: 'Description', width: 34, align: 'left' },
+            { key: 'product_code', label: 'Code', width: 10, align: 'left' },
+            { key: 'product_name', label: 'Description', width: 24, align: 'left' },
             { key: 'hsn_code', label: 'HSN', width: 10, align: 'center' },
             { key: 'initial_quantity', label: 'Qty', width: 8, align: 'right', format: 'number' },
             { key: 'rate', label: 'Rate', width: 12, align: 'right', format: 'currency' },

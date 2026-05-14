@@ -694,6 +694,7 @@ export default function SalesInvoicePage() {
           : item.rate;
         dispatch(addSalesItem({
         product_id: item.product_id || 0, // Using product_id from item if available, else need map
+        product_code: item.product_code,
         product_name: item.description, // Fallback
         unit_id: item.unit_id,
           hsn_sac_code: item.hsn_sac_code,
@@ -723,6 +724,7 @@ export default function SalesInvoicePage() {
       const loadedItems = items.map(item => ({
         id: `loaded-${item.id}`,
         product_id: item.product_id || 0,
+        product_code: item.product_code,
         product_name: item.description,
         unit_id: item.unit_id,
         hsn_sac_code: item.hsn_sac_code,

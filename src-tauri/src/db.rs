@@ -1,5 +1,78 @@
 use sqlx::sqlite::SqlitePool;
 
+async fn backfill_stock_movement_costs(
+    pool: &SqlitePool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    sqlx::query(
+        "UPDATE stock_movements
+         SET cost_rate = rate,
+             cost_amount = amount
+         WHERE COALESCE(cost_rate, 0) = 0
+           AND COALESCE(cost_amount, 0) = 0
+           AND voucher_id IN (
+               SELECT id FROM vouchers
+               WHERE voucher_type IN ('purchase_invoice', 'purchase_return', 'opening_stock', 'stock_journal')
+           )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "UPDATE stock_movements
+         SET cost_rate = COALESCE((SELECT purchase_rate FROM products p WHERE p.id = stock_movements.product_id), 0),
+             cost_amount = quantity * COALESCE((SELECT purchase_rate FROM products p WHERE p.id = stock_movements.product_id), 0)
+         WHERE COALESCE(cost_rate, 0) = 0
+           AND COALESCE(cost_amount, 0) = 0
+           AND voucher_id IN (
+               SELECT id FROM vouchers
+               WHERE voucher_type IN ('sales_invoice', 'sales_return')
+           )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "UPDATE stock_movements
+         SET cost_rate = COALESCE((
+                 SELECT sm_sale.cost_rate
+                 FROM vouchers sr
+                 JOIN vouchers si ON si.voucher_no = sr.reference
+                     AND si.voucher_type = 'sales_invoice'
+                     AND si.deleted_at IS NULL
+                 JOIN stock_movements sm_sale ON sm_sale.voucher_id = si.id
+                     AND sm_sale.product_id = stock_movements.product_id
+                     AND sm_sale.movement_type = 'OUT'
+                 WHERE sr.id = stock_movements.voucher_id
+                   AND sr.voucher_type = 'sales_return'
+                   AND sr.deleted_at IS NULL
+                 ORDER BY sm_sale.created_at ASC, sm_sale.id ASC
+                 LIMIT 1
+             ), cost_rate),
+             cost_amount = quantity * COALESCE((
+                 SELECT sm_sale.cost_rate
+                 FROM vouchers sr
+                 JOIN vouchers si ON si.voucher_no = sr.reference
+                     AND si.voucher_type = 'sales_invoice'
+                     AND si.deleted_at IS NULL
+                 JOIN stock_movements sm_sale ON sm_sale.voucher_id = si.id
+                     AND sm_sale.product_id = stock_movements.product_id
+                     AND sm_sale.movement_type = 'OUT'
+                 WHERE sr.id = stock_movements.voucher_id
+                   AND sr.voucher_type = 'sales_return'
+                   AND sr.deleted_at IS NULL
+                 ORDER BY sm_sale.created_at ASC, sm_sale.id ASC
+                 LIMIT 1
+             ), cost_rate)
+         WHERE voucher_id IN (
+             SELECT id FROM vouchers WHERE voucher_type = 'sales_return'
+         )",
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 /// Initialize the schema (tables + migrations) on an already-connected pool.
 /// Called by DbRegistry when opening or creating a company database.
 pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
@@ -541,6 +614,8 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             count INTEGER DEFAULT 0,
             rate REAL NOT NULL,
             amount REAL NOT NULL,
+            cost_rate REAL DEFAULT 0,
+            cost_amount REAL DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
             FOREIGN KEY (product_id) REFERENCES products(id)
@@ -559,6 +634,13 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     )
     .execute(pool)
     .await?;
+    let _ = sqlx::query("ALTER TABLE stock_movements ADD COLUMN cost_rate REAL DEFAULT 0")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE stock_movements ADD COLUMN cost_amount REAL DEFAULT 0")
+        .execute(pool)
+        .await;
+    backfill_stock_movement_costs(pool).await?;
 
     // Payment/Receipt Allocations
     sqlx::query(
@@ -685,6 +767,8 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             count INTEGER DEFAULT 0,
             rate REAL NOT NULL,
             amount REAL NOT NULL,
+            cost_rate REAL DEFAULT 0,
+            cost_amount REAL DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
             FOREIGN KEY (product_id) REFERENCES products(id)
@@ -703,6 +787,13 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     )
     .execute(pool)
     .await?;
+    let _ = sqlx::query("ALTER TABLE stock_movements ADD COLUMN cost_rate REAL DEFAULT 0")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE stock_movements ADD COLUMN cost_amount REAL DEFAULT 0")
+        .execute(pool)
+        .await;
+    backfill_stock_movement_costs(pool).await?;
 
     // Payment/Receipt Allocations
     sqlx::query(

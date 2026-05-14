@@ -115,14 +115,16 @@ async fn insert_stock_journal_items(
 
         let movement_id = Uuid::now_v7().to_string();
         sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
-             VALUES (?, ?, ?, ?, ?, 0, ?, ?)",
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount)
+             VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?)",
         )
         .bind(&movement_id)
         .bind(voucher_id)
         .bind(&item.product_id)
         .bind(movement_type)
         .bind(unit_snapshot.base_quantity)
+        .bind(item.rate)
+        .bind(item.amount)
         .bind(item.rate)
         .bind(item.amount)
         .execute(&mut **tx)

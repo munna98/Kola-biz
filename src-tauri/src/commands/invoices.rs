@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::{Sqlite, SqlitePool, Transaction};
 use crate::company_db::DbRegistry;
 use std::sync::Arc;
 use tauri::State;
@@ -12,6 +12,24 @@ use crate::voucher_seq::get_next_voucher_number;
 
 fn round2(value: f64) -> f64 {
     (value * 100.0).round() / 100.0
+}
+
+pub(crate) async fn get_product_purchase_cost_rate(
+    tx: &mut Transaction<'_, Sqlite>,
+    product_id: &str,
+) -> Result<f64, String> {
+    if product_id.trim().is_empty() {
+        return Ok(0.0);
+    }
+
+    sqlx::query_scalar::<_, f64>(
+        "SELECT COALESCE(purchase_rate, 0) FROM products WHERE id = ?",
+    )
+    .bind(product_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())
+    .map(|value| value.unwrap_or(0.0))
 }
 
 // ============= GST INVOICE HELPERS =============
@@ -745,10 +763,11 @@ pub async fn create_purchase_invoice(
         let rate_per_base = if qty > 0.0 { item.amount / qty } else { item.rate };
         let amount = qty * rate_per_base;
         sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?)"
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?, ?)"
         )
         .bind(&sm_id).bind(&voucher_id).bind(&item.product_id)
         .bind(qty).bind(item.count).bind(rate_per_base).bind(amount)
+        .bind(rate_per_base).bind(amount)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
@@ -1063,10 +1082,11 @@ pub async fn update_purchase_invoice(
         let rate_per_base = if qty > 0.0 { item.amount / qty } else { item.rate };
         let amount = qty * rate_per_base;
         sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?)"
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?, ?)"
         )
         .bind(&sm_id).bind(&voucher_id).bind(&item.product_id)
         .bind(qty).bind(item.count).bind(rate_per_base).bind(amount)
+        .bind(rate_per_base).bind(amount)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
@@ -1174,6 +1194,7 @@ pub struct SalesInvoiceItem {
     pub item_type: Option<String>,
     pub product_id: Option<String>,
     pub service_id: Option<String>,
+    pub product_code: Option<String>,
     pub product_name: Option<String>,
     pub description: Option<String>,
     pub initial_quantity: f64,
@@ -1328,6 +1349,7 @@ pub async fn get_sales_invoice_items(
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, SalesInvoiceItem>(
         "SELECT vi.*,
+                COALESCE(p.code, s.code) as product_code,
                 COALESCE(p.name, s.name) as product_name
         FROM voucher_items vi
         LEFT JOIN products p ON vi.product_id = p.id
@@ -1382,6 +1404,7 @@ pub(crate) async fn get_sales_invoice_with_pool(pool: &SqlitePool, id: &str) -> 
 pub(crate) async fn get_sales_invoice_items_with_pool(pool: &SqlitePool, voucher_id: &str) -> Result<Vec<SalesInvoiceItem>, String> {
     sqlx::query_as::<_, SalesInvoiceItem>(
         "SELECT vi.*,
+                COALESCE(p.code, s.code) as product_code,
                 COALESCE(p.name, s.name) as product_name
          FROM voucher_items vi
          LEFT JOIN products p ON vi.product_id = p.id
@@ -1572,11 +1595,15 @@ pub async fn create_sales_invoice(
         let qty = item.base_quantity;
         let rate_per_base = if qty > 0.0 { item.amount / qty } else { item.rate };
         let amount = qty * rate_per_base;
+        let product_id = item.product_id.as_deref().unwrap_or("");
+        let cost_rate = get_product_purchase_cost_rate(&mut tx, product_id).await?;
+        let cost_amount = qty * cost_rate;
         sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount) VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)"
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount) VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?, ?)"
         )
         .bind(&sm_id).bind(&voucher_id).bind(&item.product_id)
         .bind(qty).bind(item.count).bind(rate_per_base).bind(amount)
+        .bind(cost_rate).bind(cost_amount)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
@@ -1860,11 +1887,15 @@ pub async fn update_sales_invoice(
         let qty = item.base_quantity;
         let rate_per_base = if qty > 0.0 { item.amount / qty } else { item.rate };
         let amount = qty * rate_per_base;
+        let product_id = item.product_id.as_deref().unwrap_or("");
+        let cost_rate = get_product_purchase_cost_rate(&mut tx, product_id).await?;
+        let cost_amount = qty * cost_rate;
         sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount) VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)"
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount) VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?, ?)"
         )
         .bind(&sm_id).bind(&voucher_id).bind(&item.product_id)
         .bind(qty).bind(item.count).bind(rate_per_base).bind(amount)
+        .bind(cost_rate).bind(cost_amount)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 

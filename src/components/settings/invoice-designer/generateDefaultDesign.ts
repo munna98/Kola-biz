@@ -205,7 +205,8 @@ function generateThermalDesign(
 
     // ── Items Table: Item | Qty | Count | [Less] | F.Qty | Rate | Amt ──
     const tableColumns: TableColumn[] = [
-        { key: 'product_name', label: 'Item', width: features.show_less_column ? 20 : 25, align: 'left' },
+        { key: 'product_code', label: 'Code', width: 12, align: 'left' },
+        { key: 'product_name', label: 'Item', width: features.show_less_column ? 18 : 23, align: 'left' },
         { key: 'initial_quantity', label: 'Qty', width: 10, align: 'right' },
         { key: 'count', label: 'Count', width: 10, align: 'right' },
     ];
@@ -215,7 +216,7 @@ function generateThermalDesign(
     tableColumns.push(
         { key: 'final_quantity', label: 'F.Qty', width: 10, align: 'right' },
         { key: 'rate', label: 'Rate', width: 20, align: 'right' },
-        { key: 'total', label: 'Amt', width: features.show_less_column ? 20 : 25, align: 'right' },
+        { key: 'total', label: 'Amt', width: features.show_less_column ? 10 : 15, align: 'right' },
     );
 
     elements.push({
@@ -550,7 +551,8 @@ function generateA4Design(
     // ── Items Table ──
     const tableCols: TableColumn[] = [
         { key: 'serial_no', label: 'S.No', width: 6, align: 'center' },
-        { key: 'product_name', label: 'Description', width: features.show_item_hsn ? 28 : 34, align: 'left' },
+        { key: 'product_code', label: 'Code', width: 10, align: 'left' },
+        { key: 'product_name', label: 'Description', width: features.show_item_hsn ? 18 : 24, align: 'left' },
     ];
     if (features.show_item_hsn) {
         tableCols.push({ key: 'hsn_code', label: 'HSN', width: 10, align: 'center' });

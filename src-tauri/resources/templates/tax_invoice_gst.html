@@ -150,6 +150,7 @@
   <thead>
     <tr class="items-thead-row">
       <th class="col-slno">Sl<br/>No.</th>
+      <th class="col-code">Code</th>
       <th class="col-desc">Description of Goods</th>
       <th class="col-hsn">HSN/SAC</th>
       <th class="col-qty">Quantity</th>
@@ -163,6 +164,7 @@
     {{#each items}}
     <tr class="item-row">
       <td class="center">{{increment @index}}</td>
+      <td>{{product_code}}</td>
       <td>
         <strong>{{product_name}}</strong>
         {{#if description}}<br/><small class="item-desc">{{description}}</small>{{/if}}
@@ -176,9 +178,10 @@
     </tr>
     {{/each}}
 
-    <!-- Spacer: 7 individual cells so column dividers continue through empty space -->
+    <!-- Spacer: individual cells so column dividers continue through empty space -->
     <tr class="spacer-row">
       <td class="sp-slno"></td>
+      <td class="sp-code"></td>
       <td class="sp-desc"></td>
       <td class="sp-hsn"></td>
       <td class="sp-qty"></td>
@@ -195,6 +198,7 @@
     {{#if has_cgst}}
     <tr class="tax-row">
       <td class="sp-slno"></td>
+      <td class="sp-code"></td>
       <td class="sp-desc"></td>
       <td class="sp-hsn"></td>
       <td class="sp-qty"></td>
@@ -207,6 +211,7 @@
     {{#if has_sgst}}
     <tr class="tax-row">
       <td class="sp-slno"></td>
+      <td class="sp-code"></td>
       <td class="sp-desc"></td>
       <td class="sp-hsn"></td>
       <td class="sp-qty"></td>
@@ -225,6 +230,7 @@
     {{#if has_igst}}
     <tr class="tax-row">
       <td class="sp-slno"></td>
+      <td class="sp-code"></td>
       <td class="sp-desc"></td>
       <td class="sp-hsn"></td>
       <td class="sp-qty"></td>
@@ -239,7 +245,7 @@
 
     <!-- Summary footer row: Tally-style with Disc/Total label, qty, and stacked amount -->
     <tr class="summary-footer-row">
-      <td colspan="3" class="sf-left-empty"></td>
+      <td colspan="4" class="sf-left-empty"></td>
       <td class="right sf-qty"><strong>{{total_quantity_display}}</strong></td>
       <td class="sf-rate-empty"></td>
       <td class="sf-per-empty"></td>
@@ -258,11 +264,11 @@
     </tr>
     {{#if has_returns}}
     <tr class="summary-footer-row">
-      <td colspan="7" class="right sf-disc-total-label">Less Returns</td>
+      <td colspan="8" class="right sf-disc-total-label">Less Returns</td>
       <td class="right sf-amount-cell">-&#8377;&nbsp;{{format_number return_total 2}}</td>
     </tr>
     <tr class="summary-footer-row">
-      <td colspan="7" class="right sf-disc-total-label"><strong>Net Payable</strong></td>
+      <td colspan="8" class="right sf-disc-total-label"><strong>Net Payable</strong></td>
       <td class="right sf-amount-cell"><strong class="sf-grand-total">&#8377;&nbsp;{{format_number net_payable 2}}</strong></td>
     </tr>
     {{/if}}

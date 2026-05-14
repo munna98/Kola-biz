@@ -302,7 +302,8 @@ body {
 
 /* Match spacer cell widths to header */
 .sp-slno   { width: 4%; }
-.sp-desc   { width: 35%; }
+.sp-code   { width: 8%; }
+.sp-desc   { width: 27%; }
 .sp-hsn    { width: 10%; }
 .sp-qty    { width: 10%; }
 .sp-rate   { width: 9%; }

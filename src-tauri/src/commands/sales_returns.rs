@@ -1,11 +1,15 @@
 use serde::{Deserialize, Serialize};
 use crate::company_db::DbRegistry;
 use sqlx::{Sqlite, SqlitePool, Transaction};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
-use super::invoices::{finalize_processed_items, prepare_voucher_line};
+use super::invoices::{
+    finalize_processed_items, get_product_purchase_cost_rate, prepare_voucher_line,
+    ProcessedVoucherItem,
+};
 use super::resolve_voucher_line_unit;
 use crate::voucher_seq::get_next_voucher_number_in_tx;
 
@@ -85,6 +89,129 @@ pub struct CreateSalesReturnItem {
 }
 
 fn default_item_type() -> String { "product".to_string() }
+
+async fn linked_sales_invoice_id_by_reference(
+    tx: &mut Transaction<'_, Sqlite>,
+    reference: Option<&str>,
+) -> Result<Option<String>, String> {
+    let Some(reference) = reference.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(None);
+    };
+
+    sqlx::query_scalar(
+        "SELECT id
+         FROM vouchers
+         WHERE voucher_type = 'sales_invoice'
+           AND voucher_no = ?
+           AND deleted_at IS NULL
+         ORDER BY voucher_date DESC, id DESC
+         LIMIT 1",
+    )
+    .bind(reference)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())
+}
+
+async fn validate_linked_return_quantities(
+    tx: &mut Transaction<'_, Sqlite>,
+    reference: Option<&str>,
+    current_return_id: Option<&str>,
+    items: &[ProcessedVoucherItem],
+) -> Result<(), String> {
+    let Some(reference) = reference.map(str::trim).filter(|value| !value.is_empty()) else {
+        return Ok(());
+    };
+    let Some(sales_invoice_id) = linked_sales_invoice_id_by_reference(tx, Some(reference)).await? else {
+        return Ok(());
+    };
+
+    let mut requested_by_product = HashMap::<String, f64>::new();
+    for item in items {
+        if item.item_type == "service" {
+            continue;
+        }
+        if let Some(product_id) = item.product_id.as_deref() {
+            *requested_by_product.entry(product_id.to_string()).or_insert(0.0) += item.base_quantity;
+        }
+    }
+
+    for (product_id, requested_qty) in requested_by_product {
+        let sold_qty: f64 = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(base_quantity), 0) AS REAL)
+             FROM voucher_items
+             WHERE voucher_id = ?
+               AND product_id = ?
+               AND COALESCE(item_type, 'product') != 'service'",
+        )
+        .bind(&sales_invoice_id)
+        .bind(&product_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or(0.0);
+
+        let prior_returned_qty: f64 = sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(vi.base_quantity), 0) AS REAL)
+             FROM voucher_items vi
+             JOIN vouchers sr ON vi.voucher_id = sr.id
+             WHERE sr.voucher_type = 'sales_return'
+               AND sr.deleted_at IS NULL
+               AND sr.reference = ?
+               AND vi.product_id = ?
+               AND COALESCE(vi.item_type, 'product') != 'service'
+               AND (? IS NULL OR sr.id != ?)",
+        )
+        .bind(reference)
+        .bind(&product_id)
+        .bind(current_return_id)
+        .bind(current_return_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or(0.0);
+
+        if requested_qty > (sold_qty - prior_returned_qty) + 0.0001 {
+            return Err(format!(
+                "Return quantity exceeds original sale quantity for product {}",
+                product_id
+            ));
+        }
+    }
+
+    Ok(())
+}
+
+async fn sales_return_cost_rate(
+    tx: &mut Transaction<'_, Sqlite>,
+    linked_sales_invoice_id: Option<&str>,
+    product_id: &str,
+) -> Result<f64, String> {
+    if let Some(invoice_id) = linked_sales_invoice_id {
+        let original_cost: Option<f64> = sqlx::query_scalar(
+            "SELECT COALESCE(cost_rate, 0)
+             FROM stock_movements
+             WHERE voucher_id = ?
+               AND product_id = ?
+               AND movement_type = 'OUT'
+             ORDER BY created_at ASC, id ASC
+             LIMIT 1",
+        )
+        .bind(invoice_id)
+        .bind(product_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if let Some(cost_rate) = original_cost {
+            if cost_rate > 0.0 {
+                return Ok(cost_rate);
+            }
+        }
+    }
+
+    get_product_purchase_cost_rate(tx, product_id).await
+}
 
 #[derive(Deserialize)]
 pub struct CreateSalesReturn {
@@ -275,6 +402,8 @@ pub(crate) async fn create_sales_return_in_tx(
     let total_amount = subtotal - discount_amount;
     let grand_total = total_amount + total_tax;
 
+    validate_linked_return_quantities(tx, invoice.reference.as_deref(), None, &processed_items).await?;
+
     let voucher_id = Uuid::now_v7().to_string();
     sqlx::query(
         "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total)
@@ -421,14 +550,21 @@ pub(crate) async fn create_sales_return_in_tx(
     .await
     .map_err(|e| e.to_string())?;
 
+    let linked_sales_invoice_id =
+        linked_sales_invoice_id_by_reference(tx, invoice.reference.as_deref()).await?;
+
     for item in items_for_stock {
         if item.0.as_deref() == Some("service") { continue; } // skip services
+        let product_id = item.1.as_deref().unwrap_or("");
         let base_qty = item.2;
         let rate_per_base = if base_qty > 0.0 { item.5 / base_qty } else { item.4 };
         let amount = base_qty * rate_per_base;
+        let cost_rate =
+            sales_return_cost_rate(tx, linked_sales_invoice_id.as_deref(), product_id).await?;
+        let cost_amount = base_qty * cost_rate;
         sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
-             VALUES (?, ?, ?, 'IN', ?, ?, ?, ?)",
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount)
+             VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?, ?)",
         )
         .bind(Uuid::now_v7().to_string())
         .bind(&voucher_id)
@@ -437,6 +573,8 @@ pub(crate) async fn create_sales_return_in_tx(
         .bind(item.3)
         .bind(rate_per_base)
         .bind(amount)
+        .bind(cost_rate)
+        .bind(cost_amount)
         .execute(&mut **tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -549,6 +687,8 @@ pub async fn update_sales_return(
     let total_tax = processed.total_cgst + processed.total_sgst + processed.total_igst;
     let total_amount = subtotal - discount_amount;
     let grand_total = total_amount + total_tax;
+
+    validate_linked_return_quantities(&mut tx, invoice.reference.as_deref(), Some(&id), &processed_items).await?;
 
     sqlx::query(
         "UPDATE vouchers
@@ -702,6 +842,9 @@ pub async fn update_sales_return(
         .map_err(|e| e.to_string())?;
     }
 
+    let linked_sales_invoice_id =
+        linked_sales_invoice_id_by_reference(&mut tx, invoice.reference.as_deref()).await?;
+
     for item in &invoice.items {
         if item.item_type == "service" { continue; } // Services have no stock
         let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
@@ -718,9 +861,12 @@ pub async fn update_sales_return(
         let base_qty = unit_snapshot.base_quantity;
         let amount_for_item = final_qty * item.rate;
         let rate_per_base = if base_qty > 0.0 { amount_for_item / base_qty } else { item.rate };
+        let cost_rate =
+            sales_return_cost_rate(&mut tx, linked_sales_invoice_id.as_deref(), item_id).await?;
+        let cost_amount = base_qty * cost_rate;
         sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
-             VALUES (?, ?, ?, 'IN', ?, ?, ?, ?)",
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount)
+             VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?, ?)",
         )
         .bind(Uuid::now_v7().to_string())
         .bind(&id)
@@ -729,6 +875,8 @@ pub async fn update_sales_return(
         .bind(item.count)
         .bind(rate_per_base)
         .bind(base_qty * rate_per_base)
+        .bind(cost_rate)
+        .bind(cost_amount)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;

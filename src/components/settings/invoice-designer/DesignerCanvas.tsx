@@ -98,8 +98,8 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
             if (!config) return <div style={effectiveStyles}>Table</div>;
 
             if (config.twoRowLayout) {
-                const row1Cols = config.columns.filter(c => c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
-                const row2Cols = config.columns.filter(c => c.key !== 'product_name' && c.key !== 'description' && c.key !== 'serial_no');
+                const row1Cols = config.columns.filter(c => c.key === 'product_code' || c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
+                const row2Cols = config.columns.filter(c => c.key !== 'product_code' && c.key !== 'product_name' && c.key !== 'description' && c.key !== 'serial_no');
                 const totalCols = row2Cols.length || 1;
 
                 return (
@@ -127,6 +127,7 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                                         <tr>
                                             <td colSpan={totalCols} style={{ padding: '2px 3px 0 3px', textAlign: 'left', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', fontSize: `${config.bodyFontSize || 8}pt`, color: '#666' }}>
                                                 {row1Cols.find(c => c.key === 'serial_no') ? `${row}. ` : ''}
+                                                {row1Cols.find(c => c.key === 'product_code') ? `{{product_code}} ` : ''}
                                                 {row1Cols.find(c => c.key === 'product_name') ? `{{product_name}}` : ''}
                                             </td>
                                         </tr>

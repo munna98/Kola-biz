@@ -53,6 +53,7 @@
     <thead>
         <tr>
         <tr>
+            <th>Code</th>
             <th>Item</th>
             <th>Qty</th>
             {{#if show_less_column}}
@@ -65,6 +66,7 @@
     <tbody>
         {{#each items}}
         <tr>
+            <td>{{product_code}}</td>
             <td>{{product_name}}</td>
             <td>{{format_number initial_quantity 0}}</td>
             {{#if @root.show_less_column}}

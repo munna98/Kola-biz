@@ -419,14 +419,16 @@ pub async fn create_purchase_return(
         let rate_per_base = if base_qty > 0.0 { item.5 / base_qty } else { item.4 };
         let amount = base_qty * rate_per_base;
         sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
-             VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)",
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount)
+             VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?, ?)",
         )
         .bind(Uuid::now_v7().to_string())
         .bind(&voucher_id)
         .bind(&item.1)
         .bind(base_qty)
         .bind(item.3)
+        .bind(rate_per_base)
+        .bind(amount)
         .bind(rate_per_base)
         .bind(amount)
         .execute(&mut *tx)
@@ -677,9 +679,10 @@ pub async fn update_purchase_return(
         let base_qty = unit_snapshot.base_quantity;
         let amount_for_item = final_qty * item.rate;
         let rate_per_base = if base_qty > 0.0 { amount_for_item / base_qty } else { item.rate };
+        let amount = base_qty * rate_per_base;
         sqlx::query(
-            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount)
-             VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?)",
+            "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount)
+             VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?, ?)",
         )
         .bind(Uuid::now_v7().to_string())
         .bind(&id)
@@ -687,7 +690,9 @@ pub async fn update_purchase_return(
         .bind(base_qty)
         .bind(item.count)
         .bind(rate_per_base)
-        .bind(base_qty * rate_per_base)
+        .bind(amount)
+        .bind(rate_per_base)
+        .bind(amount)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;

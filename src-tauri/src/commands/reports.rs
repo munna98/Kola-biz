@@ -1162,17 +1162,25 @@ pub async fn get_stock_report(
             u.symbol as unit_symbol,
             CAST(COALESCE(SUM(
                 CASE 
-                    WHEN sm.movement_type = 'IN' THEN sm.quantity
-                    WHEN sm.movement_type = 'OUT' THEN -sm.quantity
+                    WHEN v.id IS NOT NULL AND sm.movement_type = 'IN' THEN sm.quantity
+                    WHEN v.id IS NOT NULL AND sm.movement_type = 'OUT' THEN -sm.quantity
                     ELSE 0
                 END
             ), 0) AS REAL) as current_stock,
             CAST(COALESCE(
-                (SELECT SUM(rate * quantity) / NULLIF(SUM(quantity), 0)
+                (SELECT
+                    SUM(CASE
+                        WHEN sm2.movement_type = 'IN' THEN COALESCE(sm2.cost_amount, sm2.amount)
+                        WHEN sm2.movement_type = 'OUT' THEN -COALESCE(sm2.cost_amount, sm2.amount)
+                        ELSE 0
+                    END) / NULLIF(SUM(CASE
+                        WHEN sm2.movement_type = 'IN' THEN sm2.quantity
+                        WHEN sm2.movement_type = 'OUT' THEN -sm2.quantity
+                        ELSE 0
+                    END), 0)
                  FROM stock_movements sm2
                  JOIN vouchers v2 ON sm2.voucher_id = v2.id
                  WHERE sm2.product_id = p.id 
-                 AND sm2.movement_type = 'IN'
                  AND v2.voucher_date <= ?
                  AND v2.deleted_at IS NULL),
                 0
@@ -1200,7 +1208,8 @@ pub async fn get_stock_report(
         JOIN units u ON p.unit_id = u.id
         LEFT JOIN stock_movements sm ON p.id = sm.product_id
         LEFT JOIN vouchers v ON sm.voucher_id = v.id AND v.voucher_date <= ? AND v.deleted_at IS NULL
-        WHERE p.deleted_at IS NULL {}
+        WHERE p.deleted_at IS NULL
+        AND COALESCE(p.is_master, 0) = 0 {}
         GROUP BY p.id
         ORDER BY p.name ASC
         ",
@@ -1419,26 +1428,23 @@ pub async fn get_dashboard_metrics(
     let total_revenue = revenue.unwrap_or(0.0);
     let total_expenses = expenses.unwrap_or(0.0);
 
-    // Get stock value using weighted average purchase rate (same as Stock Report)
+    // Get stock value using stored inventory cost (same as Stock Report)
     let stock_value: Option<f64> = sqlx::query_scalar(
         "SELECT CAST(COALESCE(SUM(
-            -- current stock qty
             COALESCE((
-                SELECT SUM(CASE WHEN sm.movement_type = 'IN' THEN sm.quantity ELSE -sm.quantity END)
+                SELECT SUM(CASE
+                    WHEN sm.movement_type = 'IN' THEN COALESCE(sm.cost_amount, sm.amount)
+                    WHEN sm.movement_type = 'OUT' THEN -COALESCE(sm.cost_amount, sm.amount)
+                    ELSE 0
+                END)
                 FROM stock_movements sm
                 JOIN vouchers v ON sm.voucher_id = v.id
                 WHERE sm.product_id = p.id AND v.deleted_at IS NULL
             ), 0)
-            *
-            -- weighted average purchase rate
-            COALESCE((
-                SELECT SUM(sm.rate * sm.quantity) / NULLIF(SUM(sm.quantity), 0)
-                FROM stock_movements sm
-                JOIN vouchers v ON sm.voucher_id = v.id
-                WHERE sm.product_id = p.id AND sm.movement_type = 'IN' AND v.deleted_at IS NULL
-            ), 0)
         ), 0) AS REAL)
-         FROM products p WHERE p.deleted_at IS NULL",
+         FROM products p
+         WHERE p.deleted_at IS NULL
+         AND COALESCE(p.is_master, 0) = 0",
     )
     .fetch_optional(&pool)
     .await
@@ -1768,6 +1774,7 @@ pub async fn get_stock_alerts(
         LEFT JOIN vouchers v ON sm.voucher_id = v.id AND v.deleted_at IS NULL
         WHERE p.deleted_at IS NULL
         AND p.parent_product_id IS NULL
+        AND COALESCE(p.is_master, 0) = 0
         GROUP BY p.id
         HAVING current_stock < ? AND current_stock >= 0
         ORDER BY current_stock ASC
@@ -1836,18 +1843,19 @@ pub async fn get_product_groups_distribution(
             COALESCE(pg.name, 'Ungrouped') as group_name,
             COUNT(DISTINCT p.id) as product_count,
             CAST(COALESCE(SUM(
-                (SELECT COALESCE(SUM(quantity), 0) FROM stock_movements sm
+                (SELECT COALESCE(SUM(CASE
+                    WHEN sm.movement_type = 'IN' THEN COALESCE(sm.cost_amount, sm.amount)
+                    WHEN sm.movement_type = 'OUT' THEN -COALESCE(sm.cost_amount, sm.amount)
+                    ELSE 0
+                 END), 0) FROM stock_movements sm
                  JOIN vouchers v ON sm.voucher_id = v.id
-                 WHERE sm.product_id = p.id AND sm.movement_type = 'IN'
-                 AND v.deleted_at IS NULL) -
-                (SELECT COALESCE(SUM(quantity), 0) FROM stock_movements sm
-                 JOIN vouchers v ON sm.voucher_id = v.id
-                 WHERE sm.product_id = p.id AND sm.movement_type = 'OUT'
+                 WHERE sm.product_id = p.id
                  AND v.deleted_at IS NULL)
-            ) * p.sales_rate, 0) AS REAL) as total_stock_value
+            ), 0) AS REAL) as total_stock_value
         FROM products p
         LEFT JOIN product_groups pg ON p.group_id = pg.id
         WHERE p.deleted_at IS NULL
+        AND COALESCE(p.is_master, 0) = 0
         GROUP BY pg.id, pg.name
         ORDER BY total_stock_value DESC
     ";

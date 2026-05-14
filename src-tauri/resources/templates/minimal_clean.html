@@ -64,6 +64,7 @@
     <thead>
         <tr>
             <th class="col-no">NO.</th>
+            <th class="col-code">CODE</th>
             <th class="col-description">DESCRIPTION</th>
             <th class="col-qty">QTY</th>
             <th class="col-price">PRICE</th>
@@ -74,6 +75,7 @@
         {{#each items}}
         <tr>
             <td class="col-no">{{increment @index}}.</td>
+            <td class="col-code">{{product_code}}</td>
             <td class="col-description">{{product_name}}</td>
             <td class="col-qty">{{format_number final_quantity 0}}</td>
             <td class="col-price">₹{{format_number rate 0}}</td>
