@@ -256,6 +256,16 @@
         <strong class="sf-grand-total">&#8377;&nbsp;{{format_number grand_total 2}}</strong>
       </td>
     </tr>
+    {{#if has_returns}}
+    <tr class="summary-footer-row">
+      <td colspan="7" class="right sf-disc-total-label">Less Returns</td>
+      <td class="right sf-amount-cell">-&#8377;&nbsp;{{format_number return_total 2}}</td>
+    </tr>
+    <tr class="summary-footer-row">
+      <td colspan="7" class="right sf-disc-total-label"><strong>Net Payable</strong></td>
+      <td class="right sf-amount-cell"><strong class="sf-grand-total">&#8377;&nbsp;{{format_number net_payable 2}}</strong></td>
+    </tr>
+    {{/if}}
   </tbody>
 </table>
 

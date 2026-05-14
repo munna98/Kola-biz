@@ -77,6 +77,22 @@
     </tbody>
 </table>
 <div class="separator"></div>
+{{#if has_returns}}
+<div class="return-title">RETURNED ITEMS</div>
+<table class="items returned-items">
+    <tbody>
+        {{#each return_items}}
+        <tr>
+            <td>{{description}}</td>
+            <td>{{format_number final_quantity 2}}</td>
+            <td>{{format_number rate 2}}</td>
+            <td>{{format_number total 2}}</td>
+        </tr>
+        {{/each}}
+    </tbody>
+</table>
+<div class="separator"></div>
+{{/if}}
 <div class="totals">
     <div class="row">
         <span>Subtotal:</span>
@@ -98,6 +114,16 @@
         <span>TOTAL:</span>
         <span>₹{{format_number grand_total 2}}</span>
     </div>
+    {{#if has_returns}}
+    <div class="row">
+        <span>Less Returns:</span>
+        <span>-₹{{format_number return_total 2}}</span>
+    </div>
+    <div class="row total">
+        <span>NET:</span>
+        <span>₹{{format_number net_payable 2}}</span>
+    </div>
+    {{/if}}
 </div>
 
 {{#unless is_cash}}

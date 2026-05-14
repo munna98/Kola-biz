@@ -108,6 +108,16 @@
             <span class="total-label">Grand Total</span>
             <span class="total-value">₹{{format_number grand_total 2}}</span>
         </div>
+        {{#if has_returns}}
+        <div class="total-row">
+            <span class="total-label">less returns:</span>
+            <span class="total-value">-₹{{format_number return_total 2}}</span>
+        </div>
+        <div class="total-row grand-total">
+            <span class="total-label">Net Payable</span>
+            <span class="total-value">₹{{format_number net_payable 2}}</span>
+        </div>
+        {{/if}}
     </div>
 </div>
 

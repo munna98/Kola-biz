@@ -960,6 +960,19 @@ export interface SalesInvoiceItem {
   discount_amount: number;
 }
 
+export interface SalesInvoiceReturnDraft {
+  voucher_date: string;
+  reference: string;
+  narration: string;
+  items: SalesInvoiceItem[];
+  totals: {
+    subtotal: number;
+    discount: number;
+    tax: number;
+    grandTotal: number;
+  };
+}
+
 export interface SalesInvoiceState extends VoucherNavigationState {
   currentVoucherNo?: string;
   created_by_name?: string;
@@ -975,6 +988,7 @@ export interface SalesInvoiceState extends VoucherNavigationState {
     discount_amount: number;
   };
   items: SalesInvoiceItem[];
+  returnDraft?: SalesInvoiceReturnDraft;
   loading: boolean;
   savedInvoices: any[];
   totals: {
@@ -1007,6 +1021,7 @@ const salesInitialState: SalesInvoiceState = {
     discount_amount: 0,
   },
   items: [],
+  returnDraft: undefined,
   loading: false,
   savedInvoices: [],
   totals: {
@@ -1084,6 +1099,10 @@ const salesInvoiceSlice = createSlice({
     setSalesTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; grandTotal: number }>) => {
       state.totals = action.payload;
     },
+    setSalesReturnDraft: (state, action: PayloadAction<SalesInvoiceReturnDraft | undefined>) => {
+      state.returnDraft = action.payload;
+      state.hasUnsavedChanges = true;
+    },
     resetSalesForm: (state) => {
       state.form = {
         customer_id: 0,
@@ -1097,6 +1116,7 @@ const salesInvoiceSlice = createSlice({
         discount_amount: 0,
       };
       state.items = [];
+      state.returnDraft = undefined;
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
     },
     setSavedSalesInvoices: (state, action: PayloadAction<any[]>) => {
@@ -1115,6 +1135,7 @@ const salesInvoiceSlice = createSlice({
          created_by_name: state.created_by_name,
          form: state.form,
          items: state.items,
+         returnDraft: state.returnDraft,
          loading: state.loading,
          savedInvoices: state.savedInvoices,
          totals: state.totals,
@@ -1157,6 +1178,7 @@ const salesInvoiceSlice = createSlice({
          created_by_name: state.created_by_name,
          form: state.form,
          items: state.items,
+         returnDraft: state.returnDraft,
          loading: state.loading,
          savedInvoices: state.savedInvoices,
          totals: state.totals,
@@ -1221,6 +1243,7 @@ export const {
   updateSalesItem,
   removeSalesItem,
   setSalesTotals,
+  setSalesReturnDraft,
   resetSalesForm,
   setSavedSalesInvoices,
   setSalesLoading,

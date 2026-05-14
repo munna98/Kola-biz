@@ -258,6 +258,62 @@ pub async fn render_invoice(
         _ => return Err("Unsupported voucher type".to_string()),
     };
 
+    let has_sales_returns = voucher_type == "sales_invoice"
+        && voucher_data
+            .get("has_returns")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+    // Existing saved templates may not have been reseeded with the returns block.
+    // Inject a compact return summary at render time so all active templates show net payable.
+    if has_sales_returns && !template.body_html.contains("has_returns") {
+        let return_summary = r#"
+{{#if has_returns}}
+<div class="inline-return-items" style="margin: 10px 0; padding: 6px 0; border-top: 1px dashed #999; border-bottom: 1px dashed #999; font-size: 9pt;">
+  <div style="text-align: center; font-weight: bold; margin-bottom: 4px;">RETURNED ITEMS</div>
+  <table style="width: 100%; border-collapse: collapse;">
+    <tbody>
+      {{#each return_items}}
+      <tr>
+        <td>{{description}}</td>
+        <td style="text-align: right;">{{format_number final_quantity 2}}</td>
+        <td style="text-align: right;">{{format_number rate 2}}</td>
+        <td style="text-align: right;">{{format_number total 2}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</div>
+<div class="inline-return-summary" style="margin: 10px 0; padding: 8px 0; border-top: 1px solid #999; border-bottom: 1px solid #999; font-size: 10pt;">
+  <div style="display: flex; justify-content: flex-end; gap: 24px;">
+    <span>Invoice Total</span>
+    <strong>{{format_currency grand_total}}</strong>
+  </div>
+  <div style="display: flex; justify-content: flex-end; gap: 24px; color: #b91c1c;">
+    <span>Less Returns</span>
+    <strong>-{{format_currency return_total}}</strong>
+  </div>
+  <div style="display: flex; justify-content: flex-end; gap: 24px; font-size: 12pt;">
+    <span><strong>Net Payable</strong></span>
+    <strong>{{format_currency net_payable}}</strong>
+  </div>
+</div>
+{{/if}}
+"#;
+
+        if let Some(pos) = template.body_html.find("<!-- Account Summary -->") {
+            template.body_html.insert_str(pos, return_summary);
+        } else if let Some(pos) = template.body_html.find("account-summary") {
+            if let Some(div_start) = template.body_html[..pos].rfind('<') {
+                template.body_html.insert_str(div_start, return_summary);
+            } else {
+                template.body_html.push_str(return_summary);
+            }
+        } else {
+            template.body_html.push_str(return_summary);
+        }
+    }
+
     // 5. Dynamically inject {{#unless is_cash}} around Account Summary
     //    in case the database template hasn't been updated with the conditional yet.
     if !template.body_html.contains("unless is_cash") {
@@ -1034,6 +1090,57 @@ async fn get_sales_invoice_data(
             obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
             obj.insert("bill_discount".to_string(), json!(round2(bill_discount)));
+
+            let (formatted_return_items, return_total) = if let Some(linked_return_id) = invoice.linked_return_id.as_deref() {
+                let return_items: Vec<crate::commands::sales_returns::SalesReturnItem> = sqlx::query_as(
+                    "SELECT vi.*,
+                            COALESCE(p.name, s.name) as product_name
+                     FROM voucher_items vi
+                     LEFT JOIN products p ON vi.product_id = p.id
+                     LEFT JOIN services s ON vi.service_id = s.id
+                     WHERE vi.voucher_id = ?",
+                )
+                .bind(linked_return_id)
+                .fetch_all(pool)
+                .await
+                .unwrap_or_default();
+
+                let total: f64 = sqlx::query_scalar(
+                    "SELECT COALESCE(grand_total, total_amount, 0) FROM vouchers WHERE id = ? AND voucher_type = 'sales_return' AND deleted_at IS NULL",
+                )
+                .bind(linked_return_id)
+                .fetch_optional(pool)
+                .await
+                .unwrap_or(None)
+                .unwrap_or(0.0);
+
+                let formatted: Vec<serde_json::Value> = return_items
+                    .into_iter()
+                    .map(|item| {
+                        let mut item_val = serde_json::to_value(&item).unwrap_or(json!({}));
+                        if let Some(obj) = item_val.as_object_mut() {
+                            let tax_rate = if item.resolved_gst_rate > 0.0 { item.resolved_gst_rate } else { item.tax_rate };
+                            let display_amt = if tax_inclusive && tax_rate > 0.0 {
+                                item.amount / (1.0 + tax_rate / 100.0)
+                            } else {
+                                item.amount
+                            };
+                            obj.insert("amount".to_string(), json!(round2(display_amt)));
+                            obj.insert("total".to_string(), json!(round2(item.net_amount + item.tax_amount)));
+                            obj.insert("description".to_string(), json!(item.description.clone().or(item.product_name.clone()).unwrap_or_default()));
+                        }
+                        item_val
+                    })
+                    .collect();
+
+                (formatted, total)
+            } else {
+                (Vec::new(), 0.0)
+            };
+            obj.insert("return_items".to_string(), serde_json::to_value(&formatted_return_items).unwrap_or(json!([])));
+            obj.insert("return_total".to_string(), json!(round2(return_total)));
+            obj.insert("has_returns".to_string(), json!(return_total > 0.0));
+            obj.insert("net_payable".to_string(), json!(round2((invoice.grand_total - return_total).max(0.0))));
 
             // Detect cash sale (no meaningful balance to show)
             let is_cash = invoice.customer_name == "Cash";

@@ -20,6 +20,8 @@ import {
     setSalesReturnCurrentVoucherNo,
     setSalesReturnHasUnsavedChanges,
     setSalesReturnNavigationData,
+    setActiveSectionWithParams,
+    setSalesReturnDraft,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -59,6 +61,7 @@ interface Party {
 export default function SalesReturnPage() {
     const dispatch = useDispatch<AppDispatch>();
     const salesReturnState = useSelector((state: RootState) => state.salesReturn);
+    const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
     const [products, setProducts] = useState<Product[]>([]);
     const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
@@ -78,6 +81,7 @@ export default function SalesReturnPage() {
     // Refs for focus management
     const formRef = useRef<HTMLFormElement>(null);
     const customerRef = useRef<HTMLDivElement>(null);
+    const appliedInvoicePrefillRef = useRef<string | null>(null);
 
     // Load initial data
     useEffect(() => {
@@ -108,8 +112,46 @@ export default function SalesReturnPage() {
                 }));
                 setParties(combinedParties);
 
-                // Default to "Cash Sale" account if available, otherwise first party
-                if (salesReturnState.form.customer_id === 0 && salesReturnState.mode === 'new') {
+                const invoicePrefill = activeSectionParams?.source === 'sales_invoice'
+                    ? activeSectionParams
+                    : null;
+
+                const invoicePrefillKey = invoicePrefill
+                    ? String(invoicePrefill.invoiceNo || invoicePrefill.invoiceId || 'draft-sales-invoice')
+                    : null;
+
+                if (invoicePrefill && appliedInvoicePrefillRef.current !== invoicePrefillKey) {
+                    appliedInvoicePrefillRef.current = invoicePrefillKey;
+                    dispatch(resetSalesReturnForm());
+                    dispatch(setSalesReturnMode('new'));
+                    dispatch(setSalesReturnCurrentVoucherId(null));
+                    dispatch(setSalesReturnCurrentVoucherNo(undefined));
+                    dispatch(setSalesReturnCustomer({
+                        id: Number(invoicePrefill.customerId) || 0,
+                        name: String(invoicePrefill.customerName || ''),
+                        type: invoicePrefill.partyType || 'customer',
+                    }));
+                    dispatch(setSalesReturnVoucherDate(String(invoicePrefill.voucherDate || new Date().toISOString().split('T')[0])));
+                    dispatch(setSalesReturnReference(String(invoicePrefill.invoiceNo || '')));
+                    dispatch(setSalesReturnNarration(invoicePrefill.invoiceNo
+                        ? `Return against Sales Invoice ${invoicePrefill.invoiceNo}`
+                        : 'Return against current Sales Invoice'));
+                    if (invoicePrefill.returnDraft) {
+                        invoicePrefill.returnDraft.items?.forEach((item: any) => {
+                            dispatch(addSalesReturnItem(item));
+                        });
+                        dispatch(setSalesReturnDiscountRate(invoicePrefill.returnDraft.totals?.discount ? invoicePrefill.returnDraft.form?.discount_rate || 0 : 0));
+                        dispatch(setSalesReturnDiscountAmount(invoicePrefill.returnDraft.totals?.discount || 0));
+                        dispatch(setSalesReturnTotals(invoicePrefill.returnDraft.totals || {
+                            subtotal: 0,
+                            discount: 0,
+                            tax: 0,
+                            grandTotal: 0,
+                        }));
+                    }
+                    dispatch(setSalesReturnHasUnsavedChanges(true));
+                } else if (salesReturnState.form.customer_id === 0 && salesReturnState.mode === 'new') {
+                    // Default to "Cash Sale" account if available, otherwise first party
                     const cashSaleAccount = combinedParties.find(p => p.name === 'Cash');
                     const defaultParty = cashSaleAccount || combinedParties[0];
 
@@ -130,7 +172,7 @@ export default function SalesReturnPage() {
         };
 
         loadData();
-    }, [dispatch]);
+    }, [dispatch, activeSectionParams]);
 
     // Auto-add first line if empty and in new mode
     useEffect(() => {
@@ -355,6 +397,24 @@ export default function SalesReturnPage() {
             return;
         }
 
+        if (activeSectionParams?.source === 'sales_invoice' && activeSectionParams.draftReturn) {
+            dispatch(setSalesReturnDraft({
+                voucher_date: salesReturnState.form.voucher_date,
+                reference: salesReturnState.form.reference,
+                narration: salesReturnState.form.narration,
+                items: salesReturnState.items.map(item => ({ ...item })),
+                totals: { ...salesReturnState.totals },
+            }));
+            dispatch(setActiveSectionWithParams({
+                section: 'sales',
+                params: {
+                    returnDraftSaved: true,
+                    refreshKey: Date.now(),
+                },
+            }));
+            return;
+        }
+
         try {
             dispatch(setSalesReturnLoading(true));
             if (salesReturnState.mode === 'editing' && salesReturnState.currentVoucherId) {
@@ -421,6 +481,16 @@ export default function SalesReturnPage() {
             }
 
             dispatch(setSalesReturnHasUnsavedChanges(false));
+            if (activeSectionParams?.source === 'sales_invoice' && activeSectionParams.invoiceId) {
+                dispatch(setActiveSectionWithParams({
+                    section: 'sales',
+                    params: {
+                        refreshInvoiceId: activeSectionParams.invoiceId,
+                        refreshKey: Date.now(),
+                    },
+                }));
+                return;
+            }
             handleNew(true);
         } catch (error) {
             toast.error('Failed to save sales return');
@@ -504,7 +574,11 @@ export default function SalesReturnPage() {
                 discount_amount: item.discount_amount || 0,
             }));
 
-            updateTotalsWithItems(loadedItems, invoice.discount_rate, invoice.discount_amount);
+            updateTotalsWithItems(
+                loadedItems,
+                invoice.discount_amount ? undefined : invoice.discount_rate,
+                invoice.discount_amount || undefined
+            );
 
             dispatch(setSalesReturnMode('viewing'));
             dispatch(setSalesReturnHasUnsavedChanges(false));
@@ -823,7 +897,7 @@ export default function SalesReturnPage() {
                                             <Label className="text-xs font-medium mb-1 block">Discount %</Label>
                                             <Input
                                                 type="number"
-                                                value={salesReturnState.form.discount_rate}
+                                                value={salesReturnState.form.discount_rate || ''}
                                                 onChange={(e) => {
                                                     const rate = parseFloat(e.target.value) || 0;
                                                     dispatch(setSalesReturnHasUnsavedChanges(true));
@@ -840,7 +914,7 @@ export default function SalesReturnPage() {
                                             <Input
                                                 id="voucher-discount-amount"
                                                 type="number"
-                                                value={salesReturnState.form.discount_amount}
+                                                value={salesReturnState.form.discount_amount || ''}
                                                 onChange={(e) => {
                                                     const amount = parseFloat(e.target.value) || 0;
                                                     dispatch(setSalesReturnHasUnsavedChanges(true));

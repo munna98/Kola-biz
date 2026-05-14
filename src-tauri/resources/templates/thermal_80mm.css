@@ -92,6 +92,17 @@ body {
     text-align: right;
 }
 
+.return-title {
+    font-size: 9pt;
+    text-align: center;
+    font-weight: bold !important;
+    margin: 4px 0;
+}
+
+.returned-items {
+    font-size: 8.5pt;
+}
+
 .totals {
     margin-top: 8px;
     font-size: 9pt;

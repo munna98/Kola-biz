@@ -1,12 +1,13 @@
 use serde::{Deserialize, Serialize};
 use crate::company_db::DbRegistry;
+use sqlx::{Sqlite, SqlitePool, Transaction};
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
 use super::invoices::{finalize_processed_items, prepare_voucher_line};
 use super::resolve_voucher_line_unit;
-use crate::voucher_seq::get_next_voucher_number;
+use crate::voucher_seq::get_next_voucher_number_in_tx;
 
 // ============= SALES RETURN =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -65,7 +66,7 @@ pub struct SalesReturnItem {
     pub resolved_gst_rate: f64,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct CreateSalesReturnItem {
     #[serde(default = "default_item_type")]
     pub item_type: String,
@@ -200,16 +201,25 @@ pub async fn create_sales_return(
 ) -> Result<String, String> {
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    let voucher_id = create_sales_return_in_tx(&pool, &mut tx, &invoice).await?;
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(voucher_id)
+}
 
-    let voucher_no = get_next_voucher_number(&pool, "sales_return").await?;
+pub(crate) async fn create_sales_return_in_tx(
+    pool: &SqlitePool,
+    tx: &mut Transaction<'_, Sqlite>,
+    invoice: &CreateSalesReturn,
+) -> Result<String, String> {
+    let voucher_no = get_next_voucher_number_in_tx(tx, "sales_return").await?;
     let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .ok()
         .flatten();
     let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?")
         .bind(&invoice.customer_id)
-        .fetch_optional(&mut *tx)
+        .fetch_optional(&mut **tx)
         .await
         .ok()
         .flatten();
@@ -219,7 +229,7 @@ pub async fn create_sales_return(
     let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
     let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
         "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
-    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+    ).fetch_optional(&mut **tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
     let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
@@ -231,8 +241,8 @@ pub async fn create_sales_return(
         };
         prepared_lines.push(
             prepare_voucher_line(
-                &mut tx,
-                &pool,
+                tx,
+                pool,
                 "sale",
                 &item.item_type,
                 item_id,
@@ -284,7 +294,7 @@ pub async fn create_sales_return(
     .bind(&invoice.narration)
     .bind(tax_inclusive as i64)
     .bind(grand_total)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -323,25 +333,25 @@ pub async fn create_sales_return(
         .bind(&item.hsn_sac_code)
         .bind(&item.gst_slab_id)
         .bind(item.resolved_gst_rate)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(|e| e.to_string())?;
     }
 
-    let party_id = invoice.customer_id;
+    let party_id = invoice.customer_id.clone();
     let sales_return_account: String =
         sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4003'")
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut **tx)
             .await
             .map_err(|e| e.to_string())?;
     let tax_account: String =
         sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '2002'")
-            .fetch_one(&mut *tx)
+            .fetch_one(&mut **tx)
             .await
             .map_err(|e| e.to_string())?;
     let party_account: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE id = ?")
         .bind(&party_id)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await
         .map_err(|e| format!("Party account not found: {}", e))?;
 
@@ -353,7 +363,7 @@ pub async fn create_sales_return(
     .bind(&voucher_id)
     .bind(&sales_return_account)
     .bind(subtotal)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -366,7 +376,7 @@ pub async fn create_sales_return(
         .bind(&voucher_id)
         .bind(&tax_account)
         .bind(total_tax)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(|e| e.to_string())?;
     }
@@ -379,14 +389,14 @@ pub async fn create_sales_return(
     .bind(&voucher_id)
     .bind(&party_account)
     .bind(subtotal - discount_amount + total_tax)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
 
     if discount_amount > 0.0 {
         let discount_allowed_account: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'")
-                .fetch_one(&mut *tx)
+                .fetch_one(&mut **tx)
                 .await
                 .map_err(|e| e.to_string())?;
 
@@ -398,7 +408,7 @@ pub async fn create_sales_return(
         .bind(&voucher_id)
         .bind(&discount_allowed_account)
         .bind(discount_amount)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(|e| e.to_string())?;
     }
@@ -407,7 +417,7 @@ pub async fn create_sales_return(
         "SELECT item_type, product_id, base_quantity, count, rate, amount FROM voucher_items WHERE voucher_id = ?",
     )
     .bind(&voucher_id)
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -427,13 +437,46 @@ pub async fn create_sales_return(
         .bind(item.3)
         .bind(rate_per_base)
         .bind(amount)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(|e| e.to_string())?;
     }
 
-    tx.commit().await.map_err(|e| e.to_string())?;
+    sync_sales_invoice_link_for_return(tx, &voucher_id, invoice.reference.as_deref()).await?;
+
     Ok(voucher_id)
+}
+
+async fn sync_sales_invoice_link_for_return(
+    tx: &mut Transaction<'_, Sqlite>,
+    return_id: &str,
+    reference: Option<&str>,
+) -> Result<(), String> {
+    sqlx::query("UPDATE vouchers SET linked_return_id = NULL WHERE linked_return_id = ?")
+        .bind(return_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if let Some(reference) = reference {
+        let trimmed = reference.trim();
+        if !trimmed.is_empty() {
+            sqlx::query(
+                "UPDATE vouchers
+                 SET linked_return_id = ?
+                 WHERE voucher_type = 'sales_invoice'
+                   AND voucher_no = ?
+                   AND deleted_at IS NULL",
+            )
+            .bind(return_id)
+            .bind(trimmed)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
+    Ok(())
 }
 
 #[tauri::command]
@@ -691,6 +734,8 @@ pub async fn update_sales_return(
         .map_err(|e| e.to_string())?;
     }
 
+    sync_sales_invoice_link_for_return(&mut tx, &id, invoice.reference.as_deref()).await?;
+
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -711,6 +756,11 @@ pub async fn delete_sales_return(registry: State<'_, Arc<DbRegistry>>, id: Strin
         .await
         .map_err(|e| e.to_string())?;
     sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+        .bind(&id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("UPDATE vouchers SET linked_return_id = NULL WHERE linked_return_id = ?")
         .bind(&id)
         .execute(&mut *tx)
         .await

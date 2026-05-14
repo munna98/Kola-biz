@@ -165,6 +165,18 @@ impl TemplateEngine {
         if let Some(total) = voucher_data.get("grand_total").and_then(|v| v.as_f64()) {
             voucher_data["grand_total_words"] = json!(crate::utils::number_to_words_indian(total));
         }
+        if let Some(net_payable) = voucher_data.get("net_payable").and_then(|v| v.as_f64()) {
+            voucher_data["net_payable_words"] =
+                json!(crate::utils::number_to_words_indian(net_payable));
+            if voucher_data
+                .get("has_returns")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                voucher_data["grand_total_words"] =
+                    json!(crate::utils::number_to_words_indian(net_payable));
+            }
+        }
 
         Ok(voucher_data)
     }

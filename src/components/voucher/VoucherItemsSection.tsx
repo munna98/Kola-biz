@@ -174,7 +174,7 @@ const RateCell = React.forwardRef<HTMLInputElement, RateCellProps>(({ rate, exTa
 RateCell.displayName = 'RateCell';
 
 interface FormattedNumberInputProps extends Omit<React.ComponentProps<typeof Input>, 'value' | 'onChange'> {
-    value: number;
+    value?: number | null;
     onChangeValue: (val: string) => void;
     decimals?: number;
     emptyWhenZero?: boolean;
@@ -186,7 +186,7 @@ const FormattedNumberInput = React.forwardRef<HTMLInputElement, FormattedNumberI
         const [localValue, setLocalValue] = React.useState('');
 
         const blurredValue = React.useMemo(() => {
-            if (!Number.isFinite(value)) {
+            if (typeof value !== 'number' || !Number.isFinite(value)) {
                 return '';
             }
 
@@ -422,7 +422,8 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
             if (col.id === 'sl_no') return '24px';
             if (col.id === 'product') return '3fr';
             if (['cgst', 'sgst', 'igst'].includes(col.id)) return '0.8fr';
-            if (['deduction', 'amount', 'discount_percent', 'discount_amount', 'tax_rate', 'gst_rate', 'sales_rate', 'mrp'].includes(col.id)) return '0.6fr';
+            if (['sales_rate', 'mrp'].includes(col.id)) return '0.75fr';
+            if (['deduction', 'amount', 'discount_percent', 'discount_amount', 'tax_rate', 'gst_rate'].includes(col.id)) return '0.6fr';
             return '1fr';
         }).join(' ') + ' 64px';
     };
@@ -873,7 +874,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             );
                         case 'sales_rate': {
                             const isEditable = (settings?.updateRatesOnPurchase || settings?.masterProductsEnabled) && !isReadOnly;
-                            const value = item.sales_rate !== undefined ? item.sales_rate : product?.sales_rate || 0;
+                            const value = item.sales_rate !== undefined
+                                ? item.sales_rate
+                                : product?.sales_rate && (!settings?.masterProductsEnabled || (product as any).is_master !== 1)
+                                    ? product.sales_rate
+                                    : undefined;
                             return (
                                 isEditable ? (
                                     <FormattedNumberInput
@@ -894,7 +899,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                         }
                         case 'mrp': {
                             const isEditable = (settings?.updateRatesOnPurchase || settings?.masterProductsEnabled) && !isReadOnly;
-                            const value = item.mrp !== undefined ? item.mrp : product?.mrp || 0;
+                            const value = item.mrp !== undefined
+                                ? item.mrp
+                                : product?.mrp && (!settings?.masterProductsEnabled || (product as any).is_master !== 1)
+                                    ? product.mrp
+                                    : undefined;
                             return (
                                 isEditable ? (
                                     <FormattedNumberInput

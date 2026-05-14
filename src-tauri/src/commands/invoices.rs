@@ -6,6 +6,7 @@ use tauri::State;
 
 
 use uuid::Uuid;
+use super::sales_returns::{create_sales_return_in_tx, CreateSalesReturn, CreateSalesReturnItem};
 use super::resolve_voucher_line_unit;
 use crate::voucher_seq::get_next_voucher_number;
 
@@ -1163,6 +1164,7 @@ pub struct SalesInvoice {
     pub deleted_at: Option<String>,
     pub created_by_name: Option<String>,
     pub tax_inclusive: i64,
+    pub linked_return_id: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -1233,6 +1235,7 @@ pub struct CreateSalesInvoice {
     pub user_id: Option<String>,
     pub tax_inclusive: Option<bool>,
     pub gst_disabled: Option<bool>,
+    pub return_items: Option<Vec<CreateSalesReturnItem>>,
 }
 
 #[tauri::command]
@@ -1258,7 +1261,8 @@ pub async fn get_sales_invoices(registry: State<'_, Arc<DbRegistry>>) -> Result<
             v.created_at,
             v.deleted_at,
             u.full_name as created_by_name,
-            COALESCE(v.tax_inclusive, 0) as tax_inclusive
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            v.linked_return_id
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -1298,7 +1302,8 @@ pub async fn get_sales_invoice(
             v.created_at,
             v.deleted_at,
             u.full_name as created_by_name,
-            COALESCE(v.tax_inclusive, 0) as tax_inclusive
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            v.linked_return_id
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -1357,7 +1362,8 @@ pub(crate) async fn get_sales_invoice_with_pool(pool: &SqlitePool, id: &str) -> 
             v.created_at,
             v.deleted_at,
             u.full_name as created_by_name,
-            COALESCE(v.tax_inclusive, 0) as tax_inclusive
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            v.linked_return_id
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -1386,6 +1392,82 @@ pub(crate) async fn get_sales_invoice_items_with_pool(pool: &SqlitePool, voucher
     .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())
+}
+
+async fn delete_linked_sales_return_hard_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    return_id: &str,
+) -> Result<(), String> {
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+        .bind(return_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
+        .bind(return_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+        .bind(return_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM vouchers WHERE id = ? AND voucher_type = 'sales_return'")
+        .bind(return_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+async fn create_draft_return_for_sales_invoice_in_tx(
+    pool: &SqlitePool,
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    sales_invoice_id: &str,
+    sales_invoice_no: &str,
+    invoice: &CreateSalesInvoice,
+) -> Result<(), String> {
+    let return_items = invoice.return_items.clone().unwrap_or_default();
+    if return_items.is_empty() {
+        return Ok(());
+    }
+
+    let existing_return_id: Option<String> = sqlx::query_scalar(
+        "SELECT linked_return_id FROM vouchers WHERE id = ? AND voucher_type = 'sales_invoice'",
+    )
+    .bind(sales_invoice_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?
+    .flatten();
+
+    if let Some(return_id) = existing_return_id.as_deref() {
+        delete_linked_sales_return_hard_in_tx(tx, return_id).await?;
+    }
+
+    let sales_return = CreateSalesReturn {
+        customer_id: invoice.customer_id.clone(),
+        party_type: invoice.party_type.clone(),
+        voucher_date: invoice.voucher_date.clone(),
+        reference: Some(sales_invoice_no.to_string()),
+        narration: Some(format!("Return against Sales Invoice {}", sales_invoice_no)),
+        discount_rate: None,
+        discount_amount: None,
+        items: return_items,
+        tax_inclusive: invoice.tax_inclusive,
+        gst_disabled: invoice.gst_disabled,
+    };
+    let return_id = create_sales_return_in_tx(pool, tx, &sales_return).await?;
+
+    sqlx::query("UPDATE vouchers SET linked_return_id = ? WHERE id = ?")
+        .bind(return_id)
+        .bind(sales_invoice_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
 }
 
 
@@ -1502,7 +1584,7 @@ pub async fn create_sales_invoice(
 
 
 
-    let party_id = invoice.customer_id;
+    let party_id = invoice.customer_id.clone();
 
     // ============= JOURNAL: SPLIT BY ITEM TYPE =============
     let product_subtotal = round2(processed_items.iter()
@@ -1568,6 +1650,8 @@ pub async fn create_sales_invoice(
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
         }
     }
+
+    create_draft_return_for_sales_invoice_in_tx(&pool, &mut tx, &voucher_id, &voucher_no, &invoice).await?;
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(voucher_id.to_string())
@@ -1727,6 +1811,13 @@ pub async fn update_sales_invoice(
     let grand_total = round2(total_amount + total_tax);
 
     let voucher_id = id;
+    let voucher_no: String = sqlx::query_scalar(
+        "SELECT voucher_no FROM vouchers WHERE id = ? AND voucher_type = 'sales_invoice'",
+    )
+    .bind(&voucher_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
     let _ = sqlx::query(
         "UPDATE vouchers 
          SET voucher_date = ?, party_id = ?, salesperson_id = ?, party_type = ?, reference = ?, subtotal = ?, 
@@ -1781,7 +1872,7 @@ pub async fn update_sales_invoice(
 
     sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?").bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    let party_id = invoice.customer_id;
+    let party_id = invoice.customer_id.clone();
 
     // ============= JOURNAL: SPLIT BY ITEM TYPE =============
     let product_subtotal = round2(processed_items.iter()
@@ -1842,6 +1933,8 @@ pub async fn update_sales_invoice(
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
         }
     }
+
+    create_draft_return_for_sales_invoice_in_tx(&pool, &mut tx, &voucher_id, &voucher_no, &invoice).await?;
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(voucher_id.to_string())

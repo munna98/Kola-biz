@@ -22,9 +22,11 @@ import {
   setSalesSalespersonId,
   setSalesHasUnsavedChanges,
   setSalesCreatedByName,
+  setSalesReturnDraft,
   createNewSalesTab,
   switchSalesTab,
   closeSalesTab,
+  setActiveSectionWithParams,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -37,6 +39,7 @@ import {
   IconX,
   IconPlus,
   IconSettings2,
+  IconReceiptRefund,
 } from '@tabler/icons-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
@@ -73,6 +76,7 @@ interface Party {
 export default function SalesInvoicePage() {
   const dispatch = useDispatch<AppDispatch>();
   const salesState = useSelector((state: RootState) => state.salesInvoice);
+  const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
   const user = useSelector((state: RootState) => state.auth.user);
   const [products, setProducts] = useState<Product[]>([]);
   const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
@@ -102,6 +106,7 @@ export default function SalesInvoicePage() {
   const [gstDisabled, setGstDisabled] = useState(false);
   const [services, setServices] = useState<any[]>([]);
   const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
+  const [linkedReturnSummary, setLinkedReturnSummary] = useState<{ id: string; total: number; count: number } | null>(null);
 
 
 
@@ -109,6 +114,10 @@ export default function SalesInvoicePage() {
     () => buildProductUnitMap(productUnitConversions),
     [productUnitConversions]
   );
+  const draftReturnTotal = salesState.returnDraft?.totals.grandTotal || 0;
+  const linkedReturnTotal = draftReturnTotal || linkedReturnSummary?.total || 0;
+  const linkedReturnCount = salesState.returnDraft?.items.length || linkedReturnSummary?.count || 0;
+  const netPayableTotal = Math.max(0, salesState.totals.grandTotal - linkedReturnTotal);
 
   // Create Customer Shortcut State
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
@@ -449,7 +458,21 @@ export default function SalesInvoicePage() {
   // Ref to track if auto-print is pending after payment dialog
   const autoPrintPending = useRef(false);
 
-  // ... (existing code)
+  const buildSalesReturnDraftPayload = () => (salesState.returnDraft?.items || []).map(item => ({
+    item_type: 'product',
+    product_id: item.product_id || null,
+    service_id: null,
+    unit_id: item.unit_id || null,
+    description: item.description || item.product_name || '',
+    initial_quantity: item.initial_quantity,
+    count: item.count,
+    deduction_per_unit: item.deduction_per_unit,
+    rate: item.rate,
+    tax_rate: item.tax_rate,
+    discount_percent: item.discount_percent || null,
+    discount_amount: item.discount_amount || null,
+    remarks: null,
+  }));
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -507,6 +530,7 @@ export default function SalesInvoicePage() {
             })),
             tax_inclusive: isTaxInclusive,
             gst_disabled: gstDisabled,
+            return_items: buildSalesReturnDraftPayload(),
           },
         });
         toast.success('Sales invoice updated successfully');
@@ -517,7 +541,7 @@ export default function SalesInvoicePage() {
         setSavedInvoiceId(salesState.currentVoucherId);
         setSavedInvoiceNo(salesState.currentVoucherNo);
         setSavedInvoiceDate(salesState.form.voucher_date);
-        setSavedInvoiceAmount(salesState.totals.grandTotal);
+        setSavedInvoiceAmount(netPayableTotal);
         const customer = parties.find(p => p.id === salesState.form.customer_id);
         setSavedPartyName(customer?.name || 'Cash');
         setSavedPartyId(customer?.id);
@@ -559,12 +583,13 @@ export default function SalesInvoicePage() {
             user_id: user?.id.toString(),
             tax_inclusive: isTaxInclusive,
             gst_disabled: gstDisabled,
+            return_items: buildSalesReturnDraftPayload(),
           },
         });
         toast.success('Sales invoice created successfully');
 
         // Auto-prompt for payment after creating invoice
-        setSavedInvoiceAmount(salesState.totals.grandTotal);
+        setSavedInvoiceAmount(netPayableTotal);
         setSavedInvoiceId(newInvoiceId);
         setSavedInvoiceDate(salesState.form.voucher_date);
 
@@ -606,7 +631,7 @@ export default function SalesInvoicePage() {
       }
 
       dispatch(setSalesHasUnsavedChanges(false));
-      handleNew(true);
+      handleNewInvoice(true);
     } catch (error) {
       toast.error('Failed to save sales invoice');
       console.error(error);
@@ -641,6 +666,20 @@ export default function SalesInvoicePage() {
       dispatch(setSalesDiscountAmount(invoice.discount_amount || 0));
       const loadedTaxInclusive = Boolean(invoice.tax_inclusive);
       setIsTaxInclusive(loadedTaxInclusive);
+      dispatch(setSalesReturnDraft(undefined));
+      if (invoice.linked_return_id) {
+        const [linkedReturn, linkedReturnItems] = await Promise.all([
+          invoke<any>('get_sales_return', { id: invoice.linked_return_id }),
+          invoke<any[]>('get_sales_return_items', { voucherId: invoice.linked_return_id }),
+        ]);
+        setLinkedReturnSummary({
+          id: invoice.linked_return_id,
+          total: linkedReturn.grand_total || 0,
+          count: linkedReturnItems.length,
+        });
+      } else {
+        setLinkedReturnSummary(null);
+      }
 
       // Set Creator Name
       dispatch(setSalesCreatedByName(invoice.created_by_name));
@@ -707,7 +746,11 @@ export default function SalesInvoicePage() {
         discount_amount: item.discount_amount || 0,
       }));
 
-      updateTotalsWithItems(loadedItems, invoice.discount_rate, invoice.discount_amount);
+      updateTotalsWithItems(
+        loadedItems,
+        invoice.discount_amount ? undefined : invoice.discount_rate,
+        invoice.discount_amount || undefined
+      );
 
       dispatch(setSalesMode('viewing'));
       dispatch(setSalesHasUnsavedChanges(false));
@@ -719,6 +762,12 @@ export default function SalesInvoicePage() {
       dispatch(setSalesLoading(false));
     }
   };
+
+  useEffect(() => {
+    if (activeSectionParams?.refreshInvoiceId) {
+      loadVoucher(String(activeSectionParams.refreshInvoiceId));
+    }
+  }, [activeSectionParams?.refreshInvoiceId, activeSectionParams?.refreshKey]);
 
   const {
     handleNavigatePrevious,
@@ -742,6 +791,30 @@ export default function SalesInvoicePage() {
     onLoadVoucher: loadVoucher
   });
 
+  const handleNewInvoice = (skipConfirm?: boolean) => {
+    setLinkedReturnSummary(null);
+    dispatch(setSalesReturnDraft(undefined));
+    handleNew(skipConfirm);
+  };
+
+  const handleOpenSalesReturn = () => {
+    dispatch(setActiveSectionWithParams({
+      section: 'sales_return',
+      params: {
+        source: 'sales_invoice',
+        draftReturn: !salesState.currentVoucherId,
+        invoiceId: salesState.currentVoucherId,
+        invoiceNo: salesState.currentVoucherNo,
+        customerId: salesState.form.customer_id,
+        customerName: salesState.form.customer_name,
+        partyType: salesState.form.party_type,
+        voucherDate: salesState.form.voucher_date,
+        linkedReturnId: linkedReturnSummary?.id,
+        returnDraft: salesState.returnDraft,
+      },
+    }));
+  };
+
   const handleDeleteVoucher = async () => {
     const confirmed = await handleDelete();
     if (confirmed && salesState.currentVoucherId) {
@@ -750,7 +823,7 @@ export default function SalesInvoicePage() {
         // Delete the invoice (backend will handle cleanup of related data)
         await invoke('delete_sales_invoice', { id: salesState.currentVoucherId });
         toast.success('Voucher and all associated entries deleted');
-        handleNew();
+        handleNewInvoice();
       } catch (e) {
         toast.error('Failed to delete voucher');
         console.error(e);
@@ -1051,7 +1124,7 @@ export default function SalesInvoicePage() {
         onDelete={handleDeleteVoucher}
         onPrint={handlePrint}
         onSend={salesState.mode === 'viewing' ? handleSend : undefined}
-        onNew={handleNew}
+        onNew={handleNewInvoice}
         onListView={() => setShowListView(true)}
         onManagePayments={salesState.mode !== 'new' ? () => setShowQuickPayment(true) : undefined}
         loading={salesState.loading}
@@ -1132,7 +1205,7 @@ export default function SalesInvoicePage() {
         }}
         invoiceId={savedInvoiceId || salesState.currentVoucherId || undefined}
         invoiceNo={savedInvoiceNo || salesState.currentVoucherNo}
-        invoiceAmount={savedInvoiceAmount || salesState.totals.grandTotal}
+        invoiceAmount={savedInvoiceAmount || netPayableTotal}
         invoiceDate={savedInvoiceDate || salesState.form.voucher_date}
         partyName={savedPartyName}
         readOnly={salesState.mode === 'viewing'}
@@ -1141,7 +1214,6 @@ export default function SalesInvoicePage() {
           toast.success('Payment saved!');
         }}
       />
-
 
 
       <CustomerDialog
@@ -1294,41 +1366,57 @@ export default function SalesInvoicePage() {
               ) : null
             }
             footerLeftContent={
-              !isReadOnly && gstSlabs.length > 0 ? (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      title="GST Settings"
-                      className={`h-7 w-7 flex items-center justify-center rounded-md transition-colors border ${
-                        gstDisabled
-                          ? 'bg-amber-100 border-amber-400 text-amber-700 dark:bg-amber-900/30 dark:border-amber-600 dark:text-amber-400'
-                          : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'
-                      }`}
-                    >
-                      <IconSettings2 size={14} />
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent side="top" align="start" className="w-56 p-3">
-                    <p className="text-xs font-semibold mb-2 text-foreground">GST Options</p>
-                    <div className="flex items-center justify-between gap-2">
-                      <label className="text-xs text-muted-foreground cursor-pointer select-none" htmlFor="sales-gst-disable-switch">
-                        Disable GST for this voucher
-                      </label>
-                      <Switch
-                        id="sales-gst-disable-switch"
-                        checked={gstDisabled}
-                        onCheckedChange={setGstDisabled}
-                      />
-                    </div>
-                    {gstDisabled && (
-                      <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
-                        GST columns hidden. Invoice will be saved without tax.
-                      </p>
-                    )}
-                  </PopoverContent>
-                </Popover>
-              ) : null
+              <div className="flex items-center gap-1">
+                {!isReadOnly && gstSlabs.length > 0 ? (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        title="GST Settings"
+                        className={`h-7 w-7 flex items-center justify-center rounded-md transition-colors border ${
+                          gstDisabled
+                            ? 'bg-amber-100 border-amber-400 text-amber-700 dark:bg-amber-900/30 dark:border-amber-600 dark:text-amber-400'
+                            : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground'
+                        }`}
+                      >
+                        <IconSettings2 size={14} />
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent side="top" align="start" className="w-56 p-3">
+                      <p className="text-xs font-semibold mb-2 text-foreground">GST Options</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <label className="text-xs text-muted-foreground cursor-pointer select-none" htmlFor="sales-gst-disable-switch">
+                          Disable GST for this voucher
+                        </label>
+                        <Switch
+                          id="sales-gst-disable-switch"
+                          checked={gstDisabled}
+                          onCheckedChange={setGstDisabled}
+                        />
+                      </div>
+                      {gstDisabled && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                          GST columns hidden. Invoice will be saved without tax.
+                        </p>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                ) : null}
+                <button
+                  type="button"
+                  title="Sales Return"
+                  onClick={handleOpenSalesReturn}
+                  className="h-7 px-2 flex items-center gap-1 rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  <IconReceiptRefund size={14} />
+                  <span className="text-xs">Return</span>
+                  {linkedReturnCount > 0 && (
+                    <span className="min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] leading-4 text-center">
+                      {linkedReturnCount}
+                    </span>
+                  )}
+                </button>
+              </div>
             }
           />
 
@@ -1354,7 +1442,7 @@ export default function SalesInvoicePage() {
                     <Label className="text-xs font-medium mb-1 block">Discount %</Label>
                     <Input
                       type="number"
-                      value={salesState.form.discount_rate}
+                      value={salesState.form.discount_rate || ''}
                       onChange={(e) => {
                         const rate = parseFloat(e.target.value) || 0;
                         dispatch(setSalesHasUnsavedChanges(true));
@@ -1370,7 +1458,7 @@ export default function SalesInvoicePage() {
                     <Label className="text-xs font-medium mb-1 block">Discount ₹</Label>
                     <Input
                       type="number"
-                      value={salesState.form.discount_amount}
+                      value={salesState.form.discount_amount || ''}
                       onChange={(e) => {
                         const amount = parseFloat(e.target.value) || 0;
                         updateTotalsWithItems(salesState.items, undefined, amount);
@@ -1403,7 +1491,18 @@ export default function SalesInvoicePage() {
                   {salesState.totals.tax > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">Tax: ₹ {salesState.totals.tax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                   )}
-                  <div className="text-lg font-mono font-bold">₹ {salesState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                  {linkedReturnTotal > 0 && (
+                    <div className="flex justify-between items-center gap-2 text-xs font-mono text-red-600">
+                      <span>Less Returns ({linkedReturnCount}):</span>
+                      <span>- ₹ {linkedReturnTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    </div>
+                  )}
+                  {linkedReturnTotal > 0 && (
+                    <div className="text-xs font-mono text-muted-foreground">
+                      Invoice Total: ₹ {salesState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </div>
+                  )}
+                  <div className="text-lg font-mono font-bold">₹ {netPayableTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                 </div>
               </div>
             </div>

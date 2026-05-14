@@ -107,6 +107,25 @@ export default function PurchaseInvoicePage() {
     () => buildProductUnitMap(productUnitConversions),
     [productUnitConversions]
   );
+  const purchaseProductOptions = useMemo(() => {
+    if (!masterProductsEnabled) return products;
+
+    const selectableProducts = products.filter(product => !product.parent_product_id);
+    const selectableIds = new Set(selectableProducts.map(product => String(product.id)));
+    const referencedProductIds = new Set(
+      purchaseState.items
+        .filter(item => item.item_type !== 'service' && item.product_id)
+        .map(item => String(item.product_id))
+    );
+
+    const referencedChildProducts = products.filter(product =>
+      product.parent_product_id &&
+      referencedProductIds.has(String(product.id)) &&
+      !selectableIds.has(String(product.id))
+    );
+
+    return [...selectableProducts, ...referencedChildProducts];
+  }, [masterProductsEnabled, products, purchaseState.items]);
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -281,8 +300,12 @@ export default function PurchaseInvoicePage() {
 
       mappedItems.forEach(item => dispatch(addItem(item)));
 
-      // Recalculate totals
-      updateTotalsWithItems(mappedItems, 0, 0);
+      // Recalculate totals from the exact saved discount amount when present.
+      updateTotalsWithItems(
+        mappedItems,
+        voucher.discount_amount ? undefined : voucher.discount_rate,
+        voucher.discount_amount || undefined
+      );
 
       dispatch(setPurchaseHasUnsavedChanges(false));
     } catch (e) {
@@ -375,6 +398,9 @@ export default function PurchaseInvoicePage() {
           'purchase',
           product.purchase_rate || 0
         );
+        const isMasterProduct = masterProductsEnabled && product.is_master === 1;
+        const salesRate = isMasterProduct ? undefined : product.sales_rate;
+        const mrp = isMasterProduct ? undefined : product.mrp;
         finalValue = value;
         const updatedItems = [...purchaseState.items];
         updatedItems[index] = {
@@ -385,8 +411,8 @@ export default function PurchaseInvoicePage() {
           product_name: product.name,
           unit_id: defaultUnitId,
           rate,
-          sales_rate: product.sales_rate,
-          mrp: product.mrp,
+          sales_rate: salesRate,
+          mrp,
           ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
         };
         dispatch(
@@ -399,8 +425,8 @@ export default function PurchaseInvoicePage() {
               product_name: product.name,
               unit_id: defaultUnitId,
               rate,
-              sales_rate: product.sales_rate,
-              mrp: product.mrp,
+              sales_rate: salesRate,
+              mrp,
               ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
             },
           })
@@ -1198,7 +1224,7 @@ export default function PurchaseInvoicePage() {
           <VoucherItemsSection
             ref={voucherItemsRef}
             items={purchaseState.items}
-            products={masterProductsEnabled ? products.filter(p => !p.parent_product_id) : products}
+            products={purchaseProductOptions}
             units={units}
             productUnitsByProduct={productUnitsByProduct}
             isReadOnly={isReadOnly}
@@ -1290,7 +1316,7 @@ export default function PurchaseInvoicePage() {
                     <Label className="text-xs font-medium mb-1 block">Discount %</Label>
                     <Input
                       type="number"
-                      value={purchaseState.form.discount_rate}
+                      value={purchaseState.form.discount_rate || ''}
                       onChange={(e) => {
                         const rate = parseFloat(e.target.value) || 0;
                         updateTotalsWithItems(purchaseState.items, rate, undefined);
@@ -1306,7 +1332,7 @@ export default function PurchaseInvoicePage() {
                     <Label className="text-xs font-medium mb-1 block">Discount ₹</Label>
                     <Input
                       type="number"
-                      value={purchaseState.form.discount_amount}
+                      value={purchaseState.form.discount_amount || ''}
                       onChange={(e) => {
                         const amount = parseFloat(e.target.value) || 0;
                         updateTotalsWithItems(purchaseState.items, undefined, amount);

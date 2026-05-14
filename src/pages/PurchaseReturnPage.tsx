@@ -504,7 +504,11 @@ export default function PurchaseReturnPage() {
                 discount_amount: item.discount_amount || 0,
             }));
 
-            updateTotalsWithItems(loadedItems, invoice.discount_rate, invoice.discount_amount);
+            updateTotalsWithItems(
+                loadedItems,
+                invoice.discount_amount ? undefined : invoice.discount_rate,
+                invoice.discount_amount || undefined
+            );
 
             dispatch(setPurchaseReturnMode('viewing'));
             dispatch(setPurchaseReturnHasUnsavedChanges(false));
@@ -823,7 +827,7 @@ export default function PurchaseReturnPage() {
                                             <Label className="text-xs font-medium mb-1 block">Discount %</Label>
                                             <Input
                                                 type="number"
-                                                value={purchaseReturnState.form.discount_rate}
+                                                value={purchaseReturnState.form.discount_rate || ''}
                                                 onChange={(e) => {
                                                     const rate = parseFloat(e.target.value) || 0;
                                                     dispatch(setPurchaseReturnHasUnsavedChanges(true));
@@ -840,7 +844,7 @@ export default function PurchaseReturnPage() {
                                             <Input
                                                 id="voucher-discount-amount"
                                                 type="number"
-                                                value={purchaseReturnState.form.discount_amount}
+                                                value={purchaseReturnState.form.discount_amount || ''}
                                                 onChange={(e) => {
                                                     const amount = parseFloat(e.target.value) || 0;
                                                     dispatch(setPurchaseReturnHasUnsavedChanges(true));

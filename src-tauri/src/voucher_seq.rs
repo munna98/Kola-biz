@@ -1,4 +1,4 @@
-use sqlx::SqlitePool;
+use sqlx::{Sqlite, SqlitePool, Transaction};
 
 /// A single row from the voucher_sequences table
 #[derive(Debug, sqlx::FromRow)]
@@ -95,6 +95,48 @@ pub async fn get_next_voucher_number(
     .map_err(|e| e.to_string())?;
 
     tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(voucher_no)
+}
+
+pub async fn get_next_voucher_number_in_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    voucher_type: &str,
+) -> Result<String, String> {
+    let seq = sqlx::query_as::<_, VoucherSeqRow>(
+        "SELECT prefix, COALESCE(suffix, '') as suffix, COALESCE(separator, '-') as separator,
+                next_number, padding, COALESCE(include_financial_year, 0) as include_financial_year
+         FROM voucher_sequences WHERE voucher_type = ?",
+    )
+    .bind(voucher_type)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| format!("No voucher sequence found for type '{}': {}", voucher_type, e))?;
+
+    let number = format!("{:0>width$}", seq.next_number, width = seq.padding as usize);
+    let sep = &seq.separator;
+
+    let mut parts: Vec<String> = Vec::new();
+    if !seq.prefix.is_empty() {
+        parts.push(seq.prefix.clone());
+    }
+    if seq.include_financial_year {
+        parts.push(current_financial_year());
+    }
+    parts.push(number);
+
+    let base = parts.join(sep);
+    let voucher_no = if seq.suffix.is_empty() {
+        base
+    } else {
+        format!("{}{}{}", base, sep, seq.suffix)
+    };
+
+    sqlx::query("UPDATE voucher_sequences SET next_number = next_number + 1 WHERE voucher_type = ?")
+        .bind(voucher_type)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
     Ok(voucher_no)
 }
 

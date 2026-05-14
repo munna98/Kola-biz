@@ -171,6 +171,22 @@ body {
     border-radius: 4px;
     font-size: 9pt;
 }
+.account-summary {
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+.account-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 10px;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
+.account-summary-cell {
+    min-width: 0;
+    break-inside: avoid;
+    page-break-inside: avoid;
+}
 .footer {
     border-top: 2px solid #e5e7eb;
     padding-top: 20px;
@@ -240,4 +256,14 @@ body {
     .items-table { page-break-after: auto; }
     .items-table tr { page-break-inside: avoid; page-break-after: auto; }
     .totals-section { page-break-inside: avoid; }
+    .account-summary {
+        break-inside: avoid-page;
+        page-break-inside: avoid;
+        -webkit-column-break-inside: avoid;
+    }
+    .account-summary-grid,
+    .account-summary-cell {
+        break-inside: avoid-page;
+        page-break-inside: avoid;
+    }
 }
