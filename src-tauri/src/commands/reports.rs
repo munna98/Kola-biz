@@ -836,6 +836,51 @@ pub async fn get_transaction_report(
         .map_err(|e| e.to_string())
 }
 
+// ============= SALES & RETURNS REPORT =============
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct SalesReturnReportRow {
+    pub id: String,
+    pub voucher_no: String,
+    pub voucher_type: String,
+    pub voucher_date: String,
+    pub party_name: Option<String>,
+    pub reference: Option<String>,
+    pub amount: f64,
+}
+
+#[tauri::command]
+pub async fn get_sales_return_report(
+    registry: State<'_, Arc<DbRegistry>>,
+    from_date: String,
+    to_date: String,
+) -> Result<Vec<SalesReturnReportRow>, String> {
+    let pool = registry.active_pool().await?;
+    let query = "
+        SELECT
+            v.id,
+            v.voucher_no,
+            v.voucher_type,
+            v.voucher_date,
+            coa.account_name as party_name,
+            v.reference,
+            CAST(COALESCE(v.grand_total, v.total_amount, 0.0) AS REAL) as amount
+        FROM vouchers v
+        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        WHERE v.voucher_type IN ('sales_invoice', 'sales_return')
+          AND v.voucher_date >= ?
+          AND v.voucher_date <= ?
+          AND v.deleted_at IS NULL
+        ORDER BY v.voucher_date ASC, v.created_at ASC, v.id ASC
+    ";
+
+    sqlx::query_as::<_, SalesReturnReportRow>(query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())
+}
+
 // ============= PARTY OUTSTANDING =============
 #[derive(Serialize, Deserialize)]
 pub struct PartyOutstanding {
@@ -1585,16 +1630,20 @@ pub async fn get_top_products(
     let pool = registry.active_pool().await?;
     let query = "
         SELECT
-            p.name as product_name,
+            COALESCE(parent.name, p.name) as product_name,
             CAST(SUM(sm.quantity) AS REAL) as total_quantity,
             CAST(SUM(sm.amount) AS REAL) as total_revenue
         FROM stock_movements sm
         JOIN products p ON sm.product_id = p.id
+        LEFT JOIN products parent ON p.parent_product_id = parent.id
         JOIN vouchers v ON sm.voucher_id = v.id
         WHERE sm.movement_type = 'OUT'
+        AND v.voucher_type = 'sales_invoice'
         AND v.voucher_date >= ? AND v.voucher_date <= ?
         AND v.deleted_at IS NULL
-        GROUP BY p.id, p.name
+        AND p.deleted_at IS NULL
+        AND (parent.id IS NULL OR parent.deleted_at IS NULL)
+        GROUP BY COALESCE(parent.id, p.id), COALESCE(parent.name, p.name)
         ORDER BY total_revenue DESC
         LIMIT ?
     ";
@@ -1704,17 +1753,21 @@ pub async fn get_stock_alerts(
             p.name as product_name,
             CAST(COALESCE(SUM(
                 CASE
-                    WHEN sm.movement_type = 'IN' THEN sm.quantity
-                    WHEN sm.movement_type = 'OUT' THEN -sm.quantity
+                    WHEN v.id IS NOT NULL AND sm.movement_type = 'IN' THEN sm.quantity
+                    WHEN v.id IS NOT NULL AND sm.movement_type = 'OUT' THEN -sm.quantity
                     ELSE 0
                 END
             ), 0) AS REAL) as current_stock,
             u.symbol as unit_symbol
         FROM products p
         JOIN units u ON p.unit_id = u.id
-        LEFT JOIN stock_movements sm ON p.id = sm.product_id
+        LEFT JOIN products moved_product
+            ON moved_product.deleted_at IS NULL
+           AND (moved_product.id = p.id OR moved_product.parent_product_id = p.id)
+        LEFT JOIN stock_movements sm ON moved_product.id = sm.product_id
         LEFT JOIN vouchers v ON sm.voucher_id = v.id AND v.deleted_at IS NULL
         WHERE p.deleted_at IS NULL
+        AND p.parent_product_id IS NULL
         GROUP BY p.id
         HAVING current_stock < ? AND current_stock >= 0
         ORDER BY current_stock ASC

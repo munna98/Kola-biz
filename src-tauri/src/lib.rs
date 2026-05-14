@@ -181,6 +181,7 @@ pub fn run() {
             get_stock_movements,
             get_product_stock_qty,
             get_transaction_report,
+            get_sales_return_report,
             commands::parties::get_all_parties,
             // User Management (New)
             commands::auth::get_users,
