@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload } from '@tabler/icons-react';
 import { api, Product, Unit, ProductGroup, GstTaxSlab } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
@@ -13,6 +13,7 @@ import ProductDialog from '@/components/dialogs/ProductDialog';
 import UnitsDialog from '@/components/dialogs/UnitsDialog';
 import ProductGroupsDialog from '@/components/dialogs/ProductGroupsDialog';
 import BarcodeLabelDialog from '@/components/dialogs/BarcodeLabelDialog';
+import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
 import { invoke } from '@tauri-apps/api/core';
 
 type ProductFilter = 'all' | 'master' | 'child';
@@ -29,6 +30,7 @@ export default function ProductsPage() {
   const [open, setOpen] = useState(false);
   const [unitsOpen, setUnitsOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | undefined>(undefined);
   const [showDeleted, setShowDeleted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -171,6 +173,14 @@ export default function ProductsPage() {
             </Tooltip>
             {!showDeleted && (
               <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => setImportOpen(true)}>
+                      <IconFileUpload size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Import Products</TooltipContent>
+                </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <Button variant="outline" onClick={() => setGroupsOpen(true)}>
@@ -342,6 +352,61 @@ export default function ProductsPage() {
         open={barcodeDialogOpen}
         onOpenChange={setBarcodeDialogOpen}
         products={barcodeProduct ? [{ code: barcodeProduct.code, name: barcodeProduct.name, salesRate: barcodeProduct.sales_rate }] : []}
+      />
+
+      <ImportExcelDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        title="Import Products from Excel"
+        expectedColumns={['name', 'code', 'group', 'unit', 'purchase_rate', 'sales_rate', 'mrp', 'barcode', 'hsn_sac_code']}
+        sampleData={[
+          {
+            name: "Premium Widget",
+            code: "PW-001",
+            group: "General",
+            unit: "PCS",
+            purchase_rate: 100.0,
+            sales_rate: 150.0,
+            mrp: 199.0,
+            barcode: "1234567890123",
+            hsn_sac_code: "8471"
+          }
+        ]}
+        onImport={async (data) => {
+          if (units.length === 0) {
+            throw new Error("You must have at least one unit created before importing products.");
+          }
+
+          const defaultUnitId = units[0].id;
+          
+          const validData = data.filter(r => r.name && String(r.name).trim() !== '');
+          const formatted = validData.map(r => {
+            const unitName = String(r.unit || '').trim().toLowerCase();
+            const matchedUnit = units.find(u => u.name.toLowerCase() === unitName || u.symbol.toLowerCase() === unitName);
+            const unitId = matchedUnit ? matchedUnit.id : defaultUnitId;
+
+            const groupName = String(r.group || '').trim().toLowerCase();
+            const matchedGroup = groups.find(g => g.name.toLowerCase() === groupName);
+            const groupId = matchedGroup ? matchedGroup.id : undefined;
+
+            return {
+              name: String(r.name),
+              code: r.code ? String(r.code) : '',
+              group_id: groupId,
+              unit_id: unitId,
+              purchase_rate: Number(r.purchase_rate) || 0,
+              sales_rate: Number(r.sales_rate) || 0,
+              mrp: Number(r.mrp) || 0,
+              barcode: r.barcode ? String(r.barcode) : undefined,
+              hsn_sac_code: r.hsn_sac_code ? String(r.hsn_sac_code) : undefined,
+              conversions: [],
+              is_master: false
+            };
+          });
+          
+          await api.products.batchCreate(formatted);
+          load();
+        }}
       />
     </div>
   );

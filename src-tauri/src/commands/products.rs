@@ -696,6 +696,66 @@ pub async fn create_product(
 }
 
 #[tauri::command]
+pub async fn batch_create_products(
+    registry: State<'_, Arc<DbRegistry>>,
+    products: Vec<CreateProduct>,
+) -> Result<usize, String> {
+    let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    
+    let count = products.len();
+
+    for product in products {
+        let id = Uuid::now_v7().to_string();
+
+        let code = if product.is_master {
+            if product.code.trim().is_empty() {
+                return Err("Code is required for master products.".to_string());
+            }
+            product.code.clone()
+        } else if product.code.is_empty() {
+            generate_product_code_in_tx(&mut tx).await?
+        } else {
+            product.code.clone()
+        };
+
+        sqlx::query(
+            "INSERT INTO products (id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, hsn_sac_code, gst_slab_id, is_master) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(&code)
+        .bind(&product.name)
+        .bind(product.group_id.clone())
+        .bind(&product.unit_id)
+        .bind(product.purchase_rate)
+        .bind(product.sales_rate)
+        .bind(product.mrp)
+        .bind(&product.barcode)
+        .bind(&product.hsn_sac_code)
+        .bind(&product.gst_slab_id)
+        .bind(if product.is_master { 1i64 } else { 0i64 })
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        replace_product_unit_conversions(
+            &mut tx,
+            &id,
+            &product.unit_id,
+            product.purchase_rate,
+            product.sales_rate,
+            &product.conversions,
+        )
+        .await?;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    
+    Ok(count)
+}
+
+#[tauri::command]
 pub async fn update_product(
     registry: State<'_, Arc<DbRegistry>>,
     id: String,

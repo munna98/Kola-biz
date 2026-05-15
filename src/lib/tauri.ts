@@ -405,6 +405,7 @@ export const api = {
     listAllUnitConversions: () => invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
     listDeleted: () => invoke<Product[]>('get_deleted_products'),
     create: (data: CreateProduct) => invoke<Product>('create_product', { product: data }),
+    batchCreate: (data: CreateProduct[]) => invoke<number>('batch_create_products', { products: data }),
     update: (id: string, data: CreateProduct) => invoke<void>('update_product', { id, product: data }),
     delete: (id: string, deletedBy: string) => invoke<void>('delete_product', { id, deletedBy }),
     restore: (id: string) => invoke<void>('restore_product', { id }),
