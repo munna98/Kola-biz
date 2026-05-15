@@ -79,6 +79,7 @@ pub fn run() {
             // Customers
             get_customers,
             create_customer,
+            batch_create_customers,
             update_customer,
             delete_customer,
             get_deleted_customers,
@@ -88,6 +89,7 @@ pub fn run() {
             // Suppliers
             get_suppliers,
             create_supplier,
+            batch_create_suppliers,
             update_supplier,
             delete_supplier,
             get_deleted_suppliers,

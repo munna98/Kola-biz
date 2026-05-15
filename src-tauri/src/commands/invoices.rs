@@ -1984,6 +1984,8 @@ pub struct VoucherSummary {
     pub total_amount: f64,
     pub status: String,
     pub voucher_type: String,
+    pub total_debit: Option<f64>,
+    pub total_credit: Option<f64>,
 }
 
 #[tauri::command]
@@ -2022,7 +2024,21 @@ pub async fn list_vouchers(
                 2
             ) as total_amount,
             v.status,
-            v.voucher_type
+            v.voucher_type,
+            CASE 
+                WHEN v.voucher_type = 'opening_balance' THEN 
+                    (SELECT COALESCE(SUM(debit), 0.0) FROM journal_entries WHERE voucher_id = v.id AND account_id != (SELECT id FROM chart_of_accounts WHERE account_code = '3004' LIMIT 1))
+                WHEN v.voucher_type = 'journal' THEN
+                    (SELECT COALESCE(SUM(debit), 0.0) FROM journal_entries WHERE voucher_id = v.id)
+                ELSE NULL
+            END as total_debit,
+            CASE 
+                WHEN v.voucher_type = 'opening_balance' THEN 
+                    (SELECT COALESCE(SUM(credit), 0.0) FROM journal_entries WHERE voucher_id = v.id AND account_id != (SELECT id FROM chart_of_accounts WHERE account_code = '3004' LIMIT 1))
+                WHEN v.voucher_type = 'journal' THEN
+                    (SELECT COALESCE(SUM(credit), 0.0) FROM journal_entries WHERE voucher_id = v.id)
+                ELSE NULL
+            END as total_credit
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         WHERE v.voucher_type = ? AND v.deleted_at IS NULL ",

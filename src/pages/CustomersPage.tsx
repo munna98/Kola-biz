@@ -2,14 +2,17 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconFileUpload } from '@tabler/icons-react';
 import { api, Customer } from '@/lib/tauri';
 import { toast } from 'sonner';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
+import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
 
 export default function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [open, setOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [customerToEdit, setCustomerToEdit] = useState<Customer | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -83,17 +86,34 @@ export default function CustomersPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-64"
           />
-          <Button
-            variant="outline"
-            onClick={() => setShowDeleted(!showDeleted)}
-          >
-            {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
-          </Button>
-          {!showDeleted && (
-            <Button onClick={() => { setOpen(true); setCustomerToEdit(null); }}>
-              <IconPlus size={16} /> Add Customer
-            </Button>
-          )}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDeleted(!showDeleted)}
+                >
+                  {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{showDeleted ? 'View Active' : 'View Recycle Bin'}</TooltipContent>
+            </Tooltip>
+            {!showDeleted && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => setImportOpen(true)}>
+                      <IconFileUpload size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Import Customers</TooltipContent>
+                </Tooltip>
+                <Button onClick={() => { setOpen(true); setCustomerToEdit(null); }}>
+                  <IconPlus size={16} /> Add Customer
+                </Button>
+              </>
+            )}
+          </TooltipProvider>
         </div>
       </div>
 
@@ -161,6 +181,46 @@ export default function CustomersPage() {
         onOpenChange={setOpen}
         customerToEdit={customerToEdit}
         onSave={load}
+      />
+
+      <ImportExcelDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        title="Import Customers from Excel"
+        expectedColumns={['name', 'phone', 'email', 'address_line_1', 'address_line_2', 'city', 'state', 'postal_code', 'gstin', 'code']}
+        sampleData={[
+          {
+            name: "John Doe",
+            phone: "9876543210",
+            email: "john@example.com",
+            address_line_1: "123 Main St",
+            address_line_2: "",
+            city: "New York",
+            state: "NY",
+            postal_code: "10001",
+            gstin: "",
+            code: "C001"
+          }
+        ]}
+        onImport={async (data) => {
+          // data is an array of objects representing rows. Keys are column headers.
+          // Filter out empty rows (where name is missing)
+          const validData = data.filter(r => r.name && String(r.name).trim() !== '');
+          const formatted = validData.map(r => ({
+            name: String(r.name),
+            phone: r.phone ? String(r.phone) : undefined,
+            email: r.email ? String(r.email) : undefined,
+            address_line_1: r.address_line_1 ? String(r.address_line_1) : undefined,
+            address_line_2: r.address_line_2 ? String(r.address_line_2) : undefined,
+            city: r.city ? String(r.city) : undefined,
+            state: r.state ? String(r.state) : undefined,
+            postal_code: r.postal_code ? String(r.postal_code) : undefined,
+            gstin: r.gstin ? String(r.gstin) : undefined,
+            code: r.code ? String(r.code) : undefined,
+          }));
+          await api.customers.batchCreate(formatted);
+          load();
+        }}
       />
     </div>
   );

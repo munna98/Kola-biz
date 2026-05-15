@@ -20,6 +20,8 @@ interface VoucherSummary {
     party_name: string | null;
     total_amount: number;
     voucher_type: string;
+    total_debit?: number | null;
+    total_credit?: number | null;
 }
 
 interface VoucherListViewSheetProps {
@@ -113,9 +115,20 @@ export function VoucherListViewSheet({
                                         <span className="text-sm truncate max-w-[200px]" title={voucher.party_name || 'N/A'}>
                                             {voucher.party_name || 'N/A'}
                                         </span>
-                                        <span className="font-bold text-sm">
-                                            ₹{voucher.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                                        </span>
+                                        {voucher.voucher_type === 'opening_balance' || voucher.voucher_type === 'journal' ? (
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-sm font-bold">
+                                                    Dr: ₹{(voucher.total_debit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </span>
+                                                <span className="text-sm font-bold">
+                                                    Cr: ₹{(voucher.total_credit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <span className="font-bold text-sm">
+                                                ₹{voucher.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                            </span>
+                                        )}
                                     </div>
                                 </button>
                             ))

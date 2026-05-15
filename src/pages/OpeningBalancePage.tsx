@@ -22,10 +22,12 @@ import type { RootState, AppDispatch, OpeningBalanceLine } from '@/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 import {
     IconCheck,
     IconX,
+    IconFileUpload,
 } from '@tabler/icons-react';
 
 // Global Voucher Components & Hooks
@@ -37,6 +39,7 @@ import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 import { VoucherJournalSection } from '@/components/voucher/VoucherJournalSection';
+import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
 
 interface LedgerAccount {
     id: number;
@@ -53,6 +56,7 @@ export default function OpeningBalancePage() {
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [isListViewOpen, setIsListViewOpen] = useState(false);
+    const [importOpen, setImportOpen] = useState(false);
 
     const formRef = useRef<HTMLFormElement>(null);
     const dateRef = useRef<HTMLInputElement>(null);
@@ -422,30 +426,133 @@ export default function OpeningBalancePage() {
                     </div>
 
                     {/* Bottom Actions */}
-                    <div className="flex justify-end gap-2 pt-4 border-t shrink-0">
-                        <Button
-                            type="button"
-                            variant="outline"
-                            onClick={handleClear}
-                            className="h-9"
-                            title="Clear (Ctrl+K)"
-                        >
-                            <IconX size={16} />
-                            Clear Form
-                        </Button>
-                        <Button
-                            id="voucher-save-btn"
-                            type="submit"
-                            disabled={openingBalanceState.loading}
-                            className="h-9"
-                            title="Save (Ctrl+S)"
-                        >
-                            <IconCheck size={16} />
-                            {openingBalanceState.loading ? 'Saving...' : (openingBalanceState.mode === 'editing' ? 'Update Opening Balance' : 'Save Opening Balance')}
-                        </Button>
+                    <div className="flex justify-between items-center pt-4 border-t shrink-0">
+                        <TooltipProvider>
+                            <Tooltip>
+                                <TooltipTrigger asChild>
+                                    <Button
+                                        type="button"
+                                        variant="outline"
+                                        onClick={() => setImportOpen(true)}
+                                        className="h-9"
+                                    >
+                                        <IconFileUpload size={16} />
+                                    </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Import from Excel</TooltipContent>
+                            </Tooltip>
+
+                            <div className="flex gap-2">
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={handleClear}
+                                            className="h-9"
+                                        >
+                                            <IconX size={16} />
+                                            Clear Form
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Clear (Ctrl+K)</TooltipContent>
+                                </Tooltip>
+
+                                <Tooltip>
+                                    <TooltipTrigger asChild>
+                                        <Button
+                                            id="voucher-save-btn"
+                                            type="submit"
+                                            disabled={openingBalanceState.loading}
+                                            className="h-9"
+                                        >
+                                            <IconCheck size={16} />
+                                            {openingBalanceState.loading ? 'Saving...' : (openingBalanceState.mode === 'editing' ? 'Update Opening Balance' : 'Save Opening Balance')}
+                                        </Button>
+                                    </TooltipTrigger>
+                                    <TooltipContent>Save (Ctrl+S)</TooltipContent>
+                                </Tooltip>
+                            </div>
+                        </TooltipProvider>
                     </div>
                 </form>
             </div>
+
+            <ImportExcelDialog
+                open={importOpen}
+                onOpenChange={setImportOpen}
+                title="Import Opening Balances"
+                expectedColumns={['account_code', 'account_name', 'debit', 'credit', 'narration']}
+                sampleData={[
+                    {
+                        account_code: "CASH01",
+                        account_name: "Cash Account",
+                        debit: 50000,
+                        credit: 0,
+                        narration: "Initial cash balance"
+                    },
+                    {
+                        account_code: "CUST01",
+                        account_name: "John Doe",
+                        debit: 15000,
+                        credit: 0,
+                        narration: "Opening receivable"
+                    }
+                ]}
+                onImport={async (data) => {
+                    const validData = data.filter(r => (r.account_code && String(r.account_code).trim() !== '') || (r.account_name && String(r.account_name).trim() !== ''));
+                    let importedLinesCount = 0;
+                    let skippedRows = 0;
+                    
+                    for (const row of validData) {
+                        const accCode = row.account_code ? String(row.account_code).trim().toLowerCase() : '';
+                        const accName = row.account_name ? String(row.account_name).trim().toLowerCase() : '';
+                        
+                        let matchedAccount = null;
+                        
+                        // 1. Try to match by account_code first
+                        if (accCode) {
+                            matchedAccount = accounts.find(a => a.account_code && a.account_code.toLowerCase() === accCode);
+                        }
+                        
+                        // 2. If no match by code, try by name
+                        if (!matchedAccount && accName) {
+                            const matchingAccounts = accounts.filter(a => a.account_name.toLowerCase() === accName);
+                            if (matchingAccounts.length === 1) {
+                                matchedAccount = matchingAccounts[0];
+                            } else if (matchingAccounts.length > 1) {
+                                toast.warning(`Ambiguous account name '${row.account_name}'. Multiple found. Please use account_code.`);
+                                skippedRows++;
+                                continue;
+                            }
+                        }
+                        
+                        if (matchedAccount) {
+                            dispatch(addOpeningBalanceLine({
+                                account_id: matchedAccount.id,
+                                account_name: matchedAccount.account_name,
+                                debit: Number(row.debit) || 0,
+                                credit: Number(row.credit) || 0,
+                                narration: row.narration ? String(row.narration) : ''
+                            }));
+                            importedLinesCount++;
+                        } else {
+                            skippedRows++;
+                        }
+                    }
+                    
+                    if (importedLinesCount > 0) {
+                        dispatch(setOpeningBalanceHasUnsavedChanges(true));
+                        if (skippedRows > 0) {
+                            toast.success(`Appended ${importedLinesCount} lines. Skipped ${skippedRows} unrecognized or ambiguous rows.`);
+                        } else {
+                            toast.success(`Successfully appended ${importedLinesCount} lines.`);
+                        }
+                    } else {
+                        toast.error("No valid accounts matched. Please check your account codes and names.");
+                    }
+                }}
+            />
         </div>
     );
 }

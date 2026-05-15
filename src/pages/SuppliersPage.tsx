@@ -2,14 +2,17 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
-import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2 } from '@tabler/icons-react';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconFileUpload } from '@tabler/icons-react';
 import { api, Supplier } from '@/lib/tauri';
 import { toast } from 'sonner';
 import SupplierDialog from '@/components/dialogs/SupplierDialog';
+import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
 
 export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [open, setOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [supplierToEdit, setSupplierToEdit] = useState<Supplier | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -83,17 +86,34 @@ export default function SuppliersPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-64"
           />
-          <Button
-            variant="outline"
-            onClick={() => setShowDeleted(!showDeleted)}
-          >
-            {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
-          </Button>
-          {!showDeleted && (
-            <Button onClick={() => { setOpen(true); setSupplierToEdit(null); }}>
-              <IconPlus size={16} /> Add Supplier
-            </Button>
-          )}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  onClick={() => setShowDeleted(!showDeleted)}
+                >
+                  {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{showDeleted ? 'View Active' : 'View Recycle Bin'}</TooltipContent>
+            </Tooltip>
+            {!showDeleted && (
+              <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => setImportOpen(true)}>
+                      <IconFileUpload size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Import Suppliers</TooltipContent>
+                </Tooltip>
+                <Button onClick={() => { setOpen(true); setSupplierToEdit(null); }}>
+                  <IconPlus size={16} /> Add Supplier
+                </Button>
+              </>
+            )}
+          </TooltipProvider>
         </div>
       </div>
 
@@ -161,6 +181,44 @@ export default function SuppliersPage() {
         onOpenChange={setOpen}
         supplierToEdit={supplierToEdit}
         onSave={load}
+      />
+
+      <ImportExcelDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        title="Import Suppliers from Excel"
+        expectedColumns={['name', 'phone', 'email', 'address_line_1', 'address_line_2', 'city', 'state', 'postal_code', 'gstin', 'code']}
+        sampleData={[
+          {
+            name: "Acme Corp",
+            phone: "9876543210",
+            email: "sales@acme.com",
+            address_line_1: "456 Market St",
+            address_line_2: "",
+            city: "San Francisco",
+            state: "CA",
+            postal_code: "94105",
+            gstin: "",
+            code: "S001"
+          }
+        ]}
+        onImport={async (data) => {
+          const validData = data.filter(r => r.name && String(r.name).trim() !== '');
+          const formatted = validData.map(r => ({
+            name: String(r.name),
+            phone: r.phone ? String(r.phone) : undefined,
+            email: r.email ? String(r.email) : undefined,
+            address_line_1: r.address_line_1 ? String(r.address_line_1) : undefined,
+            address_line_2: r.address_line_2 ? String(r.address_line_2) : undefined,
+            city: r.city ? String(r.city) : undefined,
+            state: r.state ? String(r.state) : undefined,
+            postal_code: r.postal_code ? String(r.postal_code) : undefined,
+            gstin: r.gstin ? String(r.gstin) : undefined,
+            code: r.code ? String(r.code) : undefined,
+          }));
+          await api.suppliers.batchCreate(formatted);
+          load();
+        }}
       />
     </div>
   );

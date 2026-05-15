@@ -150,6 +150,72 @@ pub async fn create_customer(
 }
 
 #[tauri::command]
+pub async fn batch_create_customers(
+    registry: State<'_, Arc<DbRegistry>>,
+    customers: Vec<CreateCustomer>,
+) -> Result<usize, String> {
+    let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    for customer in customers {
+        let id = Uuid::now_v7().to_string();
+        let code = if let Some(c) = &customer.code {
+            if c.trim().is_empty() {
+                generate_customer_code(&pool).await?
+            } else {
+                c.clone()
+            }
+        } else {
+            generate_customer_code(&pool).await?
+        };
+
+        let _ = sqlx::query(
+            "INSERT INTO customers (id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(&code)
+        .bind(&customer.name)
+        .bind(&customer.email)
+        .bind(&customer.phone)
+        .bind(&customer.address_line_1)
+        .bind(&customer.address_line_2)
+        .bind(&customer.address_line_3)
+        .bind(&customer.city)
+        .bind(&customer.state)
+        .bind(&customer.postal_code)
+        .bind(&customer.country)
+        .bind(&customer.gstin)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Create corresponding account in Chart of Accounts
+        let account_code = code.clone(); // Use customer code as account code
+        let account_id = Uuid::now_v7().to_string();
+
+        sqlx::query(
+            "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, party_id, party_type) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(account_id)
+        .bind(&account_code)
+        .bind(&customer.name)
+        .bind("Asset")
+        .bind("Accounts Receivable")
+        .bind("Customer account")
+        .bind(&id)
+        .bind("customer")
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    
+    Ok(1)
+}
+
+#[tauri::command]
 pub async fn update_customer(
     registry: State<'_, Arc<DbRegistry>>,
     id: String,
@@ -476,6 +542,72 @@ pub async fn create_supplier(
         .fetch_one(&pool)
         .await
         .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn batch_create_suppliers(
+    registry: State<'_, Arc<DbRegistry>>,
+    suppliers: Vec<CreateSupplier>,
+) -> Result<usize, String> {
+    let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    for supplier in suppliers {
+        let id = Uuid::now_v7().to_string();
+        let code = if let Some(c) = &supplier.code {
+            if c.trim().is_empty() {
+                generate_supplier_code(&pool).await?
+            } else {
+                c.clone()
+            }
+        } else {
+            generate_supplier_code(&pool).await?
+        };
+
+        let _ = sqlx::query(
+            "INSERT INTO suppliers (id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(&code)
+        .bind(&supplier.name)
+        .bind(&supplier.email)
+        .bind(&supplier.phone)
+        .bind(&supplier.address_line_1)
+        .bind(&supplier.address_line_2)
+        .bind(&supplier.address_line_3)
+        .bind(&supplier.city)
+        .bind(&supplier.state)
+        .bind(&supplier.postal_code)
+        .bind(&supplier.country)
+        .bind(&supplier.gstin)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Create corresponding account in Chart of Accounts
+        let account_code = code.clone(); // Use supplier code as account code
+        let account_id = Uuid::now_v7().to_string();
+
+        sqlx::query(
+            "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, party_id, party_type) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        )
+        .bind(account_id)
+        .bind(&account_code)
+        .bind(&supplier.name)
+        .bind("Liability")
+        .bind("Accounts Payable")
+        .bind("Supplier account")
+        .bind(&id)
+        .bind("supplier")
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    
+    Ok(1)
 }
 
 #[tauri::command]
