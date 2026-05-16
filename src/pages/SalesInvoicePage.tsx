@@ -632,8 +632,8 @@ export default function SalesInvoicePage() {
 
       dispatch(setSalesHasUnsavedChanges(false));
       handleNewInvoice(true);
-    } catch (error) {
-      toast.error('Failed to save sales invoice');
+    } catch (error: any) {
+      toast.error(`Failed to save sales invoice: ${error?.message || error}`);
       console.error(error);
     } finally {
       dispatch(setSalesLoading(false));
