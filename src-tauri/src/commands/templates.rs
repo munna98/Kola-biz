@@ -591,21 +591,34 @@ async fn get_purchase_invoice_data(
     let items =
         crate::commands::invoices::get_purchase_invoice_items_with_pool(pool, &id).await?;
 
-    // Fetch supplier details
-    let supplier =
-        crate::commands::parties::get_supplier_with_pool(pool, &invoice.supplier_id)
-            .await
-            .ok();
-
-    // Fetch extra GST fields from suppliers table directly (added by migration)
-    let gst_extra: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            "SELECT gstin, address_line_1, state, city, postal_code FROM suppliers WHERE id = ?",
-        )
+    let real_supplier_id: Option<String> = sqlx::query_scalar("SELECT party_id FROM chart_of_accounts WHERE id = ?")
         .bind(&invoice.supplier_id)
         .fetch_optional(pool)
         .await
         .unwrap_or(None);
+
+    // Fetch supplier details
+    let supplier = if let Some(ref sid) = real_supplier_id {
+        crate::commands::parties::get_supplier_with_pool(pool, sid)
+            .await
+            .ok()
+    } else {
+        None
+    };
+
+    // Fetch extra GST fields from suppliers table directly (added by migration)
+    let gst_extra: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> =
+        if let Some(ref sid) = real_supplier_id {
+            sqlx::query_as(
+                "SELECT gstin, address_line_1, state, city, postal_code FROM suppliers WHERE id = ?",
+            )
+            .bind(sid)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None)
+        } else {
+            None
+        };
 
     // Fetch company profile and state for inter-state detection
     let company = crate::commands::company::get_company_profile_with_pool(pool).await.ok();
@@ -858,21 +871,34 @@ async fn get_sales_invoice_data(
     let items =
         crate::commands::invoices::get_sales_invoice_items_with_pool(pool, &id).await?;
 
-    // Fetch customer details (basic struct)
-    let customer =
-        crate::commands::parties::get_customer_with_pool(pool, &invoice.customer_id)
-            .await
-            .ok();
-
-    // Fetch extra GST fields from customers table directly (added by migration)
-    let gst_extra: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            "SELECT gstin, address_line_1, state, city, postal_code FROM customers WHERE id = ?",
-        )
+    let real_customer_id: Option<String> = sqlx::query_scalar("SELECT party_id FROM chart_of_accounts WHERE id = ?")
         .bind(&invoice.customer_id)
         .fetch_optional(pool)
         .await
         .unwrap_or(None);
+
+    // Fetch customer details (basic struct)
+    let customer = if let Some(ref cid) = real_customer_id {
+        crate::commands::parties::get_customer_with_pool(pool, cid)
+            .await
+            .ok()
+    } else {
+        None
+    };
+
+    // Fetch extra GST fields from customers table directly (added by migration)
+    let gst_extra: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> =
+        if let Some(ref cid) = real_customer_id {
+            sqlx::query_as(
+                "SELECT gstin, address_line_1, state, city, postal_code FROM customers WHERE id = ?",
+            )
+            .bind(cid)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None)
+        } else {
+            None
+        };
 
     // Fetch company profile and state for inter-state detection
     let company = crate::commands::company::get_company_profile_with_pool(pool).await.ok();
