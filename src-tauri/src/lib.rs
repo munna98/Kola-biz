@@ -28,6 +28,9 @@ pub fn run() {
                 }
             });
 
+            // Start automated backups task
+            setup_automated_backups(app.handle().clone(), registry.clone());
+
             app.manage(registry);
 
             // Initialize session store for authentication
@@ -262,6 +265,7 @@ pub fn run() {
             save_voucher_settings,
             reset_database_data,
             execute_raw_query,
+            create_manual_backup,
             // Voucher Sequence Management
             list_voucher_sequences,
             update_voucher_sequence,
@@ -290,6 +294,22 @@ pub fn run() {
             get_gstr3b_summary,
         ])
         .plugin(tauri_plugin_opener::init())
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event {
+                println!("Performing backup on exit...");
+                let registry = app_handle.state::<std::sync::Arc<crate::company_db::DbRegistry>>();
+                let handle = app_handle.clone();
+                
+                // Block the exit process until the backup is completed
+                tauri::async_runtime::block_on(async {
+                    if let Err(e) = crate::commands::run_automated_backup_cycle(&handle, &registry).await {
+                        eprintln!("Failed to backup on exit: {}", e);
+                    } else {
+                        println!("Exit backup completed successfully.");
+                    }
+                });
+            }
+        });
 }

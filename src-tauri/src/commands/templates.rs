@@ -33,7 +33,9 @@ pub struct InvoiceTemplate {
     // Features
     pub show_logo: Option<i64>, // Boolean as 0/1
     pub show_company_address: Option<i64>,
+    pub show_party_name: Option<i64>,
     pub show_party_address: Option<i64>,
+    pub table_row_padding: Option<i64>,
     pub show_gstin: Option<i64>,
     pub show_item_images: Option<i64>,
     pub show_item_hsn: Option<i64>,
@@ -106,7 +108,9 @@ pub async fn set_default_template(
 pub struct TemplateSettingsUpdate {
     pub show_logo: Option<bool>,
     pub show_company_address: Option<bool>,
+    pub show_party_name: Option<bool>,
     pub show_party_address: Option<bool>,
+    pub table_row_padding: Option<i64>,
     pub show_gstin: Option<bool>,
     pub show_item_images: Option<bool>,
     pub show_item_hsn: Option<bool>,
@@ -136,6 +140,14 @@ pub async fn update_template_settings(
     if let Some(val) = settings.show_company_address {
         separated.push("show_company_address = ");
         separated.push_bind_unseparated(if val { 1 } else { 0 });
+    }
+    if let Some(val) = settings.show_party_name {
+        separated.push("show_party_name = ");
+        separated.push_bind_unseparated(if val { 1 } else { 0 });
+    }
+    if let Some(val) = settings.table_row_padding {
+        separated.push("table_row_padding = ");
+        separated.push_bind_unseparated(val);
     }
     if let Some(val) = settings.show_party_address {
         separated.push("show_party_address = ");
@@ -354,7 +366,9 @@ pub struct DesignerTemplateData {
     pub template_format: String,
     pub show_logo: bool,
     pub show_company_address: bool,
+    pub show_party_name: bool,
     pub show_party_address: bool,
+    pub table_row_padding: i64,
     pub show_gstin: bool,
     pub show_item_hsn: bool,
     pub show_bank_details: bool,
@@ -385,10 +399,12 @@ pub async fn get_designer_template(
             Option<i64>,
             Option<i64>,
             Option<i64>,
+            Option<i64>,
+            Option<i64>,
         ),
     >(
         "SELECT name, layout_config, voucher_type, template_format, 
-         show_logo, show_company_address, show_party_address, show_gstin,
+         show_logo, show_company_address, show_party_name, show_party_address, table_row_padding, show_gstin,
          show_item_hsn, show_bank_details, show_signature, show_terms, show_less_column
          FROM invoice_templates WHERE id = ?",
     )
@@ -404,13 +420,15 @@ pub async fn get_designer_template(
         template_format: row.3,
         show_logo: row.4.unwrap_or(1) == 1,
         show_company_address: row.5.unwrap_or(1) == 1,
-        show_party_address: row.6.unwrap_or(1) == 1,
-        show_gstin: row.7.unwrap_or(1) == 1,
-        show_item_hsn: row.8.unwrap_or(1) == 1,
-        show_bank_details: row.9.unwrap_or(0) == 1,
-        show_signature: row.10.unwrap_or(0) == 1,
-        show_terms: row.11.unwrap_or(0) == 1,
-        show_less_column: row.12.unwrap_or(0) == 1,
+        show_party_name: row.6.unwrap_or(1) == 1,
+        show_party_address: row.7.unwrap_or(1) == 1,
+        table_row_padding: row.8.unwrap_or(8),
+        show_gstin: row.9.unwrap_or(1) == 1,
+        show_item_hsn: row.10.unwrap_or(1) == 1,
+        show_bank_details: row.11.unwrap_or(0) == 1,
+        show_signature: row.12.unwrap_or(0) == 1,
+        show_terms: row.13.unwrap_or(0) == 1,
+        show_less_column: row.14.unwrap_or(0) == 1,
     })
 }
 
@@ -591,27 +609,42 @@ async fn get_purchase_invoice_data(
     let items =
         crate::commands::invoices::get_purchase_invoice_items_with_pool(pool, &id).await?;
 
-    let real_supplier_id: String = sqlx::query_scalar("SELECT party_id FROM chart_of_accounts WHERE id = ?")
-        .bind(&invoice.supplier_id)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None)
-        .unwrap_or_else(|| invoice.supplier_id.clone());
+    let coa_details: Option<(Option<String>, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT party_id, account_name, gstin, address_line_1, state, city, postal_code FROM chart_of_accounts WHERE id = ?"
+    )
+    .bind(&invoice.supplier_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
 
-    // Fetch supplier details
-    let supplier = crate::commands::parties::get_supplier_with_pool(pool, &real_supplier_id)
-        .await
-        .ok();
+    let mut real_supplier_id = None;
+    let mut account_name = String::new();
+    let mut gst_extra: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = None;
 
-    // Fetch extra GST fields from suppliers table directly (added by migration)
-    let gst_extra: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            "SELECT gstin, address_line_1, state, city, postal_code FROM suppliers WHERE id = ?",
-        )
-        .bind(&real_supplier_id)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None);
+    if let Some((pid, name, gstin, addr, st, cty, pc)) = coa_details {
+        real_supplier_id = pid;
+        account_name = name;
+        if gstin.is_some() || addr.is_some() || st.is_some() {
+            gst_extra = Some((gstin, addr, st, cty, pc));
+        }
+    }
+
+    // Fallback: If COA had no GST info, try to find it in suppliers by party_id OR account_name
+    if gst_extra.is_none() {
+        if let Some(ref sid) = real_supplier_id {
+            gst_extra = sqlx::query_as("SELECT gstin, address_line_1, state, city, postal_code FROM suppliers WHERE id = ?")
+                .bind(sid).fetch_optional(pool).await.unwrap_or(None);
+        } else {
+            gst_extra = sqlx::query_as("SELECT gstin, address_line_1, state, city, postal_code FROM suppliers WHERE name = ?")
+                .bind(&account_name).fetch_optional(pool).await.unwrap_or(None);
+        }
+    }
+
+    let supplier = if let Some(ref sid) = real_supplier_id {
+        crate::commands::parties::get_supplier_with_pool(pool, sid).await.ok()
+    } else {
+        None
+    };
 
     // Fetch company profile and state for inter-state detection
     let company = crate::commands::company::get_company_profile_with_pool(pool).await.ok();
@@ -864,27 +897,42 @@ async fn get_sales_invoice_data(
     let items =
         crate::commands::invoices::get_sales_invoice_items_with_pool(pool, &id).await?;
 
-    let real_customer_id: String = sqlx::query_scalar("SELECT party_id FROM chart_of_accounts WHERE id = ?")
-        .bind(&invoice.customer_id)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None)
-        .unwrap_or_else(|| invoice.customer_id.clone());
+    let coa_details: Option<(Option<String>, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT party_id, account_name, gstin, address_line_1, state, city, postal_code FROM chart_of_accounts WHERE id = ?"
+    )
+    .bind(&invoice.customer_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
 
-    // Fetch customer details (basic struct)
-    let customer = crate::commands::parties::get_customer_with_pool(pool, &real_customer_id)
-        .await
-        .ok();
+    let mut real_customer_id = None;
+    let mut account_name = String::new();
+    let mut gst_extra: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = None;
 
-    // Fetch extra GST fields from customers table directly (added by migration)
-    let gst_extra: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            "SELECT gstin, address_line_1, state, city, postal_code FROM customers WHERE id = ?",
-        )
-        .bind(&real_customer_id)
-        .fetch_optional(pool)
-        .await
-        .unwrap_or(None);
+    if let Some((pid, name, gstin, addr, st, cty, pc)) = coa_details {
+        real_customer_id = pid;
+        account_name = name;
+        if gstin.is_some() || addr.is_some() || st.is_some() {
+            gst_extra = Some((gstin, addr, st, cty, pc));
+        }
+    }
+
+    // Fallback: If COA had no GST info, try to find it in customers by party_id OR account_name
+    if gst_extra.is_none() {
+        if let Some(ref cid) = real_customer_id {
+            gst_extra = sqlx::query_as("SELECT gstin, address_line_1, state, city, postal_code FROM customers WHERE id = ?")
+                .bind(cid).fetch_optional(pool).await.unwrap_or(None);
+        } else {
+            gst_extra = sqlx::query_as("SELECT gstin, address_line_1, state, city, postal_code FROM customers WHERE name = ?")
+                .bind(&account_name).fetch_optional(pool).await.unwrap_or(None);
+        }
+    }
+
+    let customer = if let Some(ref cid) = real_customer_id {
+        crate::commands::parties::get_customer_with_pool(pool, cid).await.ok()
+    } else {
+        None
+    };
 
     // Fetch company profile and state for inter-state detection
     let company = crate::commands::company::get_company_profile_with_pool(pool).await.ok();

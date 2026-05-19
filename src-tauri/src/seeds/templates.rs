@@ -88,9 +88,9 @@ pub async fn seed_handlebars_templates(
         "INSERT OR IGNORE INTO invoice_templates (
             id, template_number, name, description, voucher_type, template_format, design_mode,
             header_html, body_html, footer_html, styles_css, 
-            show_logo, show_company_address, show_party_address, 
+            show_logo, show_company_address, show_party_name, show_party_address, 
             show_bank_details, is_default
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(Uuid::now_v7().to_string())
     .bind("TPL-SI-003")
@@ -105,6 +105,7 @@ pub async fn seed_handlebars_templates(
     .bind(MINIMAL_CSS)
     .bind(1) // show_logo
     .bind(1) // show_company_address
+    .bind(1) // show_party_name
     .bind(1) // show_party_address
     .bind(1) // show_bank_details
     .bind(0) // not default

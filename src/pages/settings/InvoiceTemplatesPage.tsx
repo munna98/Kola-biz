@@ -44,6 +44,7 @@ interface InvoiceTemplate {
     // Features
     show_logo: number;
     show_company_address: number;
+    show_party_name: number;
     show_party_address: number;
     show_gstin: number;
     show_item_images: number;
@@ -53,6 +54,7 @@ interface InvoiceTemplate {
     show_signature: number;
     show_terms: number;
     show_less_column: number;
+    table_row_padding: number;
     // Balance section style (thermal only)
     balance_font_size: number;
     balance_bold: number;
@@ -61,6 +63,7 @@ interface InvoiceTemplate {
 const FEATURE_LABELS: Record<string, string> = {
     show_logo: 'Logo',
     show_company_address: 'Company Address',
+    show_party_name: 'Party Name',
     show_party_address: 'Party Address',
     show_gstin: 'GSTIN',
     show_item_images: 'Item Images',
@@ -383,7 +386,48 @@ export function InvoiceTemplatesPage() {
                                                     )
                                                 })}
                                             </div>
-                                            </div>
+
+                                            {/* Table Row Padding Slider */}
+                                            {template.template_format !== 'thermal_80mm' && (
+                                                <div className="border-t pt-3 mt-3 space-y-2">
+                                                    <div className="flex justify-between items-center">
+                                                        <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                                            Table Row Padding
+                                                        </Label>
+                                                        <span className="text-[11px] font-medium text-foreground bg-muted px-1.5 py-0.5 rounded">
+                                                            {template.table_row_padding ?? 8}px
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex items-center gap-3">
+                                                        <span className="text-[10px] text-muted-foreground">Compact</span>
+                                                        <input
+                                                            type="range"
+                                                            min="2"
+                                                            max="20"
+                                                            value={template.table_row_padding ?? 8}
+                                                            onChange={async (e) => {
+                                                                const val = parseInt(e.target.value, 10);
+                                                                try {
+                                                                    await invoke('update_template_settings', {
+                                                                        templateId: template.id,
+                                                                        settings: { table_row_padding: val },
+                                                                    });
+                                                                    setTemplates((prev) =>
+                                                                        prev.map((t) =>
+                                                                            t.id === template.id ? { ...t, table_row_padding: val } : t
+                                                                        )
+                                                                    );
+                                                                } catch (error) {
+                                                                    toast.error('Failed to update padding');
+                                                                }
+                                                            }}
+                                                            className="flex-1 h-1 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                                                        />
+                                                        <span className="text-[10px] text-muted-foreground">Spacious</span>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
 
                                     </div>
                                 ))}

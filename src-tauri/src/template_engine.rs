@@ -84,8 +84,16 @@ impl TemplateEngine {
                 json!(template.show_company_address.unwrap_or(1) == 1),
             );
             obj.insert(
+                "show_party_name".to_string(),
+                json!(template.show_party_name.unwrap_or(1) == 1),
+            );
+            obj.insert(
                 "show_party_address".to_string(),
                 json!(template.show_party_address.unwrap_or(1) == 1),
+            );
+            obj.insert(
+                "table_row_padding".to_string(),
+                json!(template.table_row_padding.unwrap_or(8)),
             );
             obj.insert(
                 "show_gstin".to_string(),

@@ -29,9 +29,26 @@
 
 <div class="parties-section">
     <div class="bill-to">
+        {{#if show_party_name}}
         <h3>BILL TO:</h3>
         <div class="party-details">
             <p class="party-name">{{party.name}}</p>
+            {{#if show_party_address}}
+            {{#if party.business_title}}
+            <p>{{party.business_title}}</p>
+            {{/if}}
+            {{#if party.address}}
+            <p>{{party.address}}</p>
+            {{/if}}
+            {{#if party.email}}
+            <p>{{party.email}}</p>
+            {{/if}}
+            {{/if}}
+        </div>
+        {{else}}
+        {{#if show_party_address}}
+        <h3>BILL TO:</h3>
+        <div class="party-details">
             {{#if party.business_title}}
             <p>{{party.business_title}}</p>
             {{/if}}
@@ -42,6 +59,8 @@
             <p>{{party.email}}</p>
             {{/if}}
         </div>
+        {{/if}}
+        {{/if}}
     </div>
 
     <div class="payable-to">
@@ -60,6 +79,12 @@
 </div>
 
 <!-- [BODY] -->
+<style>
+.items-table th,
+.items-table td {
+    padding: {{#if table_row_padding}}{{table_row_padding}}{{else}}12{{/if}}px 16px !important;
+}
+</style>
 <table class="items-table">
     <thead>
         <tr>

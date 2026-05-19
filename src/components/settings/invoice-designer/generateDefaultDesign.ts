@@ -13,6 +13,7 @@ export interface TemplateFeatures {
     template_format: string;
     show_logo: boolean;
     show_company_address: boolean;
+    show_party_name: boolean;
     show_party_address: boolean;
     show_gstin: boolean;
     show_item_hsn: boolean;
@@ -181,7 +182,7 @@ function generateThermalDesign(
     y += 5;
 
     // Customer: {{party.name}}
-    if (features.show_party_address) {
+    if (features.show_party_name) {
         elements.push({
             id: genId(),
             type: 'field',
@@ -497,7 +498,8 @@ function generateA4Design(
     y += 8;
 
     // ── Party Section ──
-    if (features.show_party_address) {
+    const showBillToLabel = features.show_party_name || features.show_party_address;
+    if (showBillToLabel) {
         elements.push({
             id: genId(),
             type: 'text',
@@ -512,7 +514,9 @@ function generateA4Design(
             zIndex: elements.length + 1,
         });
         y += 6;
+    }
 
+    if (features.show_party_name) {
         elements.push({
             id: genId(),
             type: 'field',
@@ -527,7 +531,9 @@ function generateA4Design(
             zIndex: elements.length + 1,
         });
         y += 8;
+    }
 
+    if (features.show_party_address) {
         elements.push({
             id: genId(),
             type: 'field',

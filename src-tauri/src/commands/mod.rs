@@ -1,6 +1,7 @@
 pub mod accounts;
 pub mod allocations;
 pub mod auth;
+pub mod backups;
 pub mod company;
 pub mod company_cmds;
 pub mod employees;
@@ -47,3 +48,4 @@ pub use stock_journal::*;
 pub use tax::*;
 pub use templates::*;
 pub use voucher_units::*;
+pub use backups::*;

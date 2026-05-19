@@ -339,6 +339,18 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             .execute(pool)
             .await;
 
+    // Migration: Add show_party_name if not exists
+    let _ =
+        sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_party_name INTEGER DEFAULT 1")
+            .execute(pool)
+            .await;
+
+    // Migration: Add table_row_padding if not exists
+    let _ =
+        sqlx::query("ALTER TABLE invoice_templates ADD COLUMN table_row_padding INTEGER DEFAULT 8")
+            .execute(pool)
+            .await;
+
     // Migration: Add balance section style columns if not exists
     let _ =
         sqlx::query("ALTER TABLE invoice_templates ADD COLUMN balance_font_size INTEGER DEFAULT 10")
@@ -684,7 +696,9 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             styles_css TEXT,
             show_logo INTEGER DEFAULT 1,
             show_company_address INTEGER DEFAULT 1,
+            show_party_name INTEGER DEFAULT 1,
             show_party_address INTEGER DEFAULT 1,
+            table_row_padding INTEGER DEFAULT 8,
             show_bank_details INTEGER DEFAULT 1,
             show_gstin INTEGER DEFAULT 1,
             show_item_images INTEGER DEFAULT 0,
@@ -837,7 +851,9 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             styles_css TEXT,
             show_logo INTEGER DEFAULT 1,
             show_company_address INTEGER DEFAULT 1,
+            show_party_name INTEGER DEFAULT 1,
             show_party_address INTEGER DEFAULT 1,
+            table_row_padding INTEGER DEFAULT 8,
             show_bank_details INTEGER DEFAULT 1,
             show_gstin INTEGER DEFAULT 1,
             show_item_images INTEGER DEFAULT 0,
@@ -1105,6 +1121,39 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN state TEXT").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN city TEXT").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN postal_code TEXT").execute(pool).await;
+
+    // Backfill: sync GSTIN/address from customers → chart_of_accounts for records saved before sync existed
+    // Also matches by `account_name` if `party_id` is NULL, which handles malformed external synced data.
+    let _ = sqlx::query(
+        "UPDATE chart_of_accounts
+         SET
+             party_id       = COALESCE(chart_of_accounts.party_id, c.id),
+             gstin          = COALESCE(NULLIF(chart_of_accounts.gstin, ''),          c.gstin),
+             address_line_1 = COALESCE(NULLIF(chart_of_accounts.address_line_1, ''), c.address_line_1),
+             address_line_2 = COALESCE(NULLIF(chart_of_accounts.address_line_2, ''), c.address_line_2),
+             state          = COALESCE(NULLIF(chart_of_accounts.state, ''),          c.state),
+             city           = COALESCE(NULLIF(chart_of_accounts.city, ''),           c.city),
+             postal_code    = COALESCE(NULLIF(chart_of_accounts.postal_code, ''),    c.postal_code)
+         FROM customers c
+         WHERE (chart_of_accounts.party_id = c.id OR (chart_of_accounts.party_id IS NULL AND chart_of_accounts.account_name = c.name))
+           AND chart_of_accounts.account_group = 'Accounts Receivable'"
+    ).execute(pool).await;
+
+    // Backfill: sync GSTIN/address from suppliers → chart_of_accounts for records saved before sync existed
+    let _ = sqlx::query(
+        "UPDATE chart_of_accounts
+         SET
+             party_id       = COALESCE(chart_of_accounts.party_id, s.id),
+             gstin          = COALESCE(NULLIF(chart_of_accounts.gstin, ''),          s.gstin),
+             address_line_1 = COALESCE(NULLIF(chart_of_accounts.address_line_1, ''), s.address_line_1),
+             address_line_2 = COALESCE(NULLIF(chart_of_accounts.address_line_2, ''), s.address_line_2),
+             state          = COALESCE(NULLIF(chart_of_accounts.state, ''),          s.state),
+             city           = COALESCE(NULLIF(chart_of_accounts.city, ''),           s.city),
+             postal_code    = COALESCE(NULLIF(chart_of_accounts.postal_code, ''),    s.postal_code)
+         FROM suppliers s
+         WHERE (chart_of_accounts.party_id = s.id OR (chart_of_accounts.party_id IS NULL AND chart_of_accounts.account_name = s.name))
+           AND chart_of_accounts.account_group = 'Accounts Payable'"
+    ).execute(pool).await;
 
     // Migration: Add GST split columns to voucher_items
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN cgst_rate REAL DEFAULT 0").execute(pool).await;

@@ -283,10 +283,12 @@ pub async fn sync_secondary_to_primary(
             (id, account_code, account_name, account_type, account_group, description,
              opening_balance, opening_balance_type, gstin,
              address_line_1, address_line_2, city, state, postal_code,
+             party_id, party_type,
              is_active, is_system, created_at, updated_at)
          SELECT s.id, s.account_code, s.account_name, s.account_type, s.account_group,
                 s.description, s.opening_balance, s.opening_balance_type, s.gstin,
                 s.address_line_1, s.address_line_2, s.city, s.state, s.postal_code,
+                s.party_id, s.party_type,
                 s.is_active, s.is_system, s.created_at, s.updated_at
          FROM sec.chart_of_accounts s
          WHERE s.is_system = 0

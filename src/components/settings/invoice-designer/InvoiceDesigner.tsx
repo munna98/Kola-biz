@@ -32,6 +32,7 @@ interface DesignerTemplateResult {
     template_format: string;
     show_logo: boolean;
     show_company_address: boolean;
+    show_party_name: boolean;
     show_party_address: boolean;
     show_gstin: boolean;
     show_item_hsn: boolean;
@@ -86,6 +87,7 @@ export default function InvoiceDesigner({ templateId, voucherType, onBack }: Inv
                     template_format: result.template_format,
                     show_logo: result.show_logo,
                     show_company_address: result.show_company_address,
+                    show_party_name: result.show_party_name,
                     show_party_address: result.show_party_address,
                     show_gstin: result.show_gstin,
                     show_item_hsn: result.show_item_hsn,

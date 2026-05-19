@@ -79,9 +79,28 @@
         <div class="addr-separator"></div>
 
         <!-- Block 3: Buyer / Bill To -->
+        {{#if show_party_name}}
         <div class="addr-block">
           <div class="addr-section-label">Buyer (Bill to)</div>
           <strong>{{party.name}}</strong>
+          {{#if show_party_address}}
+          {{#if party.address_line_1}}<div class="addr-line">{{party.address_line_1}}</div>{{/if}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">GSTIN/UIN</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{party.gstin}}</span>
+          </div>
+          <div class="addr-field-row">
+            <span class="addr-field-label">State Name</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{party.state}}{{#if party.state_code}}, <span class="field-key">Code :</span> {{party.state_code}}{{/if}}</span>
+          </div>
+          {{/if}}
+        </div>
+        {{else}}
+        {{#if show_party_address}}
+        <div class="addr-block">
+          <div class="addr-section-label">Buyer (Bill to)</div>
           {{#if party.address_line_1}}<div class="addr-line">{{party.address_line_1}}</div>{{/if}}
           <div class="addr-field-row">
             <span class="addr-field-label">GSTIN/UIN</span>
@@ -94,6 +113,8 @@
             <span class="addr-field-value">{{party.state}}{{#if party.state_code}}, <span class="field-key">Code :</span> {{party.state_code}}{{/if}}</span>
           </div>
         </div>
+        {{/if}}
+        {{/if}}
 
       </td>
 
@@ -146,6 +167,12 @@
 </table>
 
 <!-- [BODY] -->
+<style>
+.items-table th,
+.items-table td {
+    padding: {{#if table_row_padding}}{{table_row_padding}}{{else}}5{{/if}}px 6px !important;
+}
+</style>
 <table class="items-table">
   <thead>
     <tr class="items-thead-row">
