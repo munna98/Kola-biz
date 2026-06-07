@@ -56,6 +56,7 @@ const AVAILABLE_COLUMNS = [
 
 const VOUCHER_TYPES = [
     { value: 'sales_invoice', label: 'Sales Invoice' },
+    { value: 'sales_quotation', label: 'Sales Quotation' },
     { value: 'purchase_invoice', label: 'Purchase Invoice' },
     { value: 'sales_return', label: 'Sales Return' },
     { value: 'purchase_return', label: 'Purchase Return' },

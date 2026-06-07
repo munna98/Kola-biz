@@ -835,7 +835,8 @@ export default function PurchaseInvoicePage() {
       dispatch(setPurchaseHasUnsavedChanges(false));
       nav.handleNew(true);
     } catch (error) {
-      toast.error('Failed to save purchase invoice');
+      const message = error instanceof Error ? error.message : String(error || 'Unknown error');
+      toast.error(`Failed to save purchase invoice: ${message}`);
       console.error(error);
     } finally {
       dispatch(setLoading(false));

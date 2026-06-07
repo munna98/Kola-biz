@@ -1,5 +1,5 @@
-﻿use serde::{Deserialize, Serialize};
 use crate::company_db::DbRegistry;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
@@ -245,7 +245,10 @@ pub async fn get_invoice_allocations_with_details(
 
 // Delete allocation
 #[tauri::command]
-pub async fn delete_allocation(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn delete_allocation(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
@@ -326,17 +329,16 @@ pub async fn create_quick_payment(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details
-    let invoice: (String, String, String, String, String) =
-        sqlx::query_as(
-            "SELECT v.party_id, v.party_type, v.voucher_no, v.voucher_type, coa.account_name
+    let invoice: (String, String, String, String, String) = sqlx::query_as(
+        "SELECT v.party_id, v.party_type, v.voucher_no, v.voucher_type, coa.account_name
              FROM vouchers v
              LEFT JOIN chart_of_accounts coa ON coa.id = v.party_id
              WHERE v.id = ?",
-        )
-            .bind(&payment.invoice_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+    )
+    .bind(&payment.invoice_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
 
     // Generate voucher number
     let voucher_type = if invoice.3 == "purchase_invoice" {
@@ -553,17 +555,16 @@ pub async fn update_quick_payment(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details for party info
-    let invoice: (String, String, String, String, String) =
-        sqlx::query_as(
-            "SELECT v.party_id, v.party_type, v.voucher_no, v.voucher_type, coa.account_name
+    let invoice: (String, String, String, String, String) = sqlx::query_as(
+        "SELECT v.party_id, v.party_type, v.voucher_no, v.voucher_type, coa.account_name
              FROM vouchers v
              LEFT JOIN chart_of_accounts coa ON coa.id = v.party_id
              WHERE v.id = ?",
-        )
-            .bind(&payment.invoice_id)
-            .fetch_one(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+    )
+    .bind(&payment.invoice_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
 
     let voucher_type = if invoice.3 == "purchase_invoice" {
         "payment"

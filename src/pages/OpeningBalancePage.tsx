@@ -133,7 +133,8 @@ export default function OpeningBalancePage() {
     const {
         handleNavigateNext,
         handleNew,
-        handleCancel
+        handleCancel,
+        handleDelete
     } = useVoucherNavigation({
         voucherType: 'opening_balance',
         sliceState: openingBalanceState,
@@ -277,6 +278,23 @@ export default function OpeningBalancePage() {
         }
     };
 
+    const handleDeleteVoucher = async () => {
+        const confirmed = await handleDelete();
+        if (confirmed && openingBalanceState.currentVoucherId) {
+            try {
+                dispatch(setOpeningBalanceLoading(true));
+                await invoke('delete_opening_balance', { id: openingBalanceState.currentVoucherId });
+                toast.success('Opening balance deleted successfully');
+                handleNew();
+            } catch (error) {
+                console.error('Failed to delete opening balance:', error);
+                toast.error(error instanceof Error ? error.message : 'Failed to delete');
+            } finally {
+                dispatch(setOpeningBalanceLoading(false));
+            }
+        }
+    };
+
     const handleClear = () => {
         dispatch(resetOpeningBalanceForm());
         handleAddLine();
@@ -320,6 +338,7 @@ export default function OpeningBalancePage() {
                 onNew={handleNew}
                 onEdit={() => dispatch(setOpeningBalanceMode('editing'))}
                 onCancel={handleCancel}
+                onDelete={handleDeleteVoucher}
                 onSave={() => formRef.current?.requestSubmit()}
                 onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
                 onListView={() => setIsListViewOpen(true)}

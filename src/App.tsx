@@ -11,6 +11,7 @@ import EmployeesPage from './pages/EmployeesPage';
 import ChartOfAccountsPage from './pages/ChartOfAccountsPage';
 import PurchaseInvoicePage from './pages/PurchaseInvoicePage';
 import PurchaseReturnPage from './pages/PurchaseReturnPage';
+import SalesQuotationPage from './pages/SalesQuotationPage';
 import PaymentPage from './pages/PaymentPage';
 import ReceiptPage from './pages/ReceiptPage';
 import { Toaster } from '@/components/ui/sonner';
@@ -168,6 +169,7 @@ function AppContent() {
       case 'coa': return <ChartOfAccountsPage />;
       case 'purchase': return <PurchaseInvoicePage />;
       case 'purchase_return': return <PurchaseReturnPage />;
+      case 'sales_quotation': return <SalesQuotationPage />;
       case 'sales': return <SalesInvoicePage />;
       case 'sales_return': return <SalesReturnPage />;
       case 'payments': return <PaymentPage />;

@@ -1,6 +1,6 @@
+use crate::company_db::DbRegistry;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use crate::company_db::DbRegistry;
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;

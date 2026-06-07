@@ -1,5 +1,5 @@
-﻿use serde::{Deserialize, Serialize};
 use crate::company_db::DbRegistry;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
@@ -54,7 +54,11 @@ pub async fn get_cash_invoice_splits(
     let mut splits = Vec::new();
     for entry in entries {
         // Amount is the absolute debit or credit
-        let amount = if entry.debit > 0.0 { entry.debit } else { entry.credit };
+        let amount = if entry.debit > 0.0 {
+            entry.debit
+        } else {
+            entry.credit
+        };
         if amount > 0.0 {
             splits.push(PaymentLine {
                 id: entry.id,
@@ -83,13 +87,12 @@ pub async fn adjust_cash_invoice_splits(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Validate that the invoice actually exists
-    let voucher_type: Option<String> = sqlx::query_scalar(
-        "SELECT voucher_type FROM vouchers WHERE id = ?"
-    )
-    .bind(&invoice_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    let voucher_type: Option<String> =
+        sqlx::query_scalar("SELECT voucher_type FROM vouchers WHERE id = ?")
+            .bind(&invoice_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
 
     let _voucher_type = match voucher_type {
         Some(t) => t,
@@ -98,7 +101,7 @@ pub async fn adjust_cash_invoice_splits(
 
     // Fetch the current invoice grand_total from the vouchers table
     let invoice_amount: f64 = sqlx::query_scalar(
-        "SELECT CAST(COALESCE(grand_total, total_amount, 0) AS REAL) FROM vouchers WHERE id = ?"
+        "SELECT CAST(COALESCE(grand_total, total_amount, 0) AS REAL) FROM vouchers WHERE id = ?",
     )
     .bind(&invoice_id)
     .fetch_one(&mut *tx)
@@ -126,7 +129,10 @@ pub async fn adjust_cash_invoice_splits(
     .map_err(|e| e.to_string())?;
 
     if existing_entries.is_empty() {
-        return Err("No existing Cash/Bank entries found for this invoice. Is this a cash party invoice?".to_string());
+        return Err(
+            "No existing Cash/Bank entries found for this invoice. Is this a cash party invoice?"
+                .to_string(),
+        );
     }
 
     // Determine if we need to Credit (Purchase) or Debit (Sales) the cash accounts
@@ -134,24 +140,28 @@ pub async fn adjust_cash_invoice_splits(
     let is_debit = existing_entries[0].debit > 0.0;
 
     // Also grab the narration to keep it consistent (e.g. "Cash sale")
-    let shared_narration: String = sqlx::query_scalar(
-        "SELECT narration FROM journal_entries WHERE id = ?"
-    )
-    .bind(&existing_entries[0].id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    let shared_narration: String =
+        sqlx::query_scalar("SELECT narration FROM journal_entries WHERE id = ?")
+            .bind(&existing_entries[0].id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
 
     let total_new: f64 = splits.iter().map(|s| s.amount).sum();
 
     // Validate that the split total matches the current invoice amount (not the old journal entries)
     if (invoice_amount - total_new).abs() > 0.01 {
-        return Err(format!("Split total ({:.2}) must equal invoice amount ({:.2})", total_new, invoice_amount));
+        return Err(format!(
+            "Split total ({:.2}) must equal invoice amount ({:.2})",
+            total_new, invoice_amount
+        ));
     }
 
     // Validate that all account_ids in the new splits actually exist in chart_of_accounts
     for split in &splits {
-        if split.amount <= 0.0 { continue; }
+        if split.amount <= 0.0 {
+            continue;
+        }
         let exists: Option<String> = sqlx::query_scalar(
             "SELECT id FROM chart_of_accounts WHERE id = ? AND (account_group = 'Cash' OR account_group = 'Bank Account')"
         )
@@ -161,7 +171,10 @@ pub async fn adjust_cash_invoice_splits(
         .map_err(|e| e.to_string())?;
 
         if exists.is_none() {
-            return Err(format!("Account '{}' is not a valid Cash or Bank account", split.account_id));
+            return Err(format!(
+                "Account '{}' is not a valid Cash or Bank account",
+                split.account_id
+            ));
         }
     }
 
@@ -177,7 +190,9 @@ pub async fn adjust_cash_invoice_splits(
 
     // 2. Insert the new split entries
     for split in splits {
-        if split.amount <= 0.0 { continue; }
+        if split.amount <= 0.0 {
+            continue;
+        }
 
         let je_id = Uuid::now_v7().to_string();
         let debit = if is_debit { split.amount } else { 0.0 };
@@ -185,7 +200,7 @@ pub async fn adjust_cash_invoice_splits(
 
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(&je_id)
         .bind(&invoice_id)

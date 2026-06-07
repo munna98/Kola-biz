@@ -21,6 +21,7 @@ export interface TemplateFeatures {
     show_signature: boolean;
     show_terms: boolean;
     show_less_column: boolean;
+    show_discount_column: boolean;
 }
 
 let idCounter = 0;
@@ -217,8 +218,11 @@ function generateThermalDesign(
     tableColumns.push(
         { key: 'final_quantity', label: 'F.Qty', width: 10, align: 'right' },
         { key: 'rate', label: 'Rate', width: 20, align: 'right' },
-        { key: 'total', label: 'Amt', width: features.show_less_column ? 10 : 15, align: 'right' },
     );
+    if (features.show_discount_column) {
+        tableColumns.push({ key: 'discount_amount', label: 'Disc', width: 10, align: 'right', format: 'currency' });
+    }
+    tableColumns.push({ key: 'total', label: 'Amt', width: features.show_less_column ? 10 : 15, align: 'right' });
 
     elements.push({
         id: genId(),
@@ -572,8 +576,11 @@ function generateA4Design(
     tableCols.push(
         { key: 'rate', label: 'Rate', width: 12, align: 'right' },
         { key: 'amount', label: 'Amount', width: 14, align: 'right' },
-        { key: 'discount_percent', label: 'Disc %', width: 7, align: 'right' },
-        { key: 'discount_amount', label: 'Disc Amt', width: 10, align: 'right' },
+    );
+    if (features.show_discount_column) {
+        tableCols.push({ key: 'discount_amount', label: 'Disc', width: 10, align: 'right', format: 'currency' });
+    }
+    tableCols.push(
         { key: 'tax_rate', label: 'Tax %', width: 6, align: 'center' },
         { key: 'total', label: 'Total', width: 10, align: 'right' },
     );

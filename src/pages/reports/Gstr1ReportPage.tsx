@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,6 +44,44 @@ export default function Gstr1ReportPage() {
     igst: rows.reduce((s, r) => s + r.igst, 0),
     tax: rows.reduce((s, r) => s + r.total_tax, 0),
     total: rows.reduce((s, r) => s + r.total_value, 0),
+  };
+
+  const handleExport = () => {
+    if (rows.length === 0) {
+      toast.error('No data to export. Please fetch data first.');
+      return;
+    }
+
+    const headers = ['Sl.', 'Description', 'HSN/SAC', 'UQC', 'GST Rate (%)', 'Taxable Value', 'CGST', 'SGST', 'IGST', 'Total Tax', 'Invoice Value'];
+    const data = rows.map(r => [
+      r.sl,
+      r.description,
+      r.hsn_sac_code || '',
+      r.uqc,
+      r.gst_rate,
+      r.taxable_value,
+      r.cgst,
+      r.sgst,
+      r.igst,
+      r.total_tax,
+      r.total_value,
+    ]);
+    const totalRow = [
+      '', 'TOTAL', '', '', '',
+      totals.taxable,
+      totals.cgst,
+      totals.sgst,
+      totals.igst,
+      totals.tax,
+      totals.total,
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...data, totalRow]);
+    ws['!cols'] = [8, 28, 14, 8, 14, 16, 16, 16, 16, 14, 16].map(w => ({ wch: w }));
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'GSTR-1');
+    XLSX.writeFile(wb, `GSTR1_Report_${fromDate}_to_${toDate}.xlsx`);
+    toast.success('GSTR-1 exported successfully!');
   };
 
   return (
@@ -99,7 +138,7 @@ export default function Gstr1ReportPage() {
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-base">HSN/SAC-wise Outward Supply Summary</CardTitle>
-            <Button size="sm" variant="outline">
+            <Button size="sm" variant="outline" onClick={handleExport}>
               <IconDownload size={14} className="mr-1" /> Export
             </Button>
           </CardHeader>

@@ -127,6 +127,10 @@ impl TemplateEngine {
                 "show_less_column".to_string(),
                 json!(template.show_less_column.unwrap_or(1) == 1),
             );
+            obj.insert(
+                "show_discount_column".to_string(),
+                json!(template.show_discount_column.unwrap_or(0) == 1),
+            );
             // Balance section style settings (thermal only, but safe for all)
             let bal_font = template.balance_font_size.unwrap_or(10);
             obj.insert("balance_font_size".to_string(), json!(bal_font));

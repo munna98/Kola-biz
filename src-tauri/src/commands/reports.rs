@@ -1,6 +1,6 @@
+use crate::company_db::DbRegistry;
 use chrono;
 use serde::{Deserialize, Serialize};
-use crate::company_db::DbRegistry;
 use std::sync::Arc;
 use tauri::State;
 
@@ -830,10 +830,7 @@ pub async fn get_transaction_report(
         query = query.bind(param);
     }
 
-    query
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| e.to_string())
+    query.fetch_all(&pool).await.map_err(|e| e.to_string())
 }
 
 // ============= SALES & RETURNS REPORT =============

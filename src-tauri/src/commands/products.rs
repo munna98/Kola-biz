@@ -64,17 +64,22 @@ pub(crate) async fn create_child_product_in_tx(
     mrp: f64,
 ) -> Result<String, String> {
     // Fetch master fields needed for the child
-    let master: Option<(String, Option<String>, String, Option<String>, Option<String>)> =
-        sqlx::query_as(
-            "SELECT name, group_id, unit_id, hsn_sac_code, gst_slab_id FROM products WHERE id = ?",
-        )
-        .bind(master_product_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(|e| e.to_string())?;
+    let master: Option<(
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<String>,
+    )> = sqlx::query_as(
+        "SELECT name, group_id, unit_id, hsn_sac_code, gst_slab_id FROM products WHERE id = ?",
+    )
+    .bind(master_product_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
 
-    let (name, group_id, unit_id, hsn_sac_code, gst_slab_id) = master
-        .ok_or_else(|| format!("Master product '{}' not found", master_product_id))?;
+    let (name, group_id, unit_id, hsn_sac_code, gst_slab_id) =
+        master.ok_or_else(|| format!("Master product '{}' not found", master_product_id))?;
 
     // Generate next sequential code within the same transaction
     let code = generate_product_code_in_tx(tx).await?;
@@ -128,7 +133,9 @@ pub async fn get_next_product_code(registry: State<'_, Arc<DbRegistry>>) -> Resu
 }
 
 #[tauri::command]
-pub async fn get_product_groups(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<ProductGroup>, String> {
+pub async fn get_product_groups(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<ProductGroup>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, ProductGroup>(
         "SELECT id, name, description, is_active, created_at FROM product_groups WHERE deleted_at IS NULL ORDER BY name ASC",
@@ -181,7 +188,10 @@ pub async fn update_product_group(
 }
 
 #[tauri::command]
-pub async fn delete_product_group(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn delete_product_group(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     // Check if any product is using this group
     let count: (i64,) =
@@ -234,7 +244,10 @@ pub async fn get_units(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Unit>
 }
 
 #[tauri::command]
-pub async fn create_unit(registry: State<'_, Arc<DbRegistry>>, unit: CreateUnit) -> Result<Unit, String> {
+pub async fn create_unit(
+    registry: State<'_, Arc<DbRegistry>>,
+    unit: CreateUnit,
+) -> Result<Unit, String> {
     let pool = registry.active_pool().await?;
     let id = Uuid::now_v7().to_string();
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
@@ -434,14 +447,20 @@ fn normalize_product_unit_conversions(
             continue;
         }
 
-        if let Some(existing) = normalized.iter_mut().find(|item| item.unit_id == conversion.unit_id) {
+        if let Some(existing) = normalized
+            .iter_mut()
+            .find(|item| item.unit_id == conversion.unit_id)
+        {
             *existing = conversion.clone();
         } else {
             normalized.push(conversion.clone());
         }
     }
 
-    if let Some(base_row) = normalized.iter_mut().find(|item| item.unit_id == base_unit_id) {
+    if let Some(base_row) = normalized
+        .iter_mut()
+        .find(|item| item.unit_id == base_unit_id)
+    {
         base_row.factor_to_base = 1.0;
         base_row.purchase_rate = base_purchase_rate;
         base_row.sales_rate = base_sales_rate;
@@ -464,17 +483,26 @@ fn normalize_product_unit_conversions(
     }
 
     if !normalized.iter().any(|item| item.is_default_sale) {
-        if let Some(base_row) = normalized.iter_mut().find(|item| item.unit_id == base_unit_id) {
+        if let Some(base_row) = normalized
+            .iter_mut()
+            .find(|item| item.unit_id == base_unit_id)
+        {
             base_row.is_default_sale = true;
         }
     }
     if !normalized.iter().any(|item| item.is_default_purchase) {
-        if let Some(base_row) = normalized.iter_mut().find(|item| item.unit_id == base_unit_id) {
+        if let Some(base_row) = normalized
+            .iter_mut()
+            .find(|item| item.unit_id == base_unit_id)
+        {
             base_row.is_default_purchase = true;
         }
     }
     if !normalized.iter().any(|item| item.is_default_report) {
-        if let Some(base_row) = normalized.iter_mut().find(|item| item.unit_id == base_unit_id) {
+        if let Some(base_row) = normalized
+            .iter_mut()
+            .find(|item| item.unit_id == base_unit_id)
+        {
             base_row.is_default_report = true;
         }
     }
@@ -702,7 +730,7 @@ pub async fn batch_create_products(
 ) -> Result<usize, String> {
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    
+
     let count = products.len();
 
     for product in products {
@@ -751,7 +779,7 @@ pub async fn batch_create_products(
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
-    
+
     Ok(count)
 }
 
@@ -859,7 +887,7 @@ pub async fn update_multiple_product_rates(
         sqlx::query(
             "UPDATE product_unit_conversions
              SET purchase_rate = ?, sales_rate = ?
-             WHERE product_id = ? AND factor_to_base = 1.0"
+             WHERE product_id = ? AND factor_to_base = 1.0",
         )
         .bind(rate.purchase_rate)
         .bind(rate.sales_rate)
@@ -920,7 +948,9 @@ pub async fn delete_product(
 }
 
 #[tauri::command]
-pub async fn get_deleted_products(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Product>, String> {
+pub async fn get_deleted_products(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<Product>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Product>(
         "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, is_active, created_at,
@@ -938,7 +968,10 @@ pub async fn get_deleted_products(registry: State<'_, Arc<DbRegistry>>) -> Resul
 }
 
 #[tauri::command]
-pub async fn restore_product(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn restore_product(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     sqlx::query(
         "UPDATE products 
@@ -954,7 +987,10 @@ pub async fn restore_product(registry: State<'_, Arc<DbRegistry>>, id: String) -
 }
 
 #[tauri::command]
-pub async fn hard_delete_product(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn hard_delete_product(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     // Reference checks (same as soft delete)
     let ref_count: i64 =

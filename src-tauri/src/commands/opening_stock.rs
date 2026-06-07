@@ -1,6 +1,6 @@
-﻿use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 use crate::company_db::DbRegistry;
+use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
@@ -77,7 +77,9 @@ async fn get_next_voucher_number(pool: &SqlitePool, voucher_type: &str) -> Resul
 }
 
 #[tauri::command]
-pub async fn get_opening_stocks(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<OpeningStock>, String> {
+pub async fn get_opening_stocks(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<OpeningStock>, String> {
     let pool = registry.active_pool().await?;
     let stocks = sqlx::query_as::<_, OpeningStock>(
         "SELECT 
@@ -441,7 +443,10 @@ pub async fn update_opening_stock(
 }
 
 #[tauri::command]
-pub async fn delete_opening_stock(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn delete_opening_stock(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 

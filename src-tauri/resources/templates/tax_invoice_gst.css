@@ -46,10 +46,30 @@ body {
         margin: 8mm 10mm 8mm 10mm;
     }
     body { margin: 0; }
-    .einvoice-block { page-break-inside: avoid; }
-    .items-table    { page-break-inside: auto; }
-    .hsn-table      { page-break-inside: avoid; }
-    .declaration-signature-row { page-break-inside: avoid; }
+
+    /* Keep these blocks from splitting across pages */
+    .einvoice-block            { page-break-inside: avoid; break-inside: avoid; }
+    .declaration-signature-row { page-break-inside: avoid; break-inside: avoid; }
+    .page-foot                 { page-break-inside: avoid; break-inside: avoid; }
+
+    /* HSN table + tax words bar + declaration should prefer to stay together;
+       if they don't fit, allow a clean page break before the HSN block */
+    .amount-words-bar   { page-break-inside: avoid; break-inside: avoid; }
+    .amount-words-value { page-break-inside: avoid; break-inside: avoid; }
+    .hsn-table          { page-break-inside: avoid; break-inside: avoid; }
+    .tax-words-bar      { page-break-inside: avoid; break-inside: avoid; }
+
+    /* Keep the summary footer row attached to the rows just above it */
+    .summary-footer-row { page-break-before: avoid; break-before: avoid;
+                          page-break-inside: avoid; break-inside: avoid; }
+
+    /* Keep CGST / SGST / IGST tax rows with the item above them */
+    .tax-row { page-break-before: avoid; break-before: avoid;
+               page-break-inside: avoid; break-inside: avoid; }
+
+    /* Allow item rows to break across pages naturally */
+    .items-table { page-break-inside: auto; }
+    .item-row    { page-break-inside: avoid; break-inside: avoid; }
 }
 
 /* ============================================================
@@ -57,8 +77,10 @@ body {
    Opens in HEADER, closes at end of FOOTER.
    ============================================================ */
 .invoice-wrapper {
-    display: flex;
-    flex-direction: column;
+    /* No longer using flex to force full-page height.
+       flex-grow on .items-table was causing the table to overflow a page
+       and produce a broken second-page layout when items were many.
+       min-height keeps the invoice at least A4-tall for short invoices. */
     min-height: 275mm;
 }
 
@@ -245,14 +267,12 @@ body {
    in the invoice-wrapper flex container.
    ============================================================ */
 .items-table {
-    flex: 1;           /* Grow to fill remaining page height */
-    flex-basis: 0;     /* Start from 0 so flex-grow controls height */
     width: 100%;
     border-collapse: collapse;
-    border: 1.5px solid var(--border-dark);  /* top border now included */
-    /* height: 0 prevents table's natural content height from
-       overriding the flex-grow height */
-    height: 0;
+    border: 1.5px solid var(--border-dark);
+    /* height: auto — let the table grow naturally with its content.
+       For short invoices the spacer-row provides visual height.
+       For long invoices the table simply expands across pages cleanly. */
 }
 
 /* All cells: column dividers (left/right borders only, no row lines) */
@@ -289,10 +309,12 @@ body {
     padding: 5px 6px;
 }
 
-/* Spacer row: 7 individual cells, each with only left/right borders
-   so every column divider line extends through the empty space */
+/* Spacer row: individual cells keep column-divider borders continuous
+   through the empty space below items on short invoices.
+   A min-height on the row gives visual breathing room. */
 .spacer-row {
-    height: 100%; /* Fills remaining space in the flex-grown table */
+    min-height: 30mm;
+    height: 30mm; /* Fixed comfortable height — does not flex-stretch */
 }
 
 .spacer-row td {
@@ -309,6 +331,7 @@ body {
 .sp-rate   { width: 9%; }
 .sp-per    { width: 6%; }
 .sp-disc   { width: 8%; }
+.sp-disc-amt { width: 8%; }
 .sp-amount { width: 10%; }
 
 /* Tax rows — individual cells keep column-divider borders from .items-table td */
@@ -391,6 +414,7 @@ body {
 .col-rate   { width: 9%; text-align: right; }
 .col-per    { width: 6%;  text-align: center; }
 .col-disc   { width: 8%;  text-align: right; }
+.col-disc-amt { width: 8%; text-align: right; }
 .col-amount { width: 10%; text-align: right; }
 
 .item-desc  { color: var(--text-muted); font-size: 8.5pt; }

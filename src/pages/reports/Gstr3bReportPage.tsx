@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { IconRefresh } from '@tabler/icons-react';
+import { IconDownload, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { api, Gstr3bSummary } from '@/lib/tauri';
 
@@ -67,6 +68,39 @@ export default function Gstr3bReportPage() {
     }
   };
 
+  const handleExport = () => {
+    if (!data) {
+      toast.error('No data to export. Please fetch data first.');
+      return;
+    }
+
+    const rows = [
+      ['Section', 'Description', 'Amount (₹)'],
+      ['3.1 – Outward', 'Taxable Value', data.outward_taxable],
+      ['3.1 – Outward', 'CGST', data.outward_cgst],
+      ['3.1 – Outward', 'SGST', data.outward_sgst],
+      ['3.1 – Outward', 'IGST', data.outward_igst],
+      ['3.1 – Outward', 'Total Output Tax', data.outward_cgst + data.outward_sgst + data.outward_igst],
+      [],
+      ['4 – ITC', 'Taxable Value', data.inward_taxable],
+      ['4 – ITC', 'CGST Input Credit', data.inward_cgst],
+      ['4 – ITC', 'SGST Input Credit', data.inward_sgst],
+      ['4 – ITC', 'IGST Input Credit', data.inward_igst],
+      ['4 – ITC', 'Total ITC Available', data.inward_cgst + data.inward_sgst + data.inward_igst],
+      [],
+      ['Net Payable', 'CGST Payable', data.net_cgst],
+      ['Net Payable', 'SGST Payable', data.net_sgst],
+      ['Net Payable', 'IGST Payable', data.net_igst],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!cols'] = [{ wch: 18 }, { wch: 28 }, { wch: 18 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'GSTR-3B');
+    XLSX.writeFile(wb, `GSTR3B_Report_${fromDate}_to_${toDate}.xlsx`);
+    toast.success('GSTR-3B exported successfully!');
+  };
+
   return (
     <div className="h-full overflow-auto p-6 space-y-5">
       <div>
@@ -101,6 +135,12 @@ export default function Gstr3bReportPage() {
             <IconRefresh size={14} className="mr-1.5" />
             {loading ? 'Loading...' : 'Fetch'}
           </Button>
+          {data && (
+            <Button variant="outline" onClick={handleExport} className="mb-0.5">
+              <IconDownload size={14} className="mr-1.5" />
+              Export
+            </Button>
+          )}
         </CardContent>
       </Card>
 

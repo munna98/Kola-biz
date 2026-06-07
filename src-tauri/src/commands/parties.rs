@@ -1,6 +1,6 @@
+use crate::company_db::DbRegistry;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use crate::company_db::DbRegistry;
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
@@ -54,7 +54,10 @@ pub async fn get_customers(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<C
 }
 
 #[tauri::command]
-pub async fn get_customer(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<Customer, String> {
+pub async fn get_customer(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<Customer, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE id = ?")
         .bind(id)
@@ -80,7 +83,9 @@ async fn generate_customer_code(pool: &SqlitePool) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn get_next_customer_code(registry: State<'_, Arc<DbRegistry>>) -> Result<String, String> {
+pub async fn get_next_customer_code(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<String, String> {
     let pool = registry.active_pool().await?;
     generate_customer_code(&pool).await
 }
@@ -211,7 +216,7 @@ pub async fn batch_create_customers(
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
-    
+
     Ok(1)
 }
 
@@ -261,7 +266,10 @@ pub async fn update_customer(
 }
 
 #[tauri::command]
-pub async fn delete_customer(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn delete_customer(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     // Check for references in vouchers
     let voucher_count: i64 =
@@ -308,7 +316,9 @@ pub async fn delete_customer(registry: State<'_, Arc<DbRegistry>>, id: String) -
 }
 
 #[tauri::command]
-pub async fn get_deleted_customers(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Customer>, String> {
+pub async fn get_deleted_customers(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<Customer>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Customer>(
         "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
@@ -319,7 +329,10 @@ pub async fn get_deleted_customers(registry: State<'_, Arc<DbRegistry>>) -> Resu
 }
 
 #[tauri::command]
-pub async fn restore_customer(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn restore_customer(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     sqlx::query("UPDATE customers SET is_active = 1, deleted_at = NULL WHERE id = ?")
         .bind(&id)
@@ -337,7 +350,10 @@ pub async fn restore_customer(registry: State<'_, Arc<DbRegistry>>, id: String) 
 }
 
 #[tauri::command]
-pub async fn hard_delete_customer(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn hard_delete_customer(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     // Reference checks (same as soft delete)
     let voucher_count: i64 =
@@ -435,13 +451,19 @@ pub async fn get_suppliers(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<S
 }
 
 #[tauri::command]
-pub async fn get_supplier(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<Supplier, String> {
+pub async fn get_supplier(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<Supplier, String> {
     let pool = registry.active_pool().await?;
     get_supplier_with_pool(&pool, &id).await
 }
 
 /// Internal version for use by other modules (e.g., templates.rs)
-pub(crate) async fn get_supplier_with_pool(pool: &SqlitePool, id: &str) -> Result<Supplier, String> {
+pub(crate) async fn get_supplier_with_pool(
+    pool: &SqlitePool,
+    id: &str,
+) -> Result<Supplier, String> {
     sqlx::query_as::<_, Supplier>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE id = ?")
         .bind(id)
         .fetch_one(pool)
@@ -450,7 +472,10 @@ pub(crate) async fn get_supplier_with_pool(pool: &SqlitePool, id: &str) -> Resul
 }
 
 /// Internal version for use by other modules (e.g., templates.rs)
-pub(crate) async fn get_customer_with_pool(pool: &SqlitePool, id: &str) -> Result<Customer, String> {
+pub(crate) async fn get_customer_with_pool(
+    pool: &SqlitePool,
+    id: &str,
+) -> Result<Customer, String> {
     sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM customers WHERE id = ?")
         .bind(id)
         .fetch_one(pool)
@@ -475,7 +500,9 @@ async fn generate_supplier_code(pool: &SqlitePool) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn get_next_supplier_code(registry: State<'_, Arc<DbRegistry>>) -> Result<String, String> {
+pub async fn get_next_supplier_code(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<String, String> {
     let pool = registry.active_pool().await?;
     generate_supplier_code(&pool).await
 }
@@ -606,7 +633,7 @@ pub async fn batch_create_suppliers(
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
-    
+
     Ok(1)
 }
 
@@ -656,7 +683,10 @@ pub async fn update_supplier(
 }
 
 #[tauri::command]
-pub async fn delete_supplier(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn delete_supplier(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     // Check for references in vouchers
     let voucher_count: i64 =
@@ -703,7 +733,9 @@ pub async fn delete_supplier(registry: State<'_, Arc<DbRegistry>>, id: String) -
 }
 
 #[tauri::command]
-pub async fn get_deleted_suppliers(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Supplier>, String> {
+pub async fn get_deleted_suppliers(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<Supplier>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Supplier>(
         "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, is_active, deleted_at, created_at FROM suppliers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
@@ -714,7 +746,10 @@ pub async fn get_deleted_suppliers(registry: State<'_, Arc<DbRegistry>>) -> Resu
 }
 
 #[tauri::command]
-pub async fn restore_supplier(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn restore_supplier(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     sqlx::query("UPDATE suppliers SET is_active = 1, deleted_at = NULL WHERE id = ?")
         .bind(&id)
@@ -732,7 +767,10 @@ pub async fn restore_supplier(registry: State<'_, Arc<DbRegistry>>, id: String) 
 }
 
 #[tauri::command]
-pub async fn hard_delete_supplier(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn hard_delete_supplier(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     // Reference checks (same as soft delete)
     let voucher_count: i64 =

@@ -1,14 +1,13 @@
+use crate::company_db::DbRegistry;
 use serde::{Deserialize, Serialize};
 use sqlx::{Sqlite, SqlitePool, Transaction};
-use crate::company_db::DbRegistry;
 use std::sync::Arc;
 use tauri::State;
 
-
-use uuid::Uuid;
-use super::sales_returns::{create_sales_return_in_tx, CreateSalesReturn, CreateSalesReturnItem};
 use super::resolve_voucher_line_unit;
+use super::sales_returns::{create_sales_return_in_tx, CreateSalesReturn, CreateSalesReturnItem};
 use crate::voucher_seq::get_next_voucher_number;
+use uuid::Uuid;
 
 fn round2(value: f64) -> f64 {
     (value * 100.0).round() / 100.0
@@ -22,14 +21,12 @@ pub(crate) async fn get_product_purchase_cost_rate(
         return Ok(0.0);
     }
 
-    sqlx::query_scalar::<_, f64>(
-        "SELECT COALESCE(purchase_rate, 0) FROM products WHERE id = ?",
-    )
-    .bind(product_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(|e| e.to_string())
-    .map(|value| value.unwrap_or(0.0))
+    sqlx::query_scalar::<_, f64>("SELECT COALESCE(purchase_rate, 0) FROM products WHERE id = ?")
+        .bind(product_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())
+        .map(|value| value.unwrap_or(0.0))
 }
 
 // ============= GST INVOICE HELPERS =============
@@ -37,7 +34,7 @@ pub(crate) async fn get_product_purchase_cost_rate(
 #[derive(Debug)]
 pub struct ProcessedVoucherItem {
     pub id: String,
-    pub item_type: String,        // "product" | "service"
+    pub item_type: String, // "product" | "service"
     pub product_id: Option<String>,
     pub service_id: Option<String>,
     pub description: Option<String>,
@@ -48,8 +45,8 @@ pub struct ProcessedVoucherItem {
     pub unit_id: Option<String>,
     pub base_quantity: f64,
     pub rate: f64,
-    pub amount: f64,        // gross amount (original, before invoice discount)
-    pub net_amount: f64,    // net amount (after invoice discount)
+    pub amount: f64,     // gross amount (original, before invoice discount)
+    pub net_amount: f64, // net amount (after invoice discount)
     pub discount_percent: f64,
     pub discount_amount: f64,
     pub invoice_discount_amount: f64,
@@ -74,7 +71,6 @@ pub struct ProcessedVoucher {
     pub total_sgst: f64,
     pub total_igst: f64,
 }
-
 
 // ============= PURCHASE INVOICE =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -116,8 +112,8 @@ pub struct PurchaseInvoiceItem {
     pub unit_id: Option<String>,
     pub base_quantity: f64,
     pub rate: f64,
-    pub amount: f64,            // gross amount (original, before invoice discount)
-    pub net_amount: f64,        // net amount (after invoice discount)
+    pub amount: f64,     // gross amount (original, before invoice discount)
+    pub net_amount: f64, // net amount (after invoice discount)
     pub tax_rate: f64,
     pub tax_amount: f64,
     pub discount_percent: f64,
@@ -163,7 +159,11 @@ pub(crate) struct PreparedVoucherLine {
     effective_rate: f64,
 }
 
-pub(crate) fn normalize_invoice_discount(subtotal_before_invoice_discount: f64, discount_rate: Option<f64>, discount_amount: Option<f64>) -> (f64, f64) {
+pub(crate) fn normalize_invoice_discount(
+    subtotal_before_invoice_discount: f64,
+    discount_rate: Option<f64>,
+    discount_amount: Option<f64>,
+) -> (f64, f64) {
     let mut resolved_amount = discount_amount.unwrap_or(0.0);
     let mut resolved_rate = discount_rate.unwrap_or(0.0);
 
@@ -177,12 +177,18 @@ pub(crate) fn normalize_invoice_discount(subtotal_before_invoice_discount: f64, 
     (resolved_rate, resolved_amount)
 }
 
-pub(crate) fn allocate_invoice_discount(lines: &[DiscountAllocationInput], total_invoice_discount: f64) -> Vec<f64> {
+pub(crate) fn allocate_invoice_discount(
+    lines: &[DiscountAllocationInput],
+    total_invoice_discount: f64,
+) -> Vec<f64> {
     if lines.is_empty() || total_invoice_discount <= 0.0 {
         return vec![0.0; lines.len()];
     }
 
-    let subtotal: f64 = lines.iter().map(|line| line.net_before_invoice_discount.max(0.0)).sum();
+    let subtotal: f64 = lines
+        .iter()
+        .map(|line| line.net_before_invoice_discount.max(0.0))
+        .sum();
     if subtotal <= 0.0 {
         return vec![0.0; lines.len()];
     }
@@ -209,8 +215,8 @@ pub(crate) async fn prepare_voucher_line(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     pool: &SqlitePool,
     unit_kind: &str,
-    item_type: &str,          // "product" | "service"
-    item_id: &str,            // product_id or service_id depending on item_type
+    item_type: &str, // "product" | "service"
+    item_id: &str,   // product_id or service_id depending on item_type
     unit_id: Option<&str>,
     description: Option<String>,
     initial_quantity: f64,
@@ -230,7 +236,8 @@ pub(crate) async fn prepare_voucher_line(
     let (resolved_unit_id, base_quantity) = if item_type == "service" {
         (unit_id.unwrap_or("").to_string(), final_quantity)
     } else {
-        let snap = resolve_voucher_line_unit(tx, item_id, unit_id, unit_kind, final_quantity).await?;
+        let snap =
+            resolve_voucher_line_unit(tx, item_id, unit_id, unit_kind, final_quantity).await?;
         (snap.unit_id.clone(), snap.base_quantity)
     };
 
@@ -368,7 +375,8 @@ pub(crate) fn finalize_processed_items(
 
     for (line, invoice_discount_amount) in prepared_lines.into_iter().zip(allocations.into_iter()) {
         // net_amount = amount after invoice discount (taxable base)
-        let net_amount = round2((line.net_before_invoice_discount - invoice_discount_amount).max(0.0));
+        let net_amount =
+            round2((line.net_before_invoice_discount - invoice_discount_amount).max(0.0));
         let split = crate::commands::tax_utils::compute_split(
             net_amount,
             line.effective_rate,
@@ -428,9 +436,9 @@ pub(crate) fn finalize_processed_items(
 #[derive(Deserialize, Clone)]
 pub struct CreatePurchaseInvoiceItem {
     #[serde(default = "default_item_type")]
-    pub item_type: String,           // "product" | "service"
-    pub product_id: Option<String>,  // nullable — None for service lines
-    pub service_id: Option<String>,  // Some for service lines
+    pub item_type: String, // "product" | "service"
+    pub product_id: Option<String>, // nullable — None for service lines
+    pub service_id: Option<String>, // Some for service lines
     pub unit_id: Option<String>,
     pub description: Option<String>,
     pub initial_quantity: f64,
@@ -447,7 +455,9 @@ pub struct CreatePurchaseInvoiceItem {
     pub mrp: Option<f64>,
 }
 
-fn default_item_type() -> String { "product".to_string() }
+fn default_item_type() -> String {
+    "product".to_string()
+}
 
 #[derive(Deserialize)]
 pub struct CreatePurchaseInvoice {
@@ -463,7 +473,6 @@ pub struct CreatePurchaseInvoice {
     pub tax_inclusive: Option<bool>,
     pub gst_disabled: Option<bool>,
 }
-
 
 #[tauri::command]
 pub async fn get_purchase_invoices(
@@ -569,7 +578,10 @@ pub async fn get_purchase_invoice_items(
 }
 
 /// Internal version for use by other modules (e.g., templates.rs)
-pub(crate) async fn get_purchase_invoice_with_pool(pool: &SqlitePool, id: &str) -> Result<PurchaseInvoice, String> {
+pub(crate) async fn get_purchase_invoice_with_pool(
+    pool: &SqlitePool,
+    id: &str,
+) -> Result<PurchaseInvoice, String> {
     sqlx::query_as::<_, PurchaseInvoice>(
         "SELECT 
             v.id,
@@ -605,7 +617,10 @@ pub(crate) async fn get_purchase_invoice_with_pool(pool: &SqlitePool, id: &str) 
 }
 
 /// Internal version for use by other modules (e.g., templates.rs)
-pub(crate) async fn get_purchase_invoice_items_with_pool(pool: &SqlitePool, voucher_id: &str) -> Result<Vec<PurchaseInvoiceItem>, String> {
+pub(crate) async fn get_purchase_invoice_items_with_pool(
+    pool: &SqlitePool,
+    voucher_id: &str,
+) -> Result<Vec<PurchaseInvoiceItem>, String> {
     sqlx::query_as::<_, PurchaseInvoiceItem>(
         "SELECT vi.*,
                 COALESCE(p.code, s.code) as product_code,
@@ -621,7 +636,6 @@ pub(crate) async fn get_purchase_invoice_items_with_pool(pool: &SqlitePool, vouc
     .map_err(|e| e.to_string())
 }
 
-
 #[tauri::command]
 pub async fn create_purchase_invoice(
     registry: State<'_, Arc<DbRegistry>>,
@@ -632,14 +646,34 @@ pub async fn create_purchase_invoice(
 
     let voucher_no = get_next_voucher_number(&pool, "purchase_invoice").await?;
 
-    let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1").fetch_optional(&mut *tx).await.ok().flatten();
-    let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.supplier_id).fetch_optional(&mut *tx).await.ok().flatten();
-    let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
+    let company_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+    let party_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?")
+            .bind(&invoice.supplier_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+    let is_inter_state = crate::commands::tax_utils::is_inter_state(
+        company_state.as_deref(),
+        party_state.as_deref(),
+    );
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
     let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
     let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
-        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
-    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'",
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true")
+    .unwrap_or(false);
     let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
@@ -659,14 +693,13 @@ pub async fn create_purchase_invoice(
             resolved_product_ids.push(item.product_id.clone());
             continue;
         }
-        let is_master: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(is_master, 0) FROM products WHERE id = ?"
-        )
-        .bind(product_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?
-        .unwrap_or(0);
+        let is_master: i64 =
+            sqlx::query_scalar("SELECT COALESCE(is_master, 0) FROM products WHERE id = ?")
+                .bind(product_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?
+                .unwrap_or(0);
 
         if is_master == 1 {
             let child_id = crate::commands::products::create_child_product_in_tx(
@@ -675,7 +708,8 @@ pub async fn create_purchase_invoice(
                 item.rate,
                 item.sales_rate.unwrap_or(0.0),
                 item.mrp.unwrap_or(0.0),
-            ).await?;
+            )
+            .await?;
             resolved_product_ids.push(Some(child_id));
         } else {
             resolved_product_ids.push(item.product_id.clone());
@@ -727,7 +761,6 @@ pub async fn create_purchase_invoice(
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let grand_total = round2(total_amount + total_tax);
 
-    
     let voucher_id = Uuid::now_v7().to_string();
     let _ = sqlx::query(
         "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total)
@@ -757,10 +790,16 @@ pub async fn create_purchase_invoice(
 
     // ============= INSERT STOCK MOVEMENTS (IN) =============
     for item in &processed_items {
-        if item.item_type == "service" { continue; } // Services have no stock
+        if item.item_type == "service" {
+            continue;
+        } // Services have no stock
         let sm_id = Uuid::now_v7().to_string();
         let qty = item.base_quantity;
-        let rate_per_base = if qty > 0.0 { item.amount / qty } else { item.rate };
+        let rate_per_base = if qty > 0.0 {
+            item.amount / qty
+        } else {
+            item.rate
+        };
         let amount = qty * rate_per_base;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?, ?)"
@@ -773,21 +812,33 @@ pub async fn create_purchase_invoice(
 
     // ============= CREATE JOURNAL ENTRIES =============
 
-
-
     let party_id = invoice.supplier_id;
 
     // ============= JOURNAL: SPLIT BY ITEM TYPE =============
-    let product_subtotal = round2(processed_items.iter()
-        .filter(|i| i.item_type != "service").map(|i| i.net_amount).sum::<f64>());
-    let service_subtotal = round2(processed_items.iter()
-        .filter(|i| i.item_type == "service").map(|i| i.net_amount).sum::<f64>());
+    let product_subtotal = round2(
+        processed_items
+            .iter()
+            .filter(|i| i.item_type != "service")
+            .map(|i| i.net_amount)
+            .sum::<f64>(),
+    );
+    let service_subtotal = round2(
+        processed_items
+            .iter()
+            .filter(|i| i.item_type == "service")
+            .map(|i| i.net_amount)
+            .sum::<f64>(),
+    );
 
     // Group tax
     let mut tax_ledgers: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     for row in &processed_items {
         if row.tax_amount > 0.0 {
-            let accounts = crate::commands::tax_utils::resolve_gst_account_names(row.resolved_gst_rate, is_inter_state, true);
+            let accounts = crate::commands::tax_utils::resolve_gst_account_names(
+                row.resolved_gst_rate,
+                is_inter_state,
+                true,
+            );
             if let Some(cgst_acc) = accounts.cgst_account {
                 *tax_ledgers.entry(cgst_acc).or_insert(0.0) += row.cgst_amount;
             }
@@ -807,8 +858,11 @@ pub async fn create_purchase_invoice(
 
     // Dr 5001 Purchases for product lines
     if product_subtotal > 0.0 {
-        let purchases_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5001'")
-            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let purchases_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5001'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(purchases_acc).bind(product_subtotal).bind(0.0)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -816,8 +870,11 @@ pub async fn create_purchase_invoice(
 
     // Dr 5011 Service Expenses for service lines
     if service_subtotal > 0.0 {
-        let svc_exp_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5011'")
-            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let svc_exp_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5011'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(svc_exp_acc).bind(service_subtotal).bind(0.0)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -825,8 +882,11 @@ pub async fn create_purchase_invoice(
 
     // Discount entry
     if discount_amount > 0.0 {
-        let dis_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'")
-            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let dis_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(dis_acc).bind(0.0).bind(discount_amount)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -835,7 +895,10 @@ pub async fn create_purchase_invoice(
     // Tax entries
     for (acc_name, amt) in tax_ledgers {
         if amt > 0.0 {
-            let acc_id = crate::commands::tax_utils::ensure_gst_account_exists(&pool, &acc_name, !true).await?;
+            let acc_id = crate::commands::tax_utils::ensure_gst_account_exists_in_tx(
+                &mut tx, &acc_name, false,
+            )
+            .await?;
             sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
                 .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(amt).bind(0.0)
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -845,8 +908,6 @@ pub async fn create_purchase_invoice(
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(voucher_id.to_string())
 }
-
-
 
 #[tauri::command]
 pub async fn delete_purchase_invoice(
@@ -944,16 +1005,34 @@ pub async fn update_purchase_invoice(
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-
-
-    let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1").fetch_optional(&mut *tx).await.ok().flatten();
-    let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.supplier_id).fetch_optional(&mut *tx).await.ok().flatten();
-    let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
+    let company_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+    let party_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?")
+            .bind(&invoice.supplier_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+    let is_inter_state = crate::commands::tax_utils::is_inter_state(
+        company_state.as_deref(),
+        party_state.as_deref(),
+    );
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
     let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
     let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
-        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
-    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'",
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true")
+    .unwrap_or(false);
     let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
@@ -970,14 +1049,13 @@ pub async fn update_purchase_invoice(
             resolved_product_ids.push(item.product_id.clone());
             continue;
         }
-        let is_master: i64 = sqlx::query_scalar(
-            "SELECT COALESCE(is_master, 0) FROM products WHERE id = ?"
-        )
-        .bind(product_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?
-        .unwrap_or(0);
+        let is_master: i64 =
+            sqlx::query_scalar("SELECT COALESCE(is_master, 0) FROM products WHERE id = ?")
+                .bind(product_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?
+                .unwrap_or(0);
 
         if is_master == 1 {
             let child_id = crate::commands::products::create_child_product_in_tx(
@@ -986,7 +1064,8 @@ pub async fn update_purchase_invoice(
                 item.rate,
                 item.sales_rate.unwrap_or(0.0),
                 item.mrp.unwrap_or(0.0),
-            ).await?;
+            )
+            .await?;
             resolved_product_ids.push(Some(child_id));
         } else {
             resolved_product_ids.push(item.product_id.clone());
@@ -1052,8 +1131,12 @@ pub async fn update_purchase_invoice(
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
     .bind(grand_total).bind(&voucher_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    
-    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?").bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+        .bind(&voucher_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Insert items
     for item in &processed_items {
@@ -1074,12 +1157,21 @@ pub async fn update_purchase_invoice(
 
     // ============= DELETE + REINSERT STOCK MOVEMENTS (IN) =============
     sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
-        .bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        .bind(&voucher_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
     for item in &processed_items {
-        if item.item_type == "service" { continue; } // Services have no stock
+        if item.item_type == "service" {
+            continue;
+        } // Services have no stock
         let sm_id = Uuid::now_v7().to_string();
         let qty = item.base_quantity;
-        let rate_per_base = if qty > 0.0 { item.amount / qty } else { item.rate };
+        let rate_per_base = if qty > 0.0 {
+            item.amount / qty
+        } else {
+            item.rate
+        };
         let amount = qty * rate_per_base;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?, ?)"
@@ -1092,21 +1184,39 @@ pub async fn update_purchase_invoice(
 
     // ============= CREATE JOURNAL ENTRIES =============
 
-    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?").bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+        .bind(&voucher_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let party_id = invoice.supplier_id;
 
     // ============= JOURNAL: SPLIT BY ITEM TYPE =============
-    let product_subtotal = round2(processed_items.iter()
-        .filter(|i| i.item_type != "service").map(|i| i.net_amount).sum::<f64>());
-    let service_subtotal = round2(processed_items.iter()
-        .filter(|i| i.item_type == "service").map(|i| i.net_amount).sum::<f64>());
+    let product_subtotal = round2(
+        processed_items
+            .iter()
+            .filter(|i| i.item_type != "service")
+            .map(|i| i.net_amount)
+            .sum::<f64>(),
+    );
+    let service_subtotal = round2(
+        processed_items
+            .iter()
+            .filter(|i| i.item_type == "service")
+            .map(|i| i.net_amount)
+            .sum::<f64>(),
+    );
 
     // Group tax
     let mut tax_ledgers: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     for row in &processed_items {
         if row.tax_amount > 0.0 {
-            let accounts = crate::commands::tax_utils::resolve_gst_account_names(row.resolved_gst_rate, is_inter_state, true);
+            let accounts = crate::commands::tax_utils::resolve_gst_account_names(
+                row.resolved_gst_rate,
+                is_inter_state,
+                true,
+            );
             if let Some(cgst_acc) = accounts.cgst_account {
                 *tax_ledgers.entry(cgst_acc).or_insert(0.0) += row.cgst_amount;
             }
@@ -1125,23 +1235,32 @@ pub async fn update_purchase_invoice(
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     if product_subtotal > 0.0 {
-        let purchases_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5001'")
-            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let purchases_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5001'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(purchases_acc).bind(product_subtotal).bind(0.0)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
     if service_subtotal > 0.0 {
-        let svc_exp_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5011'")
-            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let svc_exp_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5011'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(svc_exp_acc).bind(service_subtotal).bind(0.0)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
     if discount_amount > 0.0 {
-        let dis_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'")
-            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let dis_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(dis_acc).bind(0.0).bind(discount_amount)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -1149,7 +1268,10 @@ pub async fn update_purchase_invoice(
 
     for (acc_name, amt) in tax_ledgers {
         if amt > 0.0 {
-            let acc_id = crate::commands::tax_utils::ensure_gst_account_exists(&pool, &acc_name, !true).await?;
+            let acc_id = crate::commands::tax_utils::ensure_gst_account_exists_in_tx(
+                &mut tx, &acc_name, false,
+            )
+            .await?;
             sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
                 .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(amt).bind(0.0)
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -1159,8 +1281,6 @@ pub async fn update_purchase_invoice(
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(voucher_id.to_string())
 }
-
-
 
 // ============= SALES INVOICE =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -1204,8 +1324,8 @@ pub struct SalesInvoiceItem {
     pub unit_id: Option<String>,
     pub base_quantity: f64,
     pub rate: f64,
-    pub amount: f64,            // gross amount (original, before invoice discount)
-    pub net_amount: f64,        // net amount (after invoice discount)
+    pub amount: f64,     // gross amount (original, before invoice discount)
+    pub net_amount: f64, // net amount (after invoice discount)
     pub tax_rate: f64,
 
     pub tax_amount: f64,
@@ -1227,9 +1347,9 @@ pub struct SalesInvoiceItem {
 #[derive(Deserialize)]
 pub struct CreateSalesInvoiceItem {
     #[serde(default = "default_item_type")]
-    pub item_type: String,           // "product" | "service"
-    pub product_id: Option<String>,  // nullable — None for service lines
-    pub service_id: Option<String>,  // Some for service lines
+    pub item_type: String, // "product" | "service"
+    pub product_id: Option<String>, // nullable — None for service lines
+    pub service_id: Option<String>, // Some for service lines
     pub unit_id: Option<String>,
     pub description: Option<String>,
     pub initial_quantity: f64,
@@ -1260,7 +1380,9 @@ pub struct CreateSalesInvoice {
 }
 
 #[tauri::command]
-pub async fn get_sales_invoices(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<SalesInvoice>, String> {
+pub async fn get_sales_invoices(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<SalesInvoice>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, SalesInvoice>(
         "SELECT 
@@ -1363,7 +1485,10 @@ pub async fn get_sales_invoice_items(
 }
 
 /// Internal version for use by other modules (e.g., templates.rs)
-pub(crate) async fn get_sales_invoice_with_pool(pool: &SqlitePool, id: &str) -> Result<SalesInvoice, String> {
+pub(crate) async fn get_sales_invoice_with_pool(
+    pool: &SqlitePool,
+    id: &str,
+) -> Result<SalesInvoice, String> {
     sqlx::query_as::<_, SalesInvoice>(
         "SELECT 
             v.id,
@@ -1401,7 +1526,10 @@ pub(crate) async fn get_sales_invoice_with_pool(pool: &SqlitePool, id: &str) -> 
 }
 
 /// Internal version for use by other modules (e.g., templates.rs)
-pub(crate) async fn get_sales_invoice_items_with_pool(pool: &SqlitePool, voucher_id: &str) -> Result<Vec<SalesInvoiceItem>, String> {
+pub(crate) async fn get_sales_invoice_items_with_pool(
+    pool: &SqlitePool,
+    voucher_id: &str,
+) -> Result<Vec<SalesInvoiceItem>, String> {
     sqlx::query_as::<_, SalesInvoiceItem>(
         "SELECT vi.*,
                 COALESCE(p.code, s.code) as product_code,
@@ -1493,7 +1621,6 @@ async fn create_draft_return_for_sales_invoice_in_tx(
     Ok(())
 }
 
-
 #[tauri::command]
 pub async fn create_sales_invoice(
     registry: State<'_, Arc<DbRegistry>>,
@@ -1504,14 +1631,34 @@ pub async fn create_sales_invoice(
 
     let voucher_no = get_next_voucher_number(&pool, "sales_invoice").await?;
 
-    let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1").fetch_optional(&mut *tx).await.ok().flatten();
-    let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.customer_id).fetch_optional(&mut *tx).await.ok().flatten();
-    let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
+    let company_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+    let party_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?")
+            .bind(&invoice.customer_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+    let is_inter_state = crate::commands::tax_utils::is_inter_state(
+        company_state.as_deref(),
+        party_state.as_deref(),
+    );
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
     let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
     let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
-        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
-    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'",
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true")
+    .unwrap_or(false);
     let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
@@ -1560,7 +1707,6 @@ pub async fn create_sales_invoice(
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let grand_total = round2(total_amount + total_tax);
 
-    
     let voucher_id = Uuid::now_v7().to_string();
     let _ = sqlx::query(
         "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total)
@@ -1590,10 +1736,16 @@ pub async fn create_sales_invoice(
 
     // ============= INSERT STOCK MOVEMENTS (OUT) =============
     for item in &processed_items {
-        if item.item_type == "service" { continue; } // Services have no stock
+        if item.item_type == "service" {
+            continue;
+        } // Services have no stock
         let sm_id = Uuid::now_v7().to_string();
         let qty = item.base_quantity;
-        let rate_per_base = if qty > 0.0 { item.amount / qty } else { item.rate };
+        let rate_per_base = if qty > 0.0 {
+            item.amount / qty
+        } else {
+            item.rate
+        };
         let amount = qty * rate_per_base;
         let product_id = item.product_id.as_deref().unwrap_or("");
         let cost_rate = get_product_purchase_cost_rate(&mut tx, product_id).await?;
@@ -1609,21 +1761,33 @@ pub async fn create_sales_invoice(
 
     // ============= CREATE JOURNAL ENTRIES =============
 
-
-
     let party_id = invoice.customer_id.clone();
 
     // ============= JOURNAL: SPLIT BY ITEM TYPE =============
-    let product_subtotal = round2(processed_items.iter()
-        .filter(|i| i.item_type != "service").map(|i| i.net_amount).sum::<f64>());
-    let service_subtotal = round2(processed_items.iter()
-        .filter(|i| i.item_type == "service").map(|i| i.net_amount).sum::<f64>());
+    let product_subtotal = round2(
+        processed_items
+            .iter()
+            .filter(|i| i.item_type != "service")
+            .map(|i| i.net_amount)
+            .sum::<f64>(),
+    );
+    let service_subtotal = round2(
+        processed_items
+            .iter()
+            .filter(|i| i.item_type == "service")
+            .map(|i| i.net_amount)
+            .sum::<f64>(),
+    );
 
     // Group tax
     let mut tax_ledgers: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     for row in &processed_items {
         if row.tax_amount > 0.0 {
-            let accounts = crate::commands::tax_utils::resolve_gst_account_names(row.resolved_gst_rate, is_inter_state, false);
+            let accounts = crate::commands::tax_utils::resolve_gst_account_names(
+                row.resolved_gst_rate,
+                is_inter_state,
+                false,
+            );
             if let Some(cgst_acc) = accounts.cgst_account {
                 *tax_ledgers.entry(cgst_acc).or_insert(0.0) += row.cgst_amount;
             }
@@ -1643,8 +1807,11 @@ pub async fn create_sales_invoice(
 
     // Cr 4001 Sales for product lines
     if product_subtotal > 0.0 {
-        let sales_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4001'")
-            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let sales_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4001'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(sales_acc).bind(0.0).bind(product_subtotal)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -1652,8 +1819,11 @@ pub async fn create_sales_invoice(
 
     // Cr 4002 Services for service lines
     if service_subtotal > 0.0 {
-        let svc_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4002'")
-            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let svc_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4002'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(svc_acc).bind(0.0).bind(service_subtotal)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -1661,8 +1831,11 @@ pub async fn create_sales_invoice(
 
     // Discount entry
     if discount_amount > 0.0 {
-        let dis_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'")
-            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let dis_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(dis_acc).bind(discount_amount).bind(0.0)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -1671,23 +1844,28 @@ pub async fn create_sales_invoice(
     // Tax entries
     for (acc_name, amt) in tax_ledgers {
         if amt > 0.0 {
-            let acc_id = crate::commands::tax_utils::ensure_gst_account_exists(&pool, &acc_name, !false).await?;
+            let acc_id = crate::commands::tax_utils::ensure_gst_account_exists_in_tx(
+                &mut tx, &acc_name, true,
+            )
+            .await?;
             sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
                 .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(0.0).bind(amt)
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
         }
     }
 
-    create_draft_return_for_sales_invoice_in_tx(&pool, &mut tx, &voucher_id, &voucher_no, &invoice).await?;
+    create_draft_return_for_sales_invoice_in_tx(&pool, &mut tx, &voucher_id, &voucher_no, &invoice)
+        .await?;
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(voucher_id.to_string())
 }
 
-
-
 #[tauri::command]
-pub async fn delete_sales_invoice(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn delete_sales_invoice(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
@@ -1779,16 +1957,34 @@ pub async fn update_sales_invoice(
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-
-
-    let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1").fetch_optional(&mut *tx).await.ok().flatten();
-    let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?").bind(&invoice.customer_id).fetch_optional(&mut *tx).await.ok().flatten();
-    let is_inter_state = crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
+    let company_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+    let party_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?")
+            .bind(&invoice.customer_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+    let is_inter_state = crate::commands::tax_utils::is_inter_state(
+        company_state.as_deref(),
+        party_state.as_deref(),
+    );
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
     let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
     let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
-        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
-    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'",
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true")
+    .unwrap_or(false);
     let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
@@ -1858,8 +2054,12 @@ pub async fn update_sales_invoice(
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
     .bind(grand_total).bind(&voucher_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    
-    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?").bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+        .bind(&voucher_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
 
     // Insert items
     for item in &processed_items {
@@ -1880,12 +2080,21 @@ pub async fn update_sales_invoice(
 
     // ============= DELETE + REINSERT STOCK MOVEMENTS (OUT) =============
     sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
-        .bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        .bind(&voucher_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
     for item in &processed_items {
-        if item.item_type == "service" { continue; } // Services have no stock
+        if item.item_type == "service" {
+            continue;
+        } // Services have no stock
         let sm_id = Uuid::now_v7().to_string();
         let qty = item.base_quantity;
-        let rate_per_base = if qty > 0.0 { item.amount / qty } else { item.rate };
+        let rate_per_base = if qty > 0.0 {
+            item.amount / qty
+        } else {
+            item.rate
+        };
         let amount = qty * rate_per_base;
         let product_id = item.product_id.as_deref().unwrap_or("");
         let cost_rate = get_product_purchase_cost_rate(&mut tx, product_id).await?;
@@ -1901,21 +2110,39 @@ pub async fn update_sales_invoice(
 
     // ============= CREATE JOURNAL ENTRIES =============
 
-    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?").bind(&voucher_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+        .bind(&voucher_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
 
     let party_id = invoice.customer_id.clone();
 
     // ============= JOURNAL: SPLIT BY ITEM TYPE =============
-    let product_subtotal = round2(processed_items.iter()
-        .filter(|i| i.item_type != "service").map(|i| i.net_amount).sum::<f64>());
-    let service_subtotal = round2(processed_items.iter()
-        .filter(|i| i.item_type == "service").map(|i| i.net_amount).sum::<f64>());
+    let product_subtotal = round2(
+        processed_items
+            .iter()
+            .filter(|i| i.item_type != "service")
+            .map(|i| i.net_amount)
+            .sum::<f64>(),
+    );
+    let service_subtotal = round2(
+        processed_items
+            .iter()
+            .filter(|i| i.item_type == "service")
+            .map(|i| i.net_amount)
+            .sum::<f64>(),
+    );
 
     // Group tax
     let mut tax_ledgers: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     for row in &processed_items {
         if row.tax_amount > 0.0 {
-            let accounts = crate::commands::tax_utils::resolve_gst_account_names(row.resolved_gst_rate, is_inter_state, false);
+            let accounts = crate::commands::tax_utils::resolve_gst_account_names(
+                row.resolved_gst_rate,
+                is_inter_state,
+                false,
+            );
             if let Some(cgst_acc) = accounts.cgst_account {
                 *tax_ledgers.entry(cgst_acc).or_insert(0.0) += row.cgst_amount;
             }
@@ -1934,23 +2161,32 @@ pub async fn update_sales_invoice(
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     if product_subtotal > 0.0 {
-        let sales_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4001'")
-            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let sales_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4001'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(sales_acc).bind(0.0).bind(product_subtotal)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
     if service_subtotal > 0.0 {
-        let svc_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4002'")
-            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let svc_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4002'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(svc_acc).bind(0.0).bind(service_subtotal)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
     if discount_amount > 0.0 {
-        let dis_acc: String = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'")
-            .fetch_one(&mut *tx).await.map_err(|e| e.to_string())?;
+        let dis_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(dis_acc).bind(discount_amount).bind(0.0)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -1958,20 +2194,22 @@ pub async fn update_sales_invoice(
 
     for (acc_name, amt) in tax_ledgers {
         if amt > 0.0 {
-            let acc_id = crate::commands::tax_utils::ensure_gst_account_exists(&pool, &acc_name, !false).await?;
+            let acc_id = crate::commands::tax_utils::ensure_gst_account_exists_in_tx(
+                &mut tx, &acc_name, true,
+            )
+            .await?;
             sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
                 .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(0.0).bind(amt)
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
         }
     }
 
-    create_draft_return_for_sales_invoice_in_tx(&pool, &mut tx, &voucher_id, &voucher_no, &invoice).await?;
+    create_draft_return_for_sales_invoice_in_tx(&pool, &mut tx, &voucher_id, &voucher_no, &invoice)
+        .await?;
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(voucher_id.to_string())
 }
-
-
 
 // ============= VOUCHER NAVIGATION =============
 
@@ -2214,16 +2452,19 @@ pub async fn open_whatsapp_url(
 }
 
 #[tauri::command]
-pub async fn save_invoice_pdf(
-    html: String,
-    file_name: String,
-) -> Result<String, String> {
+pub async fn save_invoice_pdf(html: String, file_name: String) -> Result<String, String> {
     use std::process::Command;
 
     // Sanitise file name
     let safe_name: String = file_name
         .chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect();
 
     // 1. Write HTML to a temp file
@@ -2232,8 +2473,8 @@ pub async fn save_invoice_pdf(
     std::fs::write(&temp_html, &html).map_err(|e| e.to_string())?;
 
     // 2. Output PDF path in Downloads
-    let downloads = dirs::download_dir()
-        .ok_or_else(|| "Could not find Downloads folder".to_string())?;
+    let downloads =
+        dirs::download_dir().ok_or_else(|| "Could not find Downloads folder".to_string())?;
     let pdf_path = downloads.join(format!("Invoice_{}.pdf", safe_name));
 
     // 3. Find Edge (always present on Windows 10/11 — Tauri uses WebView2/Edge)
@@ -2246,14 +2487,12 @@ pub async fn save_invoice_pdf(
         .find(|p| std::path::Path::new(p).exists())
         .copied()
         .ok_or_else(|| {
-            "Microsoft Edge not found. Please install Microsoft Edge to enable PDF export.".to_string()
+            "Microsoft Edge not found. Please install Microsoft Edge to enable PDF export."
+                .to_string()
         })?;
 
     // 4. Build file:/// URL for the temp HTML (Edge requires forward slashes)
-    let html_url = format!(
-        "file:///{}",
-        temp_html.to_string_lossy().replace('\\', "/")
-    );
+    let html_url = format!("file:///{}", temp_html.to_string_lossy().replace('\\', "/"));
 
     // 5. Run Edge headless — prints the page as PDF
     let _output = Command::new(edge_exe)

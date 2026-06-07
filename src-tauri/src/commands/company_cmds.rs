@@ -1,4 +1,4 @@
-use crate::company_db::{DbRegistry, CompanyListItem};
+use crate::company_db::{CompanyListItem, DbRegistry};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
@@ -171,8 +171,8 @@ pub async fn sync_secondary_to_primary(
 
     // ── 3. Open primary DB and ATTACH secondary ───────────────────────────────
     let pri_url = format!("sqlite:{}?mode=rwc", primary_path);
-    let pri_opts = SqliteConnectOptions::from_str(&pri_url)
-        .map_err(|e| format!("Bad primary path: {}", e))?;
+    let pri_opts =
+        SqliteConnectOptions::from_str(&pri_url).map_err(|e| format!("Bad primary path: {}", e))?;
     let pool = SqlitePoolOptions::new()
         .max_connections(1)
         .connect_with(pri_opts)

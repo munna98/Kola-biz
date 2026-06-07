@@ -82,6 +82,33 @@ pub async fn seed_handlebars_templates(
     .execute(pool)
     .await?;
 
+
+    // Sales Quotation Professional A4 Template
+    let sq_h = a4_h.replace("INVOICE", "QUOTATION").replace("Invoice No:", "Quotation No:").replace("invoice", "quotation");
+    let sq_b = a4_b.replace("Invoice", "Quotation");
+    let sq_f = a4_f.replace("invoice", "quotation");
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-SQ-001")
+    .bind("Professional A4 Quotation")
+    .bind("Modern professional quotation format")
+    .bind("sales_quotation")
+    .bind("a4_portrait")
+    .bind("standard")
+    .bind(&sq_h)
+    .bind(&sq_b)
+    .bind(&sq_f)
+    .bind(A4_CSS)
+    .bind(1)
+    .execute(pool)
+    .await?;
+
     // Minimal Clean Invoice Template
     let (min_h, min_b, min_f) = split_template(MINIMAL_HTML);
     sqlx::query(
@@ -172,6 +199,14 @@ pub async fn seed_handlebars_templates(
         .bind(&t80_b)
         .bind(&t80_f)
         .bind(THERMAL_80MM_CSS)
+        .execute(pool)
+        .await?;
+
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SQ-001' AND design_mode != 'designer'")
+        .bind(&sq_h)
+        .bind(&sq_b)
+        .bind(&sq_f)
+        .bind(A4_CSS)
         .execute(pool)
         .await?;
 

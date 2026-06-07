@@ -1,6 +1,6 @@
+use crate::company_db::DbRegistry;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use crate::company_db::DbRegistry;
 use std::sync::Arc;
 use tauri::State;
 
@@ -76,13 +76,17 @@ pub struct UpdateCompanyProfile {
 }
 
 #[tauri::command]
-pub async fn get_company_profile(registry: State<'_, Arc<DbRegistry>>) -> Result<CompanyProfile, String> {
+pub async fn get_company_profile(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<CompanyProfile, String> {
     let pool = registry.active_pool().await?;
     get_company_profile_with_pool(&pool).await
 }
 
 /// Internal version for use by other modules (e.g., templates.rs)
-pub(crate) async fn get_company_profile_with_pool(pool: &SqlitePool) -> Result<CompanyProfile, String> {
+pub(crate) async fn get_company_profile_with_pool(
+    pool: &SqlitePool,
+) -> Result<CompanyProfile, String> {
     let profile = sqlx::query_as::<_, CompanyProfile>("SELECT * FROM company_profile LIMIT 1")
         .fetch_optional(pool)
         .await

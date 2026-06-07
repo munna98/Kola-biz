@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::company_db::DbRegistry;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
@@ -46,8 +46,8 @@ pub struct PurchaseReturnItem {
     pub unit_id: Option<String>,
     pub base_quantity: f64,
     pub rate: f64,
-    pub amount: f64,            // gross amount (original, before invoice discount)
-    pub net_amount: f64,        // net amount (after invoice discount)
+    pub amount: f64,     // gross amount (original, before invoice discount)
+    pub net_amount: f64, // net amount (after invoice discount)
     pub tax_rate: f64,
     pub tax_amount: f64,
     pub discount_percent: f64,
@@ -83,7 +83,9 @@ pub struct CreatePurchaseReturnItem {
     pub remarks: Option<String>,
 }
 
-fn default_item_type() -> String { "product".to_string() }
+fn default_item_type() -> String {
+    "product".to_string()
+}
 
 #[derive(Deserialize)]
 pub struct CreatePurchaseReturn {
@@ -204,24 +206,34 @@ pub async fn create_purchase_return(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     let voucher_no = get_next_voucher_number(&pool, "purchase_return").await?;
-    let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
-        .fetch_optional(&mut *tx)
-        .await
-        .ok()
-        .flatten();
-    let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?")
-        .bind(&invoice.supplier_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .ok()
-        .flatten();
-    let is_inter_state =
-        crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
+    let company_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+    let party_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?")
+            .bind(&invoice.supplier_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+    let is_inter_state = crate::commands::tax_utils::is_inter_state(
+        company_state.as_deref(),
+        party_state.as_deref(),
+    );
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
     let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
     let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
-        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
-    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'",
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true")
+    .unwrap_or(false);
     let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
@@ -414,9 +426,15 @@ pub async fn create_purchase_return(
     .map_err(|e| e.to_string())?;
 
     for item in items_for_stock {
-        if item.0.as_deref() == Some("service") { continue; } // skip services
+        if item.0.as_deref() == Some("service") {
+            continue;
+        } // skip services
         let base_qty = item.2;
-        let rate_per_base = if base_qty > 0.0 { item.5 / base_qty } else { item.4 };
+        let rate_per_base = if base_qty > 0.0 {
+            item.5 / base_qty
+        } else {
+            item.4
+        };
         let amount = base_qty * rate_per_base;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount)
@@ -448,24 +466,34 @@ pub async fn update_purchase_return(
 ) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-    let company_state: Option<String> = sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
-        .fetch_optional(&mut *tx)
-        .await
-        .ok()
-        .flatten();
-    let party_state: Option<String> = sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?")
-        .bind(&invoice.supplier_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .ok()
-        .flatten();
-    let is_inter_state =
-        crate::commands::tax_utils::is_inter_state(company_state.as_deref(), party_state.as_deref());
+    let company_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+    let party_state: Option<String> =
+        sqlx::query_scalar("SELECT state FROM chart_of_accounts WHERE id = ?")
+            .bind(&invoice.supplier_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .ok()
+            .flatten();
+    let is_inter_state = crate::commands::tax_utils::is_inter_state(
+        company_state.as_deref(),
+        party_state.as_deref(),
+    );
     let tax_inclusive = invoice.tax_inclusive.unwrap_or(false);
     let gst_disabled_by_voucher = invoice.gst_disabled.unwrap_or(false);
     let gst_enabled_globally: bool = sqlx::query_scalar::<_, String>(
-        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'"
-    ).fetch_optional(&mut *tx).await.ok().flatten().map(|v| v == "true").unwrap_or(false);
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'",
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true")
+    .unwrap_or(false);
     let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
     let mut prepared_lines = Vec::new();
@@ -664,7 +692,9 @@ pub async fn update_purchase_return(
     }
 
     for item in &invoice.items {
-        if item.item_type == "service" { continue; } // Services have no stock
+        if item.item_type == "service" {
+            continue;
+        } // Services have no stock
         let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
         let item_id = item.product_id.as_deref().unwrap_or("");
         let unit_snapshot = resolve_voucher_line_unit(
@@ -678,7 +708,11 @@ pub async fn update_purchase_return(
 
         let base_qty = unit_snapshot.base_quantity;
         let amount_for_item = final_qty * item.rate;
-        let rate_per_base = if base_qty > 0.0 { amount_for_item / base_qty } else { item.rate };
+        let rate_per_base = if base_qty > 0.0 {
+            amount_for_item / base_qty
+        } else {
+            item.rate
+        };
         let amount = base_qty * rate_per_base;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount)
@@ -703,7 +737,10 @@ pub async fn update_purchase_return(
 }
 
 #[tauri::command]
-pub async fn delete_purchase_return(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn delete_purchase_return(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 

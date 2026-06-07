@@ -1812,6 +1812,329 @@ export const {
   setOpeningStockLoading,
 } = openingStockSlice.actions;
 
+// ========== SALES QUOTATION SLICE ==========
+export interface SalesQuotationItem {
+  id?: string;
+  product_id: number;
+  service_id?: string | null;
+  item_type?: 'product' | 'service';
+  product_code?: string;
+  product_name?: string;
+  unit_id?: string;
+  base_quantity?: number;
+  original_amount?: number;
+  invoice_discount_amount?: number;
+  hsn_sac_code?: string;
+  gst_slab_id?: string;
+  resolved_gst_rate?: number;
+  cgst_rate?: number;
+  sgst_rate?: number;
+  igst_rate?: number;
+  cgst_amount?: number;
+  sgst_amount?: number;
+  igst_amount?: number;
+  description: string;
+  initial_quantity: number;
+  count: number;
+  deduction_per_unit: number;
+  rate: number;
+  tax_rate: number;
+  discount_percent: number;
+  discount_amount: number;
+}
+
+export interface SalesQuotationState extends VoucherNavigationState {
+  currentVoucherNo?: string;
+  created_by_name?: string;
+  form: {
+    customer_id: number;
+    customer_name: string;
+    salesperson_id: string | undefined;
+    party_type: string;
+    voucher_date: string;
+    reference: string;
+    narration: string;
+    discount_rate: number;
+    discount_amount: number;
+    valid_until?: string;
+  };
+  items: SalesQuotationItem[];
+  loading: boolean;
+  savedQuotations: any[];
+  totals: {
+    subtotal: number;
+    discount: number;
+    tax: number;
+    grandTotal: number;
+  };
+  activeTabId: string;
+  inactiveTabs: {
+    id: string;
+    title: string;
+    state: Omit<SalesQuotationState, 'activeTabId' | 'inactiveTabs'>;
+  }[];
+}
+
+const quotationInitialState: SalesQuotationState = {
+  ...initialNavigationState,
+  currentVoucherNo: undefined,
+  created_by_name: undefined,
+  form: {
+    customer_id: 0,
+    customer_name: '',
+    salesperson_id: undefined,
+    party_type: 'customer',
+    voucher_date: new Date().toISOString().split('T')[0],
+    reference: '',
+    narration: '',
+    discount_rate: 0,
+    discount_amount: 0,
+  },
+  items: [],
+  loading: false,
+  savedQuotations: [],
+  totals: {
+    subtotal: 0,
+    discount: 0,
+    tax: 0,
+    grandTotal: 0,
+  },
+  activeTabId: `tab-1`,
+  inactiveTabs: [],
+};
+
+const salesQuotationSlice = createSlice({
+  name: 'salesQuotation',
+  initialState: quotationInitialState,
+  reducers: {
+    setQuotationMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
+      state.mode = action.payload;
+    },
+    setQuotationCurrentVoucherId: (state, action: PayloadAction<string | null>) => {
+      state.currentVoucherId = action.payload;
+    },
+    setQuotationCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
+      state.currentVoucherNo = action.payload;
+    },
+    setQuotationCreatedByName: (state, action: PayloadAction<string | undefined>) => {
+      state.created_by_name = action.payload;
+    },
+    setQuotationHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setQuotationNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
+      state.navigationData = action.payload;
+    },
+    setQuotationCustomer: (state, action: PayloadAction<{ id: number; name: string; type?: string }>) => {
+      state.form.customer_id = action.payload.id;
+      state.form.customer_name = action.payload.name;
+      state.form.party_type = action.payload.type || 'customer';
+      state.hasUnsavedChanges = true;
+    },
+    setQuotationSalespersonId: (state, action: PayloadAction<string | undefined>) => {
+      state.form.salesperson_id = action.payload;
+    },
+    setQuotationVoucherDate: (state, action: PayloadAction<string>) => {
+      state.form.voucher_date = action.payload;
+    },
+    setQuotationValidUntil: (state, action: PayloadAction<string>) => {
+      state.form.valid_until = action.payload;
+    },
+    setQuotationReference: (state, action: PayloadAction<string>) => {
+      state.form.reference = action.payload;
+    },
+    setQuotationNarration: (state, action: PayloadAction<string>) => {
+      state.form.narration = action.payload;
+    },
+    setQuotationDiscountRate: (state, action: PayloadAction<number>) => {
+      state.form.discount_rate = action.payload;
+    },
+    setQuotationDiscountAmount: (state, action: PayloadAction<number>) => {
+      state.form.discount_amount = action.payload;
+    },
+    addQuotationItem: (state, action: PayloadAction<SalesQuotationItem & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      if (insertAt !== undefined) {
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.splice(insertAt, 0, itemWithId as any);
+      } else {
+        const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+        state.items.push(itemWithId as any);
+      }
+    },
+    updateQuotationItem: (state, action: PayloadAction<{ index: number; data: Partial<SalesQuotationItem> }>) => {
+      state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
+    },
+    removeQuotationItem: (state, action: PayloadAction<number>) => {
+      state.items.splice(action.payload, 1);
+    },
+    setQuotationTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; grandTotal: number }>) => {
+      state.totals = action.payload;
+    },
+    resetQuotationForm: (state) => {
+      state.form = {
+        customer_id: 0,
+        customer_name: '',
+        salesperson_id: undefined,
+        party_type: 'customer',
+        voucher_date: new Date().toISOString().split('T')[0],
+        reference: '',
+        narration: '',
+        discount_rate: 0,
+        discount_amount: 0,
+      };
+      state.items = [];
+      state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+    },
+    setSavedQuotations: (state, action: PayloadAction<any[]>) => {
+      state.savedQuotations = action.payload;
+    },
+    setQuotationLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+    createNewQuotationTab: (state) => {
+      const currentTabState = {
+         mode: state.mode,
+         currentVoucherId: state.currentVoucherId,
+         hasUnsavedChanges: state.hasUnsavedChanges,
+         navigationData: state.navigationData,
+         currentVoucherNo: state.currentVoucherNo,
+         created_by_name: state.created_by_name,
+         form: state.form,
+         items: state.items,
+         loading: state.loading,
+         savedQuotations: state.savedQuotations,
+         totals: state.totals,
+      };
+      
+      let title = "New Quotation";
+      if (state.form.customer_name) {
+        title = state.form.customer_name;
+      }
+      if (state.currentVoucherNo) {
+        title = state.currentVoucherNo;
+      }
+      
+      state.inactiveTabs.push({
+        id: state.activeTabId,
+        title,
+        state: currentTabState
+      });
+
+      state.activeTabId = `tab-${Date.now()}`;
+      state.mode = 'new';
+      state.currentVoucherId = null;
+      state.hasUnsavedChanges = false;
+      state.navigationData = { hasPrevious: false, hasNext: false, previousId: null, nextId: null };
+      state.currentVoucherNo = undefined;
+      state.form = {
+        customer_id: 0,
+        customer_name: '',
+        salesperson_id: undefined,
+        party_type: 'customer',
+        voucher_date: new Date().toISOString().split('T')[0],
+        reference: '',
+        narration: '',
+        discount_rate: 0,
+        discount_amount: 0,
+      };
+      state.items = [];
+      state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+    },
+    switchQuotationTab: (state, action: PayloadAction<string>) => {
+      if (state.activeTabId === action.payload) return;
+
+      const targetTabIndex = state.inactiveTabs.findIndex(t => t.id === action.payload);
+      if (targetTabIndex === -1) return;
+
+      const targetTab = state.inactiveTabs[targetTabIndex];
+
+      let currentTitle = "New Quotation";
+      if (state.form.customer_name) {
+        currentTitle = state.form.customer_name;
+      }
+      if (state.currentVoucherNo) {
+        currentTitle = state.currentVoucherNo;
+      }
+
+      const currentTabState = {
+         mode: state.mode,
+         currentVoucherId: state.currentVoucherId,
+         hasUnsavedChanges: state.hasUnsavedChanges,
+         navigationData: state.navigationData,
+         currentVoucherNo: state.currentVoucherNo,
+         created_by_name: state.created_by_name,
+         form: state.form,
+         items: state.items,
+         loading: state.loading,
+         savedQuotations: state.savedQuotations,
+         totals: state.totals,
+      };
+
+      state.inactiveTabs.splice(targetTabIndex, 1);
+      state.inactiveTabs.push({
+        id: state.activeTabId,
+        title: currentTitle,
+        state: currentTabState
+      });
+
+      state.activeTabId = targetTab.id;
+      state.mode = targetTab.state.mode;
+      state.currentVoucherId = targetTab.state.currentVoucherId;
+      state.hasUnsavedChanges = targetTab.state.hasUnsavedChanges;
+      state.navigationData = targetTab.state.navigationData;
+      state.currentVoucherNo = targetTab.state.currentVoucherNo;
+      state.created_by_name = targetTab.state.created_by_name;
+      state.form = targetTab.state.form;
+      state.items = targetTab.state.items;
+      state.loading = targetTab.state.loading;
+      state.savedQuotations = targetTab.state.savedQuotations;
+      state.totals = targetTab.state.totals;
+    },
+    closeQuotationTab: (state, action: PayloadAction<string>) => {
+      if (state.activeTabId === action.payload) {
+        if (state.inactiveTabs.length > 0) {
+          const nextTab = state.inactiveTabs[state.inactiveTabs.length - 1];
+          state.inactiveTabs.pop();
+          state.activeTabId = nextTab.id;
+          state.mode = nextTab.state.mode;
+          state.currentVoucherId = nextTab.state.currentVoucherId;
+          state.hasUnsavedChanges = nextTab.state.hasUnsavedChanges;
+          state.navigationData = nextTab.state.navigationData;
+          state.currentVoucherNo = nextTab.state.currentVoucherNo;
+          state.created_by_name = nextTab.state.created_by_name;
+          state.form = nextTab.state.form;
+          state.items = nextTab.state.items;
+          state.loading = nextTab.state.loading;
+          state.savedQuotations = nextTab.state.savedQuotations;
+          state.totals = nextTab.state.totals;
+        } else {
+          state.mode = 'new';
+          state.currentVoucherId = null;
+          state.hasUnsavedChanges = false;
+          state.navigationData = { hasPrevious: false, hasNext: false, previousId: null, nextId: null };
+          state.currentVoucherNo = undefined;
+          state.form = {
+            customer_id: 0,
+            customer_name: '',
+            salesperson_id: undefined,
+            party_type: 'customer',
+            voucher_date: new Date().toISOString().split('T')[0],
+            reference: '',
+            narration: '',
+            discount_rate: 0,
+            discount_amount: 0,
+          };
+          state.items = [];
+          state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+        }
+      } else {
+        state.inactiveTabs = state.inactiveTabs.filter(t => t.id !== action.payload);
+      }
+    }
+  },
+});
+
 // ========== STOCK JOURNAL SLICE ==========
 export interface StockJournalItem {
   id?: string;
@@ -1971,6 +2294,33 @@ export const {
   setStockJournalLoading,
 } = stockJournalSlice.actions;
 
+export const {
+  setQuotationMode,
+  setQuotationCurrentVoucherId,
+  setQuotationCurrentVoucherNo,
+  setQuotationCreatedByName,
+  setQuotationHasUnsavedChanges,
+  setQuotationNavigationData,
+  setQuotationCustomer,
+  setQuotationSalespersonId,
+  setQuotationVoucherDate,
+  setQuotationValidUntil,
+  setQuotationReference,
+  setQuotationNarration,
+  setQuotationDiscountRate,
+  setQuotationDiscountAmount,
+  addQuotationItem,
+  updateQuotationItem,
+  removeQuotationItem,
+  setQuotationTotals,
+  resetQuotationForm,
+  setSavedQuotations,
+  setQuotationLoading,
+  createNewQuotationTab,
+  switchQuotationTab,
+  closeQuotationTab,
+} = salesQuotationSlice.actions;
+
 
 export const store = configureStore({
   reducer: {
@@ -1980,6 +2330,7 @@ export const store = configureStore({
     purchaseReturn: purchaseReturnSlice.reducer,
     salesInvoice: salesInvoiceSlice.reducer,
     salesReturn: salesReturnSlice.reducer,
+    salesQuotation: salesQuotationSlice.reducer,
     payment: paymentSlice.reducer,
     receipt: receiptSlice.reducer,
     journalEntry: journalEntrySlice.reducer,

@@ -184,6 +184,9 @@
       <th class="col-rate">Rate</th>
       <th class="col-per">per</th>
       <th class="col-disc">Disc %</th>
+      {{#if show_discount_column}}
+      <th class="col-disc-amt">Disc</th>
+      {{/if}}
       <th class="col-amount">Amount</th>
     </tr>
   </thead>
@@ -201,6 +204,9 @@
       <td class="right">{{format_number rate 2}}</td>
       <td class="center">{{unit}}</td>
       <td class="right">{{format_number discount_percent 2}}</td>
+      {{#if @root.show_discount_column}}
+      <td class="right">{{format_number discount_amount 2}}</td>
+      {{/if}}
       <td class="right">{{format_number amount 2}}</td>
     </tr>
     {{/each}}
@@ -215,6 +221,9 @@
       <td class="sp-rate"></td>
       <td class="sp-per"></td>
       <td class="sp-disc"></td>
+      {{#if show_discount_column}}
+      <td class="sp-disc-amt"></td>
+      {{/if}}
       <td class="sp-amount"></td>
     </tr>
 
@@ -232,6 +241,9 @@
       <td class="sp-rate"></td>
       <td class="sp-per"></td>
       <td class="right tax-label"><em>CGST</em></td>
+      {{#if show_discount_column}}
+      <td class="sp-disc-amt"></td>
+      {{/if}}
       <td class="right">{{format_number cgst_total 2}}</td>
     </tr>
     {{/if}}
@@ -245,6 +257,9 @@
       <td class="sp-rate"></td>
       <td class="sp-per"></td>
       <td class="right tax-label"><em>SGST</em></td>
+      {{#if show_discount_column}}
+      <td class="sp-disc-amt"></td>
+      {{/if}}
       <td class="right">{{format_number sgst_total 2}}</td>
     </tr>
     {{/if}}
@@ -264,6 +279,9 @@
       <td class="sp-rate"></td>
       <td class="sp-per"></td>
       <td class="right tax-label"><em>IGST</em></td>
+      {{#if show_discount_column}}
+      <td class="sp-disc-amt"></td>
+      {{/if}}
       <td class="right">{{format_number igst_total 2}}</td>
     </tr>
     {{/if}}
@@ -276,6 +294,13 @@
       <td class="right sf-qty"><strong>{{total_quantity_display}}</strong></td>
       <td class="sf-rate-empty"></td>
       <td class="sf-per-empty"></td>
+      {{#if show_discount_column}}
+      <td class="right sf-disc-amt-total">
+        {{#if has_discount}}
+        <span>{{format_number bill_discount 2}}</span>
+        {{/if}}
+      </td>
+      {{/if}}
       <td class="right sf-disc-total-label">
         {{#if has_discount}}
         <span class="sf-disc-label">Disc</span><br/>
@@ -291,11 +316,19 @@
     </tr>
     {{#if has_returns}}
     <tr class="summary-footer-row">
+      {{#if show_discount_column}}
+      <td colspan="9" class="right sf-disc-total-label">Less Returns</td>
+      {{else}}
       <td colspan="8" class="right sf-disc-total-label">Less Returns</td>
+      {{/if}}
       <td class="right sf-amount-cell">-&#8377;&nbsp;{{format_number return_total 2}}</td>
     </tr>
     <tr class="summary-footer-row">
+      {{#if show_discount_column}}
+      <td colspan="9" class="right sf-disc-total-label"><strong>Net Payable</strong></td>
+      {{else}}
       <td colspan="8" class="right sf-disc-total-label"><strong>Net Payable</strong></td>
+      {{/if}}
       <td class="right sf-amount-cell"><strong class="sf-grand-total">&#8377;&nbsp;{{format_number net_payable 2}}</strong></td>
     </tr>
     {{/if}}

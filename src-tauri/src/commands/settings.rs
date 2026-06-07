@@ -1,8 +1,8 @@
+use crate::company_db::DbRegistry;
 use serde::{Deserialize, Serialize};
 use sqlx::{Column, Row};
-use tauri::{Manager, State};
-use crate::company_db::DbRegistry;
 use std::sync::Arc;
+use tauri::{Manager, State};
 
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
@@ -68,18 +68,24 @@ pub async fn set_app_setting(
 
 /// Get print settings
 #[tauri::command]
-pub async fn get_print_settings(registry: State<'_, Arc<DbRegistry>>) -> Result<PrintSettings, String> {
+pub async fn get_print_settings(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<PrintSettings, String> {
     let pool = registry.active_pool().await?;
-    let silent = sqlx::query_scalar::<_, String>("SELECT setting_value FROM app_settings WHERE setting_key = ?")
-        .bind("silent_print")
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| e.to_string())?;
-    let printer = sqlx::query_scalar::<_, String>("SELECT setting_value FROM app_settings WHERE setting_key = ?")
-        .bind("default_printer")
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| e.to_string())?;
+    let silent = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = ?",
+    )
+    .bind("silent_print")
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    let printer = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = ?",
+    )
+    .bind("default_printer")
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
 
     Ok(PrintSettings {
         silent_print: silent.map(|v| v == "true").unwrap_or(false),
@@ -597,7 +603,11 @@ pub async fn preview_voucher_number(
     data: UpdateVoucherSequence,
 ) -> Result<String, String> {
     let sep = &data.separator;
-    let padded_num = format!("{:0width$}", data.next_number, width = data.padding as usize);
+    let padded_num = format!(
+        "{:0width$}",
+        data.next_number,
+        width = data.padding as usize
+    );
 
     // Build parts list — only include non-empty segments so no spurious separators appear
     let mut parts: Vec<String> = Vec::new();

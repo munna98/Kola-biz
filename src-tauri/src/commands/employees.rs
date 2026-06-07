@@ -1,6 +1,6 @@
-﻿use serde::{Deserialize, Serialize};
-use sqlx::Row;
 use crate::company_db::DbRegistry;
+use serde::{Deserialize, Serialize};
+use sqlx::Row;
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
@@ -291,7 +291,10 @@ pub async fn update_employee(
 }
 
 #[tauri::command]
-pub async fn delete_employee(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<String, String> {
+pub async fn delete_employee(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<String, String> {
     let pool = registry.active_pool().await?;
     // Soft delete
     sqlx::query("UPDATE employees SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?")

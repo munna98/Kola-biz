@@ -102,7 +102,7 @@ export const ITEM_TABLE_COLUMNS = [
     { key: 'rate', label: 'Rate', defaultWidth: 10, align: 'right' as const, format: 'currency' as const },
     { key: 'amount', label: 'Amount', defaultWidth: 10, align: 'right' as const, format: 'currency' as const },
     { key: 'discount_percent', label: 'Disc %', defaultWidth: 7, align: 'right' as const, format: 'number' as const },
-    { key: 'discount_amount', label: 'Disc Amt', defaultWidth: 9, align: 'right' as const, format: 'currency' as const },
+    { key: 'discount_amount', label: 'Disc', defaultWidth: 9, align: 'right' as const, format: 'currency' as const },
     { key: 'tax_rate', label: 'Tax %', defaultWidth: 6, align: 'center' as const, format: 'number' as const },
     { key: 'tax_amount', label: 'Tax Amt', defaultWidth: 8, align: 'right' as const, format: 'currency' as const },
     { key: 'total', label: 'Total', defaultWidth: 10, align: 'right' as const, format: 'currency' as const },

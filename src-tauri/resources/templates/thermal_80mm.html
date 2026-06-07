@@ -60,6 +60,9 @@
             <th>Less</th>
             {{/if}}
             <th>Rate</th>
+            {{#if show_discount_column}}
+            <th>Disc</th>
+            {{/if}}
             <th>Amt</th>
         </tr>
     </thead>
@@ -73,6 +76,9 @@
             <td>{{format_number less_quantity 0}}</td>
             {{/if}}
             <td>{{format_number rate 2}}</td>
+            {{#if @root.show_discount_column}}
+            <td>{{format_number discount_amount 2}}</td>
+            {{/if}}
             <td>{{format_number total 2}}</td>
         </tr>
         {{/each}}

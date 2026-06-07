@@ -2,9 +2,8 @@
 ///
 /// This module provides slab-based GST resolution for invoice line items.
 /// It handles both fixed-rate and price-threshold dynamic slabs (e.g. 5/18 @2500).
-
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
+use sqlx::{Sqlite, SqlitePool, Transaction};
 
 // ============= DATA MODELS =============
 
@@ -12,7 +11,7 @@ use sqlx::SqlitePool;
 pub struct GstTaxSlab {
     pub id: String,
     pub name: String,
-    pub is_dynamic: i64,   // 0 = fixed, 1 = threshold-based
+    pub is_dynamic: i64, // 0 = fixed, 1 = threshold-based
     pub fixed_rate: f64,
     pub threshold: f64,
     pub below_rate: f64,
@@ -23,10 +22,10 @@ pub struct GstTaxSlab {
 /// Result of GST calculation for a single line item.
 #[derive(Debug, Clone, Serialize)]
 pub struct ResolvedGst {
-    pub effective_rate: f64,  // total GST% (e.g. 18.0)
-    pub cgst_rate: f64,       // half of effective_rate when intra-state
-    pub sgst_rate: f64,       // half of effective_rate when intra-state
-    pub igst_rate: f64,       // = effective_rate when inter-state
+    pub effective_rate: f64, // total GST% (e.g. 18.0)
+    pub cgst_rate: f64,      // half of effective_rate when intra-state
+    pub sgst_rate: f64,      // half of effective_rate when intra-state
+    pub igst_rate: f64,      // = effective_rate when inter-state
     pub cgst_amount: f64,
     pub sgst_amount: f64,
     pub igst_amount: f64,
@@ -116,10 +115,14 @@ pub fn resolve_gst_account_names(
     is_inter_state: bool,
     is_purchase: bool,
 ) -> GstAccounts {
-    let suffix = if is_purchase { "Input Credit" } else { "Payable" };
+    let suffix = if is_purchase {
+        "Input Credit"
+    } else {
+        "Payable"
+    };
 
     if is_inter_state {
-        let name = format!("IGST {}% {}", effective_rate as u32, suffix);
+        let name = format!("IGST {}% {}", format_rate(effective_rate), suffix);
         return GstAccounts {
             cgst_account: None,
             sgst_account: None,
@@ -138,18 +141,19 @@ pub fn resolve_gst_account_names(
 }
 
 fn format_rate(rate: f64) -> String {
-    if rate.fract() == 0.0 {
-        format!("{}", rate as u32)
+    let rounded = (rate * 100.0).round() / 100.0;
+    if rounded.fract() == 0.0 {
+        format!("{}", rounded as u32)
     } else {
-        format!("{}", rate)
+        format!("{:.2}", rounded)
+            .trim_end_matches('0')
+            .trim_end_matches('.')
+            .to_string()
     }
 }
 
 /// Fetch the COA id for a given account name (`account_name` exact match).
-pub async fn get_gst_account_id(
-    pool: &SqlitePool,
-    account_name: &str,
-) -> Option<String> {
+pub async fn get_gst_account_id(pool: &SqlitePool, account_name: &str) -> Option<String> {
     sqlx::query_scalar::<_, String>(
         "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1 LIMIT 1",
     )
@@ -174,10 +178,14 @@ pub async fn ensure_gst_account_exists(
     let id = Uuid::new_v4().to_string();
     let short_uuid = &id[0..6];
     let account_code = format!("GST-AUTO-{}", short_uuid).to_uppercase();
-    
+
     // Usually, input credits are Asset under 'Tax Receivable', output tax is Liability under 'Duties & Taxes'.
     let account_type = if is_payable { "Liability" } else { "Asset" };
-    let account_group = if is_payable { "Duties & Taxes" } else { "Tax Receivable" };
+    let account_group = if is_payable {
+        "Duties & Taxes"
+    } else {
+        "Tax Receivable"
+    };
     let description = format!("Auto-created ledger for {}", account_name);
 
     sqlx::query(
@@ -191,6 +199,53 @@ pub async fn ensure_gst_account_exists(
     .bind(account_group)
     .bind(description)
     .execute(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(id)
+}
+
+/// Transaction-aware version used while saving vouchers. Creating the GST
+/// ledger through the same transaction avoids SQLite write-lock failures.
+pub async fn ensure_gst_account_exists_in_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    account_name: &str,
+    is_payable: bool,
+) -> Result<String, String> {
+    if let Some(id) = sqlx::query_scalar::<_, String>(
+        "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1 LIMIT 1",
+    )
+    .bind(account_name)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?
+    {
+        return Ok(id);
+    }
+
+    use uuid::Uuid;
+    let id = Uuid::new_v4().to_string();
+    let short_uuid = &id[0..6];
+    let account_code = format!("GST-AUTO-{}", short_uuid).to_uppercase();
+    let account_type = if is_payable { "Liability" } else { "Asset" };
+    let account_group = if is_payable {
+        "Duties & Taxes"
+    } else {
+        "Tax Receivable"
+    };
+    let description = format!("Auto-created ledger for {}", account_name);
+
+    sqlx::query(
+        "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, is_system)
+         VALUES (?, ?, ?, ?, ?, ?, 1)",
+    )
+    .bind(&id)
+    .bind(&account_code)
+    .bind(account_name)
+    .bind(account_type)
+    .bind(account_group)
+    .bind(description)
+    .execute(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -225,17 +280,15 @@ pub fn state_code_from_gstin(gstin: Option<&str>) -> String {
 /// Generate a base64-encoded PNG QR code from an IRN string.
 /// Returns `None` if encoding fails (non-critical — template hides the QR section gracefully).
 pub fn irn_to_qr_base64(irn: &str) -> Option<String> {
+    use image::{ImageBuffer, Luma};
     use qrcode::QrCode;
-    use image::{Luma, ImageBuffer};
 
     let code = QrCode::new(irn.as_bytes()).ok()?;
     let image: ImageBuffer<Luma<u8>, Vec<u8>> = code.render::<Luma<u8>>().build();
 
     let mut png_bytes: Vec<u8> = Vec::new();
     let mut cursor = std::io::Cursor::new(&mut png_bytes);
-    image
-        .write_to(&mut cursor, image::ImageFormat::Png)
-        .ok()?;
+    image.write_to(&mut cursor, image::ImageFormat::Png).ok()?;
 
     use base64::Engine as _;
     Some(format!(

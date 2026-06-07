@@ -93,6 +93,9 @@
             <th class="col-description">DESCRIPTION</th>
             <th class="col-qty">QTY</th>
             <th class="col-price">PRICE</th>
+            {{#if show_discount_column}}
+            <th class="col-discount">Disc</th>
+            {{/if}}
             <th class="col-total">TOTAL</th>
         </tr>
     </thead>
@@ -104,6 +107,9 @@
             <td class="col-description">{{product_name}}</td>
             <td class="col-qty">{{format_number final_quantity 0}}</td>
             <td class="col-price">₹{{format_number rate 0}}</td>
+            {{#if @root.show_discount_column}}
+            <td class="col-discount">₹{{format_number discount_amount 0}}</td>
+            {{/if}}
             <td class="col-total">₹{{format_number total 0}}</td>
         </tr>
         {{/each}}

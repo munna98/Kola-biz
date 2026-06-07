@@ -40,6 +40,7 @@ interface DesignerTemplateResult {
     show_signature: boolean;
     show_terms: boolean;
     show_less_column: boolean;
+    show_discount_column: boolean;
 }
 
 interface InvoiceDesignerProps {
@@ -95,6 +96,7 @@ export default function InvoiceDesigner({ templateId, voucherType, onBack }: Inv
                     show_signature: result.show_signature,
                     show_terms: result.show_terms,
                     show_less_column: result.show_less_column,
+                    show_discount_column: result.show_discount_column,
                 };
                 const design = generateDefaultDesign(features);
                 designer.loadDesign(design);

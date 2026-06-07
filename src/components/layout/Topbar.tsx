@@ -83,6 +83,9 @@ export default function Topbar() {
                         <MenubarItem onClick={() => handleNavigation('purchase_return')}>
                             Purchase Return
                         </MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('sales_quotation')}>
+                            Sales Quotation
+                        </MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('sales')}>
                             Sales Invoice
                         </MenubarItem>

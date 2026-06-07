@@ -1,9 +1,9 @@
-﻿use printpdf::*;
+use dirs::download_dir;
+use printpdf::*;
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::PathBuf;
-use dirs::download_dir;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct LedgerPdfEntry {
@@ -35,10 +35,7 @@ pub fn get_downloads_path() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn generate_ledger_pdf(
-    data: LedgerPdfData,
-    file_path: String,
-) -> Result<String, String> {
+pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Result<String, String> {
     let output_path = PathBuf::from(&file_path);
 
     // Create PDF document with A4 size
@@ -59,7 +56,13 @@ pub async fn generate_ledger_pdf(
     let mut y_pos = top_margin;
 
     // Title
-    current_layer.use_text("LEDGER REPORT", 24.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    current_layer.use_text(
+        "LEDGER REPORT",
+        24.0,
+        Mm(left_margin),
+        Mm(y_pos),
+        &font_bold,
+    );
     y_pos -= 8.0;
 
     // Account Information
@@ -79,7 +82,15 @@ pub async fn generate_ledger_pdf(
         col_x.push(col_x.last().unwrap() + width);
     }
 
-    let headers = vec!["Date", "Voucher No", "Type", "Narration", "Debit", "Credit", "Balance"];
+    let headers = vec![
+        "Date",
+        "Voucher No",
+        "Type",
+        "Narration",
+        "Debit",
+        "Credit",
+        "Balance",
+    ];
     let line_height = 5.0;
     let cell_padding = 0.8;
 
@@ -106,11 +117,12 @@ pub async fn generate_ledger_pdf(
             &font_bold,
         );
 
-        let balance_str = format!(
-            "₹ {:.2}",
-            data.opening_balance.abs()
-        );
-        let dr_cr = if data.opening_balance >= 0.0 { "Dr" } else { "Cr" };
+        let balance_str = format!("₹ {:.2}", data.opening_balance.abs());
+        let dr_cr = if data.opening_balance >= 0.0 {
+            "Dr"
+        } else {
+            "Cr"
+        };
         current_layer.use_text(
             &format!("{} {}", balance_str, dr_cr),
             8.0,
@@ -214,13 +226,7 @@ pub async fn generate_ledger_pdf(
             entry.balance.abs(),
             if entry.balance >= 0.0 { "Dr" } else { "Cr" }
         );
-        current_layer.use_text(
-            &balance_str,
-            7.5,
-            Mm(col_x[6] - 8.0),
-            Mm(y_pos),
-            &font,
-        );
+        current_layer.use_text(&balance_str, 7.5, Mm(col_x[6] - 8.0), Mm(y_pos), &font);
 
         y_pos -= line_height;
     }
@@ -237,11 +243,12 @@ pub async fn generate_ledger_pdf(
         &font_bold,
     );
 
-    let closing_str = format!(
-        "₹ {:.2}",
-        data.closing_balance.abs()
-    );
-    let dr_cr = if data.closing_balance >= 0.0 { "Dr" } else { "Cr" };
+    let closing_str = format!("₹ {:.2}", data.closing_balance.abs());
+    let dr_cr = if data.closing_balance >= 0.0 {
+        "Dr"
+    } else {
+        "Cr"
+    };
     current_layer.use_text(
         &format!("{} {}", closing_str, dr_cr),
         9.0,

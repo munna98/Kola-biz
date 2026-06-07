@@ -1,6 +1,6 @@
+use crate::company_db::DbRegistry;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use crate::company_db::DbRegistry;
 use std::sync::Arc;
 use tauri::State;
 
@@ -101,10 +101,7 @@ pub async fn get_accounts_by_groups(
         query = query.bind(group);
     }
 
-    query
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| e.to_string())
+    query.fetch_all(&pool).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -539,7 +536,10 @@ pub async fn get_deleted_chart_of_accounts(
 }
 
 #[tauri::command]
-pub async fn restore_chart_of_account(registry: State<'_, Arc<DbRegistry>>, id: i64) -> Result<(), String> {
+pub async fn restore_chart_of_account(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: i64,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     sqlx::query("UPDATE chart_of_accounts SET is_active = 1, deleted_at = NULL WHERE id = ?")
         .bind(id)
@@ -616,7 +616,9 @@ pub async fn get_account_types() -> Result<Vec<String>, String> {
 }
 
 #[tauri::command]
-pub async fn get_account_groups(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<String>, String> {
+pub async fn get_account_groups(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<String>, String> {
     let pool = registry.active_pool().await?;
     let groups = sqlx::query_scalar::<_, String>(
         "SELECT name FROM account_groups WHERE is_active = 1 ORDER BY account_type, name ASC",
@@ -680,7 +682,10 @@ pub async fn create_account_group(
 }
 
 #[tauri::command]
-pub async fn delete_account_group(registry: State<'_, Arc<DbRegistry>>, id: i64) -> Result<(), String> {
+pub async fn delete_account_group(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: i64,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     sqlx::query("UPDATE account_groups SET is_active = 0 WHERE id = ?")
         .bind(id)

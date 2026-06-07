@@ -1,9 +1,9 @@
+use crate::company_db::DbRegistry;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::Mutex;
-use crate::company_db::DbRegistry;
 use std::sync::Arc;
+use std::sync::Mutex;
 use tauri::State;
 use uuid::Uuid;
 
@@ -207,7 +207,10 @@ pub async fn update_user(
 }
 
 #[tauri::command]
-pub async fn delete_user(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<String, String> {
+pub async fn delete_user(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<String, String> {
     let pool = registry.active_pool().await?;
     // We'll do a soft delete by setting is_active = 0 for now,
     // or just delete if it's not the last admin?

@@ -3,29 +3,28 @@ import { useDispatch, useSelector } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import {
-  setSalesCustomer,
-  setSalesVoucherDate,
-  setSalesReference,
-  setSalesNarration,
-  setSalesDiscountRate,
-  setSalesDiscountAmount,
-  addSalesItem,
-  updateSalesItem,
-  removeSalesItem,
-  setSalesTotals,
-  resetSalesForm,
-  setSalesLoading,
-  setSalesMode,
-  setSalesCurrentVoucherId,
-  setSalesCurrentVoucherNo,
-  setSalesNavigationData,
-  setSalesSalespersonId,
-  setSalesHasUnsavedChanges,
-  setSalesCreatedByName,
-  setSalesReturnDraft,
-  createNewSalesTab,
-  switchSalesTab,
-  closeSalesTab,
+  setQuotationCustomer,
+  setQuotationVoucherDate,
+  setQuotationReference,
+  setQuotationNarration,
+  setQuotationDiscountRate,
+  setQuotationDiscountAmount,
+  addQuotationItem,
+  updateQuotationItem,
+  removeQuotationItem,
+  setQuotationTotals,
+  resetQuotationForm,
+  setQuotationLoading,
+  setQuotationMode,
+  setQuotationCurrentVoucherId,
+  setQuotationCurrentVoucherNo,
+  setQuotationNavigationData,
+  setQuotationSalespersonId,
+  setQuotationHasUnsavedChanges,
+  setQuotationCreatedByName,
+  createNewQuotationTab,
+  switchQuotationTab,
+  closeQuotationTab,
   setActiveSectionWithParams,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
@@ -39,7 +38,7 @@ import {
   IconX,
   IconPlus,
   IconSettings2,
-  IconReceiptRefund,
+  IconFileExport,
 } from '@tabler/icons-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
@@ -55,7 +54,6 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings, VoucherItemsSectionRef } from '@/components/voucher/VoucherItemsSection';
 
-import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import { usePrint } from '@/hooks/usePrint';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
 import ProductDialog from '@/components/dialogs/ProductDialog';
@@ -73,9 +71,9 @@ interface Party {
   address_line_1?: string;
 }
 
-export default function SalesInvoicePage() {
+export default function SalesQuotationPage() {
   const dispatch = useDispatch<AppDispatch>();
-  const salesState = useSelector((state: RootState) => state.salesInvoice);
+  const salesState = useSelector((state: RootState) => state.salesQuotation);
   const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
   const user = useSelector((state: RootState) => state.auth.user);
   const [products, setProducts] = useState<Product[]>([]);
@@ -91,22 +89,13 @@ export default function SalesInvoicePage() {
   const [showCreateProduct, setShowCreateProduct] = useState(false);
   const [newProductName, setNewProductName] = useState('');
   const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
-  const [showQuickPayment, setShowQuickPayment] = useState(false);
-  const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
-  const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
-  const [savedInvoiceNo, setSavedInvoiceNo] = useState<string | undefined>(undefined);
-  const [savedInvoiceDate, setSavedInvoiceDate] = useState<string | undefined>(undefined);
-  const [savedPartyName, setSavedPartyName] = useState<string>('');
-  const [, setSavedPartyId] = useState<number | undefined>(undefined);
-  const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
-  const [gstDisabled, setGstDisabled] = useState(false);
+  const gstDisabled = true; const setGstDisabled = () => {};
   const [services, setServices] = useState<any[]>([]);
   const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
-  const [linkedReturnSummary, setLinkedReturnSummary] = useState<{ id: string; total: number; count: number } | null>(null);
 
 
 
@@ -114,11 +103,6 @@ export default function SalesInvoicePage() {
     () => buildProductUnitMap(productUnitConversions),
     [productUnitConversions]
   );
-  const draftReturnTotal = salesState.returnDraft?.totals.grandTotal || 0;
-  const linkedReturnTotal = draftReturnTotal || linkedReturnSummary?.total || 0;
-  const linkedReturnCount = salesState.returnDraft?.items.length || linkedReturnSummary?.count || 0;
-  const netPayableTotal = Math.max(0, salesState.totals.grandTotal - linkedReturnTotal);
-
   // Create Customer Shortcut State
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
@@ -138,7 +122,7 @@ export default function SalesInvoicePage() {
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
           invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable', 'Cash', 'Bank Account'] }),
-          invoke<any>('get_voucher_settings', { voucherType: 'sales_invoice' }),
+          invoke<any>('get_voucher_settings', { voucherType: 'sales_quotation' }),
           invoke<ProductGroup[]>('get_product_groups'),
           invoke<Employee[]>('get_employees'),
           api.gst.getSettings().catch(() => null),
@@ -187,15 +171,6 @@ export default function SalesInvoicePage() {
     }
   }, [salesState.mode, salesState.currentVoucherId, voucherSettings?.taxInclusive]);
 
-  // Clear savedInvoiceId when navigating to a different voucher (so we don't hold onto stale IDs)
-  useEffect(() => {
-    if (salesState.currentVoucherId) {
-      setSavedInvoiceId(undefined);
-      setSavedInvoiceNo(undefined);
-      setSavedInvoiceDate(undefined);
-    }
-  }, [salesState.currentVoucherId]);
-
   // Default Party Selection Effect
   useEffect(() => {
     if (salesState.mode === 'new' && salesState.form.customer_id === 0 && parties.length > 0) {
@@ -204,7 +179,7 @@ export default function SalesInvoicePage() {
       const defaultParty = cashSaleAccount || parties[0];
 
       if (defaultParty) {
-        dispatch(setSalesCustomer({
+        dispatch(setQuotationCustomer({
           id: defaultParty.id,
           name: defaultParty.name,
           type: defaultParty.type
@@ -240,7 +215,7 @@ export default function SalesInvoicePage() {
     const parseNum = (val: string | number) => typeof val === 'string' ? parseFloat(val) || 0 : val;
 
     dispatch(
-      addSalesItem({
+      addQuotationItem({
         insertAt,
         product_id: 0,
         product_name: '',
@@ -262,9 +237,9 @@ export default function SalesInvoicePage() {
       return;
     }
     const updatedItems = salesState.items.filter((_, i) => i !== index);
-    dispatch(removeSalesItem(index));
+    dispatch(removeQuotationItem(index));
     updateTotalsWithItems(updatedItems);
-    dispatch(setSalesHasUnsavedChanges(true));
+    dispatch(setQuotationHasUnsavedChanges(true));
   };
 
   const handleUpdateItem = (index: number, field: string, value: any, options?: { initialQuantity?: number }) => {
@@ -299,7 +274,7 @@ export default function SalesInvoicePage() {
           ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
         };
         dispatch(
-          updateSalesItem({
+          updateQuotationItem({
             index,
             data: {
               item_type: 'product',
@@ -313,7 +288,7 @@ export default function SalesInvoicePage() {
           })
         );
         updateTotalsWithItems(updatedItems);
-        dispatch(setSalesHasUnsavedChanges(true));
+        dispatch(setQuotationHasUnsavedChanges(true));
         return;
       }
     }
@@ -333,7 +308,7 @@ export default function SalesInvoicePage() {
           rate: 0,
         };
         dispatch(
-          updateSalesItem({
+          updateQuotationItem({
             index,
             data: {
               item_type: 'service',
@@ -346,7 +321,7 @@ export default function SalesInvoicePage() {
           })
         );
         updateTotalsWithItems(updatedItems);
-        dispatch(setSalesHasUnsavedChanges(true));
+        dispatch(setQuotationHasUnsavedChanges(true));
         return;
       }
     }
@@ -368,9 +343,9 @@ export default function SalesInvoicePage() {
         unit_id: value,
         rate
       };
-      dispatch(updateSalesItem({ index, data: { unit_id: value, rate } }));
+      dispatch(updateQuotationItem({ index, data: { unit_id: value, rate } }));
       updateTotalsWithItems(updatedItems);
-      dispatch(setSalesHasUnsavedChanges(true));
+      dispatch(setQuotationHasUnsavedChanges(true));
       return;
     }
 
@@ -393,9 +368,9 @@ export default function SalesInvoicePage() {
     }
 
     updatedItems[index] = item;
-    dispatch(updateSalesItem({ index, data: item }));
+    dispatch(updateQuotationItem({ index, data: item }));
     updateTotalsWithItems(updatedItems);
-    dispatch(setSalesHasUnsavedChanges(true));
+    dispatch(setQuotationHasUnsavedChanges(true));
   };
 
   const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number) => {
@@ -445,34 +420,15 @@ export default function SalesInvoicePage() {
       resolveGstRate: resolveItemGstRate,
     });
 
-    dispatch(setSalesDiscountRate(calculation.discountRate));
-    dispatch(setSalesDiscountAmount(calculation.discountAmount));
-    dispatch(setSalesTotals({
+    dispatch(setQuotationDiscountRate(calculation.discountRate));
+    dispatch(setQuotationDiscountAmount(calculation.discountAmount));
+    dispatch(setQuotationTotals({
       subtotal: calculation.subtotal,
       discount: calculation.discountAmount,
       tax: calculation.tax,
       grandTotal: calculation.grandTotal
     }));
   };
-
-  // Ref to track if auto-print is pending after payment dialog
-  const autoPrintPending = useRef(false);
-
-  const buildSalesReturnDraftPayload = () => (salesState.returnDraft?.items || []).map(item => ({
-    item_type: 'product',
-    product_id: item.product_id || null,
-    service_id: null,
-    unit_id: item.unit_id || null,
-    description: item.description || item.product_name || '',
-    initial_quantity: item.initial_quantity,
-    count: item.count,
-    deduction_per_unit: item.deduction_per_unit,
-    rate: item.rate,
-    tax_rate: item.tax_rate,
-    discount_percent: item.discount_percent || null,
-    discount_amount: item.discount_amount || null,
-    remarks: null,
-  }));
 
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -501,11 +457,11 @@ export default function SalesInvoicePage() {
     }
 
     try {
-      dispatch(setSalesLoading(true));
+      dispatch(setQuotationLoading(true));
       if (salesState.mode === 'editing' && salesState.currentVoucherId) {
-        await invoke('update_sales_invoice', {
+        await invoke('update_sales_quotation', {
           id: salesState.currentVoucherId,
-          invoice: {
+          quotation: {
             customer_id: salesState.form.customer_id,
             salesperson_id: salesState.form.salesperson_id || null,
             party_type: salesState.form.party_type,
@@ -530,34 +486,16 @@ export default function SalesInvoicePage() {
             })),
             tax_inclusive: isTaxInclusive,
             gst_disabled: gstDisabled,
-            return_items: buildSalesReturnDraftPayload(),
           },
         });
-        toast.success('Sales invoice updated successfully');
-
-        toast.success('Sales invoice updated successfully');
-
-        // Prepare state for Payment Dialog & Print (persist before reset)
-        setSavedInvoiceId(salesState.currentVoucherId);
-        setSavedInvoiceNo(salesState.currentVoucherNo);
-        setSavedInvoiceDate(salesState.form.voucher_date);
-        setSavedInvoiceAmount(netPayableTotal);
-        const customer = parties.find(p => p.id === salesState.form.customer_id);
-        setSavedPartyName(customer?.name || 'Cash');
-        setSavedPartyId(customer?.id);
-
-        // Check if party is a Cash or Bank account
-        const isCashBankParty = customer?.group === 'Cash' || customer?.group === 'Bank Account';
-        setSavedIsCashBankParty(isCashBankParty);
-
-        // Always show payment dialog (for Cash parties: allows split; for regular: normal payment)
+        toast.success('Sales quotation updated successfully');
+        
         if (voucherSettings?.autoPrint) {
-          autoPrintPending.current = true;
+          setTimeout(() => printVoucher({ voucherId: salesState.currentVoucherId!, voucherType: 'sales_quotation' }), 100);
         }
-        setShowQuickPayment(true);
       } else {
-        const newInvoiceId = await invoke<string>('create_sales_invoice', {
-          invoice: {
+        const newInvoiceId = await invoke<string>('create_sales_quotation', {
+          quotation: {
             customer_id: salesState.form.customer_id,
             salesperson_id: salesState.form.salesperson_id || null,
             party_type: salesState.form.party_type,
@@ -583,190 +521,64 @@ export default function SalesInvoicePage() {
             user_id: user?.id.toString(),
             tax_inclusive: isTaxInclusive,
             gst_disabled: gstDisabled,
-            return_items: buildSalesReturnDraftPayload(),
           },
         });
-        toast.success('Sales invoice created successfully');
-
-        // Auto-prompt for payment after creating invoice
-        setSavedInvoiceAmount(netPayableTotal);
-        setSavedInvoiceId(newInvoiceId);
-        setSavedInvoiceDate(salesState.form.voucher_date);
-
-        // Fetch new invoice to get the generated voucher number
-        const newInvoice = await invoke<any>('get_sales_invoice', { id: newInvoiceId });
-        setSavedInvoiceNo(newInvoice.voucher_no);
-
-        const customer = parties.find(p => p.id === salesState.form.customer_id);
-        const partyName = customer?.name || 'Cash';
-        setSavedPartyName(partyName);
-        setSavedPartyId(customer?.id);
-
-        // Check if party is a Cash or Bank account
-        const isCashBankParty = customer?.group === 'Cash' || customer?.group === 'Bank Account';
-        setSavedIsCashBankParty(isCashBankParty);
-
-        if (isCashBankParty) {
-          // Cash/Bank party: always show payment modal for split opportunity
-          if (voucherSettings?.autoPrint) {
-            autoPrintPending.current = true;
-          }
-          setShowQuickPayment(true);
-        } else {
-          // Regular party: check payment modal setting
-          const shouldShowPaymentModal = voucherSettings?.showPaymentModal !== false;
-
-          if (shouldShowPaymentModal) {
-            if (voucherSettings?.autoPrint) {
-              autoPrintPending.current = true;
-            }
-            setShowQuickPayment(true);
-          } else {
-            // Payment modal disabled for non-cash parties: invoice remains unpaid
-            if (voucherSettings?.autoPrint) {
-              setTimeout(() => printVoucher({ voucherId: newInvoiceId, voucherType: 'sales_invoice' }), 100);
-            }
-          }
+        toast.success('Sales quotation created successfully');
+        
+        if (voucherSettings?.autoPrint) {
+          setTimeout(() => printVoucher({ voucherId: newInvoiceId, voucherType: 'sales_quotation' }), 100);
         }
       }
 
-      dispatch(setSalesHasUnsavedChanges(false));
+      dispatch(setQuotationHasUnsavedChanges(false));
       handleNewInvoice(true);
     } catch (error: any) {
-      toast.error(`Failed to save sales invoice: ${error?.message || error}`);
+      toast.error(`Failed to save sales quotation: ${error?.message || error}`);
       console.error(error);
     } finally {
-      dispatch(setSalesLoading(false));
-    }
-  };
-
-
-  const loadQuotationForConversion = async (id: string) => {
-    try {
-      dispatch(setSalesLoading(true));
-      dispatch(setSalesHasUnsavedChanges(true)); // Mark as unsaved
-      dispatch(setSalesMode('editing'));
-
-      // Fetch header and items using quotation commands
-      const quotation = await invoke<any>('get_sales_quotation', { id });
-      const items = await invoke<any[]>('get_sales_quotation_items', { voucherId: id });
-
-      dispatch(resetSalesForm()); // Clear right before hydrating to avoid race conditions with auto-add
-
-      // Populate Form
-      dispatch(setSalesCustomer({ id: quotation.customer_id, name: quotation.customer_name, type: 'customer' }));
-      invoke<number>('get_account_balance', { accountId: quotation.customer_id })
-        .then(bal => setPartyBalance(bal))
-        .catch(console.error);
-      
-      // Use current date for the new invoice, keep quotation number as reference
-      dispatch(setSalesReference(quotation.voucher_no || ''));
-      dispatch(setSalesSalespersonId(quotation.salesperson_id || undefined));
-      dispatch(setSalesNarration(quotation.narration || ''));
-      dispatch(setSalesDiscountRate(quotation.discount_rate || 0));
-      dispatch(setSalesDiscountAmount(quotation.discount_amount || 0));
-      
-      const loadedTaxInclusive = Boolean(quotation.tax_inclusive);
-      setIsTaxInclusive(loadedTaxInclusive);
-      setLinkedReturnSummary(null);
-      dispatch(setSalesReturnDraft(undefined));
-
-      // Populate Items
-      items.forEach(item => {
-        const storedGstRate = item.resolved_gst_rate || item.tax_rate || 0;
-        const displayRate = loadedTaxInclusive
-          ? item.rate * (1 + (storedGstRate / 100))
-          : item.rate;
-        dispatch(addSalesItem({
-          product_id: item.product_id || 0,
-          product_code: item.product_code,
-          product_name: item.description || item.product_name,
-          description: item.description || item.product_name || '',
-          unit_id: item.unit_id,
-          hsn_sac_code: item.hsn_sac_code,
-          tax_rate: storedGstRate,
-          rate: displayRate,
-          initial_quantity: item.initial_quantity,
-          deduction_per_unit: item.deduction_per_unit,
-          count: item.count,
-          discount_percent: item.discount_percent || 0,
-          discount_amount: item.discount_amount || 0,
-          resolved_gst_rate: storedGstRate,
-        }));
-      });
-
-      dispatch(setSalesTotals({
-        subtotal: quotation.grand_total - quotation.tax_amount + (quotation.discount_amount || 0),
-        discount: quotation.discount_amount || 0,
-        tax: quotation.tax_amount,
-        grandTotal: quotation.grand_total,
-      }));
-      
-      // Clear the param so it doesn't trigger on every mount
-      dispatch(setActiveSectionWithParams({ section: 'sales', params: undefined }));
-      toast.success("Quotation converted to Invoice format");
-
-    } catch (e) {
-      console.error(e);
-      toast.error("Failed to load quotation for conversion");
-    } finally {
-      dispatch(setSalesLoading(false));
+      dispatch(setQuotationLoading(false));
     }
   };
 
   const loadVoucher = async (id: string) => {
     try {
-      dispatch(setSalesLoading(true));
-      dispatch(setSalesHasUnsavedChanges(false));
-      dispatch(resetSalesForm()); // Clear first
+      dispatch(setQuotationLoading(true));
+      dispatch(setQuotationHasUnsavedChanges(false));
+      dispatch(resetQuotationForm()); // Clear first
 
       // Fetch header and items using existing commands
-      const invoice = await invoke<any>('get_sales_invoice', { id });
-      const items = await invoke<any[]>('get_sales_invoice_items', { voucherId: id });
+      const invoice = await invoke<any>('get_sales_quotation', { id });
+      const items = await invoke<any[]>('get_sales_quotation_items', { voucherId: id });
 
       // Set the actual voucher number
-      dispatch(setSalesCurrentVoucherNo(invoice.voucher_no));
+      dispatch(setQuotationCurrentVoucherNo(invoice.voucher_no));
 
       // Populate Form
-      dispatch(setSalesCustomer({ id: invoice.customer_id, name: invoice.customer_name, type: 'customer' })); // Assuming customer only for now
+      dispatch(setQuotationCustomer({ id: invoice.customer_id, name: invoice.customer_name, type: 'customer' })); // Assuming customer only for now
       invoke<number>('get_account_balance', { accountId: invoice.customer_id })
         .then(bal => setPartyBalance(bal))
         .catch(console.error);
-      dispatch(setSalesVoucherDate(invoice.voucher_date));
-      dispatch(setSalesSalespersonId(invoice.salesperson_id || undefined));
-      dispatch(setSalesReference(invoice.reference || ''));
-      dispatch(setSalesNarration(invoice.narration || ''));
-      dispatch(setSalesDiscountRate(invoice.discount_rate || 0));
-      dispatch(setSalesDiscountAmount(invoice.discount_amount || 0));
+      dispatch(setQuotationVoucherDate(invoice.voucher_date));
+      dispatch(setQuotationSalespersonId(invoice.salesperson_id || undefined));
+      dispatch(setQuotationReference(invoice.reference || ''));
+      dispatch(setQuotationNarration(invoice.narration || ''));
+      dispatch(setQuotationDiscountRate(invoice.discount_rate || 0));
+      dispatch(setQuotationDiscountAmount(invoice.discount_amount || 0));
       const loadedTaxInclusive = Boolean(invoice.tax_inclusive);
       setIsTaxInclusive(loadedTaxInclusive);
-      dispatch(setSalesReturnDraft(undefined));
-      if (invoice.linked_return_id) {
-        const [linkedReturn, linkedReturnItems] = await Promise.all([
-          invoke<any>('get_sales_return', { id: invoice.linked_return_id }),
-          invoke<any[]>('get_sales_return_items', { voucherId: invoice.linked_return_id }),
-        ]);
-        setLinkedReturnSummary({
-          id: invoice.linked_return_id,
-          total: linkedReturn.grand_total || 0,
-          count: linkedReturnItems.length,
-        });
-      } else {
-        setLinkedReturnSummary(null);
-      }
 
       // Set Creator Name
-      dispatch(setSalesCreatedByName(invoice.created_by_name));
+      dispatch(setQuotationCreatedByName(invoice.created_by_name));
 
       // Populate Items
       // Clear default empty item
-      // Note: resetSalesForm sets items to [], so we just add
+      // Note: resetQuotationForm sets items to [], so we just add
       items.forEach(item => {
         const storedGstRate = item.resolved_gst_rate || item.tax_rate || 0;
         const displayRate = loadedTaxInclusive
           ? item.rate * (1 + (storedGstRate / 100))
           : item.rate;
-        dispatch(addSalesItem({
+        dispatch(addQuotationItem({
         product_id: item.product_id || 0, // Using product_id from item if available, else need map
         product_code: item.product_code,
         product_name: item.description, // Fallback
@@ -828,24 +640,22 @@ export default function SalesInvoicePage() {
         invoice.discount_amount || undefined
       );
 
-      dispatch(setSalesMode('viewing'));
-      dispatch(setSalesHasUnsavedChanges(false));
+      dispatch(setQuotationMode('viewing'));
+      dispatch(setQuotationHasUnsavedChanges(false));
 
     } catch (error) {
       console.error("Failed to load invoice", error);
       toast.error("Failed to load invoice");
     } finally {
-      dispatch(setSalesLoading(false));
+      dispatch(setQuotationLoading(false));
     }
   };
 
   useEffect(() => {
     if (activeSectionParams?.refreshInvoiceId) {
       loadVoucher(String(activeSectionParams.refreshInvoiceId));
-    } else if (activeSectionParams?.sourceQuotationId) {
-      loadQuotationForConversion(String(activeSectionParams.sourceQuotationId));
     }
-  }, [activeSectionParams?.refreshInvoiceId, activeSectionParams?.refreshKey, activeSectionParams?.sourceQuotationId]);
+  }, [activeSectionParams?.refreshInvoiceId, activeSectionParams?.refreshKey]);
 
   const {
     handleNavigatePrevious,
@@ -856,57 +666,37 @@ export default function SalesInvoicePage() {
     handleCancel,
     handleDelete,
   } = useVoucherNavigation({
-    voucherType: 'sales_invoice',
+    voucherType: 'sales_quotation',
     sliceState: salesState,
     actions: {
-      setMode: setSalesMode,
-      setCurrentVoucherId: setSalesCurrentVoucherId,
-      setCurrentVoucherNo: setSalesCurrentVoucherNo,
-      setNavigationData: setSalesNavigationData,
-      setHasUnsavedChanges: setSalesHasUnsavedChanges,
-      resetForm: resetSalesForm
+      setMode: setQuotationMode,
+      setCurrentVoucherId: setQuotationCurrentVoucherId,
+      setCurrentVoucherNo: setQuotationCurrentVoucherNo,
+      setNavigationData: setQuotationNavigationData,
+      setHasUnsavedChanges: setQuotationHasUnsavedChanges,
+      resetForm: resetQuotationForm
     },
     onLoadVoucher: loadVoucher
   });
 
   const handleNewInvoice = (skipConfirm?: boolean) => {
-    setLinkedReturnSummary(null);
-    dispatch(setSalesReturnDraft(undefined));
     handleNew(skipConfirm);
-  };
-
-  const handleOpenSalesReturn = () => {
-    dispatch(setActiveSectionWithParams({
-      section: 'sales_return',
-      params: {
-        source: 'sales_invoice',
-        draftReturn: !salesState.currentVoucherId,
-        invoiceId: salesState.currentVoucherId,
-        invoiceNo: salesState.currentVoucherNo,
-        customerId: salesState.form.customer_id,
-        customerName: salesState.form.customer_name,
-        partyType: salesState.form.party_type,
-        voucherDate: salesState.form.voucher_date,
-        linkedReturnId: linkedReturnSummary?.id,
-        returnDraft: salesState.returnDraft,
-      },
-    }));
   };
 
   const handleDeleteVoucher = async () => {
     const confirmed = await handleDelete();
     if (confirmed && salesState.currentVoucherId) {
       try {
-        dispatch(setSalesLoading(true));
+        dispatch(setQuotationLoading(true));
         // Delete the invoice (backend will handle cleanup of related data)
-        await invoke('delete_sales_invoice', { id: salesState.currentVoucherId });
+        await invoke('delete_sales_quotation', { id: salesState.currentVoucherId });
         toast.success('Voucher and all associated entries deleted');
         handleNewInvoice();
       } catch (e) {
         toast.error('Failed to delete voucher');
         console.error(e);
       } finally {
-        dispatch(setSalesLoading(false));
+        dispatch(setQuotationLoading(false));
       }
     }
   };
@@ -916,7 +706,7 @@ export default function SalesInvoicePage() {
       toast.error("Please save the invoice before printing");
       return;
     }
-    printVoucher({ voucherId: salesState.currentVoucherId, voucherType: 'sales_invoice' });
+    printVoucher({ voucherId: salesState.currentVoucherId, voucherType: 'sales_quotation' });
   };
 
   const handleSend = async () => {
@@ -961,7 +751,7 @@ export default function SalesInvoicePage() {
       try {
         const html = await invoke<string>('render_invoice', {
           voucherId: salesState.currentVoucherId,
-          voucherType: 'sales_invoice',
+          voucherType: 'sales_quotation',
           templateId: null,
         });
         const savedPath = await invoke<string>('save_invoice_pdf', {
@@ -994,8 +784,8 @@ export default function SalesInvoicePage() {
     onClear: handleNew,
     onToggleShortcuts: () => setShowShortcuts(prev => !prev),
     onCloseShortcuts: () => setShowShortcuts(false),
-    onNewTab: () => dispatch(createNewSalesTab()),
-    onCloseTab: () => dispatch(closeSalesTab(salesState.activeTabId)),
+    onNewTab: () => dispatch(createNewQuotationTab()),
+    onCloseTab: () => dispatch(closeQuotationTab(salesState.activeTabId)),
     onNextTab: () => {
       const allTabs = [
         ...(salesState.inactiveTabs || []).map(t => ({...t, isActive: false})),
@@ -1003,9 +793,9 @@ export default function SalesInvoicePage() {
       ].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
       const activeIndex = allTabs.findIndex(t => t.isActive);
       if (activeIndex !== -1 && activeIndex < allTabs.length - 1) {
-        dispatch(switchSalesTab(allTabs[activeIndex + 1].id));
+        dispatch(switchQuotationTab(allTabs[activeIndex + 1].id));
       } else if (allTabs.length > 1) {
-        dispatch(switchSalesTab(allTabs[0].id));
+        dispatch(switchQuotationTab(allTabs[0].id));
       }
     },
     onPrevTab: () => {
@@ -1015,9 +805,9 @@ export default function SalesInvoicePage() {
       ].sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
       const activeIndex = allTabs.findIndex(t => t.isActive);
       if (activeIndex > 0) {
-        dispatch(switchSalesTab(allTabs[activeIndex - 1].id));
+        dispatch(switchQuotationTab(allTabs[activeIndex - 1].id));
       } else if (allTabs.length > 1) {
-        dispatch(switchSalesTab(allTabs[allTabs.length - 1].id));
+        dispatch(switchQuotationTab(allTabs[allTabs.length - 1].id));
       }
     },
 
@@ -1058,7 +848,7 @@ export default function SalesInvoicePage() {
         const createdParty = combinedParties.find(p => p.name === newCustomer.name);
 
         if (createdParty) {
-          dispatch(setSalesCustomer({
+          dispatch(setQuotationCustomer({
             id: createdParty.id,
             name: createdParty.name,
             type: 'customer'
@@ -1174,18 +964,22 @@ export default function SalesInvoicePage() {
   // Determine if form should be disabled (viewing mode)
   const isReadOnly = salesState.mode === 'viewing';
 
-  // Compute isCashBankParty dynamically so 'Manage Payments' in view mode also routes correctly.
   const currentCustomerParty = parties.find(p => p.id === salesState.form.customer_id);
-  const currentPartyIsCashBank = currentCustomerParty?.group === 'Cash' || currentCustomerParty?.group === 'Bank Account';
   const shouldShowPartyBalance = currentCustomerParty?.name.trim().toLowerCase() !== 'cash';
-  const isShowingSavedInvoiceContext = !!savedInvoiceId;
-  const effectiveIsCashBankParty = isShowingSavedInvoiceContext ? savedIsCashBankParty : currentPartyIsCashBank;
+
+  const handleConvertToInvoice = () => {
+    if (salesState.currentVoucherId && !salesState.hasUnsavedChanges) {
+      dispatch(setActiveSectionWithParams({ section: 'sales', params: { sourceQuotationId: salesState.currentVoucherId } }));
+    } else {
+      toast.error("Please save the quotation first before converting");
+    }
+  };
 
   return (
     <div className="h-full flex flex-col bg-background">
       <VoucherPageHeader
-        title="Sales Invoice"
-        description="Create and manage sales invoices"
+        title="Sales Quotation"
+        description="Create and manage sales quotations"
         mode={salesState.mode}
         voucherNo={salesState.currentVoucherNo}
         voucherDate={salesState.form.voucher_date}
@@ -1204,9 +998,24 @@ export default function SalesInvoicePage() {
         onSend={salesState.mode === 'viewing' ? handleSend : undefined}
         onNew={handleNewInvoice}
         onListView={() => setShowListView(true)}
-        onManagePayments={salesState.mode !== 'new' ? () => setShowQuickPayment(true) : undefined}
         loading={salesState.loading}
-        customActionsPrefix={salesState.mode === 'new' ? (
+        customActionsPrefix={
+          <>
+            {salesState.mode === 'viewing' && (
+              <div className="flex items-center gap-1 border-r pr-2 mr-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleConvertToInvoice}
+                  className="h-8 text-xs gap-2 border-primary/30 hover:bg-primary/5 text-primary"
+                  title="Convert to Sales Invoice"
+                >
+                  <IconFileExport size={14} />
+                  Convert
+                </Button>
+              </div>
+            )}
+            {salesState.mode === 'new' && (
           <div className="flex items-center gap-1 overflow-x-auto max-w-[40vw] pr-2 border-r mr-1">
             {(()=>{
               const allTabs = [
@@ -1222,7 +1031,7 @@ export default function SalesInvoicePage() {
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => !tab.isActive && dispatch(switchSalesTab(tab.id))}
+                  onClick={() => !tab.isActive && dispatch(switchQuotationTab(tab.id))}
                   className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
                     tab.isActive
                       ? 'bg-primary text-primary-foreground shadow-sm'
@@ -1237,7 +1046,7 @@ export default function SalesInvoicePage() {
                     onClick={(e) => {
                       e.stopPropagation();
                       e.preventDefault();
-                      dispatch(closeSalesTab(tab.id));
+                      dispatch(closeQuotationTab(tab.id));
                     }}
                   >
                     <IconX size={12} stroke={2.5} />
@@ -1247,14 +1056,16 @@ export default function SalesInvoicePage() {
             })()}
             <button
               type="button"
-              onClick={() => dispatch(createNewSalesTab())}
+              onClick={() => dispatch(createNewQuotationTab())}
               className="p-1 px-2 text-muted-foreground hover:bg-muted-foreground/10 hover:text-foreground rounded-md transition-colors flex-shrink-0 mx-1 border border-dashed border-muted-foreground/30"
               title="New Tab"
             >
               <IconPlus size={14} />
             </button>
           </div>
-        ) : undefined}
+        )}
+          </>
+        }
       />
 
       <VoucherShortcutPanel
@@ -1264,34 +1075,11 @@ export default function SalesInvoicePage() {
       <VoucherListViewSheet
         open={showListView}
         onOpenChange={setShowListView}
-        voucherType="sales_invoice"
+        voucherType="sales_quotation"
         onSelectVoucher={handleListSelect}
       />
 
-      <PaymentManagementDialog
-        mode="receipt"
-        open={showQuickPayment}
-        onOpenChange={(open) => {
-          setShowQuickPayment(open);
-          if (!open && autoPrintPending.current) {
-            autoPrintPending.current = false;
-            const idToPrint = savedInvoiceId || salesState.currentVoucherId;
-            if (idToPrint) {
-              setTimeout(() => printVoucher({ voucherId: idToPrint, voucherType: 'sales_invoice' }), 100);
-            }
-          }
-        }}
-        invoiceId={savedInvoiceId || salesState.currentVoucherId || undefined}
-        invoiceNo={savedInvoiceNo || salesState.currentVoucherNo}
-        invoiceAmount={savedInvoiceAmount || netPayableTotal}
-        invoiceDate={savedInvoiceDate || salesState.form.voucher_date}
-        partyName={savedPartyName}
-        readOnly={salesState.mode === 'viewing'}
-        isCashBankParty={effectiveIsCashBankParty}
-        onSuccess={() => {
-          toast.success('Payment saved!');
-        }}
-      />
+      
 
 
       <CustomerDialog
@@ -1331,7 +1119,7 @@ export default function SalesInvoicePage() {
                   onChange={(value) => {
                     const party = parties.find((p) => p.id === value);
                     if (party) {
-                      dispatch(setSalesCustomer({ id: party.id, name: party.name, type: party.type }));
+                      dispatch(setQuotationCustomer({ id: party.id, name: party.name, type: party.type }));
                       invoke<number>('get_account_balance', { accountId: party.id })
                         .then(bal => setPartyBalance(bal))
                         .catch(console.error);
@@ -1363,8 +1151,8 @@ export default function SalesInvoicePage() {
                   type="date"
                   value={salesState.form.voucher_date}
                   onChange={(e) => {
-                    dispatch(setSalesVoucherDate(e.target.value));
-                    dispatch(setSalesHasUnsavedChanges(true));
+                    dispatch(setQuotationVoucherDate(e.target.value));
+                    dispatch(setQuotationHasUnsavedChanges(true));
                   }}
                   className="h-8 text-sm"
                   disabled={isReadOnly}
@@ -1381,8 +1169,8 @@ export default function SalesInvoicePage() {
                   }))}
                   value={salesState.form.salesperson_id || ''}
                   onChange={(value) => {
-                    dispatch(setSalesSalespersonId(value as string || undefined));
-                    dispatch(setSalesHasUnsavedChanges(true));
+                    dispatch(setQuotationSalespersonId(value as string || undefined));
+                    dispatch(setQuotationHasUnsavedChanges(true));
                   }}
                   placeholder="Select Sales Rep"
                   searchPlaceholder="Search employees..."
@@ -1396,8 +1184,8 @@ export default function SalesInvoicePage() {
                 <Input
                   value={salesState.form.reference}
                   onChange={(e) => {
-                    dispatch(setSalesReference(e.target.value));
-                    dispatch(setSalesHasUnsavedChanges(true));
+                    dispatch(setQuotationReference(e.target.value));
+                    dispatch(setQuotationHasUnsavedChanges(true));
                   }}
                   placeholder="PO or reference no"
                   className="h-8 text-sm"
@@ -1480,20 +1268,6 @@ export default function SalesInvoicePage() {
                     </PopoverContent>
                   </Popover>
                 ) : null}
-                <button
-                  type="button"
-                  title="Sales Return"
-                  onClick={handleOpenSalesReturn}
-                  className="h-7 px-2 flex items-center gap-1 rounded-md border border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-                >
-                  <IconReceiptRefund size={14} />
-                  <span className="text-xs">Return</span>
-                  {linkedReturnCount > 0 && (
-                    <span className="min-w-4 h-4 px-1 rounded-full bg-primary text-primary-foreground text-[10px] leading-4 text-center">
-                      {linkedReturnCount}
-                    </span>
-                  )}
-                </button>
               </div>
             }
           />
@@ -1505,7 +1279,7 @@ export default function SalesInvoicePage() {
               <Label className="text-xs font-medium mb-1 block">Notes / Narration</Label>
               <Textarea
                 value={salesState.form.narration}
-                onChange={(e) => { dispatch(setSalesNarration(e.target.value)); dispatch(setSalesHasUnsavedChanges(true)); }}
+                onChange={(e) => { dispatch(setQuotationNarration(e.target.value)); dispatch(setQuotationHasUnsavedChanges(true)); }}
                 placeholder="Additional notes or remarks..."
                 className="min-h-8 text-xs"
                 disabled={isReadOnly}
@@ -1523,7 +1297,7 @@ export default function SalesInvoicePage() {
                       value={salesState.form.discount_rate || ''}
                       onChange={(e) => {
                         const rate = parseFloat(e.target.value) || 0;
-                        dispatch(setSalesHasUnsavedChanges(true));
+                        dispatch(setQuotationHasUnsavedChanges(true));
                         updateTotalsWithItems(salesState.items, rate, undefined);
                       }}
                       placeholder="0.00"
@@ -1540,7 +1314,7 @@ export default function SalesInvoicePage() {
                       onChange={(e) => {
                         const amount = parseFloat(e.target.value) || 0;
                         updateTotalsWithItems(salesState.items, undefined, amount);
-                        dispatch(setSalesHasUnsavedChanges(true));
+                        dispatch(setQuotationHasUnsavedChanges(true));
                       }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -1569,18 +1343,7 @@ export default function SalesInvoicePage() {
                   {salesState.totals.tax > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">Tax: ₹ {salesState.totals.tax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                   )}
-                  {linkedReturnTotal > 0 && (
-                    <div className="flex justify-between items-center gap-2 text-xs font-mono text-red-600">
-                      <span>Less Returns ({linkedReturnCount}):</span>
-                      <span>- ₹ {linkedReturnTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
-                    </div>
-                  )}
-                  {linkedReturnTotal > 0 && (
-                    <div className="text-xs font-mono text-muted-foreground">
-                      Invoice Total: ₹ {salesState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                    </div>
-                  )}
-                  <div className="text-lg font-mono font-bold">₹ {netPayableTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                  <div className="text-lg font-mono font-bold">₹ {salesState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
                 </div>
               </div>
             </div>
@@ -1607,7 +1370,7 @@ export default function SalesInvoicePage() {
                 id="voucher-save-btn"
               >
                 <IconCheck size={16} />
-                {salesState.loading ? 'Saving...' : (salesState.mode === 'editing' ? 'Update Invoice' : 'Save Invoice')}
+                {salesState.loading ? 'Saving...' : (salesState.mode === 'editing' ? 'Update Quotation' : 'Save Quotation')}
               </Button>
             </div>
           )}

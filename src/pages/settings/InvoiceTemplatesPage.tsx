@@ -54,6 +54,7 @@ interface InvoiceTemplate {
     show_signature: number;
     show_terms: number;
     show_less_column: number;
+    show_discount_column: number;
     table_row_padding: number;
     // Balance section style (thermal only)
     balance_font_size: number;
@@ -73,6 +74,7 @@ const FEATURE_LABELS: Record<string, string> = {
     show_signature: 'Signature',
     show_terms: 'Terms',
     show_less_column: 'Show Less Column',
+    show_discount_column: 'Discount Amount Column',
 };
 
 export function InvoiceTemplatesPage() {

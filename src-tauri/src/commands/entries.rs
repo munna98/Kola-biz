@@ -1,6 +1,6 @@
+use crate::company_db::DbRegistry;
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use crate::company_db::DbRegistry;
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
@@ -280,7 +280,9 @@ pub async fn create_payment(
 }
 
 #[tauri::command]
-pub async fn get_payments(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<PaymentVoucher>, String> {
+pub async fn get_payments(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<PaymentVoucher>, String> {
     let pool = registry.active_pool().await?;
     let payments = sqlx::query_as::<_, PaymentVoucher>(
         "SELECT 
@@ -400,7 +402,10 @@ pub async fn get_payment_items(
 }
 
 /// Internal version for use by other modules (e.g., templates.rs)
-pub(crate) async fn get_payment_items_with_pool(pool: &SqlitePool, voucher_id: &str) -> Result<Vec<PaymentItem>, String> {
+pub(crate) async fn get_payment_items_with_pool(
+    pool: &SqlitePool,
+    voucher_id: &str,
+) -> Result<Vec<PaymentItem>, String> {
     let items = sqlx::query_as::<_, PaymentItem>(
         "SELECT 
             vi.id,
@@ -428,7 +433,10 @@ pub(crate) async fn get_payment_items_with_pool(pool: &SqlitePool, voucher_id: &
 }
 
 #[tauri::command]
-pub async fn delete_payment(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn delete_payment(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
@@ -1021,7 +1029,9 @@ pub async fn create_receipt(
 }
 
 #[tauri::command]
-pub async fn get_receipts(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<ReceiptVoucher>, String> {
+pub async fn get_receipts(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<ReceiptVoucher>, String> {
     let pool = registry.active_pool().await?;
     let receipts = sqlx::query_as::<_, ReceiptVoucher>(
         "SELECT 
@@ -1141,7 +1151,10 @@ pub async fn get_receipt_items(
 }
 
 /// Internal version for use by other modules (e.g., templates.rs)
-pub(crate) async fn get_receipt_items_with_pool(pool: &SqlitePool, voucher_id: &str) -> Result<Vec<ReceiptItem>, String> {
+pub(crate) async fn get_receipt_items_with_pool(
+    pool: &SqlitePool,
+    voucher_id: &str,
+) -> Result<Vec<ReceiptItem>, String> {
     let items = sqlx::query_as::<_, ReceiptItem>(
         "SELECT 
             vi.id,
@@ -1169,7 +1182,10 @@ pub(crate) async fn get_receipt_items_with_pool(pool: &SqlitePool, voucher_id: &
 }
 
 #[tauri::command]
-pub async fn delete_receipt(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn delete_receipt(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
@@ -1622,7 +1638,9 @@ pub async fn create_journal_entry(
 }
 
 #[tauri::command]
-pub async fn get_journal_entries(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<JournalEntry>, String> {
+pub async fn get_journal_entries(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<JournalEntry>, String> {
     let pool = registry.active_pool().await?;
     let entries = sqlx::query_as::<_, JournalEntry>(
         "SELECT 
@@ -1713,7 +1731,10 @@ pub async fn get_journal_entry_lines(
 }
 
 #[tauri::command]
-pub async fn delete_journal_entry(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn delete_journal_entry(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     // Check if this is a manual journal entry
     let voucher_type: String = sqlx::query_scalar("SELECT voucher_type FROM vouchers WHERE id = ?")
@@ -1855,7 +1876,10 @@ pub async fn get_opening_balances(
 }
 
 #[tauri::command]
-pub async fn delete_opening_balance(registry: State<'_, Arc<DbRegistry>>, id: String) -> Result<(), String> {
+pub async fn delete_opening_balance(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'opening_balance'")
         .bind(id)

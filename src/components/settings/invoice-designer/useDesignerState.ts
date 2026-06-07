@@ -76,7 +76,7 @@ function getDefaultTableConfig(): TableConfig {
             { key: 'rate', label: 'Rate', width: 12, align: 'right', format: 'currency' },
             { key: 'amount', label: 'Amount', width: 14, align: 'right', format: 'currency' },
             { key: 'discount_percent', label: 'Disc %', width: 7, align: 'right', format: 'number' },
-            { key: 'discount_amount', label: 'Disc Amt', width: 10, align: 'right', format: 'currency' },
+            { key: 'discount_amount', label: 'Disc', width: 10, align: 'right', format: 'currency' },
             { key: 'tax_rate', label: 'Tax %', width: 6, align: 'center', format: 'number' },
             { key: 'total', label: 'Total', width: 10, align: 'right', format: 'currency' },
         ],

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -63,6 +64,62 @@ export default function GSTReportPage() {
     total: gstr1.reduce((s, r) => s + r.total_value, 0),
   };
 
+  const handleExport = () => {
+    if (activeTab === 'gstr1') {
+      if (gstr1.length === 0) {
+        toast.error('No GSTR-1 data to export. Please fetch data first.');
+        return;
+      }
+      const headers = ['HSN/SAC', 'GST Rate (%)', 'Taxable Value', 'CGST', 'SGST', 'IGST', 'Total Tax', 'Invoice Value'];
+      const data = gstr1.map(r => [
+        r.hsn_sac_code || '',
+        r.gst_rate,
+        r.taxable_value,
+        r.cgst,
+        r.sgst,
+        r.igst,
+        r.total_tax,
+        r.total_value,
+      ]);
+      const totalRow = ['TOTAL', '', g1Totals.taxable, g1Totals.cgst, g1Totals.sgst, g1Totals.igst, g1Totals.tax, g1Totals.total];
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...data, totalRow]);
+      ws['!cols'] = [14, 14, 16, 16, 16, 16, 14, 16].map(w => ({ wch: w }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'GSTR-1');
+      XLSX.writeFile(wb, `GSTR1_Report_${fromDate}_to_${toDate}.xlsx`);
+      toast.success('GSTR-1 exported successfully!');
+    } else {
+      if (!gstr3b) {
+        toast.error('No GSTR-3B data to export. Please fetch data first.');
+        return;
+      }
+      const rows = [
+        ['Section', 'Description', 'Amount (₹)'],
+        ['3.1 – Outward', 'Taxable Value', gstr3b.outward_taxable],
+        ['3.1 – Outward', 'CGST', gstr3b.outward_cgst],
+        ['3.1 – Outward', 'SGST', gstr3b.outward_sgst],
+        ['3.1 – Outward', 'IGST', gstr3b.outward_igst],
+        ['3.1 – Outward', 'Total Output Tax', gstr3b.outward_cgst + gstr3b.outward_sgst + gstr3b.outward_igst],
+        [],
+        ['4 – ITC', 'Taxable Value', gstr3b.inward_taxable],
+        ['4 – ITC', 'CGST Input Credit', gstr3b.inward_cgst],
+        ['4 – ITC', 'SGST Input Credit', gstr3b.inward_sgst],
+        ['4 – ITC', 'IGST Input Credit', gstr3b.inward_igst],
+        ['4 – ITC', 'Total ITC Available', gstr3b.inward_cgst + gstr3b.inward_sgst + gstr3b.inward_igst],
+        [],
+        ['Net Payable', 'CGST Payable', gstr3b.net_cgst],
+        ['Net Payable', 'SGST Payable', gstr3b.net_sgst],
+        ['Net Payable', 'IGST Payable', gstr3b.net_igst],
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [{ wch: 18 }, { wch: 28 }, { wch: 18 }];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'GSTR-3B');
+      XLSX.writeFile(wb, `GSTR3B_Report_${fromDate}_to_${toDate}.xlsx`);
+      toast.success('GSTR-3B exported successfully!');
+    }
+  };
+
   return (
     <div className="h-full overflow-auto p-6 space-y-5">
       <div>
@@ -106,9 +163,9 @@ export default function GSTReportPage() {
             <Card>
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-base">HSN/SAC-wise Summary</CardTitle>
-                <Button size="sm" variant="outline">
-                  <IconDownload size={14} className="mr-1" /> Export
-                </Button>
+                <Button size="sm" variant="outline" onClick={handleExport}>
+                <IconDownload size={14} className="mr-1" /> Export
+              </Button>
               </CardHeader>
               <CardContent className="p-0">
                 <table className="w-full text-sm">
