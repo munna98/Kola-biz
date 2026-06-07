@@ -4,17 +4,19 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload } from '@tabler/icons-react';
-import { api, Product, Unit, ProductGroup, GstTaxSlab } from '@/lib/tauri';
+import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload, IconTag } from '@tabler/icons-react';
+import { api, Product, Unit, ProductGroup, ProductBrand, GstTaxSlab } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { toast } from 'sonner';
 import ProductDialog from '@/components/dialogs/ProductDialog';
 import UnitsDialog from '@/components/dialogs/UnitsDialog';
 import ProductGroupsDialog from '@/components/dialogs/ProductGroupsDialog';
+import ProductBrandsDialog from '@/components/dialogs/ProductBrandsDialog';
 import BarcodeLabelDialog from '@/components/dialogs/BarcodeLabelDialog';
 import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
 import { invoke } from '@tauri-apps/api/core';
+import { type ProductTableColumns, DEFAULT_TABLE_COLUMNS } from '@/pages/settings/ProductSettingsPage';
 
 type ProductFilter = 'all' | 'master' | 'child';
 
@@ -22,14 +24,17 @@ export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
   const [groups, setGroups] = useState<ProductGroup[]>([]);
+  const [brands, setBrands] = useState<ProductBrand[]>([]);
   const [loading, setLoading] = useState(true);
   const [gstEnabled, setGstEnabled] = useState(false);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
   const [productFilter, setProductFilter] = useState<ProductFilter>('all');
+  const [columnSettings, setColumnSettings] = useState<ProductTableColumns>(DEFAULT_TABLE_COLUMNS);
   const [open, setOpen] = useState(false);
   const [unitsOpen, setUnitsOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
+  const [brandsOpen, setBrandsOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | undefined>(undefined);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -41,20 +46,26 @@ export default function ProductsPage() {
   const load = async () => {
     try {
       setLoading(true);
-      const [p, u, g, gstSettings, slabs, masterSetting] = await Promise.all([
+      const [p, u, g, b, gstSettings, slabs, masterSetting, colSetting] = await Promise.all([
         showDeleted ? api.products.listDeleted() : api.products.list(),
         api.units.list(),
         api.productGroups.list(),
+        api.productBrands.list(),
         api.gst.getSettings(),
         api.gst.getSlabs(),
         invoke<string | null>('get_app_setting', { key: 'enable_master_products' }),
+        invoke<string | null>('get_app_setting', { key: 'product_table_columns' }),
       ]);
       setProducts(p);
       setUnits(u);
       setGroups(g);
+      setBrands(b);
       setGstEnabled(gstSettings.gst_enabled);
       setGstSlabs(slabs);
       setMasterProductsEnabled(masterSetting === 'true');
+      if (colSetting) {
+        try { setColumnSettings({ ...DEFAULT_TABLE_COLUMNS, ...JSON.parse(colSetting) }); } catch { /* ignore */ }
+      }
     } catch (error) {
       toast.error('Failed to load data');
       console.error('Load error:', error);
@@ -116,6 +127,7 @@ export default function ProductsPage() {
 
   const handleUnitsChange = () => load();
   const handleGroupsChange = () => load();
+  const handleBrandsChange = () => load();
 
   // Apply search + category filter
   const filteredProducts = products.filter(p => {
@@ -191,6 +203,14 @@ export default function ProductsPage() {
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => setBrandsOpen(true)}>
+                      <IconTag size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Manage Brands</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
                     <Button variant="outline" onClick={() => setUnitsOpen(true)}>
                       <IconRuler size={16} />
                     </Button>
@@ -235,22 +255,55 @@ export default function ProductsPage() {
             <thead className="border-b bg-muted/50">
               <tr className="text-left text-sm">
                 <th className="p-3 w-12">S.No</th>
-                <th className="p-3">Code</th>
+                {columnSettings.code && <th className="p-3">Code</th>}
                 <th className="p-3">Name</th>
-                <th className="p-3">HSN Code</th>
-                <th className="p-3">Group</th>
-                <th className="p-3">Unit</th>
-                <th className="p-3">Purchase</th>
-                <th className="p-3">Sales</th>
-                <th className="p-3">MRP</th>
-                {gstEnabled && <th className="p-3">Tax Slab</th>}
+                {columnSettings.hsn_sac_code && <th className="p-3">HSN Code</th>}
+                {columnSettings.group && <th className="p-3">Group</th>}
+                {columnSettings.brand && <th className="p-3">Brand</th>}
+                {columnSettings.unit && <th className="p-3">Unit</th>}
+                {columnSettings.purchase_rate && <th className="p-3">Purchase</th>}
+                {columnSettings.sales_rate && <th className="p-3">Sales</th>}
+                {columnSettings.mrp && <th className="p-3">MRP</th>}
+                {columnSettings.cost && <th className="p-3">Cost</th>}
+                {gstEnabled && columnSettings.tax_slab && <th className="p-3">Tax Slab</th>}
+                {columnSettings.vehicle_manufacturer && <th className="p-3">Manufacturer</th>}
+                {columnSettings.vehicle_model && <th className="p-3">Model</th>}
+                {columnSettings.vehicle_year && <th className="p-3">Year</th>}
+                {columnSettings.vehicle_odometer && <th className="p-3">Odometer</th>}
+                {columnSettings.vehicle_fuel_type && <th className="p-3">Fuel Type</th>}
+                {columnSettings.vehicle_transmission && <th className="p-3">Transmission</th>}
+                {columnSettings.vehicle_owner && <th className="p-3">Owner</th>}
+                {columnSettings.vehicle_color && <th className="p-3">Color</th>}
                 <th className="p-3">Actions</th>
               </tr>
             </thead>
             <tbody>
               {filteredProducts.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="p-4 text-center text-muted-foreground">
+                  <td
+                    colSpan={
+                      3 +
+                      (columnSettings.code ? 1 : 0) +
+                      (columnSettings.hsn_sac_code ? 1 : 0) +
+                      (columnSettings.group ? 1 : 0) +
+                      (columnSettings.brand ? 1 : 0) +
+                      (columnSettings.unit ? 1 : 0) +
+                      (columnSettings.purchase_rate ? 1 : 0) +
+                      (columnSettings.sales_rate ? 1 : 0) +
+                      (columnSettings.mrp ? 1 : 0) +
+                      (columnSettings.cost ? 1 : 0) +
+                      (gstEnabled && columnSettings.tax_slab ? 1 : 0) +
+                      (columnSettings.vehicle_manufacturer ? 1 : 0) +
+                      (columnSettings.vehicle_model ? 1 : 0) +
+                      (columnSettings.vehicle_year ? 1 : 0) +
+                      (columnSettings.vehicle_odometer ? 1 : 0) +
+                      (columnSettings.vehicle_fuel_type ? 1 : 0) +
+                      (columnSettings.vehicle_transmission ? 1 : 0) +
+                      (columnSettings.vehicle_owner ? 1 : 0) +
+                      (columnSettings.vehicle_color ? 1 : 0)
+                    }
+                    className="p-4 text-center text-muted-foreground"
+                  >
                     {searchTerm ? 'No products match your search.' : 'No products found. Add your first product to get started.'}
                   </td>
                 </tr>
@@ -268,7 +321,7 @@ export default function ProductsPage() {
                       ].join(' ')}
                     >
                       <td className="p-3 text-sm text-muted-foreground">{index + 1}</td>
-                      <td className="p-3 font-mono text-sm">{p.code}</td>
+                      {columnSettings.code && <td className="p-3 font-mono text-sm">{p.code}</td>}
                       <td className="p-3">
                         <div className="flex items-center gap-1.5">
                           {p.name}
@@ -284,17 +337,35 @@ export default function ProductsPage() {
                           )}
                         </div>
                       </td>
-                      <td className="p-3 text-sm">{p.hsn_sac_code || '-'}</td>
-                      <td className="p-3 text-sm">{groups.find(g => g.id === p.group_id)?.name || '-'}</td>
-                      <td className="p-3">{units.find(u => u.id === p.unit_id)?.symbol || '-'}</td>
-                      <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : `₹${p.purchase_rate.toFixed(2)}`}</td>
-                      <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : `₹${p.sales_rate.toFixed(2)}`}</td>
-                      <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : `₹${p.mrp.toFixed(2)}`}</td>
-                      {gstEnabled && (
+                      {columnSettings.hsn_sac_code && <td className="p-3 text-sm">{p.hsn_sac_code || '-'}</td>}
+                      {columnSettings.group && <td className="p-3 text-sm">{groups.find(g => g.id === p.group_id)?.name || '-'}</td>}
+                      {columnSettings.brand && <td className="p-3 text-sm">{brands.find(b => b.id === p.brand_id)?.name || '-'}</td>}
+                      {columnSettings.unit && <td className="p-3">{units.find(u => u.id === p.unit_id)?.symbol || '-'}</td>}
+                      {columnSettings.purchase_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : `₹${p.purchase_rate.toFixed(2)}`}</td>}
+                      {columnSettings.sales_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : `₹${p.sales_rate.toFixed(2)}`}</td>}
+                      {columnSettings.mrp && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : `₹${p.mrp.toFixed(2)}`}</td>}
+                      {columnSettings.cost && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : p.cost !== undefined && p.cost !== null ? `₹${p.cost.toFixed(2)}` : '-'}</td>}
+                      {gstEnabled && columnSettings.tax_slab && (
                         <td className="p-3 text-sm">
                           {gstSlabs.find(s => s.id === p.gst_slab_id)?.name || '-'}
                         </td>
                       )}
+                      {columnSettings.vehicle_manufacturer && <td className="p-3 text-sm">{p.vehicle_manufacturer || '-'}</td>}
+                      {columnSettings.vehicle_model && <td className="p-3 text-sm">{p.vehicle_model || '-'}</td>}
+                      {columnSettings.vehicle_year && <td className="p-3 text-sm font-mono">{p.vehicle_year || '-'}</td>}
+                      {columnSettings.vehicle_odometer && (
+                        <td className="p-3 text-sm font-mono">
+                          {p.vehicle_odometer !== undefined && p.vehicle_odometer !== null ? `${p.vehicle_odometer.toLocaleString()} km` : '-'}
+                        </td>
+                      )}
+                      {columnSettings.vehicle_fuel_type && <td className="p-3 text-sm">{p.vehicle_fuel_type || '-'}</td>}
+                      {columnSettings.vehicle_transmission && <td className="p-3 text-sm">{p.vehicle_transmission || '-'}</td>}
+                      {columnSettings.vehicle_owner && (
+                        <td className="p-3 text-sm">
+                          {p.vehicle_owner ? `${p.vehicle_owner} Owner` : '-'}
+                        </td>
+                      )}
+                      {columnSettings.vehicle_color && <td className="p-3 text-sm">{p.vehicle_color || '-'}</td>}
                       <td className="p-3 flex gap-2">
                         {!showDeleted ? (
                           <>
@@ -329,6 +400,7 @@ export default function ProductsPage() {
         onOpenChange={setOpen}
         units={units}
         groups={groups}
+        brands={brands}
         product={editingProduct}
         onSuccess={load}
       />
@@ -345,6 +417,13 @@ export default function ProductsPage() {
         open={groupsOpen}
         onOpenChange={setGroupsOpen}
         onGroupsChange={handleGroupsChange}
+      />
+
+      {/* Product Brands Management Dialog Component */}
+      <ProductBrandsDialog
+        open={brandsOpen}
+        onOpenChange={setBrandsOpen}
+        onBrandsChange={handleBrandsChange}
       />
 
       {/* Barcode Label Dialog */}

@@ -160,6 +160,21 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await?;
 
+    // Product Brands
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS product_brands (
+            id TEXT PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            description TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME
+        )",
+    )
+    .execute(pool)
+    .await?;
+
     // Products
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS products (
@@ -185,6 +200,11 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .await?;
 
     let _ = sqlx::query("ALTER TABLE products ADD COLUMN barcode TEXT")
+        .execute(pool)
+        .await;
+
+    // Migration: Add brand_id to products if not exists
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN brand_id TEXT REFERENCES product_brands(id)")
         .execute(pool)
         .await;
 
@@ -1215,7 +1235,48 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await;
 
-    // ==================== SEEDING ====================
+    // ==================== VEHICLE FIELD MIGRATIONS ====================
+
+    // Migration: Add vehicle-specific columns to products
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN vehicle_make TEXT")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN vehicle_odometer REAL")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN vehicle_fuel_type TEXT")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN vehicle_transmission TEXT")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN vehicle_owner TEXT")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN vehicle_color TEXT")
+        .execute(pool)
+        .await;
+
+    // Renamed Make to Manufacturer, and added Model & Year
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN vehicle_manufacturer TEXT")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("UPDATE products SET vehicle_manufacturer = vehicle_make WHERE vehicle_manufacturer IS NULL AND vehicle_make IS NOT NULL")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN vehicle_model TEXT")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN vehicle_year INTEGER")
+        .execute(pool)
+        .await;
+
+    // Migration: Add cost column to products
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN cost REAL")
+        .execute(pool)
+        .await;
+
+
 
     crate::seeds::seed_initial_data(pool).await?;
     crate::seeds::seed_handlebars_templates(pool).await?;

@@ -48,6 +48,7 @@ import BarcodeSettingsPage from './pages/settings/BarcodeSettingsPage';
 import DbSettingsPage from './pages/settings/DbSettingsPage';
 import TaxSettingsPage from './pages/settings/TaxSettingsPage';
 import SidebarSettingsPage from './pages/settings/SidebarSettingsPage';
+import ProductSettingsPage from './pages/settings/ProductSettingsPage';
 import Gstr1ReportPage from './pages/reports/Gstr1ReportPage';
 import Gstr3bReportPage from './pages/reports/Gstr3bReportPage';
 import DashboardPage from './pages/DashboardPage';
@@ -197,6 +198,7 @@ function AppContent() {
       case 'barcode_settings': return <BarcodeSettingsPage />;
       case 'db_settings': return <DbSettingsPage />;
       case 'sidebar_settings': return <SidebarSettingsPage />;
+      case 'product_settings': return <ProductSettingsPage />;
       case 'invoice_designer': return <InvoiceDesigner templateId={activeSectionParams?.templateId} voucherType={activeSectionParams?.voucherType} onBack={() => dispatch({ type: 'app/setActiveSection', payload: 'invoice_settings' })} />;
 
       case 'tax_settings': return <TaxSettingsPage />;

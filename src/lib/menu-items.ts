@@ -22,7 +22,8 @@ import {
     IconScaleOutline,
     IconChartPie,
     IconCurrencyRupee,
-    IconFileReport
+    IconFileReport,
+    IconAdjustments
 } from '@tabler/icons-react';
 
 export interface MenuItem {
@@ -37,6 +38,7 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
     
     // Master
     { id: 'products', label: 'Products', icon: IconPackage, category: 'Master' },
+    { id: 'product_settings', label: 'Product Settings', icon: IconAdjustments, category: 'Master' },
     { id: 'services', label: 'Services', icon: IconTools, category: 'Master' },
     { id: 'customers', label: 'Customers', icon: IconUserDown, category: 'Master' },
     { id: 'suppliers', label: 'Suppliers', icon: IconUserUp, category: 'Master' },

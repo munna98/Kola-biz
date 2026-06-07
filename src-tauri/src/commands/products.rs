@@ -22,6 +22,22 @@ pub struct CreateProductGroup {
     pub description: Option<String>,
 }
 
+// ============= PRODUCT BRANDS =============
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct ProductBrand {
+    pub id: String,
+    pub name: String,
+    pub description: Option<String>,
+    pub is_active: i64,
+    pub created_at: String,
+}
+
+#[derive(Deserialize)]
+pub struct CreateProductBrand {
+    pub name: String,
+    pub description: Option<String>,
+}
+
 pub(crate) async fn generate_product_code(pool: &SqlitePool) -> Result<String, String> {
     let last_code: Option<i64> = sqlx::query_scalar(
         "SELECT MAX(CAST(code AS INTEGER)) FROM products WHERE code GLOB '[0-9]*'",
@@ -67,18 +83,19 @@ pub(crate) async fn create_child_product_in_tx(
     let master: Option<(
         String,
         Option<String>,
+        Option<String>,
         String,
         Option<String>,
         Option<String>,
     )> = sqlx::query_as(
-        "SELECT name, group_id, unit_id, hsn_sac_code, gst_slab_id FROM products WHERE id = ?",
+        "SELECT name, group_id, brand_id, unit_id, hsn_sac_code, gst_slab_id FROM products WHERE id = ?",
     )
     .bind(master_product_id)
     .fetch_optional(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    let (name, group_id, unit_id, hsn_sac_code, gst_slab_id) =
+    let (name, group_id, brand_id, unit_id, hsn_sac_code, gst_slab_id) =
         master.ok_or_else(|| format!("Master product '{}' not found", master_product_id))?;
 
     // Generate next sequential code within the same transaction
@@ -87,14 +104,15 @@ pub(crate) async fn create_child_product_in_tx(
 
     sqlx::query(
         "INSERT INTO products \
-         (id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, \
+         (id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, \
           barcode, hsn_sac_code, gst_slab_id, is_master, parent_product_id, is_active) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0, ?, 1)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, 0, ?, 1)",
     )
     .bind(&child_id)
     .bind(&code)
     .bind(&name)
     .bind(&group_id)
+    .bind(&brand_id)
     .bind(&unit_id)
     .bind(purchase_rate)
     .bind(sales_rate)
@@ -207,6 +225,90 @@ pub async fn delete_product_group(
 
     sqlx::query(
         "UPDATE product_groups SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, is_active = 0 WHERE id = ?",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn get_product_brands(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<ProductBrand>, String> {
+    let pool = registry.active_pool().await?;
+    sqlx::query_as::<_, ProductBrand>(
+        "SELECT id, name, description, is_active, created_at FROM product_brands WHERE deleted_at IS NULL ORDER BY name ASC",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn create_product_brand(
+    registry: State<'_, Arc<DbRegistry>>,
+    brand: CreateProductBrand,
+) -> Result<ProductBrand, String> {
+    let pool = registry.active_pool().await?;
+    let id = Uuid::now_v7().to_string();
+    sqlx::query("INSERT INTO product_brands (id, name, description) VALUES (?, ?, ?)")
+        .bind(&id)
+        .bind(&brand.name)
+        .bind(&brand.description)
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    sqlx::query_as::<_, ProductBrand>(
+        "SELECT id, name, description, is_active, created_at FROM product_brands WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn update_product_brand(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+    brand: CreateProductBrand,
+) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
+    sqlx::query("UPDATE product_brands SET name = ?, description = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(&brand.name)
+        .bind(&brand.description)
+        .bind(id)
+        .execute(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn delete_product_brand(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
+    // Check if any product is using this brand
+    let count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM products WHERE brand_id = ? AND deleted_at IS NULL")
+            .bind(&id)
+            .fetch_one(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if count.0 > 0 {
+        return Err("Cannot delete brand as it is assigned to one or more products.".to_string());
+    }
+
+    sqlx::query(
+        "UPDATE product_brands SET deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP, is_active = 0 WHERE id = ?",
     )
     .bind(id)
     .execute(&pool)
@@ -368,10 +470,12 @@ pub struct Product {
     pub code: String,
     pub name: String,
     pub group_id: Option<String>,
+    pub brand_id: Option<String>,
     pub unit_id: String,
     pub purchase_rate: f64,
     pub sales_rate: f64,
     pub mrp: f64,
+    pub cost: Option<f64>,
     pub barcode: Option<String>,
     pub is_active: i64,
     pub created_at: String,
@@ -380,6 +484,15 @@ pub struct Product {
     pub gst_slab_id: Option<String>,
     pub is_master: i64,
     pub parent_product_id: Option<String>,
+    // Vehicle fields
+    pub vehicle_manufacturer: Option<String>,
+    pub vehicle_model: Option<String>,
+    pub vehicle_year: Option<i64>,
+    pub vehicle_odometer: Option<f64>,
+    pub vehicle_fuel_type: Option<String>,
+    pub vehicle_transmission: Option<String>,
+    pub vehicle_owner: Option<String>,
+    pub vehicle_color: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow, Clone)]
@@ -418,10 +531,12 @@ pub struct CreateProduct {
     pub code: String,
     pub name: String,
     pub group_id: Option<String>,
+    pub brand_id: Option<String>,
     pub unit_id: String,
     pub purchase_rate: f64,
     pub sales_rate: f64,
     pub mrp: f64,
+    pub cost: Option<f64>,
     pub barcode: Option<String>,
     #[serde(default)]
     pub conversions: Vec<ProductUnitConversionInput>,
@@ -432,6 +547,15 @@ pub struct CreateProduct {
     /// automatically during purchase entry.
     #[serde(default)]
     pub is_master: bool,
+    // Vehicle fields
+    pub vehicle_manufacturer: Option<String>,
+    pub vehicle_model: Option<String>,
+    pub vehicle_year: Option<i64>,
+    pub vehicle_odometer: Option<f64>,
+    pub vehicle_fuel_type: Option<String>,
+    pub vehicle_transmission: Option<String>,
+    pub vehicle_owner: Option<String>,
+    pub vehicle_color: Option<String>,
 }
 
 fn normalize_product_unit_conversions(
@@ -642,11 +766,12 @@ pub async fn get_product_unit_conversions(
 pub async fn get_products(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Product>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Product>(
-        "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, is_active, created_at,
+        "SELECT id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, is_active, created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
                 hsn_sac_code, gst_slab_id,
                 COALESCE(is_master, 0) as is_master,
-                parent_product_id
+                parent_product_id,
+                vehicle_manufacturer, vehicle_model, vehicle_year, vehicle_odometer, vehicle_fuel_type, vehicle_transmission, vehicle_owner, vehicle_color
          FROM products
          WHERE deleted_at IS NULL 
          ORDER BY created_at DESC",
@@ -662,6 +787,29 @@ pub async fn create_product(
     product: CreateProduct,
 ) -> Result<Product, String> {
     let pool = registry.active_pool().await?;
+
+    // Check for duplicate names if setting is enabled
+    let prevent_duplicates: i64 = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM app_settings WHERE setting_key = 'prevent_duplicate_product_names' AND (setting_value = 'true' OR setting_value = '\"true\"'))"
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
+    if prevent_duplicates == 1 {
+        let name_exists: i64 = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM products WHERE LOWER(name) = LOWER(?) AND deleted_at IS NULL)"
+        )
+        .bind(&product.name)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0);
+
+        if name_exists == 1 {
+            return Err(format!("A product with the name '{}' already exists.", product.name));
+        }
+    }
+
     let id = Uuid::now_v7().to_string();
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
@@ -678,21 +826,32 @@ pub async fn create_product(
     };
 
     sqlx::query(
-        "INSERT INTO products (id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, hsn_sac_code, gst_slab_id, is_master) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO products (id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, hsn_sac_code, gst_slab_id, is_master,
+                              vehicle_manufacturer, vehicle_model, vehicle_year, vehicle_odometer, vehicle_fuel_type, vehicle_transmission, vehicle_owner, vehicle_color) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&code)
     .bind(&product.name)
     .bind(product.group_id.clone())
+    .bind(product.brand_id.clone())
     .bind(&product.unit_id)
     .bind(product.purchase_rate)
     .bind(product.sales_rate)
     .bind(product.mrp)
+    .bind(product.cost)
     .bind(&product.barcode)
     .bind(&product.hsn_sac_code)
     .bind(&product.gst_slab_id)
     .bind(if product.is_master { 1i64 } else { 0i64 })
+    .bind(&product.vehicle_manufacturer)
+    .bind(&product.vehicle_model)
+    .bind(product.vehicle_year)
+    .bind(product.vehicle_odometer)
+    .bind(&product.vehicle_fuel_type)
+    .bind(&product.vehicle_transmission)
+    .bind(&product.vehicle_owner)
+    .bind(&product.vehicle_color)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -710,11 +869,12 @@ pub async fn create_product(
     tx.commit().await.map_err(|e| e.to_string())?;
 
     sqlx::query_as::<_, Product>(
-        "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, is_active, created_at,
+        "SELECT id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, is_active, created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
                 hsn_sac_code, gst_slab_id,
                 COALESCE(is_master, 0) as is_master,
-                parent_product_id
+                parent_product_id,
+                vehicle_manufacturer, vehicle_model, vehicle_year, vehicle_odometer, vehicle_fuel_type, vehicle_transmission, vehicle_owner, vehicle_color
          FROM products WHERE id = ?",
     )
     .bind(id)
@@ -748,13 +908,14 @@ pub async fn batch_create_products(
         };
 
         sqlx::query(
-            "INSERT INTO products (id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, hsn_sac_code, gst_slab_id, is_master) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO products (id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, barcode, hsn_sac_code, gst_slab_id, is_master) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(&code)
         .bind(&product.name)
         .bind(product.group_id.clone())
+        .bind(product.brand_id.clone())
         .bind(&product.unit_id)
         .bind(product.purchase_rate)
         .bind(product.sales_rate)
@@ -815,24 +976,59 @@ pub async fn update_product(
         }
     }
 
+    // Check for duplicate names if setting is enabled
+    let prevent_duplicates: i64 = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM app_settings WHERE setting_key = 'prevent_duplicate_product_names' AND (setting_value = 'true' OR setting_value = '\"true\"'))"
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
+    if prevent_duplicates == 1 {
+        let name_exists: i64 = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM products WHERE LOWER(name) = LOWER(?) AND id <> ? AND deleted_at IS NULL)"
+        )
+        .bind(&product.name)
+        .bind(&id)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0);
+
+        if name_exists == 1 {
+            return Err(format!("A product with the name '{}' already exists.", product.name));
+        }
+    }
+
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     sqlx::query(
         "UPDATE products 
-         SET code = ?, name = ?, group_id = ?, unit_id = ?, purchase_rate = ?, sales_rate = ?, mrp = ?,
-             barcode = ?, hsn_sac_code = ?, gst_slab_id = ?, is_master = ?, updated_at = CURRENT_TIMESTAMP 
+         SET code = ?, name = ?, group_id = ?, brand_id = ?, unit_id = ?, purchase_rate = ?, sales_rate = ?, mrp = ?, cost = ?,
+             barcode = ?, hsn_sac_code = ?, gst_slab_id = ?, is_master = ?,
+             vehicle_manufacturer = ?, vehicle_model = ?, vehicle_year = ?, vehicle_odometer = ?, vehicle_fuel_type = ?, vehicle_transmission = ?, vehicle_owner = ?, vehicle_color = ?,
+             updated_at = CURRENT_TIMESTAMP 
          WHERE id = ?",
     )
     .bind(&product.code)
     .bind(&product.name)
     .bind(product.group_id)
+    .bind(product.brand_id)
     .bind(&product.unit_id)
     .bind(product.purchase_rate)
     .bind(product.sales_rate)
     .bind(product.mrp)
+    .bind(product.cost)
     .bind(&product.barcode)
     .bind(&product.hsn_sac_code)
     .bind(&product.gst_slab_id)
     .bind(if product.is_master { 1i64 } else { 0i64 })
+    .bind(&product.vehicle_manufacturer)
+    .bind(&product.vehicle_model)
+    .bind(product.vehicle_year)
+    .bind(product.vehicle_odometer)
+    .bind(&product.vehicle_fuel_type)
+    .bind(&product.vehicle_transmission)
+    .bind(&product.vehicle_owner)
+    .bind(&product.vehicle_color)
     .bind(&id)
     .execute(&mut *tx)
     .await
@@ -953,11 +1149,12 @@ pub async fn get_deleted_products(
 ) -> Result<Vec<Product>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Product>(
-        "SELECT id, code, name, group_id, unit_id, purchase_rate, sales_rate, mrp, barcode, is_active, created_at,
+        "SELECT id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, is_active, created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
                 hsn_sac_code, gst_slab_id,
                 COALESCE(is_master, 0) as is_master,
-                parent_product_id
+                parent_product_id,
+                vehicle_manufacturer, vehicle_model, vehicle_year, vehicle_odometer, vehicle_fuel_type, vehicle_transmission, vehicle_owner, vehicle_color
          FROM products
          WHERE deleted_at IS NOT NULL 
          ORDER BY deleted_at DESC",

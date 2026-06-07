@@ -31,6 +31,21 @@ export interface CreateProductGroup {
   description?: string;
 }
 
+// ======= PRODUCT BRANDS =======
+
+export interface ProductBrand {
+  id: string;
+  name: string;
+  description?: string;
+  is_active: number;
+  created_at: string;
+}
+
+export interface CreateProductBrand {
+  name: string;
+  description?: string;
+}
+
 // ======= GST TYPES =======
 
 export interface GstTaxSlab {
@@ -95,10 +110,12 @@ export interface Product {
   code: string;
   name: string;
   group_id?: string;
+  brand_id?: string;
   unit_id: string;
   purchase_rate: number;
   sales_rate: number;
   mrp: number;
+  cost?: number;
   barcode?: string;
   is_active: number;
   created_at: string;
@@ -109,6 +126,15 @@ export interface Product {
   is_master: number;
   /** Non-null means this is a child batch; value is the master product's ID */
   parent_product_id?: string;
+  // Vehicle fields
+  vehicle_manufacturer?: string;
+  vehicle_model?: string;
+  vehicle_year?: number;
+  vehicle_odometer?: number;
+  vehicle_fuel_type?: string;
+  vehicle_transmission?: string;
+  vehicle_owner?: string;
+  vehicle_color?: string;
 }
 
 export interface ProductUnitConversion {
@@ -139,16 +165,27 @@ export interface CreateProduct {
   code: string;
   name: string;
   group_id?: string;
+  brand_id?: string;
   unit_id: string;
   purchase_rate: number;
   sales_rate: number;
   mrp: number;
+  cost?: number;
   barcode?: string;
   conversions?: CreateProductUnitConversion[];
   hsn_sac_code?: string;
   gst_slab_id?: string;
-  /** When true, this is a master template. Code must be manually entered. */
+  /** When true, this is a is_master template. Code must be manually entered. */
   is_master?: boolean;
+  // Vehicle fields
+  vehicle_manufacturer?: string;
+  vehicle_model?: string;
+  vehicle_year?: number;
+  vehicle_odometer?: number;
+  vehicle_fuel_type?: string;
+  vehicle_transmission?: string;
+  vehicle_owner?: string;
+  vehicle_color?: string;
 }
 
 // ======= PARTIES =======
@@ -417,6 +454,12 @@ export const api = {
     create: (data: CreateProductGroup) => invoke<ProductGroup>('create_product_group', { group: data }),
     update: (id: string, data: CreateProductGroup) => invoke<void>('update_product_group', { id, group: data }),
     delete: (id: string) => invoke<void>('delete_product_group', { id }),
+  },
+  productBrands: {
+    list: () => invoke<ProductBrand[]>('get_product_brands'),
+    create: (data: CreateProductBrand) => invoke<ProductBrand>('create_product_brand', { brand: data }),
+    update: (id: string, data: CreateProductBrand) => invoke<void>('update_product_brand', { id, brand: data }),
+    delete: (id: string) => invoke<void>('delete_product_brand', { id }),
   },
   customers: {
     list: () => invoke<Customer[]>('get_customers'),

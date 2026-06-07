@@ -61,6 +61,11 @@ pub fn run() {
             create_product_group,
             update_product_group,
             delete_product_group,
+            // Product Brands
+            get_product_brands,
+            create_product_brand,
+            update_product_brand,
+            delete_product_brand,
             // Products
             get_products,
             get_all_product_unit_conversions,
