@@ -137,6 +137,14 @@ export interface Product {
   vehicle_color?: string;
 }
 
+export interface ProductImage {
+  id: string;
+  product_id: string;
+  image_path: string;
+  display_order: number;
+  created_at: string;
+}
+
 export interface ProductUnitConversion {
   id: string;
   product_id: string;
@@ -448,6 +456,10 @@ export const api = {
     restore: (id: string) => invoke<void>('restore_product', { id }),
     hardDelete: (id: string) => invoke<void>('hard_delete_product', { id }),
     getNextCode: () => invoke<string>('get_next_product_code'),
+    uploadImage: (productId: string, filename: string, base64Data: string) => invoke<ProductImage>('upload_product_image', { productId, filename, base64Data }),
+    getImages: (productId: string) => invoke<ProductImage[]>('get_product_images', { productId }),
+    deleteImage: (id: string) => invoke<void>('delete_product_image', { id }),
+    reorderImages: (imageIds: string[]) => invoke<void>('reorder_product_images', { imageIds }),
   },
   productGroups: {
     list: () => invoke<ProductGroup[]>('get_product_groups'),

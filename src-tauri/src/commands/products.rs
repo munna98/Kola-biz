@@ -1216,11 +1216,214 @@ pub async fn hard_delete_product(
         );
     }
 
+    // Fetch and delete product images on disk
+    let image_paths: Vec<String> = sqlx::query_scalar(
+        "SELECT image_path FROM product_images WHERE product_id = ?"
+    )
+    .bind(&id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    for path_str in image_paths {
+        let path = std::path::Path::new(&path_str);
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+
     sqlx::query("DELETE FROM products WHERE id = ?")
         .bind(id)
         .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
+    Ok(())
+}
+
+// ============= PRODUCT IMAGES =============
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct ProductImage {
+    pub id: String,
+    pub product_id: String,
+    pub image_path: String,
+    pub display_order: i64,
+    pub created_at: String,
+}
+
+#[tauri::command]
+pub async fn upload_product_image(
+    app_handle: tauri::AppHandle,
+    registry: State<'_, Arc<DbRegistry>>,
+    product_id: String,
+    filename: String,
+    base64_data: String,
+) -> Result<ProductImage, String> {
+    use tauri::Manager;
+    use base64::Engine;
+
+    let target_company_id = registry
+        .active_company_id()
+        .await
+        .ok_or_else(|| "No active company selected.".to_string())?;
+
+    let company: crate::company_db::CompanyInfo = sqlx::query_as(
+        "SELECT id, name, slug, db_path, is_deleted, is_primary, is_secondary, created_at, last_opened
+         FROM companies WHERE id = ?"
+    )
+    .bind(&target_company_id)
+    .fetch_optional(&registry.master_pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Company not found".to_string())?;
+
+    let clean_base64 = if base64_data.contains("base64,") {
+        base64_data.split("base64,").nth(1).unwrap_or(&base64_data)
+    } else {
+        &base64_data
+    };
+
+    let bytes = base64::prelude::BASE64_STANDARD
+        .decode(clean_base64.trim())
+        .map_err(|e| format!("Failed to decode base64 image data: {}", e))?;
+
+    let pool = registry.active_pool().await?;
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM product_images WHERE product_id = ?"
+    )
+    .bind(&product_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if count >= 10 {
+        return Err("Maximum limit of 10 images reached for this product.".to_string());
+    }
+
+    let ext = std::path::Path::new(&filename)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("png");
+
+    let app_dir = app_handle.path().app_data_dir().map_err(|e| e.to_string())?;
+    let image_id = Uuid::now_v7().to_string();
+    let file_relative_dir = format!("product_images/{}/{}", company.slug, product_id);
+    let target_dir = app_dir.join(&file_relative_dir);
+    std::fs::create_dir_all(&target_dir).map_err(|e| e.to_string())?;
+
+    let filename_saved = format!("{}.{}", image_id, ext);
+    let full_image_path = target_dir.join(&filename_saved);
+    std::fs::write(&full_image_path, bytes).map_err(|e| e.to_string())?;
+
+    let db_image_path = full_image_path.to_string_lossy().to_string();
+
+    sqlx::query(
+        "INSERT INTO product_images (id, product_id, image_path, display_order)
+         VALUES (?, ?, ?, ?)"
+    )
+    .bind(&image_id)
+    .bind(&product_id)
+    .bind(&db_image_path)
+    .bind(count)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    sqlx::query_as::<_, ProductImage>(
+        "SELECT id, product_id, image_path, display_order, created_at FROM product_images WHERE id = ?"
+    )
+    .bind(image_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_product_images(
+    registry: State<'_, Arc<DbRegistry>>,
+    product_id: String,
+) -> Result<Vec<ProductImage>, String> {
+    let pool = registry.active_pool().await?;
+    sqlx::query_as::<_, ProductImage>(
+        "SELECT id, product_id, image_path, display_order, created_at
+         FROM product_images
+         WHERE product_id = ?
+         ORDER BY display_order ASC, created_at ASC"
+    )
+    .bind(product_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn delete_product_image(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
+    
+    // Fetch image details first
+    let img: Option<(String, String)> = sqlx::query_as(
+        "SELECT image_path, product_id FROM product_images WHERE id = ?"
+    )
+    .bind(&id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if let Some((image_path, product_id)) = img {
+        // Delete file on disk
+        let path = std::path::Path::new(&image_path);
+        if path.exists() {
+            let _ = std::fs::remove_file(path);
+        }
+
+        // Delete from database
+        sqlx::query("DELETE FROM product_images WHERE id = ?")
+            .bind(&id)
+            .execute(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+        // Reorder remaining images
+        let remaining_images: Vec<String> = sqlx::query_scalar(
+            "SELECT id FROM product_images WHERE product_id = ? ORDER BY display_order ASC, created_at ASC"
+        )
+        .bind(&product_id)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        for (idx, img_id) in remaining_images.iter().enumerate() {
+            let _ = sqlx::query("UPDATE product_images SET display_order = ? WHERE id = ?")
+                .bind(idx as i64)
+                .bind(img_id)
+                .execute(&pool)
+                .await;
+        }
+    }
+
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn reorder_product_images(
+    registry: State<'_, Arc<DbRegistry>>,
+    image_ids: Vec<String>,
+) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    for (idx, id) in image_ids.iter().enumerate() {
+        sqlx::query("UPDATE product_images SET display_order = ? WHERE id = ?")
+            .bind(idx as i64)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }

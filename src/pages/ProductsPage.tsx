@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload, IconTag } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload, IconTag, IconPhoto } from '@tabler/icons-react';
 import { api, Product, Unit, ProductGroup, ProductBrand, GstTaxSlab } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
@@ -15,6 +15,7 @@ import ProductGroupsDialog from '@/components/dialogs/ProductGroupsDialog';
 import ProductBrandsDialog from '@/components/dialogs/ProductBrandsDialog';
 import BarcodeLabelDialog from '@/components/dialogs/BarcodeLabelDialog';
 import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
+import ProductImagesDialog from '@/components/dialogs/ProductImagesDialog';
 import { invoke } from '@tauri-apps/api/core';
 import { type ProductTableColumns, DEFAULT_TABLE_COLUMNS } from '@/pages/settings/ProductSettingsPage';
 
@@ -41,6 +42,8 @@ export default function ProductsPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [barcodeDialogOpen, setBarcodeDialogOpen] = useState(false);
   const [barcodeProduct, setBarcodeProduct] = useState<Product | null>(null);
+  const [imagesDialogOpen, setImagesDialogOpen] = useState(false);
+  const [imagesProduct, setImagesProduct] = useState<Product | null>(null);
   const currentUser = useSelector((state: RootState) => state.app.currentUser);
 
   const load = async () => {
@@ -375,6 +378,12 @@ export default function ProductsPage() {
                               </TooltipTrigger>
                               <TooltipContent>Print Barcode</TooltipContent>
                             </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button size="sm" variant="ghost" onClick={() => { setImagesProduct(p); setImagesDialogOpen(true); }}><IconPhoto size={16} /></Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Manage Images</TooltipContent>
+                            </Tooltip>
                             <Button size="sm" variant="ghost" onClick={() => handleEdit(p)}><IconEdit size={16} /></Button>
                             <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.id)}><IconTrash size={16} /></Button>
                           </>
@@ -424,6 +433,14 @@ export default function ProductsPage() {
         open={brandsOpen}
         onOpenChange={setBrandsOpen}
         onBrandsChange={handleBrandsChange}
+      />
+
+      {/* Product Images Dialog */}
+      <ProductImagesDialog
+        open={imagesDialogOpen}
+        onOpenChange={setImagesDialogOpen}
+        productId={imagesProduct?.id || ''}
+        productName={imagesProduct?.name || ''}
       />
 
       {/* Barcode Label Dialog */}

@@ -1276,7 +1276,25 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         .execute(pool)
         .await;
 
+    // ==================== PRODUCT IMAGES MIGRATION ====================
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS product_images (
+            id TEXT PRIMARY KEY,
+            product_id TEXT NOT NULL,
+            image_path TEXT NOT NULL,
+            display_order INTEGER NOT NULL,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+        )",
+    )
+    .execute(pool)
+    .await?;
 
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_product_images_product ON product_images(product_id)",
+    )
+    .execute(pool)
+    .await?;
 
     crate::seeds::seed_initial_data(pool).await?;
     crate::seeds::seed_handlebars_templates(pool).await?;

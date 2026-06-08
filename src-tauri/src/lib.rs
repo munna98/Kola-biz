@@ -79,6 +79,10 @@ pub fn run() {
             restore_product,
             hard_delete_product,
             get_next_product_code,
+            upload_product_image,
+            get_product_images,
+            delete_product_image,
+            reorder_product_images,
             // Services
             get_next_service_code,
             get_services,
