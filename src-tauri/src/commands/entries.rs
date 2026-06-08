@@ -39,6 +39,7 @@ pub struct PaymentItem {
     pub tax_amount: f64,
     pub remarks: Option<String>,
     pub ledger_id: Option<String>,
+    pub product_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -66,6 +67,7 @@ pub struct CreatePaymentItem {
     pub tax_rate: f64,
     pub remarks: Option<String>,
     pub allocations: Option<Vec<AllocationData>>,
+    pub product_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -122,14 +124,24 @@ pub async fn create_payment(
     .await
     .map_err(|e| e.to_string())?;
 
+    let update_cost_enabled: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'update_payment_to_product_cost'",
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true" || v == "\"true\"")
+    .unwrap_or(false);
+
     // Insert items
     for item in &payment.items {
         let tax_amount = item.amount * (item.tax_rate / 100.0);
         let item_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id, product_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item_id)
         .bind(&voucher_id)
@@ -142,9 +154,25 @@ pub async fn create_payment(
         .bind(1.0)
         .bind(item.amount)
         .bind(&item.account_id)
+        .bind(&item.product_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+        if update_cost_enabled {
+            if let Some(prod_id) = &item.product_id {
+                if !prod_id.trim().is_empty() {
+                    sqlx::query(
+                        "UPDATE products SET cost = COALESCE(cost, 0) + ? WHERE id = ?"
+                    )
+                    .bind(item.amount)
+                    .bind(prod_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                }
+            }
+        }
 
         // Insert Allocations
         if let Some(allocations) = &item.allocations {
@@ -418,7 +446,8 @@ pub(crate) async fn get_payment_items_with_pool(
             vi.tax_rate,
             vi.tax_amount,
             vi.remarks,
-            vi.ledger_id
+            vi.ledger_id,
+            vi.product_id
         FROM voucher_items vi
         LEFT JOIN vouchers v ON vi.voucher_id = v.id
         LEFT JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
@@ -439,6 +468,40 @@ pub async fn delete_payment(
 ) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // Reverse product cost updates if setting is enabled
+    let update_cost_enabled: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'update_payment_to_product_cost'",
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true" || v == "\"true\"")
+    .unwrap_or(false);
+
+    if update_cost_enabled {
+        let items_to_reverse: Vec<(Option<String>, f64)> = sqlx::query_as(
+            "SELECT product_id, amount FROM voucher_items WHERE voucher_id = ? AND product_id IS NOT NULL AND product_id != ''"
+        )
+        .bind(&id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        for (prod_id, amount) in items_to_reverse {
+            if let Some(p_id) = prod_id {
+                sqlx::query(
+                    "UPDATE products SET cost = COALESCE(cost, 0) - ? WHERE id = ?"
+                )
+                .bind(amount)
+                .bind(p_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+        }
+    }
 
     // Get affected invoices before deleting allocations
     let affected_invoices: Vec<String> = sqlx::query_scalar(
@@ -605,6 +668,40 @@ pub async fn update_payment(
             .map_err(|e| e.to_string())?;
     }
 
+    // Reverse old product cost updates if setting is enabled
+    let update_cost_enabled: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'update_payment_to_product_cost'",
+    )
+    .fetch_optional(&mut *tx)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true" || v == "\"true\"")
+    .unwrap_or(false);
+
+    if update_cost_enabled {
+        let items_to_reverse: Vec<(Option<String>, f64)> = sqlx::query_as(
+            "SELECT product_id, amount FROM voucher_items WHERE voucher_id = ? AND product_id IS NOT NULL AND product_id != ''"
+        )
+        .bind(&id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        for (prod_id, amount) in items_to_reverse {
+            if let Some(p_id) = prod_id {
+                sqlx::query(
+                    "UPDATE products SET cost = COALESCE(cost, 0) - ? WHERE id = ?"
+                )
+                .bind(amount)
+                .bind(p_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
     // 4. Delete existing Items and Journal Entries
     sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
         .bind(&id)
@@ -624,8 +721,8 @@ pub async fn update_payment(
         let item_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id, product_id)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item_id)
         .bind(&id)
@@ -638,9 +735,25 @@ pub async fn update_payment(
         .bind(1.0)
         .bind(item.amount)
         .bind(&item.account_id)
+        .bind(&item.product_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+        if update_cost_enabled {
+            if let Some(prod_id) = &item.product_id {
+                if !prod_id.trim().is_empty() {
+                    sqlx::query(
+                        "UPDATE products SET cost = COALESCE(cost, 0) + ? WHERE id = ?"
+                    )
+                    .bind(item.amount)
+                    .bind(prod_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+                }
+            }
+        }
 
         // Insert Allocations
         if let Some(allocations) = &item.allocations {

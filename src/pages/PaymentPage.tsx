@@ -42,7 +42,7 @@ import { VoucherLedgerSection } from '@/components/voucher/VoucherLedgerSection'
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import BillAllocationDialog, { AllocationData } from '@/components/dialogs/BillAllocationDialog';
 import ChartOfAccountDialog from '@/components/dialogs/ChartOfAccountDialog';
-import { AccountGroup, api } from '@/lib/tauri';
+import { AccountGroup, Product, api } from '@/lib/tauri';
 
 interface AccountData {
     id: number;
@@ -63,6 +63,8 @@ export default function PaymentPage() {
     const [payFromAccounts, setPayFromAccounts] = useState<AccountData[]>([]);
     const [payToLedgers, setPayToLedgers] = useState<LedgerAccount[]>([]);
     const [accountGroups, setAccountGroups] = useState<AccountGroup[]>([]); // For Create Dialog
+    const [updatePaymentToProductCost, setUpdatePaymentToProductCost] = useState(false);
+    const [products, setProducts] = useState<Product[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showQuickDialog, setShowQuickDialog] = useState(false);
@@ -86,14 +88,23 @@ export default function PaymentPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [cashBankData, allLedgersData, allGroups] = await Promise.all([
+                const [cashBankData, allLedgersData, allGroups, settingVal] = await Promise.all([
                     invoke<AccountData[]>('get_cash_bank_accounts').catch(() => []),
                     invoke<LedgerAccount[]>('get_chart_of_accounts').catch(() => []),
                     api.accountGroups.list().catch(() => []),
+                    invoke<string | null>('get_app_setting', { key: 'update_payment_to_product_cost' }).catch(() => null),
                 ]);
                 setPayFromAccounts(cashBankData);
                 setPayToLedgers(allLedgersData);
                 setAccountGroups(allGroups);
+
+                const isEnabled = settingVal === 'true';
+                setUpdatePaymentToProductCost(isEnabled);
+
+                if (isEnabled) {
+                    const productList = await api.products.list().catch(() => []);
+                    setProducts(productList.filter(p => p.is_active === 1));
+                }
 
                 if (cashBankData.length > 0 && paymentState.form.account_id === 0) {
                     dispatch(setPaymentAccount({ id: cashBankData[0].id, name: cashBankData[0].name }));
@@ -253,7 +264,8 @@ export default function PaymentPage() {
                     account_id: item.ledger_id || undefined,
                     amount: item.amount,
                     tax_rate: item.tax_rate,
-                    remarks: item.remarks
+                    remarks: item.remarks,
+                    product_id: item.product_id || undefined,
                 }));
             });
 
@@ -543,6 +555,8 @@ export default function PaymentPage() {
                             }, 50);
                         }}
                         onFocusRow={setFocusedRowIndex}
+                        showProductSelect={updatePaymentToProductCost}
+                        products={products}
                         footerRightContent={
                             focusedRowIndex !== null && rowBalances[focusedRowIndex] !== undefined ? (
                                 <div className={`text-xs font-mono font-bold ${rowBalances[focusedRowIndex] >= 0 ? 'text-green-600' : 'text-red-600'}`}>

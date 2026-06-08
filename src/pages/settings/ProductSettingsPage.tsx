@@ -158,6 +158,7 @@ export default function ProductSettingsPage() {
   const [tableColumns, setTableColumns] = useState<ProductTableColumns>(DEFAULT_TABLE_COLUMNS);
   const [dialogFields, setDialogFields] = useState<ProductDialogFields>(DEFAULT_DIALOG_FIELDS);
   const [preventDuplicates, setPreventDuplicates] = useState(false);
+  const [updatePaymentToProductCost, setUpdatePaymentToProductCost] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
@@ -165,14 +166,16 @@ export default function ProductSettingsPage() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [cols, fields, preventDupes] = await Promise.all([
+      const [cols, fields, preventDupes, updateCost] = await Promise.all([
         loadSetting('product_table_columns', DEFAULT_TABLE_COLUMNS),
         loadSetting('product_dialog_fields', DEFAULT_DIALOG_FIELDS),
         invoke<string | null>('get_app_setting', { key: 'prevent_duplicate_product_names' }),
+        invoke<string | null>('get_app_setting', { key: 'update_payment_to_product_cost' }),
       ]);
       setTableColumns(cols);
       setDialogFields(fields);
       setPreventDuplicates(preventDupes === 'true' || preventDupes === '"true"');
+      setUpdatePaymentToProductCost(updateCost === 'true' || updateCost === '"true"');
       setLoading(false);
     })();
   }, []);
@@ -197,6 +200,10 @@ export default function ProductSettingsPage() {
           key: 'prevent_duplicate_product_names',
           value: preventDuplicates ? 'true' : 'false',
         }),
+        invoke('set_app_setting', {
+          key: 'update_payment_to_product_cost',
+          value: updatePaymentToProductCost ? 'true' : 'false',
+        }),
       ]);
       toast.success('Product settings saved');
       setDirty(false);
@@ -212,6 +219,7 @@ export default function ProductSettingsPage() {
     setTableColumns(DEFAULT_TABLE_COLUMNS);
     setDialogFields(DEFAULT_DIALOG_FIELDS);
     setPreventDuplicates(false);
+    setUpdatePaymentToProductCost(false);
     setDirty(true);
   };
 
@@ -275,6 +283,25 @@ export default function ProductSettingsPage() {
                   checked={preventDuplicates}
                   onCheckedChange={(checked) => {
                     setPreventDuplicates(checked);
+                    setDirty(true);
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between px-6 py-3.5 hover:bg-muted/20 transition-colors">
+                <div className="space-y-0.5">
+                  <Label htmlFor="update-payment-cost" className="text-sm font-medium cursor-pointer">
+                    Update Payment to Product Cost
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Add product selection in payment vouchers to update their costs.
+                  </p>
+                </div>
+                <Switch
+                  id="update-payment-cost"
+                  checked={updatePaymentToProductCost}
+                  onCheckedChange={(checked) => {
+                    setUpdatePaymentToProductCost(checked);
                     setDirty(true);
                   }}
                 />

@@ -5,6 +5,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { IconTrash, IconReceipt2 } from '@tabler/icons-react';
 import { VoucherItemsTable } from '@/components/voucher/VoucherItemsTable';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
+import type { Product } from '@/lib/tauri';
 
 interface LedgerAccount {
     id: number;
@@ -28,6 +29,10 @@ export interface VoucherLedgerSectionProps {
     footerRightContent?: React.ReactNode;
     onCreateLedger?: (name: string, index: number) => void;
     onSectionExit?: () => void;
+    /** When true, a Product column is rendered on each line for cost tracking */
+    showProductSelect?: boolean;
+    /** Active products list for the product combobox */
+    products?: Product[];
 }
 
 export function VoucherLedgerSection({
@@ -44,7 +49,9 @@ export function VoucherLedgerSection({
     onFocusRow,
     footerRightContent,
     onCreateLedger,
-    onSectionExit
+    onSectionExit,
+    showProductSelect = false,
+    products = [],
 }: VoucherLedgerSectionProps) {
 
     // Internal row navigation handling
@@ -54,7 +61,9 @@ export function VoucherLedgerSection({
     });
 
     const gridStyle = {
-        gridTemplateColumns: '24px 5fr 2fr 4fr 32px',
+        gridTemplateColumns: showProductSelect
+            ? '24px 4fr 3fr 2fr 4fr 32px'
+            : '24px 5fr 2fr 4fr 32px',
         display: 'grid',
         gap: '0.5rem',
         alignItems: 'center'
@@ -66,6 +75,7 @@ export function VoucherLedgerSection({
             <div className="flex justify-between items-center px-1">
                 <span>Account/Ledger</span>
             </div>
+            {showProductSelect && <div className="px-1">Product</div>}
             <div className="text-right px-1">Amount</div>
             <div className="px-1">Remarks</div>
             <div className="w-8"></div>
@@ -114,6 +124,26 @@ export function VoucherLedgerSection({
                             }}
                         />
                     </div>
+
+                    {/* Product Selection (conditional) */}
+                    {showProductSelect && (
+                        <div>
+                            <Combobox
+                                value={item.product_id || ''}
+                                options={[
+                                    { value: '', label: '— Clear —' },
+                                    ...products.map(p => ({
+                                        value: p.id,
+                                        label: `${p.code} - ${p.name}`,
+                                    }))
+                                ]}
+                                onChange={(val) => onUpdateItem(index, 'product_id', val === '' ? undefined : val)}
+                                placeholder="Link product..."
+                                searchPlaceholder="Search products..."
+                                disabled={isReadOnly}
+                            />
+                        </div>
+                    )}
 
                     {/* Amount */}
                     <div className="flex items-start gap-1">

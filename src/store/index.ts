@@ -352,6 +352,7 @@ export interface PaymentItem {
   tax_rate: number;
   remarks?: string;
   allocations?: AllocationData[];
+  product_id?: string;
 }
 
 export interface PaymentState extends VoucherNavigationState {
