@@ -83,6 +83,7 @@ pub fn run() {
             get_product_images,
             delete_product_image,
             reorder_product_images,
+            sync_all_to_r2,
             // Services
             get_next_service_code,
             get_services,

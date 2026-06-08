@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload, IconTag, IconPhoto } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload, IconTag, IconPhoto, IconCloudUpload, IconLink } from '@tabler/icons-react';
 import { api, Product, Unit, ProductGroup, ProductBrand, GstTaxSlab } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
@@ -44,12 +44,15 @@ export default function ProductsPage() {
   const [barcodeProduct, setBarcodeProduct] = useState<Product | null>(null);
   const [imagesDialogOpen, setImagesDialogOpen] = useState(false);
   const [imagesProduct, setImagesProduct] = useState<Product | null>(null);
+  const [r2Enabled, setR2Enabled] = useState(false);
+  const [r2WebsiteUrl, setR2WebsiteUrl] = useState('');
+  const [syncing, setSyncing] = useState(false);
   const currentUser = useSelector((state: RootState) => state.app.currentUser);
 
   const load = async () => {
     try {
       setLoading(true);
-      const [p, u, g, b, gstSettings, slabs, masterSetting, colSetting] = await Promise.all([
+      const [p, u, g, b, gstSettings, slabs, masterSetting, colSetting, r2En, r2Wu] = await Promise.all([
         showDeleted ? api.products.listDeleted() : api.products.list(),
         api.units.list(),
         api.productGroups.list(),
@@ -58,6 +61,8 @@ export default function ProductsPage() {
         api.gst.getSlabs(),
         invoke<string | null>('get_app_setting', { key: 'enable_master_products' }),
         invoke<string | null>('get_app_setting', { key: 'product_table_columns' }),
+        invoke<string | null>('get_app_setting', { key: 'r2_sync_enabled' }),
+        invoke<string | null>('get_app_setting', { key: 'r2_website_url' }),
       ]);
       setProducts(p);
       setUnits(u);
@@ -69,6 +74,8 @@ export default function ProductsPage() {
       if (colSetting) {
         try { setColumnSettings({ ...DEFAULT_TABLE_COLUMNS, ...JSON.parse(colSetting) }); } catch { /* ignore */ }
       }
+      setR2Enabled(r2En === 'true');
+      setR2WebsiteUrl(r2Wu?.trim().replace(/\/$/, '') || '');
     } catch (error) {
       toast.error('Failed to load data');
       console.error('Load error:', error);
@@ -131,6 +138,28 @@ export default function ProductsPage() {
   const handleUnitsChange = () => load();
   const handleGroupsChange = () => load();
   const handleBrandsChange = () => load();
+
+  const handleSyncCatalog = async () => {
+    setSyncing(true);
+    try {
+      await api.products.syncAllToR2();
+      toast.success('Catalog synced to R2 successfully!');
+    } catch (error: any) {
+      toast.error(error?.toString() || 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleCopyLink = (productId: string) => {
+    const base = r2WebsiteUrl || '';
+    const url = base ? `${base}/${productId}` : productId;
+    navigator.clipboard.writeText(url).then(() => {
+      toast.success('Product link copied!');
+    }).catch(() => {
+      toast.error('Failed to copy link');
+    });
+  };
 
   // Apply search + category filter
   const filteredProducts = products.filter(p => {
@@ -220,6 +249,22 @@ export default function ProductsPage() {
                   </TooltipTrigger>
                   <TooltipContent>Manage Units</TooltipContent>
                 </Tooltip>
+                {r2Enabled && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="outline"
+                        onClick={handleSyncCatalog}
+                        disabled={syncing}
+                        id="sync-catalog-btn"
+                      >
+                        <IconCloudUpload size={16} className={syncing ? 'animate-pulse' : ''} />
+                        {syncing ? 'Syncing…' : 'Sync Catalog'}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Upload all active products &amp; images to Cloudflare R2</TooltipContent>
+                  </Tooltip>
+                )}
                 <Button onClick={handleOpenDialog}>
                   <IconPlus size={16} /> Add Product
                 </Button>
@@ -384,6 +429,16 @@ export default function ProductsPage() {
                               </TooltipTrigger>
                               <TooltipContent>Manage Images</TooltipContent>
                             </Tooltip>
+                            {r2Enabled && (
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button size="sm" variant="ghost" onClick={() => handleCopyLink(p.id)} title="Copy public link">
+                                    <IconLink size={16} />
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Copy Public Link</TooltipContent>
+                              </Tooltip>
+                            )}
                             <Button size="sm" variant="ghost" onClick={() => handleEdit(p)}><IconEdit size={16} /></Button>
                             <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.id)}><IconTrash size={16} /></Button>
                           </>

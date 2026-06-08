@@ -4,7 +4,8 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
-import { IconDeviceFloppy, IconTable, IconListDetails, IconLock, IconAdjustments } from '@tabler/icons-react';
+import { Input } from '@/components/ui/input';
+import { IconDeviceFloppy, IconTable, IconListDetails, IconLock, IconAdjustments, IconCloud, IconEye, IconEyeOff } from '@tabler/icons-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -163,19 +164,44 @@ export default function ProductSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
 
+  // R2 / Public pages settings
+  const [r2Enabled, setR2Enabled] = useState(false);
+  const [r2EndpointUrl, setR2EndpointUrl] = useState('');
+  const [r2BucketName, setR2BucketName] = useState('');
+  const [r2AccessKeyId, setR2AccessKeyId] = useState('');
+  const [r2SecretAccessKey, setR2SecretAccessKey] = useState('');
+  const [r2PublicUrl, setR2PublicUrl] = useState('');
+  const [r2WebsiteUrl, setR2WebsiteUrl] = useState('');
+  const [showSecret, setShowSecret] = useState(false);
+
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [cols, fields, preventDupes, updateCost] = await Promise.all([
+      const [cols, fields, preventDupes, updateCost,
+        r2En, r2Ep, r2Bn, r2Ak, r2Sk, r2Pu, r2Wu] = await Promise.all([
         loadSetting('product_table_columns', DEFAULT_TABLE_COLUMNS),
         loadSetting('product_dialog_fields', DEFAULT_DIALOG_FIELDS),
         invoke<string | null>('get_app_setting', { key: 'prevent_duplicate_product_names' }),
         invoke<string | null>('get_app_setting', { key: 'update_payment_to_product_cost' }),
+        invoke<string | null>('get_app_setting', { key: 'r2_sync_enabled' }),
+        invoke<string | null>('get_app_setting', { key: 'r2_endpoint_url' }),
+        invoke<string | null>('get_app_setting', { key: 'r2_bucket_name' }),
+        invoke<string | null>('get_app_setting', { key: 'r2_access_key_id' }),
+        invoke<string | null>('get_app_setting', { key: 'r2_secret_access_key' }),
+        invoke<string | null>('get_app_setting', { key: 'r2_public_url' }),
+        invoke<string | null>('get_app_setting', { key: 'r2_website_url' }),
       ]);
       setTableColumns(cols);
       setDialogFields(fields);
       setPreventDuplicates(preventDupes === 'true' || preventDupes === '"true"');
       setUpdatePaymentToProductCost(updateCost === 'true' || updateCost === '"true"');
+      setR2Enabled(r2En === 'true');
+      setR2EndpointUrl(r2Ep || '');
+      setR2BucketName(r2Bn || '');
+      setR2AccessKeyId(r2Ak || '');
+      setR2SecretAccessKey(r2Sk || '');
+      setR2PublicUrl(r2Pu || '');
+      setR2WebsiteUrl(r2Wu || '');
       setLoading(false);
     })();
   }, []);
@@ -196,14 +222,15 @@ export default function ProductSettingsPage() {
       await Promise.all([
         saveSetting('product_table_columns', tableColumns),
         saveSetting('product_dialog_fields', dialogFields),
-        invoke('set_app_setting', {
-          key: 'prevent_duplicate_product_names',
-          value: preventDuplicates ? 'true' : 'false',
-        }),
-        invoke('set_app_setting', {
-          key: 'update_payment_to_product_cost',
-          value: updatePaymentToProductCost ? 'true' : 'false',
-        }),
+        invoke('set_app_setting', { key: 'prevent_duplicate_product_names', value: preventDuplicates ? 'true' : 'false' }),
+        invoke('set_app_setting', { key: 'update_payment_to_product_cost', value: updatePaymentToProductCost ? 'true' : 'false' }),
+        invoke('set_app_setting', { key: 'r2_sync_enabled', value: r2Enabled ? 'true' : 'false' }),
+        invoke('set_app_setting', { key: 'r2_endpoint_url', value: r2EndpointUrl }),
+        invoke('set_app_setting', { key: 'r2_bucket_name', value: r2BucketName }),
+        invoke('set_app_setting', { key: 'r2_access_key_id', value: r2AccessKeyId }),
+        invoke('set_app_setting', { key: 'r2_secret_access_key', value: r2SecretAccessKey }),
+        invoke('set_app_setting', { key: 'r2_public_url', value: r2PublicUrl }),
+        invoke('set_app_setting', { key: 'r2_website_url', value: r2WebsiteUrl }),
       ]);
       toast.success('Product settings saved');
       setDirty(false);
@@ -220,6 +247,13 @@ export default function ProductSettingsPage() {
     setDialogFields(DEFAULT_DIALOG_FIELDS);
     setPreventDuplicates(false);
     setUpdatePaymentToProductCost(false);
+    setR2Enabled(false);
+    setR2EndpointUrl('');
+    setR2BucketName('');
+    setR2AccessKeyId('');
+    setR2SecretAccessKey('');
+    setR2PublicUrl('');
+    setR2WebsiteUrl('');
     setDirty(true);
   };
 
@@ -305,6 +339,108 @@ export default function ProductSettingsPage() {
                     setDirty(true);
                   }}
                 />
+              </div>
+            </div>
+          </section>
+
+          {/* ── Cloudflare R2 Sync Settings ── */}
+          <section className="bg-card border rounded-lg overflow-hidden lg:col-span-2">
+            <div className="flex items-center gap-3 px-6 py-4 border-b bg-muted/30">
+              <IconCloud size={18} className="text-primary" />
+              <div>
+                <h2 className="text-base font-semibold">Public Product Pages</h2>
+                <p className="text-xs text-muted-foreground">
+                  Sync your vehicle catalog to Cloudflare R2 so your public website can display it without a live backend.
+                </p>
+              </div>
+            </div>
+
+            <div className="divide-y">
+              {/* Toggle */}
+              <div className="flex items-center justify-between px-6 py-3.5 hover:bg-muted/20 transition-colors">
+                <div className="space-y-0.5">
+                  <Label htmlFor="r2-enabled" className="text-sm font-medium cursor-pointer">
+                    Enable public product pages
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Shows Sync Catalog button and Copy Link action on product rows.
+                  </p>
+                </div>
+                <Switch
+                  id="r2-enabled"
+                  checked={r2Enabled}
+                  onCheckedChange={(checked) => { setR2Enabled(checked); setDirty(true); }}
+                />
+              </div>
+
+              {/* Credential fields — always shown so user can fill them ahead of enabling */}
+              <div className="px-6 py-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">R2 Endpoint URL</Label>
+                  <Input
+                    placeholder="https://<account-id>.r2.cloudflarestorage.com"
+                    value={r2EndpointUrl}
+                    onChange={e => { setR2EndpointUrl(e.target.value); setDirty(true); }}
+                    className="h-8 text-sm font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Bucket Name</Label>
+                  <Input
+                    placeholder="my-showroom-bucket"
+                    value={r2BucketName}
+                    onChange={e => { setR2BucketName(e.target.value); setDirty(true); }}
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Access Key ID</Label>
+                  <Input
+                    placeholder="Access Key ID"
+                    value={r2AccessKeyId}
+                    onChange={e => { setR2AccessKeyId(e.target.value); setDirty(true); }}
+                    className="h-8 text-sm font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Secret Access Key</Label>
+                  <div className="relative">
+                    <Input
+                      type={showSecret ? 'text' : 'password'}
+                      placeholder="Secret Access Key"
+                      value={r2SecretAccessKey}
+                      onChange={e => { setR2SecretAccessKey(e.target.value); setDirty(true); }}
+                      className="h-8 text-sm font-mono pr-9"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSecret(p => !p)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showSecret ? <IconEyeOff size={14} /> : <IconEye size={14} />}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">R2 Public URL</Label>
+                  <Input
+                    placeholder="https://pub-xxxx.r2.dev"
+                    value={r2PublicUrl}
+                    onChange={e => { setR2PublicUrl(e.target.value); setDirty(true); }}
+                    className="h-8 text-sm font-mono"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Used to construct public image URLs (R2 custom domain or dev URL).</p>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs font-medium">Website URL</Label>
+                  <Input
+                    placeholder="https://myshowroom.com/vehicles"
+                    value={r2WebsiteUrl}
+                    onChange={e => { setR2WebsiteUrl(e.target.value); setDirty(true); }}
+                    className="h-8 text-sm font-mono"
+                  />
+                  <p className="text-[11px] text-muted-foreground">Base URL for shareable product page links (e.g. website/&#123;product_id&#125;).</p>
+                </div>
               </div>
             </div>
           </section>

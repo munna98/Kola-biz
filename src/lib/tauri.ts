@@ -460,6 +460,7 @@ export const api = {
     getImages: (productId: string) => invoke<ProductImage[]>('get_product_images', { productId }),
     deleteImage: (id: string) => invoke<void>('delete_product_image', { id }),
     reorderImages: (imageIds: string[]) => invoke<void>('reorder_product_images', { imageIds }),
+    syncAllToR2: () => invoke<void>('sync_all_to_r2'),
   },
   productGroups: {
     list: () => invoke<ProductGroup[]>('get_product_groups'),

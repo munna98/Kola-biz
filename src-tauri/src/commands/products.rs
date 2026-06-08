@@ -6,6 +6,10 @@ use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
+use aws_sdk_s3::config::{Credentials, Region};
+use aws_sdk_s3::primitives::ByteStream;
+use image::GenericImageView;
+
 // ============= PRODUCT GROUPS =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct ProductGroup {
@@ -1425,5 +1429,303 @@ pub async fn reorder_product_images(
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+// ============= R2 / SPA SYNC =============
+
+/// Resize an image to fit within a 1920×1920 boundary (preserving aspect ratio)
+/// and return the bytes encoded as WebP.
+fn optimize_image_to_webp(raw: &[u8]) -> Result<Vec<u8>, String> {
+    let img = image::load_from_memory(raw)
+        .map_err(|e| format!("Failed to decode image: {}", e))?;
+
+    let (w, h) = img.dimensions();
+    let max_side: u32 = 1920;
+
+    let resized = if w > max_side || h > max_side {
+        img.resize(max_side, max_side, image::imageops::FilterType::Lanczos3)
+    } else {
+        img
+    };
+
+    let mut out: Vec<u8> = Vec::new();
+    resized
+        .write_to(
+            &mut std::io::Cursor::new(&mut out),
+            image::ImageFormat::WebP,
+        )
+        .map_err(|e| format!("Failed to encode to WebP: {}", e))?;
+
+    Ok(out)
+}
+
+/// Build an S3 client targeting the configured Cloudflare R2 endpoint.
+async fn build_r2_client(
+    endpoint_url: &str,
+    access_key_id: &str,
+    secret_access_key: &str,
+) -> aws_sdk_s3::Client {
+    let creds = Credentials::new(
+        access_key_id,
+        secret_access_key,
+        None,
+        None,
+        "r2-credentials",
+    );
+
+    let config = aws_sdk_s3::Config::builder()
+        .credentials_provider(creds)
+        .region(Region::new("auto"))
+        .endpoint_url(endpoint_url)
+        .force_path_style(true)
+        .build();
+
+    aws_sdk_s3::Client::from_conf(config)
+}
+
+/// Check if a given key already exists in the R2 bucket (head_object).
+async fn r2_object_exists(
+    client: &aws_sdk_s3::Client,
+    bucket: &str,
+    key: &str,
+) -> bool {
+    client
+        .head_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await
+        .is_ok()
+}
+
+#[tauri::command]
+pub async fn sync_all_to_r2(
+    _app_handle: tauri::AppHandle,
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<(), String> {
+    // ── 1. Load R2 config from app_settings ──
+    let pool = registry.active_pool().await?;
+
+    let get_setting = |key: &'static str| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_scalar::<_, String>(
+                "SELECT setting_value FROM app_settings WHERE setting_key = ?",
+            )
+            .bind(key)
+            .fetch_optional(&pool)
+            .await
+            .ok()
+            .flatten()
+        }
+    };
+
+    let enabled = get_setting("r2_sync_enabled").await.unwrap_or_default();
+    if enabled != "true" {
+        return Err("Public product pages feature is disabled. Enable it in Product Settings first.".to_string());
+    }
+
+    let endpoint_url = get_setting("r2_endpoint_url").await
+        .or_else(|| std::env::var("R2_ENDPOINT_URL").ok())
+        .ok_or("R2_ENDPOINT_URL is not configured")?;
+
+    let bucket = get_setting("r2_bucket_name").await
+        .or_else(|| std::env::var("R2_BUCKET_NAME").ok())
+        .ok_or("R2_BUCKET_NAME is not configured")?;
+
+    let access_key_id = get_setting("r2_access_key_id").await
+        .or_else(|| std::env::var("R2_ACCESS_KEY_ID").ok())
+        .ok_or("R2_ACCESS_KEY_ID is not configured")?;
+
+    let secret_access_key = get_setting("r2_secret_access_key").await
+        .or_else(|| std::env::var("R2_SECRET_ACCESS_KEY").ok())
+        .ok_or("R2_SECRET_ACCESS_KEY is not configured")?;
+
+    let public_url = get_setting("r2_public_url").await
+        .or_else(|| std::env::var("R2_PUBLIC_URL").ok())
+        .ok_or("R2_PUBLIC_URL is not configured")?;
+    let public_url = public_url.trim_end_matches('/').to_string();
+
+    // ── 2. Fetch company info ──
+    let active_company_id = registry
+        .active_company_id()
+        .await
+        .ok_or("No active company selected")?;
+
+    let company: crate::company_db::CompanyInfo = sqlx::query_as(
+        "SELECT id, name, slug, db_path, is_deleted, is_primary, is_secondary, created_at, last_opened
+         FROM companies WHERE id = ?",
+    )
+    .bind(&active_company_id)
+    .fetch_optional(&registry.master_pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or("Active company not found")?;
+
+    // Company name used as "location" in the JSON payload
+    let company_name = company.name.clone();
+
+    // Fetch company profile for the actual company name display
+    let company_display_name: Option<String> = sqlx::query_scalar(
+        "SELECT company_name FROM company_profile LIMIT 1",
+    )
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten();
+
+    let location = company_display_name.unwrap_or_else(|| company_name.clone());
+
+    // ── 3. Build S3 / R2 client ──
+    let client = build_r2_client(&endpoint_url, &access_key_id, &secret_access_key).await;
+
+    // ── 4. Fetch all active products ──
+    #[derive(sqlx::FromRow)]
+    struct ProductRow {
+        id: String,
+        name: String,
+        sales_rate: f64,
+        vehicle_manufacturer: Option<String>,
+        vehicle_model: Option<String>,
+        vehicle_year: Option<i64>,
+        vehicle_odometer: Option<f64>,
+        vehicle_fuel_type: Option<String>,
+        vehicle_transmission: Option<String>,
+        vehicle_owner: Option<String>,
+        vehicle_color: Option<String>,
+    }
+
+    let products: Vec<ProductRow> = sqlx::query_as(
+        "SELECT id, name, sales_rate,
+                vehicle_manufacturer, vehicle_model, vehicle_year,
+                vehicle_odometer, vehicle_fuel_type, vehicle_transmission,
+                vehicle_owner, vehicle_color
+         FROM products
+         WHERE deleted_at IS NULL AND is_active = 1",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // ── 5. Process each product ──
+    for product in &products {
+        // Fetch images for this product
+        #[derive(sqlx::FromRow)]
+        struct ImageRow {
+            id: String,
+            image_path: String,
+        }
+
+        let images: Vec<ImageRow> = sqlx::query_as(
+            "SELECT id, image_path FROM product_images
+             WHERE product_id = ?
+             ORDER BY display_order ASC, created_at ASC",
+        )
+        .bind(&product.id)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        let mut public_image_urls: Vec<String> = Vec::new();
+
+        for img in &images {
+            let r2_key = format!(
+                "product_images/{}/{}/{}.webp",
+                company.slug, product.id, img.id
+            );
+            let public_img_url = format!("{}/{}", public_url, r2_key);
+
+            // Smart sync: skip if already exists in R2
+            if r2_object_exists(&client, &bucket, &r2_key).await {
+                public_image_urls.push(public_img_url);
+                continue;
+            }
+
+            // Read & optimize
+            let raw = std::fs::read(&img.image_path)
+                .map_err(|e| format!("Failed to read image {}: {}", img.image_path, e))?;
+
+            let webp_bytes = optimize_image_to_webp(&raw)?;
+
+            // Upload to R2
+            client
+                .put_object()
+                .bucket(&bucket)
+                .key(&r2_key)
+                .content_type("image/webp")
+                .body(ByteStream::from(webp_bytes))
+                .send()
+                .await
+                .map_err(|e| format!("Failed to upload image {}: {}", r2_key, e))?;
+
+            public_image_urls.push(public_img_url);
+        }
+
+        // ── 6. Build the JSON payload ──
+        let title = {
+            let parts: Vec<String> = [
+                product.vehicle_manufacturer.clone(),
+                product.vehicle_model.clone(),
+                product.vehicle_year.map(|y| y.to_string()),
+            ]
+            .into_iter()
+            .flatten()
+            .collect();
+            if parts.is_empty() {
+                product.name.clone()
+            } else {
+                parts.join(" ")
+            }
+        };
+
+        let mileage_str = product.vehicle_odometer
+            .map(|km| format!("{} km", km))
+            .unwrap_or_default();
+
+        let owner_str = product.vehicle_owner
+            .as_deref()
+            .map(|o| match o {
+                "1" => "1st".to_string(),
+                "2" => "2nd".to_string(),
+                "3" => "3rd".to_string(),
+                other => format!("{} Owner", other),
+            })
+            .unwrap_or_default();
+
+        let payload = serde_json::json!({
+            "id": product.id,
+            "title": title,
+            "price": product.sales_rate,
+            "location": location,
+            "specs": {
+                "manufacturer": product.vehicle_manufacturer,
+                "model": product.vehicle_model,
+                "year": product.vehicle_year.map(|y| y.to_string()),
+                "mileage": mileage_str,
+                "fuel": product.vehicle_fuel_type,
+                "transmission": product.vehicle_transmission,
+                "owners": owner_str,
+                "color": product.vehicle_color,
+            },
+            "images": public_image_urls,
+        });
+
+        let json_str = serde_json::to_string_pretty(&payload)
+            .map_err(|e| format!("Failed to serialize JSON: {}", e))?;
+
+        // ── 7. Upload JSON to R2 (always refreshed) ──
+        let json_key = format!("products/{}.json", product.id);
+        client
+            .put_object()
+            .bucket(&bucket)
+            .key(&json_key)
+            .content_type("application/json")
+            .body(ByteStream::from(json_str.into_bytes()))
+            .send()
+            .await
+            .map_err(|e| format!("Failed to upload JSON for product {}: {}", product.id, e))?;
+    }
+
     Ok(())
 }
