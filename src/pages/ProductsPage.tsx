@@ -4,7 +4,14 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload, IconTag, IconPhoto, IconCloudUpload, IconLink } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload, IconTag, IconPhoto, IconCloudUpload, IconLink, IconDotsVertical } from '@tabler/icons-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { api, Product, Unit, ProductGroup, ProductBrand, GstTaxSlab } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
@@ -153,7 +160,7 @@ export default function ProductsPage() {
 
   const handleCopyLink = (productId: string) => {
     const base = r2WebsiteUrl || '';
-    const url = base ? `${base}/${productId}` : productId;
+    const url = base ? `${base}/?id=${productId}` : productId;
     navigator.clipboard.writeText(url).then(() => {
       toast.success('Product link copied!');
     }).catch(() => {
@@ -259,10 +266,9 @@ export default function ProductsPage() {
                         id="sync-catalog-btn"
                       >
                         <IconCloudUpload size={16} className={syncing ? 'animate-pulse' : ''} />
-                        {syncing ? 'Syncing…' : 'Sync Catalog'}
                       </Button>
                     </TooltipTrigger>
-                    <TooltipContent>Upload all active products &amp; images to Cloudflare R2</TooltipContent>
+                    <TooltipContent>Sync Catalog</TooltipContent>
                   </Tooltip>
                 )}
                 <Button onClick={handleOpenDialog}>
@@ -414,40 +420,57 @@ export default function ProductsPage() {
                         </td>
                       )}
                       {columnSettings.vehicle_color && <td className="p-3 text-sm">{p.vehicle_color || '-'}</td>}
-                      <td className="p-3 flex gap-2">
-                        {!showDeleted ? (
-                          <>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button size="sm" variant="ghost" onClick={() => { setBarcodeProduct(p); setBarcodeDialogOpen(true); }}><IconBarcode size={16} /></Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Print Barcode</TooltipContent>
-                            </Tooltip>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Button size="sm" variant="ghost" onClick={() => { setImagesProduct(p); setImagesDialogOpen(true); }}><IconPhoto size={16} /></Button>
-                              </TooltipTrigger>
-                              <TooltipContent>Manage Images</TooltipContent>
-                            </Tooltip>
-                            {r2Enabled && (
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button size="sm" variant="ghost" onClick={() => handleCopyLink(p.id)} title="Copy public link">
-                                    <IconLink size={16} />
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>Copy Public Link</TooltipContent>
-                              </Tooltip>
+                      <td className="p-3">
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                              <IconDotsVertical size={16} />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {!showDeleted ? (
+                              <>
+                                <DropdownMenuItem onClick={() => handleEdit(p)}>
+                                  <IconEdit size={14} className="mr-2" /> Edit
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setBarcodeProduct(p); setBarcodeDialogOpen(true); }}>
+                                  <IconBarcode size={14} className="mr-2" /> Print Barcode
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setImagesProduct(p); setImagesDialogOpen(true); }}>
+                                  <IconPhoto size={14} className="mr-2" /> Manage Images
+                                </DropdownMenuItem>
+                                {r2Enabled && (
+                                  <DropdownMenuItem onClick={() => handleCopyLink(p.id)}>
+                                    <IconLink size={14} className="mr-2" /> Copy Public Link
+                                  </DropdownMenuItem>
+                                )}
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={() => handleDelete(p.id)}
+                                >
+                                  <IconTrash size={14} className="mr-2" /> Move to Recycle Bin
+                                </DropdownMenuItem>
+                              </>
+                            ) : (
+                              <>
+                                <DropdownMenuItem
+                                  className="text-blue-600 focus:text-blue-600"
+                                  onClick={() => handleRestore(p.id)}
+                                >
+                                  <IconRefresh size={14} className="mr-2" /> Restore
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  className="text-destructive focus:text-destructive"
+                                  onClick={() => handleHardDelete(p.id)}
+                                >
+                                  <IconTrashFilled size={14} className="mr-2" /> Delete Permanently
+                                </DropdownMenuItem>
+                              </>
                             )}
-                            <Button size="sm" variant="ghost" onClick={() => handleEdit(p)}><IconEdit size={16} /></Button>
-                            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(p.id)}><IconTrash size={16} /></Button>
-                          </>
-                        ) : (
-                          <>
-                            <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-700" onClick={() => handleRestore(p.id)}><IconRefresh size={16} /></Button>
-                            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleHardDelete(p.id)}><IconTrashFilled size={16} /></Button>
-                          </>
-                        )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </td>
                     </tr>
                   );

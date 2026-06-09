@@ -765,7 +765,7 @@ async fn get_purchase_invoice_data(
                 obj.insert("total".to_string(), json!(round2(total)));
 
                 // Add less_quantity field (count * deduction_per_unit)
-                let less_quantity = (item.count as f64) * item.deduction_per_unit;
+                let less_quantity = round2((item.count as f64) * item.deduction_per_unit);
                 obj.insert("less_quantity".to_string(), json!(less_quantity));
 
                 // Inject HSN code and unit from product data
@@ -1055,7 +1055,7 @@ async fn get_sales_invoice_data(
                 obj.insert("total".to_string(), json!(round2(total)));
 
                 // Add less_quantity field (count * deduction_per_unit)
-                let less_quantity = (item.count as f64) * item.deduction_per_unit;
+                let less_quantity = round2((item.count as f64) * item.deduction_per_unit);
                 obj.insert("less_quantity".to_string(), json!(less_quantity));
 
                 // Inject HSN code and unit from product data
@@ -1399,7 +1399,7 @@ async fn get_sales_quotation_data(
                 obj.insert("total".to_string(), json!(round2(total)));
 
                 // Add less_quantity field (count * deduction_per_unit)
-                let less_quantity = (item.count as f64) * item.deduction_per_unit;
+                let less_quantity = round2((item.count as f64) * item.deduction_per_unit);
                 obj.insert("less_quantity".to_string(), json!(less_quantity));
 
                 // Inject HSN code and unit from product data

@@ -380,6 +380,7 @@ export default function ProductDialog({
       setLoading(true);
       const payload: CreateProduct = {
         ...form,
+        cost: (!product && (!form.cost || form.cost === 0)) ? form.purchase_rate : form.cost,
         is_master: isMaster,
         conversions: normalizedConversions
       };

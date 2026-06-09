@@ -788,9 +788,13 @@ pub async fn get_products(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Pr
 #[tauri::command]
 pub async fn create_product(
     registry: State<'_, Arc<DbRegistry>>,
-    product: CreateProduct,
+    mut product: CreateProduct,
 ) -> Result<Product, String> {
     let pool = registry.active_pool().await?;
+
+    if product.cost.is_none() || product.cost == Some(0.0) {
+        product.cost = Some(product.purchase_rate);
+    }
 
     // Check for duplicate names if setting is enabled
     let prevent_duplicates: i64 = sqlx::query_scalar(
@@ -1475,6 +1479,7 @@ async fn build_r2_client(
     );
 
     let config = aws_sdk_s3::Config::builder()
+        .behavior_version(aws_sdk_s3::config::BehaviorVersion::latest())
         .credentials_provider(creds)
         .region(Region::new("auto"))
         .endpoint_url(endpoint_url)
