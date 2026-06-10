@@ -2313,10 +2313,29 @@ pub async fn get_previous_voucher_id(
     current_id: String,
 ) -> Result<Option<String>, String> {
     let pool = registry.active_pool().await?;
+    let current_no: Option<String> = sqlx::query_scalar(
+        "SELECT voucher_no FROM vouchers WHERE id = ?"
+    )
+    .bind(&current_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let current_no = match current_no {
+        Some(no) => no,
+        None => return Ok(None),
+    };
+
     sqlx::query_scalar::<_, String>(
-        "SELECT id FROM vouchers WHERE voucher_type = ? AND id < ? AND deleted_at IS NULL ORDER BY id DESC LIMIT 1",
+        "SELECT id FROM vouchers \
+         WHERE voucher_type = ? \
+           AND deleted_at IS NULL \
+           AND (voucher_no < ? OR (voucher_no = ? AND id < ?)) \
+         ORDER BY voucher_no DESC, id DESC LIMIT 1",
     )
     .bind(voucher_type)
+    .bind(&current_no)
+    .bind(&current_no)
     .bind(current_id)
     .fetch_optional(&pool)
     .await
@@ -2330,10 +2349,29 @@ pub async fn get_next_voucher_id(
     current_id: String,
 ) -> Result<Option<String>, String> {
     let pool = registry.active_pool().await?;
+    let current_no: Option<String> = sqlx::query_scalar(
+        "SELECT voucher_no FROM vouchers WHERE id = ?"
+    )
+    .bind(&current_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let current_no = match current_no {
+        Some(no) => no,
+        None => return Ok(None),
+    };
+
     sqlx::query_scalar::<_, String>(
-        "SELECT id FROM vouchers WHERE voucher_type = ? AND id > ? AND deleted_at IS NULL ORDER BY id ASC LIMIT 1",
+        "SELECT id FROM vouchers \
+         WHERE voucher_type = ? \
+           AND deleted_at IS NULL \
+           AND (voucher_no > ? OR (voucher_no = ? AND id > ?)) \
+         ORDER BY voucher_no ASC, id ASC LIMIT 1",
     )
     .bind(voucher_type)
+    .bind(&current_no)
+    .bind(&current_no)
     .bind(current_id)
     .fetch_optional(&pool)
     .await

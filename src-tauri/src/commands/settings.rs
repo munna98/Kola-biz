@@ -629,3 +629,211 @@ pub async fn preview_voucher_number(
 
     Ok(result)
 }
+
+// ============= VOUCHER NUMBER REASSIGNMENT =============
+
+/// Derive the Indian financial year string from a "YYYY-MM-DD" date string.
+/// April–March cycle: e.g. "2026-01-15" → "25-26", "2026-06-01" → "26-27"
+fn financial_year_from_date(date_str: &str) -> String {
+    let year: i32 = date_str.get(..4).and_then(|s| s.parse().ok()).unwrap_or(2024);
+    let month: u32 = date_str.get(5..7).and_then(|s| s.parse().ok()).unwrap_or(1);
+    if month >= 4 {
+        format!("{}-{}", year % 100, (year + 1) % 100)
+    } else {
+        format!("{}-{}", (year - 1) % 100, year % 100)
+    }
+}
+
+/// Returns the (start, end) date strings "YYYY-MM-DD" for the current Indian financial year.
+fn current_fy_range() -> (String, String) {
+    use chrono::{Datelike, FixedOffset, Utc};
+    let now = Utc::now().with_timezone(&FixedOffset::east_opt(5 * 3600 + 1800).unwrap());
+    let year = now.year();
+    let month = now.month();
+    let fy_start_year = if month >= 4 { year } else { year - 1 };
+    (
+        format!("{}-04-01", fy_start_year),
+        format!("{}-03-31", fy_start_year + 1),
+    )
+}
+
+/// Reassign voucher numbers for a given voucher type within the **current Indian
+/// financial year** (April 1 – March 31), ordering by invoice date ASC then id ASC.
+///
+/// Three-phase, collision-free strategy:
+///   Phase 1 — Fetch ALL non-deleted vouchers (saving their current voucher_no),
+///              then stamp every one with a temp unique placeholder to free the
+///              UNIQUE index completely.
+///   Phase 2 — Assign sequential numbers (1, 2, 3 …) to current-FY vouchers
+///              sorted by voucher_date ASC, id ASC.
+///   Phase 3 — Restore the original voucher_no to all non-FY vouchers.
+///
+/// After committing, `next_number` in `voucher_sequences` is set to
+/// (total non-deleted count + 1) so future vouchers continue correctly.
+///
+/// Returns the count of current-FY vouchers that were renumbered.
+#[tauri::command]
+pub async fn reassign_voucher_numbers(
+    registry: State<'_, Arc<DbRegistry>>,
+    voucher_type: String,
+) -> Result<u64, String> {
+    const ALLOWED: &[&str] = &[
+        "sales_invoice",
+        "sales_quotation",
+        "purchase_invoice",
+        "sales_return",
+        "purchase_return",
+    ];
+    if !ALLOWED.contains(&voucher_type.as_str()) {
+        return Err(format!(
+            "Voucher type '{}' does not support number reassignment",
+            voucher_type
+        ));
+    }
+
+    let (fy_start, fy_end) = current_fy_range();
+
+    let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // Fetch sequence config
+    #[derive(sqlx::FromRow)]
+    struct SeqConfig {
+        prefix: String,
+        suffix: String,
+        separator: String,
+        padding: i64,
+        include_financial_year: bool,
+    }
+    let seq = sqlx::query_as::<_, SeqConfig>(
+        "SELECT prefix,
+                COALESCE(suffix, '') AS suffix,
+                COALESCE(separator, '-') AS separator,
+                padding,
+                COALESCE(include_financial_year, 0) AS include_financial_year
+         FROM voucher_sequences WHERE voucher_type = ?",
+    )
+    .bind(&voucher_type)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| format!("No sequence config for '{}': {}", voucher_type, e))?;
+
+    // ── Load EVERY row in the vouchers table (including soft-deleted) ───────────
+    // voucher_no is UNIQUE across the entire table — the index covers deleted rows
+    // too. If we only clear live rows in Phase 1, a deleted voucher that still
+    // holds e.g. "SI-0001" will block Phase 2 from assigning that same string.
+    #[derive(sqlx::FromRow)]
+    struct VoucherRow {
+        id: String,
+        voucher_no: String,
+        voucher_date: String,
+        voucher_type: String,
+        is_deleted: bool,
+    }
+    let all_vouchers = sqlx::query_as::<_, VoucherRow>(
+        "SELECT id, voucher_no, voucher_date, voucher_type,
+                (deleted_at IS NOT NULL) AS is_deleted
+         FROM vouchers",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // ── PHASE 1 ── Stamp EVERY voucher (all types) with a unique temp placeholder.
+    // This empties the global UNIQUE index so Phases 2 & 3 cannot collide.
+    for v in &all_vouchers {
+        let temp = format!("__TEMP_{}__", v.id);
+        sqlx::query("UPDATE vouchers SET voucher_no = ? WHERE id = ?")
+            .bind(&temp)
+            .bind(&v.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("Phase 1 failed for {}: {}", v.id, e))?;
+    }
+
+    // ── PHASE 2 ── Assign fresh sequential numbers to current-FY, non-deleted
+    //              vouchers of the selected type, sorted by voucher_date ASC, id ASC.
+    let mut fy_vouchers: Vec<&VoucherRow> = all_vouchers
+        .iter()
+        .filter(|v| {
+            !v.is_deleted
+                && v.voucher_type == voucher_type
+                && v.voucher_date.as_str() >= fy_start.as_str()
+                && v.voucher_date.as_str() <= fy_end.as_str()
+        })
+        .collect();
+    // Ensure stable date-then-id ordering (the DB fetch has no ORDER BY now).
+    fy_vouchers.sort_by(|a, b| a.voucher_date.cmp(&b.voucher_date).then(a.id.cmp(&b.id)));
+
+    let fy_count = fy_vouchers.len() as u64;
+
+    // Build the set of IDs being renumbered so Phase 3 can skip them.
+    let renumbered_ids: std::collections::HashSet<&str> =
+        fy_vouchers.iter().map(|v| v.id.as_str()).collect();
+
+    for (idx, v) in fy_vouchers.iter().enumerate() {
+        let counter = (idx + 1) as i64;
+        let padded = format!("{:0>width$}", counter, width = seq.padding as usize);
+        let sep = &seq.separator;
+
+        let mut parts: Vec<String> = Vec::new();
+        if !seq.prefix.is_empty() {
+            parts.push(seq.prefix.clone());
+        }
+        if seq.include_financial_year {
+            parts.push(financial_year_from_date(&v.voucher_date));
+        }
+        parts.push(padded);
+
+        let base = parts.join(sep);
+        let new_no = if seq.suffix.is_empty() {
+            base
+        } else {
+            format!("{}{}{}", base, sep, seq.suffix)
+        };
+
+        sqlx::query("UPDATE vouchers SET voucher_no = ? WHERE id = ?")
+            .bind(&new_no)
+            .bind(&v.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("Phase 2 failed for {}: {}", v.id, e))?;
+    }
+
+    // ── PHASE 3 ── Restore original numbers ONLY for live, non-renumbered vouchers
+    //              (different type OR same type but outside current FY).
+    //
+    //  Soft-deleted vouchers are intentionally left with their __TEMP_{id}__
+    //  placeholder. They are gone from the business perspective; their old numbers
+    //  are now free, which is exactly what eliminates gaps in the live sequence.
+    for v in all_vouchers
+        .iter()
+        .filter(|v| !v.is_deleted && !renumbered_ids.contains(v.id.as_str()))
+    {
+        sqlx::query("UPDATE vouchers SET voucher_no = ? WHERE id = ?")
+            .bind(&v.voucher_no)
+            .bind(&v.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("Phase 3 failed for {}: {}", v.id, e))?;
+    }
+
+    // Update next_number = total live count (this type) + 1
+    let total_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM vouchers WHERE voucher_type = ? AND deleted_at IS NULL",
+    )
+    .bind(&voucher_type)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    sqlx::query("UPDATE voucher_sequences SET next_number = ? WHERE voucher_type = ?")
+        .bind(total_count + 1)
+        .bind(&voucher_type)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(fy_count)
+}

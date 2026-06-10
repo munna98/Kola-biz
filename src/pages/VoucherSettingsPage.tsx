@@ -5,7 +5,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { IconArrowUp, IconArrowDown, IconDeviceFloppy } from '@tabler/icons-react';
+import {
+    AlertDialog,
+    AlertDialogAction,
+    AlertDialogCancel,
+    AlertDialogContent,
+    AlertDialogDescription,
+    AlertDialogFooter,
+    AlertDialogHeader,
+    AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { IconArrowUp, IconArrowDown, IconDeviceFloppy, IconCalendarStats, IconSortAscendingNumbers } from '@tabler/icons-react';
 
 
 interface ColumnSettings {
@@ -62,6 +72,16 @@ const VOUCHER_TYPES = [
     { value: 'purchase_return', label: 'Purchase Return' },
 ];
 
+// Voucher types that support date-based renumbering (payment/receipt/journal excluded)
+const REASSIGN_SUPPORTED_TYPES = [
+    'sales_invoice',
+    'sales_quotation',
+    'purchase_invoice',
+    'sales_return',
+    'purchase_return',
+];
+
+
 export default function VoucherSettingsPage() {
     const [selectedVoucher, setSelectedVoucher] = useState('sales_invoice');
     const [columns, setColumns] = useState<ColumnSettings[]>([]);
@@ -78,6 +98,10 @@ export default function VoucherSettingsPage() {
     const [updateMrp, setUpdateMrp] = useState(true);
     const [showProductInfoOnHover, setShowProductInfoOnHover] = useState(false);
     const [loading, setLoading] = useState(false);
+
+    // ---- Reassign Voucher Numbers state ----
+    const [reassigning, setReassigning] = useState(false);
+    const [showReassignDialog, setShowReassignDialog] = useState(false);
 
     useEffect(() => {
         loadSettings(selectedVoucher);
@@ -240,6 +264,25 @@ export default function VoucherSettingsPage() {
         const newColumns = [...columns];
         newColumns[index].defaultValue = newVal;
         setColumns(newColumns);
+    };
+
+    const handleReassignVoucherNumbers = async () => {
+        setReassigning(true);
+        try {
+            const count = await invoke<number>('reassign_voucher_numbers', {
+                voucherType: selectedVoucher,
+            });
+            toast.success(
+                count === 0
+                    ? 'No vouchers found in the current financial year'
+                    : `${count} voucher${count !== 1 ? 's' : ''} renumbered by invoice date`
+            );
+            setShowReassignDialog(false);
+        } catch (error) {
+            toast.error(`Failed to reassign: ${error}`);
+        } finally {
+            setReassigning(false);
+        }
     };
 
     return (
@@ -545,10 +588,89 @@ export default function VoucherSettingsPage() {
                         </div>
                     </div>
 
+                    {/* ---- Reassign Voucher Numbers Section ---- */}
+                    {REASSIGN_SUPPORTED_TYPES.includes(selectedVoucher) && (
+                        <div className="bg-card border rounded-lg p-4">
+                            <div className="flex items-center gap-2 mb-1">
+                                <IconSortAscendingNumbers className="h-5 w-5 text-amber-500" />
+                                <h3 className="text-base font-semibold">Reassign Voucher Numbers by Invoice Date</h3>
+                            </div>
+                            <p className="text-sm text-muted-foreground mb-3">
+                                Re-numbers all{' '}
+                                <strong>{VOUCHER_TYPES.find(v => v.value === selectedVoucher)?.label}</strong>{' '}
+                                vouchers within the <strong>current financial year</strong> sequentially by invoice
+                                date (oldest first), using the current prefix/suffix format. Useful when vouchers
+                                were entered out of date order.
+                            </p>
 
+                            <div className="flex items-center gap-3 mb-3">
+                                <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted px-3 py-1.5 rounded-md">
+                                    <IconCalendarStats size={13} />
+                                    {(() => {
+                                        const now = new Date();
+                                        const m = now.getMonth() + 1;
+                                        const y = now.getFullYear();
+                                        const s = m >= 4 ? y : y - 1;
+                                        return `${s}-04-01  →  ${s + 1}-03-31`;
+                                    })()}
+                                </div>
+                                <Button
+                                    variant="outline"
+                                    className="border-amber-500 text-amber-600 hover:bg-amber-50 hover:text-amber-700 dark:hover:bg-amber-950"
+                                    onClick={() => setShowReassignDialog(true)}
+                                    disabled={reassigning}
+                                >
+                                    <IconSortAscendingNumbers className="mr-2 h-4 w-4" />
+                                    Reassign Voucher Numbers
+                                </Button>
+                            </div>
+
+                            <p className="text-xs text-muted-foreground">
+                                ⚠️ This is irreversible. Only vouchers in the current financial year are affected.
+                            </p>
+                        </div>
+                    )}
 
                 </div>
             </div>
+
+            {/* ---- Reassign Confirmation Dialog ---- */}
+            <AlertDialog open={showReassignDialog} onOpenChange={setShowReassignDialog}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle className="flex items-center gap-2">
+                            <IconSortAscendingNumbers className="h-5 w-5 text-amber-500" />
+                            Reassign Voucher Numbers?
+                        </AlertDialogTitle>
+                        <AlertDialogDescription asChild>
+                            <div className="space-y-2 text-sm">
+                                <p>
+                                    This will permanently renumber all{' '}
+                                    <strong>
+                                        {VOUCHER_TYPES.find(v => v.value === selectedVoucher)?.label}
+                                    </strong>{' '}
+                                    vouchers in the <strong>current financial year</strong> in invoice date
+                                    order (oldest → newest).
+                                </p>
+                                <p className="text-amber-600 dark:text-amber-400 font-medium">
+                                    Previously printed invoices with old numbers will be outdated.
+                                </p>
+                                <p className="font-semibold text-destructive">This action cannot be undone.</p>
+                            </div>
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel disabled={reassigning}>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                            onClick={handleReassignVoucherNumbers}
+                            disabled={reassigning}
+                            className="bg-amber-500 hover:bg-amber-600 text-white"
+                        >
+                            {reassigning ? 'Renumbering…' : 'Confirm Reassign'}
+                        </AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
         </div>
     );
 }

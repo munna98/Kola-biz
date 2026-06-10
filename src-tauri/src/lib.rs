@@ -286,6 +286,7 @@ pub fn run() {
             list_voucher_sequences,
             update_voucher_sequence,
             preview_voucher_number,
+            reassign_voucher_numbers,
             // Opening Stock
             commands::opening_stock::get_opening_stocks,
             commands::opening_stock::get_opening_stock,
