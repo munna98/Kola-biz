@@ -1734,3 +1734,67 @@ pub async fn sync_all_to_r2(
 
     Ok(())
 }
+
+#[tauri::command]
+pub async fn share_listing_to_whatsapp(specs_text: String, image_paths: Vec<String>) -> Result<(), String> {
+    use std::path::Path;
+    use std::thread::sleep;
+    use std::time::Duration;
+    use std::borrow::Cow;
+
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| e.to_string())?;
+    let mut enigo = enigo::Enigo::new(&enigo::Settings::default()).map_err(|e| e.to_string())?;
+
+    // STEP 1: Copy Specs Text to Clipboard & give OS a brief rest
+    clipboard.set_text(specs_text).map_err(|e| e.to_string())?;
+    sleep(Duration::from_millis(150));
+
+    // STEP 2: Trigger the first Paste action to drop the spec caption into the active chat UI
+    simulate_paste(&mut enigo)?;
+    sleep(Duration::from_millis(300));
+
+    // STEP 3: Sequential Media Loop Injection
+    for path in image_paths {
+        if !Path::new(&path).exists() { continue; }
+
+        // Decode the file format directly to raw byte arrays 
+        let img = image::open(&path).map_err(|e| e.to_string())?;
+        let rgba = img.to_rgba8();
+        let (w, h) = rgba.dimensions();
+        
+        let img_data = arboard::ImageData {
+            width: w as usize,
+            height: h as usize,
+            bytes: Cow::Owned(rgba.into_raw()),
+        };
+
+        // Inject the current image frame into the OS registry buffer
+        clipboard.set_image(img_data).map_err(|e| e.to_string())?;
+        sleep(Duration::from_millis(150));
+
+        // Fire paste action to attach the image file object to the WhatsApp message stack
+        simulate_paste(&mut enigo)?;
+        
+        // Critical padding delay: allows WhatsApp's UI interface thread to process the attachment
+        sleep(Duration::from_millis(400));
+    }
+
+    Ok(())
+}
+
+fn simulate_paste(enigo: &mut enigo::Enigo) -> Result<(), String> {
+    use enigo::{Direction::{Click, Press, Release}, Key, Keyboard};
+    #[cfg(target_os = "macos")]
+    {
+        enigo.key(Key::Meta, Press).map_err(|e| e.to_string())?;
+        enigo.key(Key::Unicode('v'), Click).map_err(|e| e.to_string())?;
+        enigo.key(Key::Meta, Release).map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        enigo.key(Key::Control, Press).map_err(|e| e.to_string())?;
+        enigo.key(Key::Unicode('v'), Click).map_err(|e| e.to_string())?;
+        enigo.key(Key::Control, Release).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}

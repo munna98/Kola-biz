@@ -4,7 +4,8 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload, IconTag, IconPhoto, IconCloudUpload, IconLink, IconDotsVertical } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload, IconTag, IconPhoto, IconCloudUpload, IconLink, IconDotsVertical, IconBrandWhatsapp } from '@tabler/icons-react';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,6 +28,39 @@ import { invoke } from '@tauri-apps/api/core';
 import { type ProductTableColumns, DEFAULT_TABLE_COLUMNS } from '@/pages/settings/ProductSettingsPage';
 
 type ProductFilter = 'all' | 'master' | 'child';
+
+const formatProductSpecs = (p: Product) => {
+  let text = `*${p.name.toUpperCase()}*\n`;
+  if (p.code) text += `• *Code:* ${p.code}\n`;
+  if (p.sales_rate !== undefined && p.sales_rate !== null) {
+    text += `• *Price:* ₹${p.sales_rate.toLocaleString('en-IN')}\n`;
+  }
+  if (p.mrp !== undefined && p.mrp !== null) {
+    text += `• *MRP:* ₹${p.mrp.toLocaleString('en-IN')}\n`;
+  }
+
+  // Vehicle specifications
+  const vehicleSpecs: string[] = [];
+  if (p.vehicle_manufacturer) vehicleSpecs.push(`• *Manufacturer:* ${p.vehicle_manufacturer}`);
+  if (p.vehicle_model) vehicleSpecs.push(`• *Model:* ${p.vehicle_model}`);
+  if (p.vehicle_year) vehicleSpecs.push(`• *Year:* ${p.vehicle_year}`);
+  if (p.vehicle_odometer !== undefined && p.vehicle_odometer !== null) {
+    vehicleSpecs.push(`• *Odometer:* ${p.vehicle_odometer.toLocaleString('en-IN')} km`);
+  }
+  if (p.vehicle_fuel_type) vehicleSpecs.push(`• *Fuel Type:* ${p.vehicle_fuel_type}`);
+  if (p.vehicle_transmission) vehicleSpecs.push(`• *Transmission:* ${p.vehicle_transmission}`);
+  if (p.vehicle_owner) {
+    const ownerStr = p.vehicle_owner === '1' ? '1st' : p.vehicle_owner === '2' ? '2nd' : p.vehicle_owner === '3' ? '3rd' : p.vehicle_owner;
+    vehicleSpecs.push(`• *Owner:* ${ownerStr} Owner`);
+  }
+  if (p.vehicle_color) vehicleSpecs.push(`• *Color:* ${p.vehicle_color}`);
+
+  if (vehicleSpecs.length > 0) {
+    text += `\n*Specifications:*\n` + vehicleSpecs.join('\n') + `\n`;
+  }
+
+  return text;
+};
 
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -54,6 +88,8 @@ export default function ProductsPage() {
   const [r2Enabled, setR2Enabled] = useState(false);
   const [r2WebsiteUrl, setR2WebsiteUrl] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [sharingProduct, setSharingProduct] = useState<Product | null>(null);
+  const [isSharingWhatsapp, setIsSharingWhatsapp] = useState(false);
   const currentUser = useSelector((state: RootState) => state.app.currentUser);
 
   const load = async () => {
@@ -166,6 +202,34 @@ export default function ProductsPage() {
     }).catch(() => {
       toast.error('Failed to copy link');
     });
+  };
+
+  const handleShareWhatsApp = async (product: Product) => {
+    try {
+      setSharingProduct(product);
+      setIsSharingWhatsapp(true);
+
+      const specsText = formatProductSpecs(product);
+      const imgs = await api.products.getImages(product.id);
+      const paths = imgs.map(img => img.image_path);
+
+      try {
+        await openUrl("whatsapp://");
+      } catch (err) {
+        console.warn("whatsapp:// native protocol failed, falling back to wa.me:", err);
+        await openUrl("https://wa.me/");
+      }
+      await new Promise(resolve => setTimeout(resolve, 1200));
+
+      await invoke("share_listing_to_whatsapp", { specsText, imagePaths: paths });
+      toast.success("Product info shared to WhatsApp successfully!");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(err?.toString() || "Failed to share listing to WhatsApp");
+    } finally {
+      setIsSharingWhatsapp(false);
+      setSharingProduct(null);
+    }
   };
 
   // Apply search + category filter
@@ -439,6 +503,9 @@ export default function ProductsPage() {
                                 <DropdownMenuItem onClick={() => { setImagesProduct(p); setImagesDialogOpen(true); }}>
                                   <IconPhoto size={14} className="mr-2" /> Manage Images
                                 </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => handleShareWhatsApp(p)}>
+                                  <IconBrandWhatsapp size={14} className="mr-2 text-green-500" /> Share on WhatsApp
+                                </DropdownMenuItem>
                                 {r2Enabled && (
                                   <DropdownMenuItem onClick={() => handleCopyLink(p.id)}>
                                     <IconLink size={14} className="mr-2" /> Copy Public Link
@@ -582,6 +649,30 @@ export default function ProductsPage() {
           load();
         }}
       />
+
+      {/* WhatsApp Sharing Overlay Modal */}
+      {isSharingWhatsapp && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center">
+          <div className="bg-card border p-6 rounded-lg max-w-md w-full shadow-2xl text-center space-y-4 animate-in fade-in zoom-in duration-200">
+            <div className="relative mx-auto w-16 h-16 flex items-center justify-center bg-green-100 dark:bg-green-950/50 rounded-full text-green-500">
+              <IconBrandWhatsapp size={36} className="animate-bounce" />
+              <div className="absolute inset-0 rounded-full border-2 border-green-500 border-t-transparent animate-spin" />
+            </div>
+            <h3 className="text-lg font-bold">Sharing listing to WhatsApp</h3>
+            <p className="text-sm text-muted-foreground">
+              Sending assets to WhatsApp... Please do not switch windows or click away.
+            </p>
+            {sharingProduct && (
+              <div className="bg-muted p-3 rounded text-left text-xs font-mono max-h-32 overflow-y-auto border whitespace-pre-wrap">
+                {formatProductSpecs(sharingProduct)}
+              </div>
+            )}
+            <div className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 p-2 rounded border border-amber-500/20">
+              <strong>Crucial:</strong> Ensure WhatsApp is open and the active chat has cursor focus so the automated pasting lands in the correct message box!
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

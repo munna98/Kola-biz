@@ -6,6 +6,14 @@
   "permissions": [
     "core:default",
     "opener:allow-open-path",
-    "opener:allow-open-url"
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://wa.me/**" },
+        { "url": "https://api.whatsapp.com/**" },
+        { "url": "https://web.whatsapp.com/**" },
+        { "url": "whatsapp://**" }
+      ]
+    }
   ]
 }
