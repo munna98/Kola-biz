@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { IconDeviceFloppy, IconTable, IconListDetails, IconLock, IconAdjustments, IconCloud, IconEye, IconEyeOff } from '@tabler/icons-react';
+import { IconDeviceFloppy, IconTable, IconListDetails, IconLock, IconAdjustments, IconCloud, IconEye, IconEyeOff, IconBrandWhatsapp } from '@tabler/icons-react';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -160,6 +160,7 @@ export default function ProductSettingsPage() {
   const [dialogFields, setDialogFields] = useState<ProductDialogFields>(DEFAULT_DIALOG_FIELDS);
   const [preventDuplicates, setPreventDuplicates] = useState(false);
   const [updatePaymentToProductCost, setUpdatePaymentToProductCost] = useState(false);
+  const [whatsappShareEnabled, setWhatsappShareEnabled] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [dirty, setDirty] = useState(false);
@@ -177,12 +178,13 @@ export default function ProductSettingsPage() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [cols, fields, preventDupes, updateCost,
+      const [cols, fields, preventDupes, updateCost, waShare,
         r2En, r2Ep, r2Bn, r2Ak, r2Sk, r2Pu, r2Wu] = await Promise.all([
         loadSetting('product_table_columns', DEFAULT_TABLE_COLUMNS),
         loadSetting('product_dialog_fields', DEFAULT_DIALOG_FIELDS),
         invoke<string | null>('get_app_setting', { key: 'prevent_duplicate_product_names' }),
         invoke<string | null>('get_app_setting', { key: 'update_payment_to_product_cost' }),
+        invoke<string | null>('get_app_setting', { key: 'whatsapp_share_enabled' }),
         invoke<string | null>('get_app_setting', { key: 'r2_sync_enabled' }),
         invoke<string | null>('get_app_setting', { key: 'r2_endpoint_url' }),
         invoke<string | null>('get_app_setting', { key: 'r2_bucket_name' }),
@@ -195,6 +197,7 @@ export default function ProductSettingsPage() {
       setDialogFields(fields);
       setPreventDuplicates(preventDupes === 'true' || preventDupes === '"true"');
       setUpdatePaymentToProductCost(updateCost === 'true' || updateCost === '"true"');
+      setWhatsappShareEnabled(waShare === 'true');
       setR2Enabled(r2En === 'true');
       setR2EndpointUrl(r2Ep || '');
       setR2BucketName(r2Bn || '');
@@ -224,6 +227,7 @@ export default function ProductSettingsPage() {
         saveSetting('product_dialog_fields', dialogFields),
         invoke('set_app_setting', { key: 'prevent_duplicate_product_names', value: preventDuplicates ? 'true' : 'false' }),
         invoke('set_app_setting', { key: 'update_payment_to_product_cost', value: updatePaymentToProductCost ? 'true' : 'false' }),
+        invoke('set_app_setting', { key: 'whatsapp_share_enabled', value: whatsappShareEnabled ? 'true' : 'false' }),
         invoke('set_app_setting', { key: 'r2_sync_enabled', value: r2Enabled ? 'true' : 'false' }),
         invoke('set_app_setting', { key: 'r2_endpoint_url', value: r2EndpointUrl }),
         invoke('set_app_setting', { key: 'r2_bucket_name', value: r2BucketName }),
@@ -247,6 +251,7 @@ export default function ProductSettingsPage() {
     setDialogFields(DEFAULT_DIALOG_FIELDS);
     setPreventDuplicates(false);
     setUpdatePaymentToProductCost(false);
+    setWhatsappShareEnabled(false);
     setR2Enabled(false);
     setR2EndpointUrl('');
     setR2BucketName('');
@@ -336,6 +341,26 @@ export default function ProductSettingsPage() {
                   checked={updatePaymentToProductCost}
                   onCheckedChange={(checked) => {
                     setUpdatePaymentToProductCost(checked);
+                    setDirty(true);
+                  }}
+                />
+              </div>
+
+              <div className="flex items-center justify-between px-6 py-3.5 hover:bg-muted/20 transition-colors">
+                <div className="space-y-0.5">
+                  <Label htmlFor="whatsapp-share-enabled" className="text-sm font-medium cursor-pointer flex items-center gap-1.5">
+                    <IconBrandWhatsapp size={14} className="text-green-500" />
+                    Share on WhatsApp
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Show a "Share on WhatsApp" action in the product row menu to share specs and images directly to WhatsApp.
+                  </p>
+                </div>
+                <Switch
+                  id="whatsapp-share-enabled"
+                  checked={whatsappShareEnabled}
+                  onCheckedChange={(checked) => {
+                    setWhatsappShareEnabled(checked);
                     setDirty(true);
                   }}
                 />

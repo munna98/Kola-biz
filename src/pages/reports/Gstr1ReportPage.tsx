@@ -17,6 +17,13 @@ function fmt(n: number) {
   return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+function fmtDate(d: string) {
+  if (!d) return '';
+  const date = new Date(d);
+  if (isNaN(date.getTime())) return d;
+  return date.toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' });
+}
+
 export default function Gstr1ReportPage() {
   const [fromDate, setFromDate] = useState(firstOfMonth);
   const [toDate, setToDate] = useState(today);
@@ -52,9 +59,17 @@ export default function Gstr1ReportPage() {
       return;
     }
 
-    const headers = ['Sl.', 'Description', 'HSN/SAC', 'UQC', 'GST Rate (%)', 'Taxable Value', 'CGST', 'SGST', 'IGST', 'Total Tax', 'Invoice Value'];
+    const headers = [
+      'Sl.', 'Invoice No', 'Invoice Date', 'Party', 'Party GST No',
+      'Description', 'HSN/SAC', 'UQC', 'GST Rate (%)',
+      'Taxable Value', 'CGST', 'SGST', 'IGST', 'Total Tax', 'Invoice Value',
+    ];
     const data = rows.map(r => [
       r.sl,
+      r.invoice_no,
+      fmtDate(r.invoice_date),
+      r.party_name,
+      r.party_gstin || '',
       r.description,
       r.hsn_sac_code || '',
       r.uqc,
@@ -67,7 +82,7 @@ export default function Gstr1ReportPage() {
       r.total_value,
     ]);
     const totalRow = [
-      '', 'TOTAL', '', '', '',
+      '', '', '', '', '', 'TOTAL', '', '', '',
       totals.taxable,
       totals.cgst,
       totals.sgst,
@@ -77,7 +92,7 @@ export default function Gstr1ReportPage() {
     ];
 
     const ws = XLSX.utils.aoa_to_sheet([headers, ...data, totalRow]);
-    ws['!cols'] = [8, 28, 14, 8, 14, 16, 16, 16, 16, 14, 16].map(w => ({ wch: w }));
+    ws['!cols'] = [8, 16, 14, 24, 18, 28, 14, 8, 14, 16, 16, 16, 16, 14, 16].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'GSTR-1');
     XLSX.writeFile(wb, `GSTR1_Report_${fromDate}_to_${toDate}.xlsx`);
@@ -89,7 +104,7 @@ export default function Gstr1ReportPage() {
       <div>
         <h2 className="text-2xl font-bold">GSTR-1 Report</h2>
         <p className="text-sm text-muted-foreground mt-1">
-          Outward supplies summary grouped by HSN/SAC code and GST rate
+          Outward supplies invoice-wise summary with party and HSN/SAC details
         </p>
       </div>
 
@@ -137,57 +152,67 @@ export default function Gstr1ReportPage() {
       ) : (
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-base">HSN/SAC-wise Outward Supply Summary</CardTitle>
+            <CardTitle className="text-base">Invoice-wise Outward Supply Summary</CardTitle>
             <Button size="sm" variant="outline" onClick={handleExport}>
               <IconDownload size={14} className="mr-1" /> Export
             </Button>
           </CardHeader>
           <CardContent className="p-0">
-            <table className="w-full text-sm">
+            <div className="overflow-x-auto">
+            <table className="w-full text-sm min-w-[1200px]">
               <thead className="border-b border-t bg-muted/40">
                 <tr className="text-left">
-                  <th className="px-4 py-2.5 font-medium w-10">Sl.</th>
-                  <th className="px-4 py-2.5 font-medium">Description</th>
-                  <th className="px-4 py-2.5 font-medium">HSN/SAC</th>
-                  <th className="px-4 py-2.5 font-medium">UQC</th>
-                  <th className="px-4 py-2.5 font-medium text-right">GST Rate</th>
-                  <th className="px-4 py-2.5 font-medium text-right">Taxable Value</th>
-                  <th className="px-4 py-2.5 font-medium text-right">CGST</th>
-                  <th className="px-4 py-2.5 font-medium text-right">SGST</th>
-                  <th className="px-4 py-2.5 font-medium text-right">IGST</th>
-                  <th className="px-4 py-2.5 font-medium text-right">Total Tax</th>
-                  <th className="px-4 py-2.5 font-medium text-right">Invoice Value</th>
+                  <th className="px-3 py-2.5 font-medium w-10">Sl.</th>
+                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">Invoice No</th>
+                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">Invoice Date</th>
+                  <th className="px-3 py-2.5 font-medium">Party</th>
+                  <th className="px-3 py-2.5 font-medium whitespace-nowrap">Party GST No</th>
+                  <th className="px-3 py-2.5 font-medium">Description</th>
+                  <th className="px-3 py-2.5 font-medium">HSN/SAC</th>
+                  <th className="px-3 py-2.5 font-medium">UQC</th>
+                  <th className="px-3 py-2.5 font-medium text-right">GST Rate</th>
+                  <th className="px-3 py-2.5 font-medium text-right">Taxable Value</th>
+                  <th className="px-3 py-2.5 font-medium text-right">CGST</th>
+                  <th className="px-3 py-2.5 font-medium text-right">SGST</th>
+                  <th className="px-3 py-2.5 font-medium text-right">IGST</th>
+                  <th className="px-3 py-2.5 font-medium text-right">Total Tax</th>
+                  <th className="px-3 py-2.5 font-medium text-right">Invoice Value</th>
                 </tr>
               </thead>
               <tbody>
                 {rows.map((row, i) => (
                   <tr key={i} className="border-b hover:bg-muted/20">
-                    <td className="px-4 py-2.5 text-center text-xs text-muted-foreground">{row.sl}</td>
-                    <td className="px-4 py-2.5">{row.description}</td>
-                    <td className="px-4 py-2.5 font-mono text-xs">{row.hsn_sac_code || '—'}</td>
-                    <td className="px-4 py-2.5 text-xs font-medium">{row.uqc}</td>
-                    <td className="px-4 py-2.5 text-right">{row.gst_rate}%</td>
-                    <td className="px-4 py-2.5 text-right">{fmt(row.taxable_value)}</td>
-                    <td className="px-4 py-2.5 text-right">{fmt(row.cgst)}</td>
-                    <td className="px-4 py-2.5 text-right">{fmt(row.sgst)}</td>
-                    <td className="px-4 py-2.5 text-right">{fmt(row.igst)}</td>
-                    <td className="px-4 py-2.5 text-right font-medium">{fmt(row.total_tax)}</td>
-                    <td className="px-4 py-2.5 text-right font-medium">{fmt(row.total_value)}</td>
+                    <td className="px-3 py-2.5 text-center text-xs text-muted-foreground">{row.sl}</td>
+                    <td className="px-3 py-2.5 font-mono text-xs whitespace-nowrap">{row.invoice_no}</td>
+                    <td className="px-3 py-2.5 text-xs whitespace-nowrap">{fmtDate(row.invoice_date)}</td>
+                    <td className="px-3 py-2.5">{row.party_name}</td>
+                    <td className="px-3 py-2.5 font-mono text-xs">{row.party_gstin || '—'}</td>
+                    <td className="px-3 py-2.5">{row.description}</td>
+                    <td className="px-3 py-2.5 font-mono text-xs">{row.hsn_sac_code || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs font-medium">{row.uqc}</td>
+                    <td className="px-3 py-2.5 text-right">{row.gst_rate}%</td>
+                    <td className="px-3 py-2.5 text-right">{fmt(row.taxable_value)}</td>
+                    <td className="px-3 py-2.5 text-right">{fmt(row.cgst)}</td>
+                    <td className="px-3 py-2.5 text-right">{fmt(row.sgst)}</td>
+                    <td className="px-3 py-2.5 text-right">{fmt(row.igst)}</td>
+                    <td className="px-3 py-2.5 text-right font-medium">{fmt(row.total_tax)}</td>
+                    <td className="px-3 py-2.5 text-right font-medium">{fmt(row.total_value)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot className="border-t-2 bg-muted/40 font-semibold">
                 <tr>
-                  <td className="px-4 py-2.5" colSpan={5}>Total</td>
-                  <td className="px-4 py-2.5 text-right">{fmt(totals.taxable)}</td>
-                  <td className="px-4 py-2.5 text-right">{fmt(totals.cgst)}</td>
-                  <td className="px-4 py-2.5 text-right">{fmt(totals.sgst)}</td>
-                  <td className="px-4 py-2.5 text-right">{fmt(totals.igst)}</td>
-                  <td className="px-4 py-2.5 text-right">{fmt(totals.tax)}</td>
-                  <td className="px-4 py-2.5 text-right">{fmt(totals.total)}</td>
+                  <td className="px-3 py-2.5" colSpan={9}>Total</td>
+                  <td className="px-3 py-2.5 text-right">{fmt(totals.taxable)}</td>
+                  <td className="px-3 py-2.5 text-right">{fmt(totals.cgst)}</td>
+                  <td className="px-3 py-2.5 text-right">{fmt(totals.sgst)}</td>
+                  <td className="px-3 py-2.5 text-right">{fmt(totals.igst)}</td>
+                  <td className="px-3 py-2.5 text-right">{fmt(totals.tax)}</td>
+                  <td className="px-3 py-2.5 text-right">{fmt(totals.total)}</td>
                 </tr>
               </tfoot>
             </table>
+            </div>
           </CardContent>
         </Card>
       )}

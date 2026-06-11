@@ -222,7 +222,7 @@ pub async fn save_gst_settings(
 
 // ============= GSTR SUMMARY QUERIES =============
 
-/// GSTR-1: Outward supply summary grouped by HSN/SAC + description + unit + resolved GST rate.
+/// GSTR-1: Outward supply invoice-wise list with party details, HSN/SAC and GST breakup.
 #[tauri::command]
 pub async fn get_gstr1_summary(
     registry: State<'_, Arc<DbRegistry>>,
@@ -230,28 +230,33 @@ pub async fn get_gstr1_summary(
     to_date: String,
 ) -> Result<serde_json::Value, String> {
     let pool = registry.active_pool().await?;
-    // Each tuple: (description, hsn, uqc, gst_rate, taxable, cgst, sgst, igst, tax, total)
-    let rows: Vec<(String, String, String, f64, f64, f64, f64, f64, f64, f64)> = sqlx::query_as(
+    // Each row: (invoice_no, invoice_date, party_name, party_gstin, description, hsn, uqc, gst_rate, taxable, cgst, sgst, igst, tax, total)
+    let rows: Vec<(String, String, String, String, String, String, String, f64, f64, f64, f64, f64, f64, f64)> = sqlx::query_as(
         "SELECT
-            COALESCE(p.name, vi.description, 'N/A')                            AS description,
-            COALESCE(vi.hsn_sac_code, 'N/A')                                   AS hsn_sac_code,
-            COALESCE(u.symbol, 'NOS')                                          AS uqc,
-            COALESCE(vi.resolved_gst_rate, 0)                                  AS gst_rate,
-            COALESCE(SUM(vi.amount), 0)                                        AS taxable_value,
-            COALESCE(SUM(vi.cgst_amount), 0)                                   AS cgst,
-            COALESCE(SUM(vi.sgst_amount), 0)                                   AS sgst,
-            COALESCE(SUM(vi.igst_amount), 0)                                   AS igst,
-            COALESCE(SUM(vi.cgst_amount + vi.sgst_amount + vi.igst_amount), 0) AS total_tax,
+            v.voucher_no                                                           AS invoice_no,
+            v.voucher_date                                                         AS invoice_date,
+            COALESCE(coa.account_name, 'N/A')                                     AS party_name,
+            COALESCE(coa.gstin, '')                                                AS party_gstin,
+            COALESCE(p.name, vi.description, 'N/A')                               AS description,
+            COALESCE(vi.hsn_sac_code, 'N/A')                                      AS hsn_sac_code,
+            COALESCE(u.symbol, 'NOS')                                             AS uqc,
+            COALESCE(vi.resolved_gst_rate, 0)                                     AS gst_rate,
+            COALESCE(SUM(vi.amount), 0)                                           AS taxable_value,
+            COALESCE(SUM(vi.cgst_amount), 0)                                      AS cgst,
+            COALESCE(SUM(vi.sgst_amount), 0)                                      AS sgst,
+            COALESCE(SUM(vi.igst_amount), 0)                                      AS igst,
+            COALESCE(SUM(vi.cgst_amount + vi.sgst_amount + vi.igst_amount), 0)    AS total_tax,
             COALESCE(SUM(vi.amount + vi.cgst_amount + vi.sgst_amount + vi.igst_amount), 0) AS total_value
          FROM voucher_items vi
          JOIN vouchers v ON vi.voucher_id = v.id
+         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN products p ON vi.product_id = p.id
          LEFT JOIN units u ON vi.unit_id = u.id
          WHERE v.voucher_type = 'sales_invoice'
            AND v.voucher_date BETWEEN ? AND ?
            AND v.deleted_at IS NULL
-         GROUP BY p.name, vi.description, vi.hsn_sac_code, u.symbol, vi.resolved_gst_rate
-         ORDER BY vi.hsn_sac_code, p.name",
+         GROUP BY v.id, vi.hsn_sac_code, vi.resolved_gst_rate, p.name, vi.description, u.symbol
+         ORDER BY v.voucher_date ASC, v.voucher_no ASC, vi.hsn_sac_code",
     )
     .bind(&from_date)
     .bind(&to_date)
@@ -262,9 +267,13 @@ pub async fn get_gstr1_summary(
     let items: Vec<serde_json::Value> = rows
         .into_iter()
         .enumerate()
-        .map(|(i, (desc, hsn, uqc, rate, taxable, cgst, sgst, igst, tax, total))| {
+        .map(|(i, (invoice_no, invoice_date, party_name, party_gstin, desc, hsn, uqc, rate, taxable, cgst, sgst, igst, tax, total))| {
             json!({
                 "sl": i + 1,
+                "invoice_no": invoice_no,
+                "invoice_date": invoice_date,
+                "party_name": party_name,
+                "party_gstin": party_gstin,
                 "description": desc,
                 "hsn_sac_code": hsn,
                 "uqc": uqc,

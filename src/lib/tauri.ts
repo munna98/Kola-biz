@@ -77,6 +77,10 @@ export interface GstSettings {
 
 export interface GstSummaryRow {
   sl: number;
+  invoice_no: string;
+  invoice_date: string;
+  party_name: string;
+  party_gstin: string;
   description: string;
   hsn_sac_code: string;
   uqc: string;

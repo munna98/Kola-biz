@@ -90,12 +90,13 @@ export default function ProductsPage() {
   const [syncing, setSyncing] = useState(false);
   const [sharingProduct, setSharingProduct] = useState<Product | null>(null);
   const [isSharingWhatsapp, setIsSharingWhatsapp] = useState(false);
+  const [whatsappShareEnabled, setWhatsappShareEnabled] = useState(false);
   const currentUser = useSelector((state: RootState) => state.app.currentUser);
 
   const load = async () => {
     try {
       setLoading(true);
-      const [p, u, g, b, gstSettings, slabs, masterSetting, colSetting, r2En, r2Wu] = await Promise.all([
+      const [p, u, g, b, gstSettings, slabs, masterSetting, colSetting, r2En, r2Wu, waShare] = await Promise.all([
         showDeleted ? api.products.listDeleted() : api.products.list(),
         api.units.list(),
         api.productGroups.list(),
@@ -106,6 +107,7 @@ export default function ProductsPage() {
         invoke<string | null>('get_app_setting', { key: 'product_table_columns' }),
         invoke<string | null>('get_app_setting', { key: 'r2_sync_enabled' }),
         invoke<string | null>('get_app_setting', { key: 'r2_website_url' }),
+        invoke<string | null>('get_app_setting', { key: 'whatsapp_share_enabled' }),
       ]);
       setProducts(p);
       setUnits(u);
@@ -119,6 +121,7 @@ export default function ProductsPage() {
       }
       setR2Enabled(r2En === 'true');
       setR2WebsiteUrl(r2Wu?.trim().replace(/\/$/, '') || '');
+      setWhatsappShareEnabled(waShare === 'true');
     } catch (error) {
       toast.error('Failed to load data');
       console.error('Load error:', error);
@@ -503,9 +506,11 @@ export default function ProductsPage() {
                                 <DropdownMenuItem onClick={() => { setImagesProduct(p); setImagesDialogOpen(true); }}>
                                   <IconPhoto size={14} className="mr-2" /> Manage Images
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleShareWhatsApp(p)}>
-                                  <IconBrandWhatsapp size={14} className="mr-2 text-green-500" /> Share on WhatsApp
-                                </DropdownMenuItem>
+                                {whatsappShareEnabled && (
+                                  <DropdownMenuItem onClick={() => handleShareWhatsApp(p)}>
+                                    <IconBrandWhatsapp size={14} className="mr-2 text-green-500" /> Share on WhatsApp
+                                  </DropdownMenuItem>
+                                )}
                                 {r2Enabled && (
                                   <DropdownMenuItem onClick={() => handleCopyLink(p.id)}>
                                     <IconLink size={14} className="mr-2" /> Copy Public Link
