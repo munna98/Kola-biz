@@ -35,6 +35,9 @@ interface ComboboxProps {
   openOnFocus?: boolean
   onEmptyEnter?: () => void
   onActionClick?: () => void
+  /** Called synchronously inside onCloseAutoFocus right after an item is selected.
+   *  Use this to redirect focus before the browser moves it anywhere else. */
+  onAfterSelect?: () => void
 }
 
 export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { disabled?: boolean }>(({
@@ -50,6 +53,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   openOnFocus = true,
   onActionClick,
   onEmptyEnter,
+  onAfterSelect,
 }, ref) => {
   const [open, setOpen] = React.useState(false)
   const [hasOpenedOnFocus, setHasOpenedOnFocus] = React.useState(false)
@@ -122,8 +126,15 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
         }}
         onCloseAutoFocus={(e) => {
           if (itemSelected.current) {
-            e.preventDefault();
+            // If onAfterSelect is provided, let Radix restore focus to the trigger
+            // naturally (trigger has skipOpen=true so it won't reopen). onAfterSelect
+            // will then redirect focus via RAF after all Radix cleanup is done.
+            // Without onAfterSelect, prevent return-to-trigger as normal.
+            if (!onAfterSelect) {
+              e.preventDefault();
+            }
             itemSelected.current = false;
+            onAfterSelect?.();
           }
         }}
       >

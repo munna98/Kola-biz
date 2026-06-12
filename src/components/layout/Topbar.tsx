@@ -169,7 +169,7 @@ export default function Topbar() {
                         <MenubarItem onClick={() => handleNavigation('sidebar_settings')}>Sidebar Settings</MenubarItem>
                         <MenubarSeparator />
                         <MenubarItem onClick={() => handleNavigation('users')}>Users</MenubarItem>
-                        <MenubarItem onClick={() => handleNavigation('license')}>License</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('license')}>About KolaBiz</MenubarItem>
                         <MenubarSeparator />
                         <MenubarItem onClick={() => handleNavigation('db_settings')}>DB Settings</MenubarItem>
                     </MenubarContent>

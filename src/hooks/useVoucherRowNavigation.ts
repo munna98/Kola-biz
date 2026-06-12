@@ -14,6 +14,11 @@ export function useVoucherRowNavigation({
         const inputs = Array.from(currentRow.querySelectorAll('input:not([disabled]):not([data-exclude-nav="true"]), button:not([disabled]):not([data-exclude-nav="true"])')) as HTMLElement[];
         const currentIndex = inputs.indexOf(document.activeElement as HTMLElement);
 
+        // If the active element isn't in this row (currentIndex === -1), the event
+        // came from a portal (e.g. a Combobox dropdown's CommandInput). Don't navigate
+        // — the combobox handles its own keyboard interaction.
+        if (currentIndex === -1) return;
+
         // Ctrl/Cmd + D: Delete current row
         // Using e.code for physical key detection (more reliable across keyboard layouts)
         if ((e.ctrlKey || e.metaKey) && e.code === 'KeyD') {

@@ -116,11 +116,24 @@ export function VoucherLedgerSection({
                             onActionClick={onCreateLedger ? () => onCreateLedger('', index) : undefined}
                             className="flex-1"
                             onEmptyEnter={() => {
-                                // If it's not the first row, remove it and exit section
                                 if (index > 0) {
                                     onRemoveItem(index);
                                     onSectionExit?.();
                                 }
+                            }}
+                            onAfterSelect={() => {
+                                // Radix restores focus to the Ledger trigger (skipOpen=true prevents
+                                // it from reopening). RAF fires after all Radix cleanup and moves
+                                // focus to the next element in the row (Product or Amount).
+                                const row = document.querySelector(`[data-row-index="${index}"]`);
+                                const rowInputs = Array.from(
+                                    row?.querySelectorAll('input:not([disabled]):not([data-exclude-nav="true"]), button:not([disabled]):not([data-exclude-nav="true"])') ?? []
+                                ) as HTMLElement[];
+                                const nextInput = rowInputs[1]; // Ledger is [0], next is [1]
+                                requestAnimationFrame(() => {
+                                    nextInput?.focus();
+                                    if (nextInput instanceof HTMLInputElement) nextInput.select();
+                                });
                             }}
                         />
                     </div>
@@ -138,9 +151,21 @@ export function VoucherLedgerSection({
                                     }))
                                 ]}
                                 onChange={(val) => onUpdateItem(index, 'product_id', val === '' ? undefined : val)}
+                                onAfterSelect={() => {
+                                    // Radix restores focus to the product trigger (skipOpen=true
+                                    // prevents it from reopening). RAF fires after all Radix
+                                    // cleanup is done and moves focus forward to Amount.
+                                    const row = document.querySelector(`[data-row-index="${index}"]`);
+                                    const amountInput = row?.querySelector('input[type="number"]') as HTMLInputElement | null;
+                                    requestAnimationFrame(() => {
+                                        amountInput?.focus();
+                                        amountInput?.select();
+                                    });
+                                }}
                                 placeholder="Link product..."
                                 searchPlaceholder="Search products..."
                                 disabled={isReadOnly}
+                                onKeyDown={(e) => handleRowKeyDown(e as React.KeyboardEvent<HTMLDivElement>, index)}
                             />
                         </div>
                     )}

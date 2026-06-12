@@ -1,0 +1,56 @@
+name: Auto Release on Version Change
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read version from tauri.conf.json
+        id: version
+        run: |
+          VERSION=$(python3 -c "import json; d=json.load(open('src-tauri/tauri.conf.json')); print(d['version'])")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          echo "Detected version: $VERSION"
+
+      - name: Check if release tag already exists
+        id: check
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/munna98/Kola-biz/releases/tags/${{ steps.version.outputs.tag }}")
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "GitHub API status for tag ${{ steps.version.outputs.tag }}: $STATUS"
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.status == '404'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: "KolaBiz ${{ steps.version.outputs.tag }}"
+          body: |
+            ## KolaBiz ${{ steps.version.outputs.tag }}
+
+            ### What's new
+            See commit history for changes in this release.
+
+            ---
+            **Released:** ${{ github.event.head_commit.timestamp }}
+            **Commit:** ${{ github.sha }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Skip (version unchanged)
+        if: steps.check.outputs.status != '404'
+        run: echo "Tag ${{ steps.version.outputs.tag }} already exists. Skipping release creation."
