@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { open } from '@tauri-apps/plugin-opener';
+import { openUrl } from '@tauri-apps/plugin-opener';
 import { useLicense } from '@/components/providers/LicenseProvider';
 import { ActivationPage } from '@/pages/ActivationPage';
 import { Button } from '@/components/ui/button';
@@ -86,7 +86,7 @@ export default function LicensePage() {
 
     const handleDownloadInstall = async () => {
         if (!downloadUrl) return;
-        await open(downloadUrl);
+        await openUrl(downloadUrl);
     };
 
     const licenseStatusColor =
@@ -222,7 +222,7 @@ export default function LicensePage() {
                                 Your data will not be affected.
                             </p>
                             <button
-                                onClick={() => open(releasePageUrl)}
+                                onClick={() => openUrl(releasePageUrl)}
                                 className="text-xs text-amber-600 dark:text-amber-400 underline underline-offset-2 hover:no-underline"
                             >
                                 View release notes on GitHub →
@@ -261,7 +261,7 @@ export default function LicensePage() {
                         </a>
 
                         <button
-                            onClick={() => open(`https://wa.me/91${SUPPORT_PHONE}`)}
+                            onClick={() => openUrl(`https://wa.me/91${SUPPORT_PHONE}`)}
                             id="support-whatsapp-btn"
                             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border
                                        bg-emerald-50 border-emerald-200 hover:bg-emerald-100
