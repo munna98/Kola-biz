@@ -14,22 +14,10 @@ use tauri::Manager;
 #[tauri::command]
 fn get_app_version() -> String {
     let conf = include_str!("../tauri.conf.json");
-    // Simple JSON parse to extract "version" without pulling in extra dependencies
-    for line in conf.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('"') && trimmed.contains("version") {
-            // Match: "version": "1.1.76"
-            if let Some(val_start) = trimmed.rfind('"') {
-                let tail = &trimmed[val_start + 1..];
-                let end = tail.find('"').unwrap_or(tail.len());
-                let version = &tail[..end];
-                if !version.is_empty() && version.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false) {
-                    return version.to_string();
-                }
-            }
-        }
-    }
-    "unknown".to_string()
+    serde_json::from_str::<serde_json::Value>(conf)
+        .ok()
+        .and_then(|v| v["version"].as_str().map(|s| s.to_string()))
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

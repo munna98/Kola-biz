@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-opener';
 import { useLicense } from '@/components/providers/LicenseProvider';
 import { ActivationPage } from '@/pages/ActivationPage';
 import { Button } from '@/components/ui/button';
@@ -11,7 +12,7 @@ import {
     IconCircleCheck,
     IconAlertCircle,
     IconLoader2,
-    IconExternalLink,
+    IconDownload,
     IconShieldCheck,
     IconShieldOff,
     IconInfoCircle,
@@ -28,49 +29,74 @@ export default function LicensePage() {
     const [showActivation, setShowActivation] = useState(false);
 
     // Version state
-    const [appVersion, setAppVersion] = useState<string>('...');
+    const [appVersion, setAppVersion] = useState<string>('');
 
     // Update check state
     const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
     const [latestVersion, setLatestVersion] = useState<string>('');
-    const [releaseUrl, setReleaseUrl] = useState<string>('');
+    const [downloadUrl, setDownloadUrl] = useState<string>('');
+    const [releasePageUrl, setReleasePageUrl] = useState<string>('');
 
     useEffect(() => {
         invoke<string>('get_app_version')
             .then(setAppVersion)
-            .catch(() => setAppVersion('unknown'));
+            .catch(() => setAppVersion('?'));
     }, []);
 
     const checkForUpdates = async () => {
         setUpdateStatus('checking');
         setLatestVersion('');
-        setReleaseUrl('');
+        setDownloadUrl('');
+        setReleasePageUrl('');
         try {
             const res = await fetch(
                 `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
                 { headers: { Accept: 'application/vnd.github+json' } }
             );
-            if (!res.ok) throw new Error(`GitHub API error: ${res.status}`);
+            if (!res.ok) throw new Error(`GitHub API ${res.status}`);
             const data = await res.json();
+
             // tag_name is like "v1.1.77" — strip the leading "v"
-            const latest = (data.tag_name as string).replace(/^v/, '');
+            const latest: string = (data.tag_name as string).replace(/^v/, '');
             setLatestVersion(latest);
-            setReleaseUrl(data.html_url as string);
-            setUpdateStatus(latest === appVersion ? 'up_to_date' : 'update_available');
+            setReleasePageUrl(data.html_url as string);
+
+            // Look for an .msi installer asset; fall back to the release page
+            const msiAsset = (data.assets as any[])?.find((a) =>
+                (a.name as string).toLowerCase().endsWith('.msi')
+            );
+            setDownloadUrl(msiAsset?.browser_download_url ?? data.html_url);
+
+            // Compare versions: split by "." and compare each part numerically
+            const isNewer = (a: string, b: string) => {
+                const pa = a.split('.').map(Number);
+                const pb = b.split('.').map(Number);
+                for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+                    const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
+                    if (diff !== 0) return diff > 0;
+                }
+                return false;
+            };
+
+            setUpdateStatus(isNewer(appVersion, latest) ? 'update_available' : 'up_to_date');
         } catch {
             setUpdateStatus('error');
         }
+    };
+
+    const handleDownloadInstall = async () => {
+        if (!downloadUrl) return;
+        await open(downloadUrl);
     };
 
     const licenseStatusColor =
         status?.status === 'Active'
             ? 'text-emerald-500'
             : status?.status === 'Trial'
-            ? 'text-amber-500'
-            : 'text-red-500';
+                ? 'text-amber-500'
+                : 'text-red-500';
 
-    const LicenseIcon =
-        status?.status === 'Active' ? IconShieldCheck : IconShieldOff;
+    const LicenseIcon = status?.status === 'Active' ? IconShieldCheck : IconShieldOff;
 
     return (
         <div className="p-6 max-w-4xl mx-auto space-y-6 overflow-y-auto h-full">
@@ -82,7 +108,7 @@ export default function LicensePage() {
                 </div>
                 <div>
                     <h1 className="text-2xl font-bold tracking-tight">About KolaBiz</h1>
-                    <p className="text-sm text-muted-foreground">Version, updates, support & license</p>
+                    <p className="text-sm text-muted-foreground">Version, updates, support &amp; license</p>
                 </div>
             </div>
 
@@ -97,9 +123,11 @@ export default function LicensePage() {
                         <div className="space-y-1">
                             <p className="text-3xl font-bold tracking-tight">
                                 KolaBiz
-                                <span className="ml-3 text-xl font-mono text-primary">
-                                    v{appVersion}
-                                </span>
+                                {appVersion && (
+                                    <span className="ml-3 text-xl font-mono text-primary">
+                                        v{appVersion}
+                                    </span>
+                                )}
                             </p>
                             <p className="text-sm text-muted-foreground">
                                 Business management software for growing businesses
@@ -107,10 +135,10 @@ export default function LicensePage() {
                         </div>
                         <div className="flex flex-col items-end gap-1">
                             <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">
-                                Current Version
+                                Installed Version
                             </span>
                             <span className="font-mono text-sm bg-muted px-3 py-1 rounded-md border">
-                                v{appVersion}
+                                {appVersion ? `v${appVersion}` : '—'}
                             </span>
                         </div>
                     </div>
@@ -140,32 +168,34 @@ export default function LicensePage() {
                             {updateStatus === 'checking' ? 'Checking...' : 'Check for Updates'}
                         </Button>
 
-                        {/* Result inline */}
+                        {/* ✅ Up to date */}
                         {updateStatus === 'up_to_date' && (
                             <div className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400 font-medium">
                                 <IconCircleCheck size={18} />
-                                You're up to date — v{appVersion} is the latest version
+                                You&apos;re up to date — v{appVersion} is the latest version
                             </div>
                         )}
 
+                        {/* 🔔 Update available */}
                         {updateStatus === 'update_available' && (
                             <div className="flex items-center gap-3 flex-wrap">
                                 <div className="flex items-center gap-2 text-sm text-amber-600 dark:text-amber-400 font-medium">
                                     <IconAlertCircle size={18} />
-                                    Version <span className="font-bold">v{latestVersion}</span> is available!
+                                    Version <span className="font-bold ml-1">v{latestVersion}</span>&nbsp;is available
                                 </div>
                                 <Button
                                     size="sm"
                                     className="gap-1.5 h-8"
-                                    onClick={() => window.open(releaseUrl, '_blank')}
-                                    id="download-update-btn"
+                                    onClick={handleDownloadInstall}
+                                    id="download-install-btn"
                                 >
-                                    <IconExternalLink size={14} />
-                                    View Release
+                                    <IconDownload size={14} />
+                                    Download &amp; Install
                                 </Button>
                             </div>
                         )}
 
+                        {/* ❌ Error */}
                         {updateStatus === 'error' && (
                             <div className="flex items-center gap-2 text-sm text-red-500 font-medium">
                                 <IconAlertCircle size={18} />
@@ -178,6 +208,34 @@ export default function LicensePage() {
                         <p className="text-xs text-muted-foreground">
                             Click the button above to check GitHub for the latest release.
                         </p>
+                    )}
+
+                    {/* Update detail panel */}
+                    {updateStatus === 'update_available' && (
+                        <div className="mt-3 p-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 space-y-2">
+                            <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">
+                                🔔 KolaBiz v{latestVersion} is ready
+                            </p>
+                            <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
+                                Clicking <strong>Download &amp; Install</strong> will open the installer in your browser.
+                                Save and run the <code>.msi</code> file to update KolaBiz.
+                                Your data will not be affected.
+                            </p>
+                            <button
+                                onClick={() => open(releasePageUrl)}
+                                className="text-xs text-amber-600 dark:text-amber-400 underline underline-offset-2 hover:no-underline"
+                            >
+                                View release notes on GitHub →
+                            </button>
+                        </div>
+                    )}
+
+                    {updateStatus === 'up_to_date' && (
+                        <div className="mt-2 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800">
+                            <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                                KolaBiz v{appVersion} is the latest version. No action needed.
+                            </p>
+                        </div>
                     )}
                 </CardContent>
             </Card>
@@ -202,10 +260,8 @@ export default function LicensePage() {
                             <span className="text-muted-foreground font-mono">{SUPPORT_PHONE}</span>
                         </a>
 
-                        <a
-                            href={`https://wa.me/91${SUPPORT_PHONE}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
+                        <button
+                            onClick={() => open(`https://wa.me/91${SUPPORT_PHONE}`)}
                             id="support-whatsapp-btn"
                             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border
                                        bg-emerald-50 border-emerald-200 hover:bg-emerald-100
@@ -215,7 +271,7 @@ export default function LicensePage() {
                             <IconBrandWhatsapp size={16} />
                             WhatsApp Support
                             <span className="font-mono">{SUPPORT_PHONE}</span>
-                        </a>
+                        </button>
                     </div>
                 </CardContent>
             </Card>
@@ -259,10 +315,7 @@ export default function LicensePage() {
                                 )}
                             </div>
                         </div>
-                        <Button
-                            onClick={() => setShowActivation(true)}
-                            id="update-license-btn"
-                        >
+                        <Button onClick={() => setShowActivation(true)} id="update-license-btn">
                             Update License
                         </Button>
                     </div>

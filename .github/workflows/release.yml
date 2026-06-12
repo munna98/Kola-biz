@@ -1,56 +1,93 @@
-name: Auto Release on Version Change
+name: Build and Release
 
 on:
   push:
     branches: [main]
 
 jobs:
-  release:
+  # ── Step 1: Check if the version is new ──────────────────────────────────
+  check-version:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      is_new: ${{ steps.check.outputs.is_new }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Read version from tauri.conf.json
         id: version
         run: |
-          VERSION=$(python3 -c "import json; d=json.load(open('src-tauri/tauri.conf.json')); print(d['version'])")
+          VERSION=$(python3 -c "import json; print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "tag=v$VERSION" >> $GITHUB_OUTPUT
-          echo "Detected version: $VERSION"
+          echo "Detected app version: $VERSION"
 
-      - name: Check if release tag already exists
+      - name: Check if this version already has a release
         id: check
         run: |
           STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/munna98/Kola-biz/releases/tags/${{ steps.version.outputs.tag }}")
-          echo "status=$STATUS" >> $GITHUB_OUTPUT
-          echo "GitHub API status for tag ${{ steps.version.outputs.tag }}: $STATUS"
+            "https://api.github.com/repos/munna98/Kola-biz/releases/tags/v${{ steps.version.outputs.version }}")
+          echo "GitHub release tag check HTTP status: $STATUS"
+          if [ "$STATUS" = "404" ]; then
+            echo "is_new=true" >> $GITHUB_OUTPUT
+            echo "New version detected — will build and release."
+          else
+            echo "is_new=false" >> $GITHUB_OUTPUT
+            echo "Version already released — skipping build."
+          fi
 
-      - name: Create GitHub Release
-        if: steps.check.outputs.status == '404'
+  # ── Step 2: Build Tauri app for Windows and publish release ──────────────
+  build-and-release:
+    needs: check-version
+    if: needs.check-version.outputs.is_new == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Install Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build KolaBiz (Tauri)
+        run: npm run tauri build
+
+      - name: Create GitHub Release and Upload Installer
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.version.outputs.tag }}
-          name: "KolaBiz ${{ steps.version.outputs.tag }}"
+          tag_name: ${{ needs.check-version.outputs.tag }}
+          name: "KolaBiz ${{ needs.check-version.outputs.tag }}"
           body: |
-            ## KolaBiz ${{ steps.version.outputs.tag }}
+            ## KolaBiz ${{ needs.check-version.outputs.tag }}
 
-            ### What's new
-            See commit history for changes in this release.
+            ### Installation
+            1. Download the `.msi` installer below
+            2. Run it — KolaBiz will be updated automatically
+            3. Your business data will not be affected
 
             ---
-            **Released:** ${{ github.event.head_commit.timestamp }}
-            **Commit:** ${{ github.sha }}
+            Released from commit: ${{ github.sha }}
           draft: false
           prerelease: false
+          files: |
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/nsis/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Skip (version unchanged)
-        if: steps.check.outputs.status != '404'
-        run: echo "Tag ${{ steps.version.outputs.tag }} already exists. Skipping release creation."
