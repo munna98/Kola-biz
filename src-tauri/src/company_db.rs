@@ -363,6 +363,15 @@ impl DbRegistry {
         .map(|(id,)| id)
     }
 
+    /// Returns true if at least one company exists (non-deleted) in master.db.
+    pub async fn has_any_company(&self) -> bool {
+        let count: Result<(i64,), _> =
+            sqlx::query_as("SELECT COUNT(*) FROM companies WHERE is_deleted = 0")
+                .fetch_one(&self.master_pool)
+                .await;
+        count.map(|(n,)| n > 0).unwrap_or(false)
+    }
+
     /// Get info for the currently active company.
     pub async fn get_active_company_info(&self) -> Result<Option<CompanyInfo>, String> {
         let active_id = self.active_id.read().await;

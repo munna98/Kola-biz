@@ -11,7 +11,67 @@ pub struct CreateCompanyInput {
     pub custom_path: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct FirstCompanyInput {
+    pub name: String,
+    pub country: String,
+}
+
 // ===================== COMMANDS =====================
+
+/// Check if this is a fresh installation (no companies registered yet).
+#[tauri::command]
+pub async fn check_first_run(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<bool, String> {
+    Ok(!registry.has_any_company().await)
+}
+
+/// Create the first company on a fresh installation:
+/// 1. Creates the company DB and seeds it (default admin/admin + chart of accounts etc.)
+/// 2. Updates company_profile with the given name and country
+/// 3. Marks it as primary and activates it
+#[tauri::command]
+pub async fn create_first_company(
+    registry: State<'_, Arc<DbRegistry>>,
+    app_handle: tauri::AppHandle,
+    input: FirstCompanyInput,
+) -> Result<String, String> {
+    if input.name.trim().is_empty() {
+        return Err("Company name cannot be empty.".to_string());
+    }
+
+    // 1. Create company DB
+    let company_id = registry
+        .create_company(input.name.trim(), None, &app_handle)
+        .await?;
+
+    // 2. Activate it so pool is reachable
+    registry
+        .set_active_company(&company_id, &app_handle)
+        .await?;
+
+    // 3. Seed initial data (accounts, admin user, countries, units …)
+    let pool = registry.active_pool().await?;
+    crate::seeds::data::seed_initial_data(&pool)
+        .await
+        .map_err(|e| format!("Failed to seed initial data: {}", e))?;
+
+    // 4. Update company_profile with the chosen name and country
+    sqlx::query(
+        "UPDATE company_profile SET company_name = ?, country = ? WHERE id = 1",
+    )
+    .bind(input.name.trim())
+    .bind(input.country.trim())
+    .execute(&pool)
+    .await
+    .map_err(|e| format!("Failed to update company profile: {}", e))?;
+
+    // 5. Mark as primary
+    registry.set_primary_company(&company_id).await?;
+
+    Ok(company_id)
+}
 
 /// List all available companies (only those whose DB file exists on disk).
 #[tauri::command]
@@ -53,6 +113,7 @@ pub async fn create_company(
         .create_company(input.name.trim(), input.custom_path, &app_handle)
         .await
 }
+
 
 /// Rename an existing company.
 #[tauri::command]

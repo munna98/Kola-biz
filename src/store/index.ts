@@ -63,6 +63,7 @@ export interface AuthState {
   error: string | null;
 
   needsCompanySetup: boolean;
+  isFirstRun: boolean;
 }
 
 const authInitialState: AuthState = {
@@ -73,6 +74,7 @@ const authInitialState: AuthState = {
   error: null,
 
   needsCompanySetup: false,
+  isFirstRun: false,
 };
 
 const authSlice = createSlice({
@@ -85,6 +87,9 @@ const authSlice = createSlice({
 
     setNeedsCompanySetup: (state, action: PayloadAction<boolean>) => {
       state.needsCompanySetup = action.payload;
+    },
+    setIsFirstRun: (state, action: PayloadAction<boolean>) => {
+      state.isFirstRun = action.payload;
     },
     loginSuccess: (state, action: PayloadAction<{ user: User; token: string }>) => {
       state.isAuthenticated = true;
@@ -116,6 +121,7 @@ export const {
   setAuthLoading,
 
   setNeedsCompanySetup,
+  setIsFirstRun,
   loginSuccess,
   loginFailure,
   logout,

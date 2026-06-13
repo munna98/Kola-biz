@@ -50,6 +50,9 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // ---- First-Run Setup ----
+            check_first_run,
+            create_first_company,
             // ---- Company Management ----
             list_companies,
             get_active_company,

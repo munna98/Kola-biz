@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Provider, useSelector, useDispatch } from 'react-redux';
 import { store, RootState } from './store';
-import { setAuthLoading, setNeedsCompanySetup, loginSuccess } from './store';
+import { setAuthLoading, setNeedsCompanySetup, loginSuccess, setIsFirstRun } from './store';
 import { invoke } from '@tauri-apps/api/core';
 import ProductsPage from './pages/ProductsPage';
 import ServicesPage from './pages/ServicesPage';
@@ -38,6 +38,7 @@ import SalesReturnReportPage from './pages/reports/SalesReturnReportPage';
 import LoginPage from './pages/LoginPage';
 // import InitialSetupPage from './pages/InitialSetupPage'; // Removed
 import CompanySetupPage from './pages/CompanySetupPage';
+import FirstRunSetupPage from './pages/FirstRunSetupPage';
 import VoucherSettingsPage from './pages/VoucherSettingsPage';
 import VoucherSequencesPage from './pages/settings/VoucherSequencesPage';
 import UsersPage from './pages/UsersPage';
@@ -62,7 +63,7 @@ import LicensePage from './pages/LicensePage';
 function AppContent() {
   const dispatch = useDispatch();
   const { activeSection, activeSectionParams } = useSelector((state: RootState) => state.app);
-  const { isAuthenticated, isLoading, needsCompanySetup, token } = useSelector((state: RootState) => state.auth);
+  const { isAuthenticated, isLoading, needsCompanySetup, token, isFirstRun } = useSelector((state: RootState) => state.auth);
 
   // Reload data when switching to products page
   const [productPageKey, setProductPageKey] = useState(0);
@@ -71,10 +72,14 @@ function AppContent() {
   useEffect(() => {
     const checkAuth = async () => {
       try {
-        // Check if we have a valid session
-        // NOTE: We used to check for users here and redirect to setup, but now we seed a default admin.
-
-        console.log('Users found in database. Proceeding to session check.');
+        // --- First-run check: no companies exist yet (fresh install) ---
+        const isFirstRunResult: boolean = await invoke('check_first_run');
+        if (isFirstRunResult) {
+          console.log('Fresh installation detected. Showing company setup.');
+          dispatch(setIsFirstRun(true));
+          dispatch(setAuthLoading(false));
+          return;
+        }
 
         // Users exist, check if we have a valid session
         const storedToken = token || localStorage.getItem('auth_token');
@@ -147,6 +152,11 @@ function AppContent() {
   }
 
 
+
+  // Show first-run setup page for fresh installations (no company exists yet)
+  if (isFirstRun) {
+    return <FirstRunSetupPage />;
+  }
 
   // Show login page if not authenticated
   if (!isAuthenticated) {
