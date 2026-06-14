@@ -19,7 +19,8 @@ import {
     setJournalHasUnsavedChanges,
     setJournalNavigationData,
     setJournalLines,
-    setJournalCreatedByName
+    setJournalCreatedByName,
+    setActiveSectionWithParams,
 } from '@/store';
 import type { RootState, AppDispatch, JournalEntryLine } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -54,6 +55,7 @@ export default function JournalEntryPage() {
     const dispatch = useDispatch<AppDispatch>();
     const journalState = useSelector((state: RootState) => state.journalEntry);
     const user = useSelector((state: RootState) => state.auth.user);
+    const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
 
     const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
@@ -62,6 +64,7 @@ export default function JournalEntryPage() {
 
     const formRef = useRef<HTMLFormElement>(null);
     const dateRef = useRef<HTMLInputElement>(null);
+    const loadingVoucherIdRef = useRef<string | null>(null);
 
     // Load accounts
     useEffect(() => {
@@ -80,6 +83,8 @@ export default function JournalEntryPage() {
 
     // Load Voucher Effect
     const loadVoucher = useCallback(async (id: string) => {
+        if (loadingVoucherIdRef.current === id) return;
+        loadingVoucherIdRef.current = id;
         try {
             dispatch(setJournalLoading(true));
             dispatch(setJournalHasUnsavedChanges(false));
@@ -136,6 +141,7 @@ export default function JournalEntryPage() {
         } finally {
             dispatch(setJournalLoading(false));
             setIsListViewOpen(false);
+            loadingVoucherIdRef.current = null;
         }
     }, [dispatch]);
 
@@ -159,6 +165,16 @@ export default function JournalEntryPage() {
         },
         onLoadVoucher: loadVoucher,
     });
+
+    useEffect(() => {
+        if (activeSectionParams?.voucherId) {
+            const vId = activeSectionParams.voucherId;
+            dispatch(setJournalMode('viewing'));
+            dispatch(setJournalCurrentVoucherId(vId));
+            loadVoucher(vId);
+            dispatch(setActiveSectionWithParams({ section: 'journal', params: undefined }));
+        }
+    }, [activeSectionParams?.voucherId]);
 
     const handleDeleteVoucher = async () => {
         const confirmed = await handleDelete();

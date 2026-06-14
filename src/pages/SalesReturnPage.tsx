@@ -82,6 +82,7 @@ export default function SalesReturnPage() {
     const formRef = useRef<HTMLFormElement>(null);
     const customerRef = useRef<HTMLDivElement>(null);
     const appliedInvoicePrefillRef = useRef<string | null>(null);
+    const loadingVoucherIdRef = useRef<string | null>(null);
 
     // Load initial data
     useEffect(() => {
@@ -501,6 +502,8 @@ export default function SalesReturnPage() {
     };
 
     const loadVoucher = async (id: string) => {
+        if (loadingVoucherIdRef.current === id) return;
+        loadingVoucherIdRef.current = id;
         try {
             dispatch(setSalesReturnLoading(true));
             dispatch(setSalesReturnHasUnsavedChanges(false));
@@ -588,6 +591,7 @@ export default function SalesReturnPage() {
             toast.error("Failed to load return");
         } finally {
             dispatch(setSalesReturnLoading(false));
+            loadingVoucherIdRef.current = null;
         }
     };
 

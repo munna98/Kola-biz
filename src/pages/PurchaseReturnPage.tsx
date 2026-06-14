@@ -20,6 +20,7 @@ import {
     setPurchaseReturnCurrentVoucherNo,
     setPurchaseReturnHasUnsavedChanges,
     setPurchaseReturnNavigationData,
+    setActiveSectionWithParams,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -59,6 +60,7 @@ interface Party {
 export default function PurchaseReturnPage() {
     const dispatch = useDispatch<AppDispatch>();
     const purchaseReturnState = useSelector((state: RootState) => state.purchaseReturn);
+    const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
     const [products, setProducts] = useState<Product[]>([]);
     const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
@@ -78,6 +80,7 @@ export default function PurchaseReturnPage() {
     // Refs for focus management
     const formRef = useRef<HTMLFormElement>(null);
     const supplierRef = useRef<HTMLDivElement>(null);
+    const loadingVoucherIdRef = useRef<string | null>(null);
 
     // Load initial data
     useEffect(() => {
@@ -431,6 +434,8 @@ export default function PurchaseReturnPage() {
     };
 
     const loadVoucher = async (id: string) => {
+        if (loadingVoucherIdRef.current === id) return;
+        loadingVoucherIdRef.current = id;
         try {
             dispatch(setPurchaseReturnLoading(true));
             dispatch(setPurchaseReturnHasUnsavedChanges(false));
@@ -518,6 +523,7 @@ export default function PurchaseReturnPage() {
             toast.error("Failed to load return");
         } finally {
             dispatch(setPurchaseReturnLoading(false));
+            loadingVoucherIdRef.current = null;
         }
     };
 
@@ -542,6 +548,16 @@ export default function PurchaseReturnPage() {
         },
         onLoadVoucher: loadVoucher
     });
+
+    useEffect(() => {
+        if (activeSectionParams?.voucherId) {
+            const vId = activeSectionParams.voucherId;
+            dispatch(setPurchaseReturnMode('viewing'));
+            dispatch(setPurchaseReturnCurrentVoucherId(vId));
+            loadVoucher(vId);
+            dispatch(setActiveSectionWithParams({ section: 'purchase_return', params: undefined }));
+        }
+    }, [activeSectionParams?.voucherId]);
 
     const handleDeleteVoucher = async () => {
         const confirmed = await handleDelete();

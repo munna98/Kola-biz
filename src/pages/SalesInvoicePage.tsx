@@ -128,6 +128,7 @@ export default function SalesInvoicePage() {
   const formRef = useRef<HTMLFormElement>(null);
   const customerRef = useRef<HTMLDivElement>(null);
   const voucherItemsRef = useRef<VoucherItemsSectionRef>(null);
+  const loadingVoucherIdRef = useRef<string | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -715,6 +716,8 @@ export default function SalesInvoicePage() {
   };
 
   const loadVoucher = async (id: string) => {
+    if (loadingVoucherIdRef.current === id) return;
+    loadingVoucherIdRef.current = id;
     try {
       dispatch(setSalesLoading(true));
       dispatch(setSalesHasUnsavedChanges(false));
@@ -836,16 +839,21 @@ export default function SalesInvoicePage() {
       toast.error("Failed to load invoice");
     } finally {
       dispatch(setSalesLoading(false));
+      loadingVoucherIdRef.current = null;
     }
   };
 
   useEffect(() => {
-    if (activeSectionParams?.refreshInvoiceId) {
-      loadVoucher(String(activeSectionParams.refreshInvoiceId));
+    const vId = activeSectionParams?.voucherId || activeSectionParams?.refreshInvoiceId;
+    if (vId) {
+      dispatch(setSalesMode('viewing'));
+      dispatch(setSalesCurrentVoucherId(String(vId)));
+      loadVoucher(String(vId));
+      dispatch(setActiveSectionWithParams({ section: 'sales', params: undefined }));
     } else if (activeSectionParams?.sourceQuotationId) {
       loadQuotationForConversion(String(activeSectionParams.sourceQuotationId));
     }
-  }, [activeSectionParams?.refreshInvoiceId, activeSectionParams?.refreshKey, activeSectionParams?.sourceQuotationId]);
+  }, [activeSectionParams?.voucherId, activeSectionParams?.refreshInvoiceId, activeSectionParams?.refreshKey, activeSectionParams?.sourceQuotationId]);
 
   const {
     handleNavigatePrevious,

@@ -21,7 +21,8 @@ import {
   setPurchaseCurrentVoucherNo,
   setPurchaseHasUnsavedChanges,
   setPurchaseNavigationData,
-  setPurchaseCreatedByName
+  setPurchaseCreatedByName,
+  setActiveSectionWithParams
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -67,6 +68,7 @@ export default function PurchaseInvoicePage() {
   const dispatch = useDispatch<AppDispatch>();
   const purchaseState = useSelector((state: RootState) => state.purchaseInvoice);
   const user = useSelector((state: RootState) => state.auth.user);
+  const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
   const [products, setProducts] = useState<Product[]>([]);
   const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -136,6 +138,7 @@ export default function PurchaseInvoicePage() {
   const autoPrintPending = useRef(false);
   // Ref to track if barcode dialog should open after print preview / payment
   const barcodePending = useRef(false);
+  const loadingVoucherIdRef = useRef<string | null>(null);
 
   // Load initial data
   useEffect(() => {
@@ -232,6 +235,8 @@ export default function PurchaseInvoicePage() {
   };
 
   const handleLoadVoucher = async (id: string) => {
+    if (loadingVoucherIdRef.current === id) return;
+    loadingVoucherIdRef.current = id;
     try {
       dispatch(setLoading(true));
       dispatch(setPurchaseHasUnsavedChanges(false));
@@ -313,6 +318,7 @@ export default function PurchaseInvoicePage() {
       toast.error('Failed to load voucher');
     } finally {
       dispatch(setLoading(false));
+      loadingVoucherIdRef.current = null;
     }
   };
 
@@ -329,6 +335,16 @@ export default function PurchaseInvoicePage() {
     },
     onLoadVoucher: handleLoadVoucher
   });
+
+  useEffect(() => {
+    if (activeSectionParams?.voucherId) {
+      const vId = activeSectionParams.voucherId;
+      dispatch(setPurchaseMode('viewing'));
+      dispatch(setPurchaseCurrentVoucherId(vId));
+      handleLoadVoucher(vId);
+      dispatch(setActiveSectionWithParams({ section: 'purchase', params: undefined }));
+    }
+  }, [activeSectionParams?.voucherId]);
 
   const handleAddItem = (insertAt?: number) => {
     // Get defaults from settings.

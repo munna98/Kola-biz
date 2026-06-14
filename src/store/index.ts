@@ -463,6 +463,12 @@ const paymentSlice = createSlice({
     removePaymentItem: (state, action: PayloadAction<number>) => {
       state.items.splice(action.payload, 1);
     },
+    setPaymentItems: (state, action: PayloadAction<PaymentItem[]>) => {
+      state.items = action.payload.map(item => ({
+        ...item,
+        id: item.id || `temp-${Date.now()}-${Math.random()}`
+      }));
+    },
     setPaymentTotals: (state, action: PayloadAction<{ subtotal: number; tax: number; grandTotal: number }>) => {
       state.totals = action.payload;
     },
@@ -601,6 +607,12 @@ const receiptSlice = createSlice({
     removeReceiptItem: (state, action: PayloadAction<number>) => {
       state.items.splice(action.payload, 1);
     },
+    setReceiptItems: (state, action: PayloadAction<ReceiptItem[]>) => {
+      state.items = action.payload.map(item => ({
+        ...item,
+        id: item.id || `temp-${Date.now()}-${Math.random()}`
+      }));
+    },
     setReceiptTotals: (state, action: PayloadAction<{ subtotal: number; tax: number; grandTotal: number }>) => {
       state.totals = action.payload;
     },
@@ -642,6 +654,7 @@ export const {
   addPaymentItem,
   updatePaymentItem,
   removePaymentItem,
+  setPaymentItems,
   setPaymentTotals,
   resetPaymentForm,
   setSavedPayments,
@@ -664,6 +677,7 @@ export const {
   addReceiptItem,
   updateReceiptItem,
   removeReceiptItem,
+  setReceiptItems,
   setReceiptTotals,
   resetReceiptForm,
   setSavedReceipts,
@@ -2329,6 +2343,97 @@ export const {
 } = salesQuotationSlice.actions;
 
 
+// ========== LEDGER REPORT SLICE ==========
+export interface LedgerEntry {
+  id: string;
+  date: string;
+  voucher_no: string;
+  voucher_type: string;
+  narration: string;
+  debit: number;
+  credit: number;
+  balance: number;
+}
+
+export interface LedgerReportState {
+  selectedAccount: number;
+  entries: LedgerEntry[];
+  fromDate: string;
+  toDate: string;
+  openingBalance: number;
+  closingBalance: number;
+  hasGenerated: boolean;
+}
+
+const getInitialFromDate = () => {
+  const date = new Date();
+  date.setMonth(date.getMonth() - 1);
+  date.setDate(1);
+  return date.toISOString().split('T')[0];
+};
+
+const getInitialToDate = () => {
+  return new Date().toISOString().split('T')[0];
+};
+
+const ledgerReportInitialState: LedgerReportState = {
+  selectedAccount: 0,
+  entries: [],
+  fromDate: getInitialFromDate(),
+  toDate: getInitialToDate(),
+  openingBalance: 0,
+  closingBalance: 0,
+  hasGenerated: false,
+};
+
+const ledgerReportSlice = createSlice({
+  name: 'ledgerReport',
+  initialState: ledgerReportInitialState,
+  reducers: {
+    setLedgerReportSelectedAccount: (state, action: PayloadAction<number>) => {
+      state.selectedAccount = action.payload;
+      state.entries = [];
+      state.openingBalance = 0;
+      state.closingBalance = 0;
+      state.hasGenerated = false;
+    },
+    setLedgerReportFromDate: (state, action: PayloadAction<string>) => {
+      state.fromDate = action.payload;
+    },
+    setLedgerReportToDate: (state, action: PayloadAction<string>) => {
+      state.toDate = action.payload;
+    },
+    setLedgerReportData: (state, action: PayloadAction<{
+      entries: LedgerEntry[];
+      openingBalance: number;
+      closingBalance: number;
+    }>) => {
+      state.entries = action.payload.entries;
+      state.openingBalance = action.payload.openingBalance;
+      state.closingBalance = action.payload.closingBalance;
+      state.hasGenerated = true;
+    },
+    clearLedgerReport: (state) => {
+      state.selectedAccount = 0;
+      state.entries = [];
+      state.fromDate = getInitialFromDate();
+      state.toDate = getInitialToDate();
+      state.openingBalance = 0;
+      state.closingBalance = 0;
+      state.hasGenerated = false;
+    },
+  },
+});
+
+export const {
+  setLedgerReportSelectedAccount,
+  setLedgerReportFromDate,
+  setLedgerReportToDate,
+  setLedgerReportData,
+  clearLedgerReport,
+} = ledgerReportSlice.actions;
+
+
 export const store = configureStore({
   reducer: {
     app: appSlice.reducer,
@@ -2345,6 +2450,7 @@ export const store = configureStore({
     openingStock: openingStockSlice.reducer,
     stockJournal: stockJournalSlice.reducer,
     companyProfile: companyProfileSlice.reducer,
+    ledgerReport: ledgerReportSlice.reducer,
   },
 });
 

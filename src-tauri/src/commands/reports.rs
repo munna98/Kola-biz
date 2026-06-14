@@ -54,6 +54,7 @@ pub async fn get_trial_balance(
 // ============= LEDGER REPORT =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct LedgerEntry {
+    pub id: String,
     pub date: String,
     pub voucher_no: String,
     pub voucher_type: String,
@@ -123,6 +124,7 @@ pub async fn get_ledger_report(
 
     let query = format!(
         "SELECT 
+            v.id,
             v.voucher_date as date,
             v.voucher_no,
             v.voucher_type,

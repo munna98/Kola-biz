@@ -20,7 +20,9 @@ import {
     setReceiptNavigationData,
     setReceiptMethod,
     setReceiptCreatedFromInvoiceId,
-    setReceiptCreatedByName
+    setReceiptCreatedByName,
+    setActiveSectionWithParams,
+    setReceiptItems,
 } from '@/store';
 import type { RootState, AppDispatch, ReceiptItem } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -60,6 +62,7 @@ export default function ReceiptPage() {
     const dispatch = useDispatch<AppDispatch>();
     const receiptState = useSelector((state: RootState) => state.receipt);
     const user = useSelector((state: RootState) => state.auth.user);
+    const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
 
     const [depositToAccounts, setDepositToAccounts] = useState<AccountData[]>([]);
     const [receivedFromLedgers, setReceivedFromLedgers] = useState<LedgerAccount[]>([]);
@@ -81,6 +84,7 @@ export default function ReceiptPage() {
 
     const formRef = useRef<HTMLFormElement>(null);
     const depositToRef = useRef<HTMLDivElement>(null);
+    const loadingVoucherIdRef = useRef<string | null>(null);
 
     // Load Data
     useEffect(() => {
@@ -107,12 +111,12 @@ export default function ReceiptPage() {
         loadData();
     }, [dispatch]);
 
-    // Auto-add first item when data is loaded
+    // Auto-add first item when data is loaded (ONLY for new mode)
     useEffect(() => {
-        if (receivedFromLedgers.length > 0 && receiptState.items.length === 0) {
+        if (receiptState.mode === 'new' && receivedFromLedgers.length > 0 && receiptState.items.length === 0) {
             handleAddItem();
         }
-    }, [receivedFromLedgers.length]);
+    }, [receivedFromLedgers.length, receiptState.mode, receiptState.items.length]);
 
     // Calculations
     const calculateTotals = useCallback((items: ReceiptItem[]) => {
@@ -220,6 +224,8 @@ export default function ReceiptPage() {
     };
 
     const loadVoucher = async (id: string) => {
+        if (loadingVoucherIdRef.current === id) return;
+        loadingVoucherIdRef.current = id;
         try {
             dispatch(setReceiptLoading(true));
             dispatch(setReceiptHasUnsavedChanges(false));
@@ -241,15 +247,14 @@ export default function ReceiptPage() {
             dispatch(setReceiptCreatedByName(receipt.created_by_name));
 
             // Populate Items
-            items.forEach(item => {
-                dispatch(addReceiptItem({
-                    description: item.description,
-                    account_id: item.ledger_id || undefined,
-                    amount: item.amount,
-                    tax_rate: item.tax_rate,
-                    remarks: item.remarks
-                }));
-            });
+            dispatch(setReceiptItems(items.map(item => ({
+                id: item.id,
+                description: item.description,
+                account_id: item.ledger_id || undefined,
+                amount: item.amount,
+                tax_rate: item.tax_rate,
+                remarks: item.remarks
+            }))));
 
             // Use totals from backend
             dispatch(setReceiptTotals({
@@ -266,6 +271,7 @@ export default function ReceiptPage() {
             toast.error("Failed to load receipt");
         } finally {
             dispatch(setReceiptLoading(false));
+            loadingVoucherIdRef.current = null;
         }
     };
 
@@ -289,6 +295,16 @@ export default function ReceiptPage() {
         },
         onLoadVoucher: loadVoucher
     });
+
+    useEffect(() => {
+        if (activeSectionParams?.voucherId) {
+            const vId = activeSectionParams.voucherId;
+            dispatch(setReceiptMode('viewing'));
+            dispatch(setReceiptCurrentVoucherId(vId));
+            loadVoucher(vId);
+            dispatch(setActiveSectionWithParams({ section: 'receipts', params: undefined }));
+        }
+    }, [activeSectionParams?.voucherId]);
 
     const handleDeleteVoucher = async () => {
         const confirmed = await handleDelete();

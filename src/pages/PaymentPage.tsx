@@ -20,7 +20,9 @@ import {
     setPaymentNavigationData,
     setPaymentMethod,
     setPaymentCreatedFromInvoiceId,
-    setPaymentCreatedByName
+    setPaymentCreatedByName,
+    setActiveSectionWithParams,
+    setPaymentItems,
 } from '@/store';
 import type { RootState, AppDispatch, PaymentItem } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -59,6 +61,7 @@ export default function PaymentPage() {
     const dispatch = useDispatch<AppDispatch>();
     const paymentState = useSelector((state: RootState) => state.payment);
     const user = useSelector((state: RootState) => state.auth.user);
+    const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
 
     const [payFromAccounts, setPayFromAccounts] = useState<AccountData[]>([]);
     const [payToLedgers, setPayToLedgers] = useState<LedgerAccount[]>([]);
@@ -83,6 +86,7 @@ export default function PaymentPage() {
 
     const formRef = useRef<HTMLFormElement>(null);
     const payFromRef = useRef<HTMLDivElement>(null);
+    const loadingVoucherIdRef = useRef<string | null>(null);
 
     // Load Data
     useEffect(() => {
@@ -118,12 +122,12 @@ export default function PaymentPage() {
         loadData();
     }, [dispatch]);
 
-    // Auto-add first item when data is loaded
+    // Auto-add first item when data is loaded (ONLY for new mode)
     useEffect(() => {
-        if (payToLedgers.length > 0 && paymentState.items.length === 0) {
+        if (paymentState.mode === 'new' && payToLedgers.length > 0 && paymentState.items.length === 0) {
             handleAddItem();
         }
-    }, [payToLedgers.length]);
+    }, [payToLedgers.length, paymentState.mode, paymentState.items.length]);
 
     // Calculations
     const calculateTotals = useCallback((items: PaymentItem[]) => {
@@ -237,6 +241,8 @@ export default function PaymentPage() {
     };
 
     const loadVoucher = async (id: string) => {
+        if (loadingVoucherIdRef.current === id) return;
+        loadingVoucherIdRef.current = id;
         try {
             dispatch(setPaymentLoading(true));
             dispatch(setPaymentHasUnsavedChanges(false));
@@ -258,16 +264,15 @@ export default function PaymentPage() {
             dispatch(setPaymentCreatedByName(payment.created_by_name));
 
             // Populate Items
-            items.forEach(item => {
-                dispatch(addPaymentItem({
-                    description: item.description,
-                    account_id: item.ledger_id || undefined,
-                    amount: item.amount,
-                    tax_rate: item.tax_rate,
-                    remarks: item.remarks,
-                    product_id: item.product_id || undefined,
-                }));
-            });
+            dispatch(setPaymentItems(items.map(item => ({
+                id: item.id,
+                description: item.description,
+                account_id: item.ledger_id || undefined,
+                amount: item.amount,
+                tax_rate: item.tax_rate,
+                remarks: item.remarks,
+                product_id: item.product_id || undefined,
+            }))));
 
             // Use totals from backend
             dispatch(setPaymentTotals({
@@ -284,6 +289,7 @@ export default function PaymentPage() {
             toast.error("Failed to load payment");
         } finally {
             dispatch(setPaymentLoading(false));
+            loadingVoucherIdRef.current = null;
         }
     };
 
@@ -307,6 +313,16 @@ export default function PaymentPage() {
         },
         onLoadVoucher: loadVoucher
     });
+
+    useEffect(() => {
+        if (activeSectionParams?.voucherId) {
+            const vId = activeSectionParams.voucherId;
+            dispatch(setPaymentMode('viewing'));
+            dispatch(setPaymentCurrentVoucherId(vId));
+            loadVoucher(vId);
+            dispatch(setActiveSectionWithParams({ section: 'payments', params: undefined }));
+        }
+    }, [activeSectionParams?.voucherId]);
 
     const handleDeleteVoucher = async () => {
         const confirmed = await handleDelete();

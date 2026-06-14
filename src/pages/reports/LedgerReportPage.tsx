@@ -8,6 +8,15 @@ import { Combobox } from '@/components/ui/combobox';
 import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useSelector, useDispatch } from 'react-redux';
+import {
+  RootState,
+  setLedgerReportSelectedAccount,
+  setLedgerReportFromDate,
+  setLedgerReportToDate,
+  setLedgerReportData,
+  setActiveSectionWithParams,
+} from '@/store';
 
 interface LedgerAccount {
   id: number;
@@ -16,6 +25,7 @@ interface LedgerAccount {
 }
 
 interface LedgerEntry {
+  id: string;
   date: string;
   voucher_no: string;
   voucher_type: string;
@@ -26,19 +36,19 @@ interface LedgerEntry {
 }
 
 export default function LedgerReportPage() {
+  const dispatch = useDispatch();
+  const {
+    selectedAccount,
+    entries,
+    fromDate,
+    toDate,
+    openingBalance,
+    closingBalance,
+    hasGenerated,
+  } = useSelector((state: RootState) => state.ledgerReport);
+
   const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
-  const [selectedAccount, setSelectedAccount] = useState<number>(0);
-  const [entries, setEntries] = useState<LedgerEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [fromDate, setFromDate] = useState(() => {
-    const date = new Date();
-    date.setMonth(date.getMonth() - 1);
-    date.setDate(1);
-    return date.toISOString().split('T')[0];
-  });
-  const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
-  const [openingBalance, setOpeningBalance] = useState(0);
-  const [closingBalance, setClosingBalance] = useState(0);
 
   useEffect(() => {
     loadAccounts();
@@ -72,9 +82,11 @@ export default function LedgerReportPage() {
         toDate,
       });
 
-      setEntries(result.entries);
-      setOpeningBalance(result.opening_balance);
-      setClosingBalance(result.closing_balance);
+      dispatch(setLedgerReportData({
+        entries: result.entries,
+        openingBalance: result.opening_balance,
+        closingBalance: result.closing_balance,
+      }));
     } catch (error) {
       toast.error('Failed to load ledger');
       console.error(error);
@@ -136,6 +148,43 @@ export default function LedgerReportPage() {
     toast.info('Export functionality coming soon');
   };
 
+  const handleVoucherClick = (id: string, type: string) => {
+    let section = '';
+    switch (type) {
+      case 'sales_invoice':
+        section = 'sales';
+        break;
+      case 'sales_return':
+        section = 'sales_return';
+        break;
+      case 'purchase_invoice':
+        section = 'purchase';
+        break;
+      case 'purchase_return':
+        section = 'purchase_return';
+        break;
+      case 'payment':
+        section = 'payments';
+        break;
+      case 'receipt':
+        section = 'receipts';
+        break;
+      case 'journal':
+        section = 'journal';
+        break;
+      default:
+        toast.error(`Unknown voucher type: ${type}`);
+        return;
+    }
+
+    dispatch(
+      setActiveSectionWithParams({
+        section,
+        params: { voucherId: id },
+      })
+    );
+  };
+
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
@@ -173,7 +222,7 @@ export default function LedgerReportPage() {
                 label: `${a.account_code} - ${a.account_name}`,
               }))}
               value={selectedAccount}
-              onChange={(val) => setSelectedAccount(val as number)}
+              onChange={(val) => dispatch(setLedgerReportSelectedAccount(val as number))}
               placeholder="Choose account..."
               searchPlaceholder="Search accounts..."
             />
@@ -183,7 +232,7 @@ export default function LedgerReportPage() {
             <Input
               type="date"
               value={fromDate}
-              onChange={(e) => setFromDate(e.target.value)}
+              onChange={(e) => dispatch(setLedgerReportFromDate(e.target.value))}
               className="h-9"
             />
           </div>
@@ -192,7 +241,7 @@ export default function LedgerReportPage() {
             <Input
               type="date"
               value={toDate}
-              onChange={(e) => setToDate(e.target.value)}
+              onChange={(e) => dispatch(setLedgerReportToDate(e.target.value))}
               className="h-9"
             />
           </div>
@@ -228,7 +277,11 @@ export default function LedgerReportPage() {
             <div className="flex items-center justify-center h-64">
               <p className="text-muted-foreground">Loading ledger...</p>
             </div>
-          ) : entries.length === 0 && selectedAccount ? (
+          ) : !hasGenerated ? (
+            <div className="flex items-center justify-center h-64">
+              <p className="text-muted-foreground">Click 'Generate Report' to view ledger</p>
+            </div>
+          ) : entries.length === 0 ? (
             <div className="flex items-center justify-center h-64">
               <p className="text-muted-foreground">No transactions found for this account</p>
             </div>
@@ -287,10 +340,18 @@ export default function LedgerReportPage() {
                     {entries.map((entry, idx) => (
                       <tr key={idx} className="border-b hover:bg-muted/30">
                         <td className="p-3 text-sm">{formatDate(entry.date)}</td>
-                        <td className="p-3 font-mono text-sm">{entry.voucher_no}</td>
+                        <td className="p-3 text-sm">
+                          <button
+                            type="button"
+                            onClick={() => handleVoucherClick(entry.id, entry.voucher_type)}
+                            className="text-primary hover:underline font-mono font-medium text-left cursor-pointer focus:outline-none"
+                          >
+                            {entry.voucher_no}
+                          </button>
+                        </td>
                         <td className="p-3 text-sm">
                           <span className="px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
-                            {entry.voucher_type}
+                            {entry.voucher_type ? entry.voucher_type.replace(/_/g, ' ').toUpperCase() : '-'}
                           </span>
                         </td>
                         <td className="p-3 text-sm text-muted-foreground">{entry.narration || '-'}</td>
