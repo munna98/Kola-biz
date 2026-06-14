@@ -137,10 +137,10 @@
             <span>Subtotal:</span>
             <span>{{format_currency subtotal}}</span>
         </div>
-        {{#if discount_amount}}
+        {{#if has_discount}}
         <div class="totals-row">
             <span>Discount {{#if discount_rate}}({{discount_rate}}%){{/if}}:</span>
-            <span class="discount">{{format_currency discount_amount}}</span>
+            <span class="discount">{{format_currency bill_discount}}</span>
         </div>
         {{/if}}
         {{#if tax_total}}

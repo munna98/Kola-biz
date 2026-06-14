@@ -181,7 +181,7 @@ function renderThermalTable(el: DesignerElement): string {
         if (row1Cols.find(c => c.key === 'serial_no')) html += '{{increment @index}}. ';
         if (row1Cols.find(c => c.key === 'product_code')) html += '{{product_code}} ';
         if (row1Cols.find(c => c.key === 'product_name')) html += '{{product_name}} ';
-        if (row1Cols.find(c => c.key === 'description')) html += '{{#if description}}<br/><span style="font-size:${fontSize - 1}pt;font-weight:normal;">{{description}}</span>{{/if}}';
+        if (row1Cols.find(c => c.key === 'description')) html += `{{#if description}}<br/><span style="font-size:${fontSize - 1}pt;font-weight:normal;">{{description}}</span>{{/if}}`;
         html += `</td></tr>`;
 
         // Row 2
@@ -253,10 +253,10 @@ function renderThermalTotals(el: DesignerElement): string {
 
         let valueHtml: string;
         if (row.format === 'currency') {
-            // Use conditional to hide zero/empty values for optional fields
-            if (row.field === 'discount_amount') {
-                valueHtml = `{{#if discount_amount}}₹{{format_number discount_amount 2}}{{/if}}`;
-                html += `{{#if discount_amount}}<div style="display:flex;justify-content:space-between;padding:2px 0;color:#000;${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
+            // Bill-level discount: field may be bill_discount, invoice_discount_amount (legacy), or discount_amount
+            if (row.field === 'bill_discount' || row.field === 'invoice_discount_amount' || row.field === 'discount_amount') {
+                valueHtml = `{{#if has_discount}}₹{{format_number bill_discount 2}}{{/if}}`;
+                html += `{{#if has_discount}}<div style="display:flex;justify-content:space-between;padding:2px 0;color:#000;${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
                 continue;
             } else if (row.field === 'tax_total') {
                 valueHtml = `{{#if tax_total}}₹{{format_number tax_total 2}}{{/if}}`;
@@ -271,6 +271,7 @@ function renderThermalTotals(el: DesignerElement): string {
         html += `<div style="display:flex;justify-content:space-between;padding:2px 0;color:#000;${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>`;
     }
 
+    html += '</div>';
     return html;
 }
 
@@ -438,20 +439,24 @@ function renderA4TotalsElement(el: DesignerElement): string {
         const borderTop = row.bold && config.showBorder ? 'border-top:1px solid #333;' : '';
         const fontWeight = row.bold ? 'font-weight:bold;' : '';
 
+        // Resolve bill-level discount aliases → bill_discount / has_discount
+        const isBillDiscount = row.field === 'bill_discount'
+            || row.field === 'invoice_discount_amount'
+            || row.field === 'discount_amount';
+        const resolvedField = isBillDiscount ? 'bill_discount' : row.field;
+        const guardField = isBillDiscount ? 'has_discount' : (row.field === 'tax_total' ? 'tax_total' : null);
+
         let valueHtml: string;
         if (row.format === 'currency') {
-            valueHtml = `{{format_currency ${row.field}}}`;
+            valueHtml = `{{format_currency ${resolvedField}}}`;
         } else {
-            valueHtml = `{{${row.field}}}`;
+            valueHtml = `{{${resolvedField}}}`;
         }
 
-        const isOptionalCurrencyRow = row.field === 'discount_amount'
-            || row.field === 'invoice_discount_amount'
-            || row.field === 'tax_total';
         const rowHtml = `<tr><td style="text-align:${config.labelAlign || 'right'};padding:2px 6px;${borderTop}${fontWeight}">${escapeHtml(row.label)}:</td><td style="text-align:right;padding:2px 6px;width:40%;${borderTop}${fontWeight}">${valueHtml}</td></tr>`;
 
-        if (isOptionalCurrencyRow) {
-            html += `{{#if ${row.field}}}${rowHtml}{{/if}}`;
+        if (guardField) {
+            html += `{{#if ${guardField}}}${rowHtml}{{/if}}`;
             continue;
         }
 

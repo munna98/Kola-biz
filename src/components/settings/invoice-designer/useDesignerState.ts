@@ -96,7 +96,7 @@ function getDefaultTotalsConfig(): TotalsConfig {
     return {
         rows: [
             { label: 'Subtotal', field: 'subtotal', format: 'currency' },
-            { label: 'Disc', field: 'invoice_discount_amount', format: 'currency' },
+            { label: 'Disc', field: 'bill_discount', format: 'currency' },
             { label: 'Tax', field: 'tax_total', format: 'currency' },
             { label: 'Grand Total', field: 'grand_total', format: 'currency', bold: true },
         ],

@@ -123,10 +123,10 @@
             <span class="total-value">₹{{format_number subtotal 0}}</span>
         </div>
 
-        {{#if discount_amount}}
+        {{#if has_discount}}
         <div class="total-row">
             <span class="total-label">discount:</span>
-            <span class="total-value">₹{{format_number discount_amount 0}}</span>
+            <span class="total-value">₹{{format_number bill_discount 0}}</span>
         </div>
         {{/if}}
 

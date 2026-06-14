@@ -374,16 +374,17 @@ pub async fn create_quick_payment(
 
     // Create payment/receipt voucher
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, metadata, narration, status, created_from_invoice_id, account_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, grand_total, metadata, narration, status, created_from_invoice_id, account_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?)"
     )
     .bind(&payment_id)
     .bind(&voucher_no)
     .bind(voucher_type)
     .bind(&payment.payment_date)
-        .bind(&invoice.0)
-        .bind(&invoice.1)
+    .bind(&invoice.0)
+    .bind(&invoice.1)
     .bind(&payment.reference)
+    .bind(payment.amount)
     .bind(payment.amount)
     .bind(&payment.payment_method)
     .bind(&payment.remarks)
@@ -583,12 +584,14 @@ pub async fn update_quick_payment(
         "UPDATE vouchers 
          SET voucher_date = ?, 
              total_amount = ?, 
+             grand_total = ?,
              metadata = ?, 
              narration = ?,
              account_id = ?
          WHERE id = ?",
     )
     .bind(&payment.payment_date)
+    .bind(payment.amount)
     .bind(payment.amount)
     .bind(&payment.payment_method)
     .bind(&payment.remarks)

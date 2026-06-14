@@ -1118,6 +1118,13 @@ pub async fn update_purchase_invoice(
     let grand_total = round2(total_amount + total_tax);
 
     let voucher_id = id;
+    let old_party_id: Option<String> = sqlx::query_scalar(
+        "SELECT party_id FROM vouchers WHERE id = ? AND voucher_type = 'purchase_invoice'",
+    )
+    .bind(&voucher_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
     let _ = sqlx::query(
         "UPDATE vouchers 
          SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, 
@@ -1131,6 +1138,133 @@ pub async fn update_purchase_invoice(
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
     .bind(grand_total).bind(&voucher_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+    if let Some(old_id) = &old_party_id {
+        if old_id != &invoice.supplier_id {
+            let is_cash_or_bank: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM chart_of_accounts WHERE id = ? AND account_group IN ('Cash', 'Bank Account'))",
+            )
+            .bind(&invoice.supplier_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            if is_cash_or_bank {
+                // Delete related quick payments
+                let related_payment_ids: Vec<String> =
+                    sqlx::query_scalar("SELECT id FROM vouchers WHERE created_from_invoice_id = ?")
+                        .bind(&voucher_id)
+                        .fetch_all(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                for payment_id in &related_payment_ids {
+                    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+                        .bind(payment_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+                        .bind(payment_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    sqlx::query("DELETE FROM payment_allocations WHERE payment_voucher_id = ?")
+                        .bind(payment_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    sqlx::query("DELETE FROM vouchers WHERE id = ?")
+                        .bind(payment_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+            } else {
+                // Update linked vouchers' party_id and party_type
+                sqlx::query(
+                    "UPDATE vouchers SET party_id = ?, party_type = ? WHERE created_from_invoice_id = ?"
+                )
+                .bind(&invoice.supplier_id)
+                .bind(&invoice.party_type)
+                .bind(&voucher_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // Update allocations' party_id and party_type
+                sqlx::query(
+                    "UPDATE payment_allocations SET party_id = ?, party_type = ? WHERE invoice_voucher_id = ?"
+                )
+                .bind(&invoice.supplier_id)
+                .bind(&invoice.party_type)
+                .bind(&voucher_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // Update voucher items' ledger_id in linked vouchers
+                sqlx::query(
+                    "UPDATE voucher_items SET ledger_id = ? WHERE voucher_id IN (SELECT id FROM vouchers WHERE created_from_invoice_id = ?)"
+                )
+                .bind(&invoice.supplier_id)
+                .bind(&voucher_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // Update journal entries' account_id in linked vouchers
+                sqlx::query(
+                    "UPDATE journal_entries SET account_id = ? WHERE voucher_id IN (SELECT id FROM vouchers WHERE created_from_invoice_id = ?) AND account_id = ?"
+                )
+                .bind(&invoice.supplier_id)
+                .bind(&voucher_id)
+                .bind(old_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    // Recalculate invoice payment_status
+    let is_cash_or_bank: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM chart_of_accounts WHERE id = ? AND account_group IN ('Cash', 'Bank Account'))",
+    )
+    .bind(&invoice.supplier_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let new_status = if is_cash_or_bank {
+        "paid"
+    } else {
+        let total_allocated: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+        )
+        .bind(&voucher_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if (total_allocated - grand_total).abs() < 0.01 {
+            "paid"
+        } else if total_allocated > 0.0 {
+            "partially_paid"
+        } else {
+            "unpaid"
+        }
+    };
+
+    sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
+        .bind(new_status)
+        .bind(&voucher_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
 
     sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
         .bind(&voucher_id)
@@ -1764,18 +1898,21 @@ pub async fn create_sales_invoice(
     let party_id = invoice.customer_id.clone();
 
     // ============= JOURNAL: SPLIT BY ITEM TYPE =============
+    // Use pre-bill-discount net (net_amount + invoice_discount_amount) so that
+    // Sales/Service is credited at the gross subtotal and the bill-level discount
+    // is captured solely in the Discount Allowed (5007) debit entry.
     let product_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type != "service")
-            .map(|i| i.net_amount)
+            .map(|i| i.net_amount + i.invoice_discount_amount)
             .sum::<f64>(),
     );
     let service_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type == "service")
-            .map(|i| i.net_amount)
+            .map(|i| i.net_amount + i.invoice_discount_amount)
             .sum::<f64>(),
     );
 
@@ -2034,8 +2171,8 @@ pub async fn update_sales_invoice(
     let grand_total = round2(total_amount + total_tax);
 
     let voucher_id = id;
-    let voucher_no: String = sqlx::query_scalar(
-        "SELECT voucher_no FROM vouchers WHERE id = ? AND voucher_type = 'sales_invoice'",
+    let (voucher_no, old_party_id): (String, Option<String>) = sqlx::query_as(
+        "SELECT voucher_no, party_id FROM vouchers WHERE id = ? AND voucher_type = 'sales_invoice'",
     )
     .bind(&voucher_id)
     .fetch_one(&mut *tx)
@@ -2054,6 +2191,133 @@ pub async fn update_sales_invoice(
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
     .bind(grand_total).bind(&voucher_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+    if let Some(old_id) = &old_party_id {
+        if old_id != &invoice.customer_id {
+            let is_cash_or_bank: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM chart_of_accounts WHERE id = ? AND account_group IN ('Cash', 'Bank Account'))",
+            )
+            .bind(&invoice.customer_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            if is_cash_or_bank {
+                // Delete related quick payments
+                let related_receipt_ids: Vec<String> =
+                    sqlx::query_scalar("SELECT id FROM vouchers WHERE created_from_invoice_id = ?")
+                        .bind(&voucher_id)
+                        .fetch_all(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                for receipt_id in &related_receipt_ids {
+                    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+                        .bind(receipt_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+                        .bind(receipt_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    sqlx::query("DELETE FROM payment_allocations WHERE payment_voucher_id = ?")
+                        .bind(receipt_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                    sqlx::query("DELETE FROM vouchers WHERE id = ?")
+                        .bind(receipt_id)
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                }
+            } else {
+                // Update linked vouchers' party_id and party_type
+                sqlx::query(
+                    "UPDATE vouchers SET party_id = ?, party_type = ? WHERE created_from_invoice_id = ?"
+                )
+                .bind(&invoice.customer_id)
+                .bind(&invoice.party_type)
+                .bind(&voucher_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // Update allocations' party_id and party_type
+                sqlx::query(
+                    "UPDATE payment_allocations SET party_id = ?, party_type = ? WHERE invoice_voucher_id = ?"
+                )
+                .bind(&invoice.customer_id)
+                .bind(&invoice.party_type)
+                .bind(&voucher_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // Update voucher items' ledger_id in linked vouchers
+                sqlx::query(
+                    "UPDATE voucher_items SET ledger_id = ? WHERE voucher_id IN (SELECT id FROM vouchers WHERE created_from_invoice_id = ?)"
+                )
+                .bind(&invoice.customer_id)
+                .bind(&voucher_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                // Update journal entries' account_id in linked vouchers
+                sqlx::query(
+                    "UPDATE journal_entries SET account_id = ? WHERE voucher_id IN (SELECT id FROM vouchers WHERE created_from_invoice_id = ?) AND account_id = ?"
+                )
+                .bind(&invoice.customer_id)
+                .bind(&voucher_id)
+                .bind(old_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+            }
+        }
+    }
+
+    // Recalculate invoice payment_status
+    let is_cash_or_bank: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM chart_of_accounts WHERE id = ? AND account_group IN ('Cash', 'Bank Account'))",
+    )
+    .bind(&invoice.customer_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let new_status = if is_cash_or_bank {
+        "paid"
+    } else {
+        let total_allocated: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+        )
+        .bind(&voucher_id)
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        if (total_allocated - grand_total).abs() < 0.01 {
+            "paid"
+        } else if total_allocated > 0.0 {
+            "partially_paid"
+        } else {
+            "unpaid"
+        }
+    };
+
+    sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
+        .bind(new_status)
+        .bind(&voucher_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
 
     sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
         .bind(&voucher_id)
@@ -2119,18 +2383,21 @@ pub async fn update_sales_invoice(
     let party_id = invoice.customer_id.clone();
 
     // ============= JOURNAL: SPLIT BY ITEM TYPE =============
+    // Use pre-bill-discount net (net_amount + invoice_discount_amount) so that
+    // Sales/Service is credited at the gross subtotal and the bill-level discount
+    // is captured solely in the Discount Allowed (5007) debit entry.
     let product_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type != "service")
-            .map(|i| i.net_amount)
+            .map(|i| i.net_amount + i.invoice_discount_amount)
             .sum::<f64>(),
     );
     let service_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type == "service")
-            .map(|i| i.net_amount)
+            .map(|i| i.net_amount + i.invoice_discount_amount)
             .sum::<f64>(),
     );
 
@@ -2257,7 +2524,7 @@ pub async fn list_vouchers(
                 CASE
                     WHEN v.voucher_type IN ('sales_invoice', 'purchase_invoice', 'sales_return', 'purchase_return')
                         THEN COALESCE(v.subtotal, v.total_amount, 0.0) - COALESCE(v.discount_amount, 0.0) + COALESCE(v.tax_amount, 0.0)
-                    ELSE COALESCE(v.grand_total, v.total_amount, 0.0)
+                    ELSE COALESCE(NULLIF(v.grand_total, 0.0), v.total_amount, 0.0)
                 END,
                 2
             ) as total_amount,

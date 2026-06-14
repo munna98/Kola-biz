@@ -106,10 +106,10 @@
         <span>Subtotal:</span>
         <span>₹{{format_number subtotal 2}}</span>
     </div>
-    {{#if discount_amount}}
+    {{#if has_discount}}
     <div class="row">
-        <span>Discount:</span>
-        <span>₹{{format_number discount_amount 2}}</span>
+        <span>Disc:</span>
+        <span>₹{{format_number bill_discount 2}}</span>
     </div>
     {{/if}}
     {{#if tax_total}}
