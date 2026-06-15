@@ -1,0 +1,79 @@
+<!-- [HEADER] -->
+<style>
+    /* Global bold override for better thermal print clarity */
+    body,
+    p,
+    span,
+    div,
+    td,
+    th,
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-weight: bold !important;
+    }
+</style>
+<div class="thermal-header">
+    {{#if company.has_logo}}
+    <div class="logo-wrap">
+        <img src="{{company.logo}}" alt="Logo" class="logo" />
+    </div>
+    {{/if}}
+    <h1>{{company.name}}</h1>
+    <p>{{company.address}}</p>
+    <p>Ph: {{company.phone}}</p>
+    {{#if company.gstin}}
+    <p>GSTIN: {{company.gstin}}</p>
+    {{/if}}
+</div>
+<div class="separator"></div>
+<div class="invoice-info">
+    <div class="row">
+        <span>Receipt No:</span>
+        <span><strong>{{voucher_no}}</strong></span>
+    </div>
+    <div class="row">
+        <span>Date:</span>
+        <span>{{format_date voucher_date}}</span>
+    </div>
+    {{#if account_name}}
+    <div class="row">
+        <span>Received From:</span>
+        <span>{{account_name}}</span>
+    </div>
+    {{/if}}
+</div>
+<div class="separator"></div>
+
+<!-- [BODY] -->
+<div class="totals">
+    <div class="row">
+        <span>Payment Mode:</span>
+        <span>{{receipt_method}}</span>
+    </div>
+    {{#if reference_number}}
+    <div class="row">
+        <span>Ref No:</span>
+        <span>{{reference_number}}</span>
+    </div>
+    {{/if}}
+    <div class="row total">
+        <span>AMOUNT RECEIVED:</span>
+        <span>₹{{format_number grand_total 2}}</span>
+    </div>
+</div>
+
+<!-- [FOOTER] -->
+<div class="separator"></div>
+<div class="footer">
+    <p class="center"><strong>Thank You!</strong></p>
+    {{#if narration}}
+    <p class="center small">Note: {{narration}}</p>
+    {{/if}}
+    {{#if company.website}}
+    <p class="center small">{{company.website}}</p>
+    {{/if}}
+</div>

@@ -77,6 +77,15 @@ const FEATURE_LABELS: Record<string, string> = {
     show_discount_column: 'Discount Amount Column',
 };
 
+const VOUCHER_TYPE_OPTIONS = [
+    { value: 'all', label: 'All Vouchers' },
+    { value: 'sales_invoice', label: 'Sales Invoice' },
+    { value: 'sales_return', label: 'Sales Return' },
+    { value: 'purchase_invoice', label: 'Purchase Invoice' },
+    { value: 'payment', label: 'Payment Voucher' },
+    { value: 'receipt', label: 'Receipt Voucher' },
+];
+
 export function InvoiceTemplatesPage() {
     const dispatch = useDispatch();
     const [templates, setTemplates] = useState<InvoiceTemplate[]>([]);
@@ -84,6 +93,7 @@ export function InvoiceTemplatesPage() {
     const { print } = usePrint();
     const [printSettings, setPrintSettings] = useState({ silent_print: false, default_printer: '' });
     const [printers, setPrinters] = useState<string[]>([]);
+    const [selectedVoucherType, setSelectedVoucherType] = useState<string>('all');
 
 
     useEffect(() => {
@@ -198,6 +208,7 @@ export function InvoiceTemplatesPage() {
     const getVoucherLabel = (type: string) => {
         switch (type) {
             case 'sales_invoice': return 'Sales Invoice';
+            case 'sales_return': return 'Sales Return';
             case 'purchase_invoice': return 'Purchase Invoice';
             case 'payment': return 'Payment Voucher';
             case 'receipt': return 'Receipt Voucher';
@@ -214,10 +225,26 @@ export function InvoiceTemplatesPage() {
                         Manage your invoice templates and printing preferences
                     </p>
                 </div>
-                <Button onClick={() => dispatch({ type: 'app/setActiveSectionWithParams', payload: { section: 'invoice_designer' } })}>
-                    <IconPlus size={16} className="mr-2" />
-                    Create Custom Template
-                </Button>
+                <div className="flex items-center gap-4">
+                    <div className="w-[200px]">
+                        <Select value={selectedVoucherType} onValueChange={setSelectedVoucherType}>
+                            <SelectTrigger>
+                                <SelectValue placeholder="Filter by voucher" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {VOUCHER_TYPE_OPTIONS.map((opt) => (
+                                    <SelectItem key={opt.value} value={opt.value}>
+                                        {opt.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <Button onClick={() => dispatch({ type: 'app/setActiveSectionWithParams', payload: { section: 'invoice_designer' } })}>
+                        <IconPlus size={16} className="mr-2" />
+                        Create Custom Template
+                    </Button>
+                </div>
             </div>
 
             <div className="flex-1 overflow-auto p-6">
@@ -275,11 +302,13 @@ export function InvoiceTemplatesPage() {
 
                 {loading ? (
                     <div className="flex justify-center p-8">Loading templates...</div>
-                ) : Object.entries(groupedTemplates).map(([type, typeTemplates]) => (
-                    <Card key={type}>
+                ) : Object.entries(groupedTemplates)
+                    .filter(([type]) => selectedVoucherType === 'all' || type === selectedVoucherType)
+                    .map(([type, typeTemplates]) => (
+                        <Card key={type}>
                         <CardHeader>
                             <CardTitle className="text-lg flex items-center gap-2">
-                                {type === 'sales_invoice' || type === 'purchase_invoice' ? (
+                                {type === 'sales_invoice' || type === 'purchase_invoice' || type === 'sales_return' ? (
                                     <IconFileInvoice size={20} />
                                 ) : (
                                     <IconReceipt size={20} />

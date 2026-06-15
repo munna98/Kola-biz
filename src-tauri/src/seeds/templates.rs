@@ -8,6 +8,8 @@ const A4_CSS: &str = include_str!("../../resources/templates/a4_professional.css
 const THERMAL_80MM_HTML: &str = include_str!("../../resources/templates/thermal_80mm.html");
 const THERMAL_80MM_CSS: &str = include_str!("../../resources/templates/thermal_80mm.css");
 
+const THERMAL_RECEIPT_HTML: &str = include_str!("../../resources/templates/thermal_receipt.html");
+
 const MINIMAL_HTML: &str = include_str!("../../resources/templates/minimal_clean.html");
 const MINIMAL_CSS: &str = include_str!("../../resources/templates/minimal_clean.css");
 
@@ -295,6 +297,147 @@ pub async fn seed_handlebars_templates(
         .bind(&gst_b)
         .bind(&gst_f)
         .bind(GST_TAX_INVOICE_CSS)
+        .execute(pool)
+        .await?;
+
+    // ==================== SALES RETURN TEMPLATES ====================
+
+    // Sales Return A4 (Professional)
+    let sr_a4_h = a4_h.replace("INVOICE", "CREDIT NOTE").replace("Invoice No:", "Return No:").replace("invoice", "sales_return");
+    let sr_a4_b = a4_b.replace("Invoice", "Sales Return");
+    let sr_a4_f = a4_f.replace("invoice", "sales_return");
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-SR-001")
+    .bind("Professional A4 Credit Note")
+    .bind("Modern professional Credit Note format for sales returns")
+    .bind("sales_return")
+    .bind("a4_portrait")
+    .bind("standard")
+    .bind(&sr_a4_h)
+    .bind(&sr_a4_b)
+    .bind(&sr_a4_f)
+    .bind(A4_CSS)
+    .bind(1)
+    .execute(pool)
+    .await?;
+
+    // Sales Return Thermal
+    let sr_t80_h = t80_h.replace("Invoice:", "Credit Note:");
+    let sr_t80_b = t80_b.clone();
+    let sr_t80_f = t80_f.clone();
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-SR-002")
+    .bind("Thermal Credit Note Receipt")
+    .bind("Thermal print format for credit notes (Sales Returns)")
+    .bind("sales_return")
+    .bind("thermal_80mm")
+    .bind("compact")
+    .bind(&sr_t80_h)
+    .bind(&sr_t80_b)
+    .bind(&sr_t80_f)
+    .bind(THERMAL_80MM_CSS)
+    .bind(0)
+    .execute(pool)
+    .await?;
+
+    // Sales Return GST Tax Invoice
+    let sr_gst_h = gst_h.replace("TAX INVOICE", "CREDIT NOTE").replace("Invoice No:", "Credit Note No:").replace("invoice", "sales_return");
+    let sr_gst_b = gst_b.replace("Invoice", "Sales Return");
+    let sr_gst_f = gst_f.replace("invoice", "sales_return");
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css,
+            show_gstin, show_item_hsn, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-SR-GST-001")
+    .bind("GST Credit Note (Tally Style)")
+    .bind("Tally-compatible Credit Note for sales returns with GST breakup")
+    .bind("sales_return")
+    .bind("a4_portrait")
+    .bind("standard")
+    .bind(&sr_gst_h)
+    .bind(&sr_gst_b)
+    .bind(&sr_gst_f)
+    .bind(GST_TAX_INVOICE_CSS)
+    .bind(1) // show_gstin
+    .bind(1) // show_item_hsn
+    .bind(0) // not default
+    .execute(pool)
+    .await?;
+
+    // Update Sales Return templates on start (if design_mode != 'designer')
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SR-001' AND design_mode != 'designer'")
+        .bind(&sr_a4_h)
+        .bind(&sr_a4_b)
+        .bind(&sr_a4_f)
+        .bind(A4_CSS)
+        .execute(pool)
+        .await?;
+
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SR-002' AND design_mode != 'designer'")
+        .bind(&sr_t80_h)
+        .bind(&sr_t80_b)
+        .bind(&sr_t80_f)
+        .bind(THERMAL_80MM_CSS)
+        .execute(pool)
+        .await?;
+
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SR-GST-001' AND design_mode != 'designer'")
+        .bind(&sr_gst_h)
+        .bind(&sr_gst_b)
+        .bind(&sr_gst_f)
+        .bind(GST_TAX_INVOICE_CSS)
+        .execute(pool)
+        .await?;
+
+    // ==================== RECEIPT TEMPLATES ====================
+
+    // Receipt Thermal
+    let (rc_h, rc_b, rc_f) = split_template(THERMAL_RECEIPT_HTML);
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-RC-002")
+    .bind("Thermal Receipt Slip")
+    .bind("Thermal print format for Receipt Vouchers")
+    .bind("receipt")
+    .bind("thermal_80mm")
+    .bind("compact")
+    .bind(&rc_h)
+    .bind(&rc_b)
+    .bind(&rc_f)
+    .bind(THERMAL_80MM_CSS)
+    .bind(1)
+    .execute(pool)
+    .await?;
+
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-RC-002' AND design_mode != 'designer'")
+        .bind(&rc_h)
+        .bind(&rc_b)
+        .bind(&rc_f)
+        .bind(THERMAL_80MM_CSS)
         .execute(pool)
         .await?;
 

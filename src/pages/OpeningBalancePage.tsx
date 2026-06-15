@@ -16,7 +16,8 @@ import {
     setOpeningBalanceCurrentVoucherId,
     setOpeningBalanceCurrentVoucherNo,
     setOpeningBalanceHasUnsavedChanges,
-    setOpeningBalanceNavigationData
+    setOpeningBalanceNavigationData,
+    setActiveSectionWithParams,
 } from '@/store';
 import type { RootState, AppDispatch, OpeningBalanceLine } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -51,6 +52,8 @@ interface LedgerAccount {
 export default function OpeningBalancePage() {
     const dispatch = useDispatch<AppDispatch>();
     const openingBalanceState = useSelector((state: RootState) => state.openingBalance);
+    const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
+    const loadingVoucherIdRef = useRef<string | null>(null);
 
     const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
@@ -80,6 +83,8 @@ export default function OpeningBalancePage() {
 
     // Load Voucher Effect
     const loadVoucher = useCallback(async (id: string) => {
+        if (loadingVoucherIdRef.current === id) return;
+        loadingVoucherIdRef.current = id;
         try {
             dispatch(setOpeningBalanceLoading(true));
             dispatch(setOpeningBalanceHasUnsavedChanges(false));
@@ -126,6 +131,7 @@ export default function OpeningBalancePage() {
         } finally {
             dispatch(setOpeningBalanceLoading(false));
             setIsListViewOpen(false);
+            loadingVoucherIdRef.current = null;
         }
     }, [dispatch]);
 
@@ -148,6 +154,16 @@ export default function OpeningBalancePage() {
         },
         onLoadVoucher: loadVoucher,
     });
+
+    useEffect(() => {
+        if (activeSectionParams?.voucherId) {
+            const vId = activeSectionParams.voucherId;
+            dispatch(setOpeningBalanceMode('viewing'));
+            dispatch(setOpeningBalanceCurrentVoucherId(vId));
+            loadVoucher(vId);
+            dispatch(setActiveSectionWithParams({ section: 'opening', params: undefined }));
+        }
+    }, [activeSectionParams?.voucherId]);
 
     // Auto-add first line when data is loaded
     useEffect(() => {

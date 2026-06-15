@@ -39,6 +39,7 @@ import BillAllocationDialog, { AllocationData } from '@/components/dialogs/BillA
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
+import { usePrint } from '@/hooks/usePrint';
 
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
@@ -71,6 +72,8 @@ export default function ReceiptPage() {
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showQuickDialog, setShowQuickDialog] = useState(false);
     const [showListView, setShowListView] = useState(false);
+    const { print } = usePrint();
+    const [voucherSettings, setVoucherSettings] = useState<{ autoPrint?: boolean } | undefined>(undefined);
 
     // Create Account State
     const [showCreateAccount, setShowCreateAccount] = useState(false);
@@ -90,14 +93,16 @@ export default function ReceiptPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [cashBankData, allLedgersData, allGroups] = await Promise.all([
+                const [cashBankData, allLedgersData, allGroups, settingsData] = await Promise.all([
                     invoke<AccountData[]>('get_cash_bank_accounts').catch(() => []),
                     invoke<LedgerAccount[]>('get_chart_of_accounts').catch(() => []),
                     api.accountGroups.list().catch(() => []),
+                    invoke<any>('get_voucher_settings', { voucherType: 'receipt' }).catch(() => undefined),
                 ]);
                 setDepositToAccounts(cashBankData);
                 setReceivedFromLedgers(allLedgersData);
                 setAccountGroups(allGroups);
+                setVoucherSettings(settingsData);
 
                 if (cashBankData.length > 0 && receiptState.form.account_id === 0) {
                     dispatch(setReceiptAccount({ id: cashBankData[0].id, name: cashBankData[0].name }));
@@ -196,6 +201,10 @@ export default function ReceiptPage() {
                 toast.success('Receipt updated successfully');
                 dispatch(setReceiptLoading(false));
 
+                if (voucherSettings?.autoPrint) {
+                    print({ voucherId: receiptState.currentVoucherId, voucherType: 'receipt' });
+                }
+
                 dispatch(resetReceiptForm());
                 handleAddItem();
                 dispatch(setReceiptHasUnsavedChanges(false));
@@ -203,8 +212,13 @@ export default function ReceiptPage() {
                 return;
             }
 
-            await invoke('create_receipt', { receipt: { ...receiptState.form, items: receiptState.items, user_id: user?.id.toString() } });
+            const newVoucherId = await invoke<string>('create_receipt', { receipt: { ...receiptState.form, items: receiptState.items, user_id: user?.id.toString() } });
             toast.success('Receipt saved successfully');
+
+            if (voucherSettings?.autoPrint) {
+                print({ voucherId: newVoucherId, voucherType: 'receipt' });
+            }
+
             dispatch(resetReceiptForm());
             handleAddItem();
 
@@ -323,6 +337,14 @@ export default function ReceiptPage() {
         }
     };
 
+    const handlePrint = () => {
+        if (receiptState.mode === 'new' || !receiptState.currentVoucherId) {
+            toast.error("Please save the receipt before printing");
+            return;
+        }
+        print({ voucherId: receiptState.currentVoucherId, voucherType: 'receipt' });
+    };
+
     // Global keyboard shortcuts hook
     useVoucherShortcuts({
         onSave: () => formRef.current?.requestSubmit(),
@@ -408,6 +430,7 @@ export default function ReceiptPage() {
                 onSave={() => formRef.current?.requestSubmit()}
                 onCancel={handleCancel}
                 onDelete={handleDeleteVoucher}
+                onPrint={handlePrint}
                 onNew={handleNew}
                 onListView={() => setShowListView(true)}
                 editDisabled={!!receiptState.form.created_from_invoice_id}

@@ -172,6 +172,9 @@ export default function LedgerReportPage() {
       case 'journal':
         section = 'journal';
         break;
+      case 'opening_balance':
+        section = 'opening';
+        break;
       default:
         toast.error(`Unknown voucher type: ${type}`);
         return;

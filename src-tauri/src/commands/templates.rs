@@ -1,5 +1,6 @@
 use crate::commands::entries::{PaymentVoucher, ReceiptVoucher};
 use crate::commands::tax_utils;
+use crate::commands::sales_returns::SalesReturn;
 use crate::template_engine::TemplateEngine;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -272,6 +273,7 @@ pub async fn render_invoice(
         "purchase_invoice" => get_purchase_invoice_data(&pool, voucher_id).await?,
         "sales_invoice" => get_sales_invoice_data(&pool, voucher_id).await?,
         "sales_quotation" => get_sales_quotation_data(&pool, voucher_id).await?,
+        "sales_return" => get_sales_return_data(&pool, voucher_id).await?,
         "payment" => get_payment_data(&pool, voucher_id).await?,
         "receipt" => get_receipt_data(&pool, voucher_id).await?,
         _ => return Err("Unsupported voucher type".to_string()),
@@ -543,32 +545,52 @@ pub async fn reset_template_to_default(
 
     // Also immediately restore the original HTML from embedded resources
     // by re-running the seed for this specific template
-    let (html, css) = match template_number.as_str() {
-        "TPL-SI-001" | "TPL-PI-001" => {
+    let (html_str, css_str) = match template_number.as_str() {
+        "TPL-SI-001" | "TPL-PI-001" | "TPL-SR-001" => {
             let html = include_str!("../../resources/templates/a4_professional.html");
             let css = include_str!("../../resources/templates/a4_professional.css");
-            (html, css)
+            if template_number == "TPL-SR-001" {
+                let html_replaced = html.replace("INVOICE", "CREDIT NOTE").replace("Invoice No:", "Return No:").replace("invoice", "sales_return");
+                (html_replaced, css.to_string())
+            } else {
+                (html.to_string(), css.to_string())
+            }
         }
-        "TPL-SI-002" | "TPL-PI-002" => {
+        "TPL-SI-002" | "TPL-PI-002" | "TPL-SR-002" => {
             let html = include_str!("../../resources/templates/thermal_80mm.html");
             let css = include_str!("../../resources/templates/thermal_80mm.css");
-            (html, css)
+            if template_number == "TPL-SR-002" {
+                let html_replaced = html.replace("Invoice:", "Credit Note:");
+                (html_replaced, css.to_string())
+            } else {
+                (html.to_string(), css.to_string())
+            }
         }
         "TPL-SI-003" => {
             let html = include_str!("../../resources/templates/minimal_clean.html");
             let css = include_str!("../../resources/templates/minimal_clean.css");
-            (html, css)
+            (html.to_string(), css.to_string())
         }
-        "TPL-SI-GST-001" | "TPL-PI-GST-001" => {
+        "TPL-SI-GST-001" | "TPL-PI-GST-001" | "TPL-SR-GST-001" => {
             let html = include_str!("../../resources/templates/tax_invoice_gst.html");
             let css = include_str!("../../resources/templates/tax_invoice_gst.css");
-            (html, css)
+            if template_number == "TPL-SR-GST-001" {
+                let html_replaced = html.replace("TAX INVOICE", "CREDIT NOTE").replace("Invoice No:", "Credit Note No:").replace("invoice", "sales_return");
+                (html_replaced, css.to_string())
+            } else {
+                (html.to_string(), css.to_string())
+            }
+        }
+        "TPL-RC-002" => {
+            let html = include_str!("../../resources/templates/thermal_receipt.html");
+            let css = include_str!("../../resources/templates/thermal_80mm.css");
+            (html.to_string(), css.to_string())
         }
         _ => return Ok(()), // Custom templates can't be reset to seed
     };
 
     // Parse sections
-    let sections: Vec<&str> = html.split("<!-- [").collect();
+    let sections: Vec<&str> = html_str.split("<!-- [").collect();
     let mut header = String::new();
     let mut body = String::new();
     let mut footer = String::new();
@@ -588,7 +610,7 @@ pub async fn reset_template_to_default(
     .bind(&header)
     .bind(&body)
     .bind(&footer)
-    .bind(css)
+    .bind(&css_str)
     .bind(&template_id)
     .execute(&pool)
     .await
@@ -1545,6 +1567,314 @@ async fn get_sales_quotation_data(
     }
 }
 
+async fn get_sales_return_data(
+    pool: &SqlitePool,
+    id: String,
+) -> Result<serde_json::Value, String> {
+    let invoice = sqlx::query_as::<_, SalesReturn>(
+        "SELECT 
+            v.id,
+            v.voucher_no,
+            v.voucher_date,
+            v.party_id as customer_id,
+            coa.account_name as customer_name,
+            v.party_type,
+            v.reference,
+            v.total_amount,
+            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
+            v.grand_total,
+            v.discount_rate,
+            v.discount_amount,
+            v.narration,
+            v.status,
+            v.created_at,
+            v.deleted_at,
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive
+         FROM vouchers v
+         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+         WHERE v.id = ? AND v.voucher_type = 'sales_return' AND v.deleted_at IS NULL
+         GROUP BY v.id",
+    )
+    .bind(&id)
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Sales return not found".to_string())?;
+
+    let items = sqlx::query_as::<_, crate::commands::invoices::SalesInvoiceItem>(
+        "SELECT vi.*,
+                COALESCE(p.code, s.code) as product_code,
+                COALESCE(p.name, s.name) as product_name
+         FROM voucher_items vi
+         LEFT JOIN products p ON vi.product_id = p.id
+         LEFT JOIN services s ON vi.service_id = s.id
+         WHERE vi.voucher_id = ?",
+    )
+    .bind(&id)
+    .fetch_all(pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let coa_details: Option<(Option<String>, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT party_id, account_name, gstin, address_line_1, state, city, postal_code FROM chart_of_accounts WHERE id = ?"
+    )
+    .bind(&invoice.customer_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    let mut real_customer_id = None;
+    let mut account_name = String::new();
+    let mut gst_extra: Option<(Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = None;
+
+    if let Some((pid, name, gstin, addr, st, cty, pc)) = coa_details {
+        real_customer_id = pid;
+        account_name = name;
+        if gstin.is_some() || addr.is_some() || st.is_some() {
+            gst_extra = Some((gstin, addr, st, cty, pc));
+        }
+    }
+
+    if gst_extra.is_none() {
+        if let Some(ref cid) = real_customer_id {
+            gst_extra = sqlx::query_as("SELECT gstin, address_line_1, state, city, postal_code FROM customers WHERE id = ?")
+                .bind(cid).fetch_optional(pool).await.unwrap_or(None);
+        } else {
+            gst_extra = sqlx::query_as("SELECT gstin, address_line_1, state, city, postal_code FROM customers WHERE name = ?")
+                .bind(&account_name).fetch_optional(pool).await.unwrap_or(None);
+        }
+    }
+
+    let customer = if let Some(ref cid) = real_customer_id {
+        crate::commands::parties::get_customer_with_pool(pool, cid).await.ok()
+    } else {
+        None
+    };
+
+    let company = crate::commands::company::get_company_profile_with_pool(pool).await.ok();
+    let company_state = company.as_ref().and_then(|c| c.state.clone()).unwrap_or_default();
+
+    let account_id = invoice.customer_id.clone();
+    let balance_res: (f64, f64) = sqlx::query_as(
+        "SELECT 
+            COALESCE(SUM(je.debit), 0.0) as total_debit, 
+            COALESCE(SUM(je.credit), 0.0) as total_credit
+            FROM journal_entries je
+            JOIN vouchers v ON je.voucher_id = v.id
+            WHERE je.account_id = ? 
+            AND (v.voucher_date < ? OR (v.voucher_date = ? AND v.id < ?))
+            AND v.deleted_at IS NULL",
+    )
+    .bind(&account_id)
+    .bind(&invoice.voucher_date)
+    .bind(&invoice.voucher_date)
+    .bind(&id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or((0.0, 0.0));
+
+    let old_balance = balance_res.0 - balance_res.1;
+    let paid_amount: f64 = 0.0;
+    let tax_inclusive: bool = invoice.tax_inclusive != 0;
+
+    let item_meta: Vec<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT vi.id,
+                COALESCE(vi.hsn_sac_code, p.hsn_sac_code) as hsn_sac_code,
+                u.symbol as unit
+         FROM voucher_items vi
+         LEFT JOIN products p ON vi.product_id = p.id
+         LEFT JOIN units u ON vi.unit_id = u.id
+         WHERE vi.voucher_id = ?",
+    )
+    .bind(&id)
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let meta_map: std::collections::HashMap<String, (String, String)> = item_meta
+        .into_iter()
+        .map(|(iid, hsn, unit)| (iid, (hsn.unwrap_or_default(), unit.unwrap_or_default())))
+        .collect();
+
+    let formatted_items: Vec<serde_json::Value> = items
+        .into_iter()
+        .map(|item| {
+            let mut item_val = serde_json::to_value(&item).unwrap_or(json!({}));
+            if let Some(obj) = item_val.as_object_mut() {
+                let taxable_amt = item.net_amount;
+                let item_level_taxable_amt = round2((item.amount - item.discount_amount).max(0.0));
+                let display_amt = item.amount;
+                let tax_rate = if item.resolved_gst_rate > 0.0 { item.resolved_gst_rate } else { item.tax_rate };
+
+                let (base_amt, tax_amt, ex_tax_rate) = if tax_inclusive && tax_rate > 0.0 {
+                    let base = taxable_amt / (1.0 + tax_rate / 100.0);
+                    let tax = taxable_amt - base;
+                    let final_qty = item.initial_quantity - (item.count as f64) * item.deduction_per_unit;
+                    let original_base = item_level_taxable_amt;
+                    let ex_rate = if final_qty > 0.0 { original_base / final_qty } else { item.rate };
+                    (base, tax, ex_rate)
+                } else {
+                    (taxable_amt, item.tax_amount, item.rate)
+                };
+
+                let display_base = if tax_inclusive && tax_rate > 0.0 {
+                    display_amt / (1.0 + tax_rate / 100.0)
+                } else {
+                    display_amt
+                };
+
+                obj.insert("inclusive_rate".to_string(), json!(item.rate));
+                obj.insert("inclusive_amount".to_string(), json!(item.amount));
+                
+                obj.insert("rate".to_string(), json!(round2(ex_tax_rate)));
+                obj.insert("amount".to_string(), json!(round2(display_base)));
+
+                obj.insert("base_amount".to_string(), json!(round2(base_amt)));
+                obj.insert("ex_tax_rate".to_string(), json!(round2(ex_tax_rate)));
+                obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
+
+                let total = item_level_taxable_amt * (1.0 + tax_rate / 100.0);
+                obj.insert("total".to_string(), json!(round2(total)));
+
+                let less_quantity = round2((item.count as f64) * item.deduction_per_unit);
+                obj.insert("less_quantity".to_string(), json!(less_quantity));
+
+                let (hsn, unit) = meta_map.get(&item.id).cloned().unwrap_or_default();
+                obj.insert("hsn_sac_code".to_string(), json!(hsn));
+                obj.insert("unit".to_string(), json!(unit));
+
+                let party_state = gst_extra.as_ref().and_then(|e| e.2.clone()).unwrap_or_default();
+                let is_inter = tax_utils::is_inter_state(Some(&company_state), Some(&party_state));
+                let total_rate = tax_rate;
+
+                if item.cgst_rate > 0.0 || item.sgst_rate > 0.0 || item.igst_rate > 0.0 {
+                    obj.insert("cgst_rate".to_string(), json!(item.cgst_rate));
+                    obj.insert("sgst_rate".to_string(), json!(item.sgst_rate));
+                    obj.insert("igst_rate".to_string(), json!(item.igst_rate));
+                    obj.insert("cgst_amount".to_string(), json!(round2(item.cgst_amount)));
+                    obj.insert("sgst_amount".to_string(), json!(round2(item.sgst_amount)));
+                    obj.insert("igst_amount".to_string(), json!(round2(item.igst_amount)));
+                } else if is_inter {
+                    obj.insert("cgst_rate".to_string(), json!(0.0));
+                    obj.insert("sgst_rate".to_string(), json!(0.0));
+                    obj.insert("igst_rate".to_string(), json!(total_rate));
+                    obj.insert("cgst_amount".to_string(), json!(0.0));
+                    obj.insert("sgst_amount".to_string(), json!(0.0));
+                    obj.insert("igst_amount".to_string(), json!(round2(tax_amt)));
+                } else {
+                    obj.insert("cgst_rate".to_string(), json!(total_rate / 2.0));
+                    obj.insert("sgst_rate".to_string(), json!(total_rate / 2.0));
+                    obj.insert("igst_rate".to_string(), json!(0.0));
+                    obj.insert("cgst_amount".to_string(), json!(round2(tax_amt / 2.0)));
+                    obj.insert("sgst_amount".to_string(), json!(round2(tax_amt / 2.0)));
+                    obj.insert("igst_amount".to_string(), json!(0.0));
+                }
+            }
+            item_val
+        })
+        .collect();
+
+    if let Some(mut invoice_val) = serde_json::to_value(&invoice).ok() {
+        if let Some(obj) = invoice_val.as_object_mut() {
+            obj.insert(
+                "items".to_string(),
+                serde_json::to_value(formatted_items.clone()).unwrap_or(json!([])),
+            );
+
+            if let Some(c) = company {
+                obj.insert("company".to_string(), serde_json::to_value(c).unwrap_or(json!({})));
+            }
+
+            let (party_gstin, party_state, party_address_1, party_city, party_postal) =
+                if let Some((g, a1, s, c, p)) = &gst_extra {
+                    (
+                        g.clone().unwrap_or_default(),
+                        s.clone().unwrap_or_default(),
+                        a1.clone().unwrap_or_default(),
+                        c.clone().unwrap_or_default(),
+                        p.clone().unwrap_or_default(),
+                    )
+                } else {
+                    (String::new(), String::new(), String::new(), String::new(), String::new())
+                };
+
+            let party_state_code = tax_utils::state_code_from_gstin(
+                if party_gstin.is_empty() { None } else { Some(&party_gstin) },
+            );
+
+            let party_obj = if let Some(cust) = customer {
+                json!({
+                    "name": cust.name,
+                    "address": cust.address_line_1.clone(),
+                    "address_line_1": if party_address_1.is_empty() { cust.address_line_1.clone() } else { Some(party_address_1.clone()) },
+                    "phone": cust.phone,
+                    "email": cust.email,
+                    "gstin": if party_gstin.is_empty() { None } else { Some(party_gstin.clone()) },
+                    "state": if party_state.is_empty() { None } else { Some(party_state.clone()) },
+                    "city": if party_city.is_empty() { None } else { Some(party_city.clone()) },
+                    "postal_code": if party_postal.is_empty() { None } else { Some(party_postal.clone()) },
+                    "state_code": &party_state_code,
+                })
+            } else {
+                json!({
+                    "name": invoice.customer_name,
+                    "address": Option::<String>::None,
+                    "address_line_1": Option::<String>::None,
+                    "phone": Option::<String>::None,
+                    "email": Option::<String>::None,
+                    "gstin": Option::<String>::None,
+                    "state": Option::<String>::None,
+                    "city": Option::<String>::None,
+                    "postal_code": Option::<String>::None,
+                    "state_code": "",
+                })
+            };
+
+            obj.insert("party".to_string(), party_obj.clone());
+            obj.insert("ship_to".to_string(), party_obj);
+
+            let bill_discount = invoice.discount_amount.unwrap_or(0.0);
+            let subtotal = invoice.grand_total - invoice.tax_amount + bill_discount;
+            obj.insert("subtotal".to_string(), json!(round2(subtotal)));
+            obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
+            obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
+            obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
+            obj.insert("bill_discount".to_string(), json!(round2(bill_discount)));
+
+            let formatted_return_items: Vec<serde_json::Value> = Vec::new();
+            let return_total = 0.0;
+            obj.insert("return_items".to_string(), serde_json::to_value(&formatted_return_items).unwrap_or(json!([])));
+            obj.insert("return_total".to_string(), json!(round2(return_total)));
+            obj.insert("has_returns".to_string(), json!(false));
+            obj.insert("net_payable".to_string(), json!(round2(invoice.grand_total.max(0.0))));
+
+            let is_cash = invoice.customer_name == "Cash";
+            obj.insert("is_cash".to_string(), json!(is_cash));
+
+            obj.insert("old_balance".to_string(), json!(old_balance));
+            obj.insert("paid_amount".to_string(), json!(paid_amount));
+
+            let balance_due = old_balance - invoice.grand_total;
+            obj.insert("balance_due".to_string(), json!(balance_due));
+
+            let total_balance = old_balance - invoice.grand_total;
+            obj.insert("total_balance".to_string(), json!(total_balance));
+
+            obj.insert("voucher_type".to_string(), json!("sales_return"));
+
+            let inter_state = tax_utils::is_inter_state(
+                Some(&company_state),
+                Some(&party_state),
+            );
+            inject_gst_context(obj, pool, &id, &formatted_items, inter_state).await;
+        }
+        Ok(invoice_val)
+    } else {
+        Err("Failed to serialize sales return".to_string())
+    }
+}
+
 
 async fn get_payment_data(
     pool: &SqlitePool,
@@ -1629,12 +1959,14 @@ async fn get_receipt_data(
             COALESCE(v.metadata, '') as receipt_method,
             v.reference as reference_number,
             v.total_amount,
-            COALESCE(SUM(vi.tax_amount), 0) as tax_amount,
+            COALESCE(SUM(vi.tax_amount), 0.0) as tax_amount,
             v.grand_total,
             v.narration,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            v.created_from_invoice_id,
+            u.full_name as created_by_name
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
@@ -1650,6 +1982,7 @@ async fn get_receipt_data(
             WHERE debit > 0
         ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        LEFT JOIN users u ON v.created_by = u.id
         WHERE v.id = ? AND v.voucher_type = 'receipt' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -1659,6 +1992,7 @@ async fn get_receipt_data(
     .map_err(|e| e.to_string())?;
 
     let items = crate::commands::entries::get_receipt_items_with_pool(pool, &id).await?;
+    let company = crate::commands::company::get_company_profile_with_pool(pool).await.ok();
 
     let mut val = serde_json::to_value(voucher).map_err(|e| e.to_string())?;
     if let Some(obj) = val.as_object_mut() {
@@ -1666,6 +2000,9 @@ async fn get_receipt_data(
             "items".to_string(),
             serde_json::to_value(items).unwrap_or(json!([])),
         );
+        if let Some(c) = company {
+            obj.insert("company".to_string(), serde_json::to_value(c).unwrap_or(json!({})));
+        }
     }
     Ok(val)
 }
