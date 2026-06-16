@@ -424,6 +424,21 @@ export default function PropertiesPanel({
                                             </SelectContent>
                                         </Select>
                                     </div>
+                                    <div className="flex items-center gap-2">
+                                        <Label className="text-[11px] text-muted-foreground w-20 shrink-0">Font</Label>
+                                        <Select
+                                            value={el.tableConfig.fontFamily || 'inherit'}
+                                            onValueChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, fontFamily: v === 'inherit' ? undefined : v } })}
+                                        >
+                                            <SelectTrigger className="h-7 text-xs flex-1"><SelectValue placeholder="Inherit (Global)" /></SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="inherit" className="text-xs">Inherit (Global)</SelectItem>
+                                                {FONT_FAMILIES.map(f => (
+                                                    <SelectItem key={f} value={f} className="text-xs">{f.split(',')[0]}</SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
                                     <ColorInput label="Header BG" value={el.tableConfig.headerBg} onChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, headerBg: v } })} />
                                     <ColorInput label="Header Text" value={el.tableConfig.headerColor} onChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, headerColor: v } })} />
                                     <NumberInput label="Header Font" value={el.tableConfig.headerFontSize} onChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, headerFontSize: v } })} min={6} max={16} unit="pt" />
@@ -440,7 +455,27 @@ export default function PropertiesPanel({
                                         <Label className="text-[11px]">Two-Row Layout (Thermal)</Label>
                                         <Switch
                                             checked={el.tableConfig.twoRowLayout ?? false}
-                                            onCheckedChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, twoRowLayout: v } })}
+                                            onCheckedChange={v => onUpdateElement(el.id, { 
+                                                tableConfig: { 
+                                                    ...el.tableConfig!, 
+                                                    twoRowLayout: v,
+                                                    threeRowLayout: v ? false : el.tableConfig!.threeRowLayout
+                                                } 
+                                            })}
+                                            className="h-4 w-7"
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between">
+                                        <Label className="text-[11px]">Three-Row Stacked (Thermal)</Label>
+                                        <Switch
+                                            checked={el.tableConfig.threeRowLayout ?? false}
+                                            onCheckedChange={v => onUpdateElement(el.id, { 
+                                                tableConfig: { 
+                                                    ...el.tableConfig!, 
+                                                    threeRowLayout: v,
+                                                    twoRowLayout: v ? false : el.tableConfig!.twoRowLayout
+                                                } 
+                                            })}
                                             className="h-4 w-7"
                                         />
                                     </div>

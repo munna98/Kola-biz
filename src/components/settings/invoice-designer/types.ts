@@ -34,6 +34,7 @@ export interface TableConfig {
     columns: TableColumn[];
     showHeader: boolean;
     showSerialNo: boolean;
+    fontFamily?: string;      // override font for the entire table
     headerBg?: string;
     headerColor?: string;
     headerFontSize?: number;
@@ -44,6 +45,7 @@ export interface TableConfig {
     borderStyle?: 'full' | 'horizontal' | 'none';
     rowHeight?: number;       // mm
     twoRowLayout?: boolean;   // Split items into 2 rows for thermal
+    threeRowLayout?: boolean; // Stack items into 3 rows for thermal
 }
 
 export interface TotalsConfig {

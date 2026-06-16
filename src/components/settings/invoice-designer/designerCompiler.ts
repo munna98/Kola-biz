@@ -152,12 +152,74 @@ function renderThermalTable(el: DesignerElement): string {
     const fontSize = config.bodyFontSize || 9;
     const headerFontSize = config.headerFontSize || fontSize;
     const bodyBold = config.bodyFontBold !== false;  // default true for thermal
+    const fontFamilyStyle = config.fontFamily ? `font-family:${config.fontFamily};` : '';
+    const borderBottomStyle = config.borderStyle && config.borderStyle !== 'none' ? 'border-bottom:1px dotted #ccc;' : '';
 
-    let html = `<table style="width:100%;border-collapse:collapse;font-size:${fontSize}pt;color:#000;">`;
+    let html = `<table style="width:100%;border-collapse:collapse;font-size:${fontSize}pt;color:#000;${fontFamilyStyle}">`;
+
+    if (config.threeRowLayout) {
+        // No header rendered as per user request ("no Code / Item header in that settings")
+        html += '<tbody>{{#each items}}';
+        
+        const visibleCols = config.columns.filter(c => !c.hidden);
+        const row1Parts: string[] = [];
+        if (visibleCols.some(c => c.key === 'serial_no')) row1Parts.push('{{increment @index}}.');
+        if (visibleCols.some(c => c.key === 'product_code')) row1Parts.push('{{product_code}}');
+        if (visibleCols.some(c => c.key === 'product_name')) row1Parts.push('{{product_name}}');
+        
+        let row1Text = row1Parts.join(' ');
+        if (visibleCols.some(c => c.key === 'description')) {
+            row1Text += `{{#if description}}<br/><span style="font-size:${fontSize - 1}pt;font-weight:normal;">{{description}}</span>{{/if}}`;
+        }
+
+        html += `<tr><td colspan="2" style="padding:4px 2px 0 2px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};">${row1Text}</td></tr>`;
+
+        // Row 2: Count | Qty | Less
+        const row2Parts: string[] = [];
+        if (visibleCols.some(c => c.key === 'count')) {
+            row2Parts.push('Count: {{count}}');
+        }
+        if (visibleCols.some(c => c.key === 'initial_quantity')) {
+            row2Parts.push('Qty: {{format_number initial_quantity 2}}');
+        }
+        if (visibleCols.some(c => c.key === 'less_quantity')) {
+            row2Parts.push('Less: {{format_number less_quantity 2}}');
+        }
+        const row2Text = row2Parts.join(' &nbsp;|&nbsp; ');
+        
+        if (row2Parts.length > 0) {
+            html += `<tr><td colspan="2" style="padding:0 2px 2px 12px;text-align:left;font-size:${fontSize}pt;color:#666;font-weight:${bodyBold ? 'bold' : 'normal'};">${row2Text}</td></tr>`;
+        }
+
+        // Row 3: F.Qty @ Rate and Amt
+        const row3Parts: string[] = [];
+        if (visibleCols.some(c => c.key === 'final_quantity')) {
+            row3Parts.push('F.Qty: {{format_number final_quantity 2}}');
+        }
+        if (visibleCols.some(c => c.key === 'rate')) {
+            row3Parts.push('@ ₹{{format_number rate 2}}');
+        }
+        const row3Text = row3Parts.join(' ');
+
+        const amtCol = visibleCols.find(c => c.key === 'total' || c.key === 'amount') || visibleCols[visibleCols.length - 1];
+        let amtContent = '';
+        if (amtCol) {
+            amtContent = `{{format_number ${amtCol.key} 2}}`;
+        }
+
+        html += `<tr>`;
+        html += `<td style="padding:0 2px 4px 12px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};${borderBottomStyle}">${row3Text}</td>`;
+        html += `<td style="padding:0 2px 4px 2px;text-align:right;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};width:30%;${borderBottomStyle}">${amtContent}</td>`;
+        html += `</tr>`;
+
+        html += '{{/each}}</tbody></table>';
+        return html;
+    }
 
     if (config.twoRowLayout) {
-        const row1Cols = config.columns.filter(c => c.key === 'product_code' || c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
-        const row2Cols = config.columns.filter(c => c.key !== 'product_code' && c.key !== 'product_name' && c.key !== 'description' && c.key !== 'serial_no');
+        const visibleCols = config.columns.filter(c => !c.hidden);
+        const row1Cols = visibleCols.filter(c => c.key === 'product_code' || c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
+        const row2Cols = visibleCols.filter(c => c.key !== 'product_code' && c.key !== 'product_name' && c.key !== 'description' && c.key !== 'serial_no');
         const totalCols = row2Cols.length || 1;
 
         // Header for both rows
@@ -177,7 +239,7 @@ function renderThermalTable(el: DesignerElement): string {
         html += '<tbody>{{#each items}}';
         
         // Row 1
-        html += `<tr><td colspan="${totalCols}" style="padding:4px 2px 0 2px;text-align:left;font-size:${fontSize}pt;color:#000;${bodyBold ? 'font-weight:bold;' : ''}">`;
+        html += `<tr><td colspan="${totalCols}" style="padding:4px 2px 0 2px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};">`;
         if (row1Cols.find(c => c.key === 'serial_no')) html += '{{increment @index}}. ';
         if (row1Cols.find(c => c.key === 'product_code')) html += '{{product_code}} ';
         if (row1Cols.find(c => c.key === 'product_name')) html += '{{product_name}} ';
@@ -195,7 +257,7 @@ function renderThermalTable(el: DesignerElement): string {
             } else {
                 cellContent = `{{${col.key}}}`;
             }
-            html += `<td style="padding:0 2px 4px 2px;text-align:${col.align};font-size:${fontSize}pt;color:#000;border-bottom:1px dotted #ccc;">${cellContent}</td>`;
+            html += `<td style="padding:0 2px 4px 2px;text-align:${col.align};font-size:${fontSize}pt;color:#000;${borderBottomStyle}font-weight:${bodyBold ? 'bold' : 'normal'};width:${col.width}%;">${cellContent}</td>`;
         }
         html += `</tr>`;
         
@@ -210,7 +272,7 @@ function renderThermalTable(el: DesignerElement): string {
         for (const col of visibleColumns) {
             const bgStyle = config.headerBg && config.headerBg !== '#f0f0f0'
                 ? `background:${config.headerBg};` : '';
-            html += `<th style="text-align:${col.align};padding:4px 2px;font-size:${headerFontSize}pt;border-bottom:1px solid #000;font-weight:bold;color:#000;${bgStyle}">${escapeHtml(col.label)}</th>`;
+            html += `<th style="text-align:${col.align};padding:4px 2px;font-size:${headerFontSize}pt;border-bottom:1px solid #000;font-weight:bold;color:#000;width:${col.width}%;${bgStyle}">${escapeHtml(col.label)}</th>`;
         }
         html += '</tr></thead>';
     }
@@ -229,7 +291,7 @@ function renderThermalTable(el: DesignerElement): string {
         } else {
             cellContent = `{{${col.key}}}`;
         }
-        html += `<td style="padding:4px 2px;text-align:${col.align};font-size:${fontSize}pt;color:#000;${bodyBold ? 'font-weight:bold;' : ''}">${cellContent}</td>`;
+        html += `<td style="padding:4px 2px;text-align:${col.align};font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};width:${col.width}%;${borderBottomStyle}">${cellContent}</td>`;
     }
     html += '</tr>{{/each}}</tbody>';
     html += '</table>';
@@ -242,33 +304,47 @@ function renderThermalTotals(el: DesignerElement): string {
     if (!config) return '';
 
     const fontSize = el.styles.fontSize || 10;
-    let html = '<div class="totals" style="color:#000;">';
+    // Inherit font properties from el.styles so property panel changes are reflected in print
+    const fontFamily = el.styles.fontFamily ? `font-family:${el.styles.fontFamily};` : '';
+    const fontWeight = el.styles.fontWeight === 'bold' ? 'font-weight:bold;' : '';
+
+    // Use buildThermalInlineStyle so ALL element-level style changes (font, size, color, border…)
+    // actually make it into the generated HTML
+    const wrapperStyle = buildThermalInlineStyle(el);
+    let html = `<div style="${wrapperStyle}">`;
 
     for (const row of config.rows) {
         const isBold = row.bold;
-        const isGrandTotal = row.field === 'grand_total';
+        // isGrandTotal styling only applies in the main Totals block (multi-row, showBorder enabled),
+        // not for individual Account Summary rows where grand_total means "Bill Amt"
+        const isGrandTotal = row.field === 'grand_total' && config.rows.length > 1;
+        const isBoldRow = isBold && !isGrandTotal;
         const extraStyle = isGrandTotal
             ? `font-weight:bold;font-size:${fontSize + 2}pt;border-top:1px solid #000;padding-top:5px;margin-top:5px;`
-            : isBold ? 'font-weight:bold;' : '';
+            : isBoldRow ? `font-weight:bold;font-size:${fontSize + 1}pt;border-top:1px dotted #000;padding-top:3px;margin-top:2px;` : '';
 
         let valueHtml: string;
         if (row.format === 'currency') {
             // Bill-level discount: field may be bill_discount, invoice_discount_amount (legacy), or discount_amount
             if (row.field === 'bill_discount' || row.field === 'invoice_discount_amount' || row.field === 'discount_amount') {
                 valueHtml = `{{#if has_discount}}₹{{format_number bill_discount 2}}{{/if}}`;
-                html += `{{#if has_discount}}<div style="display:flex;justify-content:space-between;padding:2px 0;color:#000;${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
+                html += `{{#if has_discount}}<div style="display:flex;justify-content:space-between;padding:1px 0;color:#000;${fontFamily}${fontWeight}${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
                 continue;
             } else if (row.field === 'tax_total') {
                 valueHtml = `{{#if tax_total}}₹{{format_number tax_total 2}}{{/if}}`;
-                html += `{{#if tax_total}}<div style="display:flex;justify-content:space-between;padding:2px 0;color:#000;${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
+                html += `{{#if tax_total}}<div style="display:flex;justify-content:space-between;padding:1px 0;color:#000;${fontFamily}${fontWeight}${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
                 continue;
+            } else if (row.field === 'old_balance' || row.field === 'balance_due' || row.field === 'total_balance') {
+                // These can be negative — use abs_format_number
+                valueHtml = `₹{{abs_format_number ${row.field} 2}}`;
+            } else {
+                valueHtml = `₹{{format_number ${row.field} 2}}`;
             }
-            valueHtml = `₹{{format_number ${row.field} 2}}`;
         } else {
             valueHtml = `{{${row.field}}}`;
         }
 
-        html += `<div style="display:flex;justify-content:space-between;padding:2px 0;color:#000;${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>`;
+        html += `<div style="display:flex;justify-content:space-between;padding:1px 0;color:#000;${fontFamily}${fontWeight}${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>`;
     }
 
     html += '</div>';
@@ -314,7 +390,7 @@ function generateThermalCSS(design: TemplateDesign): string {
     border-color: #000000 !important;
 }
 body, p, span, div, td, th, h1, h2, h3, h4, h5, h6 {
-    font-weight: bold !important;
+    font-weight: bold;
 }
 body {
     font-family: ${globalStyles.fontFamily || "'Courier New', 'Courier', monospace"};
@@ -326,7 +402,6 @@ body {
     color: #000000;
 }
 .totals {
-    margin-top: 8px;
     font-size: 9pt;
     color: #000000;
 }
@@ -393,8 +468,10 @@ function renderA4TableElement(el: DesignerElement): string {
             ? 'border-bottom:1px solid #eee;'
             : '';
 
+    const fontFamilyStyle = config.fontFamily ? `font-family:${config.fontFamily};` : '';
+
     let html = `<div class="de de-table" style="${style}">`;
-    html += `<table style="width:100%;border-collapse:collapse;font-size:${config.bodyFontSize || 9}pt;">`;
+    html += `<table style="width:100%;border-collapse:collapse;font-size:${config.bodyFontSize || 9}pt;${fontFamilyStyle}">`;
 
     const visibleCols = config.columns.filter(c => !c.hidden);
     if (config.showHeader) {

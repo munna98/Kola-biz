@@ -97,9 +97,76 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
             const config = element.tableConfig;
             if (!config) return <div style={effectiveStyles}>Table</div>;
 
+            const visibleColumns = config.columns.filter(c => !c.hidden);
+
+            if (config.threeRowLayout) {
+                const row1Cols = visibleColumns.filter(c => c.key === 'product_code' || c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
+                
+                const row2Parts: string[] = [];
+                if (visibleColumns.some(c => c.key === 'count')) {
+                    row2Parts.push('Count: 18');
+                }
+                if (visibleColumns.some(c => c.key === 'initial_quantity')) {
+                    row2Parts.push('Qty: 1500.00');
+                }
+                if (visibleColumns.some(c => c.key === 'less_quantity')) {
+                    row2Parts.push('Less: 18.00');
+                }
+                const row2Text = row2Parts.join('  |  ');
+
+                const row3Parts: string[] = [];
+                if (visibleColumns.some(c => c.key === 'final_quantity')) {
+                    row3Parts.push('F.Qty: 1482.00');
+                }
+                if (visibleColumns.some(c => c.key === 'rate')) {
+                    row3Parts.push('@ ₹25.00');
+                }
+                const row3Text = row3Parts.join(' ');
+
+                const amtCol = visibleColumns.find(c => c.key === 'total' || c.key === 'amount') || visibleColumns[visibleColumns.length - 1];
+                const amtText = amtCol ? '37050.00' : '';
+
+                const borderStyle = config.borderStyle && config.borderStyle !== 'none' ? '1px dotted #ccc' : undefined;
+
+                return (
+                    <div style={{ ...effectiveStyles, padding: 0, overflow: 'hidden' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `${config.bodyFontSize || 8}pt` }}>
+                            <tbody>
+                                {[1, 2, 3].map(row => (
+                                    <React.Fragment key={row}>
+                                        <tr>
+                                            <td colSpan={2} style={{ padding: '2px 3px 0 3px', textAlign: 'left', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', fontSize: `${config.bodyFontSize || 8}pt`, color: '#666' }}>
+                                                {row1Cols.find(c => c.key === 'serial_no') ? `${row}. ` : ''}
+                                                {row1Cols.find(c => c.key === 'product_code') ? '101 ' : ''}
+                                                {row1Cols.find(c => c.key === 'product_name') ? 'NENTRAN 1ST' : ''}
+                                            </td>
+                                        </tr>
+                                        {row2Parts.length > 0 && (
+                                            <tr>
+                                                <td colSpan={2} style={{ padding: '0 3px 2px 12px', textAlign: 'left', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal' }}>
+                                                    {row2Text}
+                                                </td>
+                                            </tr>
+                                        )}
+                                        <tr>
+                                            <td style={{ padding: '0 3px 2px 12px', textAlign: 'left', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: borderStyle, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal' }}>
+                                                {row3Text}
+                                            </td>
+                                            <td style={{ padding: '0 3px 2px 3px', textAlign: 'right', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: borderStyle, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', width: '30%' }}>
+                                                {amtText}
+                                            </td>
+                                        </tr>
+                                    </React.Fragment>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                );
+            }
+
             if (config.twoRowLayout) {
-                const row1Cols = config.columns.filter(c => c.key === 'product_code' || c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
-                const row2Cols = config.columns.filter(c => c.key !== 'product_code' && c.key !== 'product_name' && c.key !== 'description' && c.key !== 'serial_no');
+                const row1Cols = visibleColumns.filter(c => c.key === 'product_code' || c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
+                const row2Cols = visibleColumns.filter(c => c.key !== 'product_code' && c.key !== 'product_name' && c.key !== 'description' && c.key !== 'serial_no');
                 const totalCols = row2Cols.length || 1;
 
                 return (
@@ -133,7 +200,7 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                                         </tr>
                                         <tr>
                                             {row2Cols.map((col, i) => (
-                                                <td key={i} style={{ padding: '0 3px 2px 3px', textAlign: col.align, fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: '1px dotted #ccc' }}>
+                                                <td key={i} style={{ padding: '0 3px 2px 3px', textAlign: col.align, fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: config.borderStyle && config.borderStyle !== 'none' ? '1px dotted #ccc' : undefined, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', width: `${col.width}%` }}>
                                                     {`{{${col.key}}}`}
                                                 </td>
                                             ))}
@@ -152,7 +219,7 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                         {config.showHeader && (
                             <thead>
                                 <tr>
-                                    {config.columns.map((col, i) => (
+                                    {visibleColumns.map((col, i) => (
                                         <th
                                             key={i}
                                             style={{
@@ -176,17 +243,20 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                         <tbody>
                             {[1, 2, 3].map(row => (
                                 <tr key={row} style={{ backgroundColor: config.stripedRows && row % 2 === 0 ? (config.stripedColor || '#f9f9f9') : 'transparent' }}>
-                                    {config.columns.map((col, i) => (
+                                    {visibleColumns.map((col, i) => (
                                         <td
                                             key={i}
                                             style={{
-                                                padding: '2px 3px',
-                                                border: config.borderStyle === 'full' ? '1px solid #ddd' : config.borderStyle === 'horizontal' ? '1px solid #eee' : 'none',
-                                                borderLeft: config.borderStyle === 'horizontal' ? 'none' : undefined,
-                                                borderRight: config.borderStyle === 'horizontal' ? 'none' : undefined,
+                                                padding: '4px 3px',
+                                                borderBottom: config.borderStyle && config.borderStyle !== 'none' ? '1px dotted #ccc' : undefined,
+                                                borderTop: config.borderStyle === 'full' ? '1px solid #ddd' : undefined,
+                                                borderLeft: config.borderStyle === 'full' ? '1px solid #ddd' : undefined,
+                                                borderRight: config.borderStyle === 'full' ? '1px solid #ddd' : undefined,
                                                 textAlign: col.align,
                                                 fontSize: `${config.bodyFontSize || 8}pt`,
                                                 color: '#999',
+                                                fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal',
+                                                width: `${col.width}%`,
                                             }}
                                         >
                                             {col.key === 'serial_no' ? row : `{{${col.key}}}`}

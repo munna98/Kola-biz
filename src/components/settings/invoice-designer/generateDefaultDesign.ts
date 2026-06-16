@@ -277,30 +277,48 @@ function generateThermalDesign(
     });
     y += 32;
 
-    // ── Balance Section (Account Summary) ──
-    elements.push({
-        id: genId(),
-        type: 'totals',
-        x: ml,
-        y,
-        width: contentWidth,
-        height: 25,
-        styles: { fontSize: 9, lineHeight: 1.3, border: '1px dashed #000', padding: 2 },
-        label: 'Account Summary',
-        totalsConfig: {
-            rows: [
-                { label: 'Old Bal', field: 'old_balance', format: 'currency', bold: false },
-                { label: 'Bill Amt', field: 'grand_total', format: 'currency', bold: false },
-                { label: 'Paid Amt', field: 'paid_amount', format: 'currency', bold: false },
-                { label: 'Bal Due', field: 'balance_due', format: 'currency', bold: true },
-            ],
-            labelAlign: 'left',
-            showBorder: true,
-        },
-        visible: true,
-        zIndex: elements.length + 1,
-    });
-    y += 27;
+    // ── Balance Section (Account Summary) — each row is its own element ──
+    // This allows each row to be independently positioned, styled, and toggled.
+    const accountSummaryRows: Array<{ label: string; field: string; bold: boolean }> = [
+        { label: 'Old Bal', field: 'old_balance', bold: false },
+        { label: 'Bill Amt', field: 'grand_total', bold: false },
+        { label: 'Total Bal', field: 'total_balance', bold: false },
+        { label: 'Paid Amt', field: 'paid_amount', bold: false },
+        { label: 'Bal Due', field: 'balance_due', bold: true },
+    ];
+
+    elements.push(makeDivider(ml, y, contentWidth, 'dashed', elements.length));
+    y += 2;
+
+    for (let i = 0; i < accountSummaryRows.length; i++) {
+        const row = accountSummaryRows[i];
+        const isLast = i === accountSummaryRows.length - 1;
+        elements.push({
+            id: genId(),
+            type: 'totals',
+            x: ml,
+            y,
+            width: contentWidth,
+            height: 5,
+            styles: {
+                fontSize: 9,
+                lineHeight: 1.3,
+                padding: 0,
+                ...(row.bold ? { fontWeight: 'bold' } : {}),
+            },
+            label: row.label,
+            totalsConfig: {
+                rows: [{ label: row.label, field: row.field, format: 'currency', bold: row.bold }],
+                labelAlign: 'left',
+                showBorder: isLast, // border-top separator above Bal Due
+            },
+            visible: true,
+            zIndex: elements.length + 1,
+        });
+        y += 5;
+    }
+    y += 2; // small gap after section
+
 
 
     // ── Separator (dashed) ──
