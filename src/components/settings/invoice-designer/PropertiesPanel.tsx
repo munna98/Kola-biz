@@ -364,7 +364,61 @@ export default function PropertiesPanel({
                                 />
                             </div>
                             <NumberInput label="Radius" value={el.styles.borderRadius} onChange={v => onUpdateElementStyles(el.id, { borderRadius: v })} min={0} max={50} unit="px" />
-                            <NumberInput label="Padding" value={el.styles.padding} onChange={v => onUpdateElementStyles(el.id, { padding: v })} min={0} max={20} step={0.5} unit="mm" />
+                            <div className="space-y-1 my-2">
+                                <NumberInput 
+                                    label="Padding (All)" 
+                                    value={el.styles.padding} 
+                                    onChange={v => onUpdateElementStyles(el.id, { 
+                                        padding: v,
+                                        paddingTop: v,
+                                        paddingRight: v,
+                                        paddingBottom: v,
+                                        paddingLeft: v
+                                    })} 
+                                    min={0} 
+                                    max={20} 
+                                    step={0.5} 
+                                    unit="mm" 
+                                />
+                                <div className="grid grid-cols-2 gap-1.5 pl-6 pt-1 border-l-2 border-slate-100 ml-2">
+                                    <NumberInput 
+                                        label="Top" 
+                                        value={el.styles.paddingTop ?? el.styles.padding} 
+                                        onChange={v => onUpdateElementStyles(el.id, { paddingTop: v })} 
+                                        min={0} 
+                                        max={20} 
+                                        step={0.5} 
+                                        unit="mm" 
+                                    />
+                                    <NumberInput 
+                                        label="Right" 
+                                        value={el.styles.paddingRight ?? el.styles.padding} 
+                                        onChange={v => onUpdateElementStyles(el.id, { paddingRight: v })} 
+                                        min={0} 
+                                        max={20} 
+                                        step={0.5} 
+                                        unit="mm" 
+                                    />
+                                    <NumberInput 
+                                        label="Bottom" 
+                                        value={el.styles.paddingBottom ?? el.styles.padding} 
+                                        onChange={v => onUpdateElementStyles(el.id, { paddingBottom: v })} 
+                                        min={0} 
+                                        max={20} 
+                                        step={0.5} 
+                                        unit="mm" 
+                                    />
+                                    <NumberInput 
+                                        label="Left" 
+                                        value={el.styles.paddingLeft ?? el.styles.padding} 
+                                        onChange={v => onUpdateElementStyles(el.id, { paddingLeft: v })} 
+                                        min={0} 
+                                        max={20} 
+                                        step={0.5} 
+                                        unit="mm" 
+                                    />
+                                </div>
+                            </div>
 
                             {/* Divider-specific */}
                             {el.type === 'divider' && (

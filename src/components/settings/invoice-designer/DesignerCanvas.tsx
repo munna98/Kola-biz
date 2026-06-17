@@ -46,7 +46,10 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
         letterSpacing: element.styles.letterSpacing ? `${element.styles.letterSpacing}px` : undefined,
         textTransform: element.styles.textTransform || 'none',
         textDecoration: element.styles.textDecoration || 'none',
-        padding: element.styles.padding ? `${mmToPx(element.styles.padding)}px` : '0',
+        paddingTop: element.styles.paddingTop !== undefined ? `${mmToPx(element.styles.paddingTop)}px` : (element.styles.padding !== undefined ? `${mmToPx(element.styles.padding)}px` : '0'),
+        paddingRight: element.styles.paddingRight !== undefined ? `${mmToPx(element.styles.paddingRight)}px` : (element.styles.padding !== undefined ? `${mmToPx(element.styles.padding)}px` : '0'),
+        paddingBottom: element.styles.paddingBottom !== undefined ? `${mmToPx(element.styles.paddingBottom)}px` : (element.styles.padding !== undefined ? `${mmToPx(element.styles.padding)}px` : '0'),
+        paddingLeft: element.styles.paddingLeft !== undefined ? `${mmToPx(element.styles.paddingLeft)}px` : (element.styles.padding !== undefined ? `${mmToPx(element.styles.padding)}px` : '0'),
         width: '100%',
         height: '100%',
         overflow: 'hidden',
@@ -100,64 +103,76 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
             const visibleColumns = config.columns.filter(c => !c.hidden);
 
             if (config.threeRowLayout) {
-                const row1Cols = visibleColumns.filter(c => c.key === 'product_code' || c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
-                
-                const row2Parts: string[] = [];
-                if (visibleColumns.some(c => c.key === 'count')) {
-                    row2Parts.push('Count: 18');
-                }
-                if (visibleColumns.some(c => c.key === 'initial_quantity')) {
-                    row2Parts.push('Qty: 1500.00');
-                }
-                if (visibleColumns.some(c => c.key === 'less_quantity')) {
-                    row2Parts.push('Less: 18.00');
-                }
-                const row2Text = row2Parts.join('  |  ');
-
-                const row3Parts: string[] = [];
-                if (visibleColumns.some(c => c.key === 'final_quantity')) {
-                    row3Parts.push('F.Qty: 1482.00');
-                }
-                if (visibleColumns.some(c => c.key === 'rate')) {
-                    row3Parts.push('@ ₹25.00');
-                }
-                const row3Text = row3Parts.join(' ');
-
                 const amtCol = visibleColumns.find(c => c.key === 'total' || c.key === 'amount') || visibleColumns[visibleColumns.length - 1];
                 const amtText = amtCol ? '37050.00' : '';
-
                 const borderStyle = config.borderStyle && config.borderStyle !== 'none' ? '1px dotted #ccc' : undefined;
 
                 return (
-                    <div style={{ ...effectiveStyles, padding: 0, overflow: 'hidden' }}>
+                    <div style={{ ...effectiveStyles, overflow: 'hidden' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `${config.bodyFontSize || 8}pt` }}>
                             <tbody>
-                                {[1, 2, 3].map(row => (
-                                    <React.Fragment key={row}>
-                                        <tr>
-                                            <td colSpan={2} style={{ padding: '2px 3px 0 3px', textAlign: 'left', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', fontSize: `${config.bodyFontSize || 8}pt`, color: '#666' }}>
-                                                {row1Cols.find(c => c.key === 'serial_no') ? `${row}. ` : ''}
-                                                {row1Cols.find(c => c.key === 'product_code') ? '101 ' : ''}
-                                                {row1Cols.find(c => c.key === 'product_name') ? 'NENTRAN 1ST' : ''}
-                                            </td>
-                                        </tr>
-                                        {row2Parts.length > 0 && (
+                                {[1, 2, 3].map(row => {
+                                    // Row 1 Left: [Count] [Code] [Name]
+                                    const row1LeftParts: string[] = [];
+                                    if (visibleColumns.some(c => c.key === 'serial_no')) row1LeftParts.push(`${row}.`);
+                                    if (visibleColumns.some(c => c.key === 'count')) row1LeftParts.push('18');
+                                    if (visibleColumns.some(c => c.key === 'product_code')) row1LeftParts.push('101');
+                                    if (visibleColumns.some(c => c.key === 'product_name')) row1LeftParts.push('NENTRAN 1ST');
+                                    const row1LeftText = row1LeftParts.join(' ');
+
+                                    // Row 1 Right: Qty: [initial_quantity] [unit]
+                                    let row1RightText = '';
+                                    if (visibleColumns.some(c => c.key === 'initial_quantity')) {
+                                        row1RightText = 'Qty: 1500.00 Nos';
+                                    }
+
+                                    // Row 2 Left: Less: [less_quantity] [unit]
+                                    let row2LeftText = '';
+                                    if (visibleColumns.some(c => c.key === 'less_quantity')) {
+                                        row2LeftText = 'Less: 18.00 Nos';
+                                    }
+
+                                    // Row 2 Right: [final_quantity] X ₹[rate]
+                                    const calcParts: string[] = [];
+                                    if (visibleColumns.some(c => c.key === 'final_quantity')) {
+                                        calcParts.push('1482.00');
+                                    }
+                                    if (visibleColumns.some(c => c.key === 'rate')) {
+                                        calcParts.push('₹25.00');
+                                    }
+                                    const row2RightText = calcParts.join(' X ');
+
+                                    return (
+                                        <React.Fragment key={row}>
                                             <tr>
-                                                <td colSpan={2} style={{ padding: '0 3px 2px 12px', textAlign: 'left', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal' }}>
-                                                    {row2Text}
+                                                <td style={{ padding: '2px 3px 0 3px', textAlign: 'left', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', fontSize: `${config.bodyFontSize || 8}pt`, color: '#666' }}>
+                                                    {row1LeftText}
+                                                </td>
+                                                <td style={{ padding: '2px 3px 0 3px', textAlign: 'right', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', fontSize: `${config.bodyFontSize || 8}pt`, color: '#666', whiteSpace: 'nowrap', width: '35%' }}>
+                                                    {row1RightText}
                                                 </td>
                                             </tr>
-                                        )}
-                                        <tr>
-                                            <td style={{ padding: '0 3px 2px 12px', textAlign: 'left', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: borderStyle, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal' }}>
-                                                {row3Text}
-                                            </td>
-                                            <td style={{ padding: '0 3px 2px 3px', textAlign: 'right', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: borderStyle, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', width: '30%' }}>
-                                                {amtText}
-                                            </td>
-                                        </tr>
-                                    </React.Fragment>
-                                ))}
+                                            {(row2LeftText || row2RightText) && (
+                                                <tr>
+                                                    <td style={{ padding: '0 3px 2px 12px', textAlign: 'left', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal' }}>
+                                                        {row2LeftText}
+                                                    </td>
+                                                    <td style={{ padding: '0 3px 2px 3px', textAlign: 'right', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', whiteSpace: 'nowrap', width: '45%' }}>
+                                                        {row2RightText}
+                                                    </td>
+                                                </tr>
+                                            )}
+                                            <tr>
+                                                <td style={{ padding: '0 3px 2px 12px', textAlign: 'left', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: borderStyle, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal' }}>
+                                                    {/* Left side empty as per layout specifications */}
+                                                </td>
+                                                <td style={{ padding: '0 3px 2px 3px', textAlign: 'right', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: borderStyle, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', width: '30%' }}>
+                                                    {amtText}
+                                                </td>
+                                            </tr>
+                                        </React.Fragment>
+                                    );
+                                })}
                             </tbody>
                         </table>
                     </div>
@@ -170,7 +185,7 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                 const totalCols = row2Cols.length || 1;
 
                 return (
-                    <div style={{ ...effectiveStyles, padding: 0, overflow: 'hidden' }}>
+                    <div style={{ ...effectiveStyles, overflow: 'hidden' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `${config.headerFontSize || 8}pt` }}>
                             {config.showHeader && (
                                 <thead>
@@ -214,7 +229,7 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
             }
 
             return (
-                <div style={{ ...effectiveStyles, padding: 0, overflow: 'hidden' }}>
+                <div style={{ ...effectiveStyles, overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: `${config.headerFontSize || 8}pt` }}>
                         {config.showHeader && (
                             <thead>
@@ -272,7 +287,7 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
 
         case 'divider':
             return (
-                <div style={{ ...effectiveStyles, display: 'flex', alignItems: 'center', padding: 0 }}>
+                <div style={{ ...effectiveStyles, display: 'flex', alignItems: 'center' }}>
                     <hr
                         style={{
                             width: '100%',
@@ -287,8 +302,21 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
         case 'totals': {
             const config = element.totalsConfig;
             if (!config) return <div style={effectiveStyles}>Totals</div>;
+
+            const totalsStyles = { ...effectiveStyles };
+            if (element.styles.padding === undefined &&
+                element.styles.paddingTop === undefined &&
+                element.styles.paddingRight === undefined &&
+                element.styles.paddingBottom === undefined &&
+                element.styles.paddingLeft === undefined) {
+                totalsStyles.paddingTop = '2px';
+                totalsStyles.paddingRight = '2px';
+                totalsStyles.paddingBottom = '2px';
+                totalsStyles.paddingLeft = '2px';
+            }
+
             return (
-                <div style={{ ...effectiveStyles, padding: element.styles.padding ? `${mmToPx(element.styles.padding)}px` : '2px' }}>
+                <div style={totalsStyles}>
                     <table style={{ width: '100%', fontSize: `${element.styles.fontSize || 10}pt` }}>
                         <tbody>
                             {config.rows.map((row, i) => (

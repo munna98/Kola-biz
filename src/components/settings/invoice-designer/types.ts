@@ -15,6 +15,10 @@ export interface ElementStyles {
     border?: string;          // CSS shorthand e.g. "1px solid #000"
     borderRadius?: number;    // px
     padding?: number;         // mm
+    paddingTop?: number;      // mm
+    paddingRight?: number;    // mm
+    paddingBottom?: number;   // mm
+    paddingLeft?: number;     // mm
     lineHeight?: number;
     letterSpacing?: number;
     textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize';

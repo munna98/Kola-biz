@@ -132,10 +132,10 @@ function renderThermalElement(el: DesignerElement): string {
             return `<div style="${style}"></div>`;
 
         case 'divider':
-            return `<div style="border-top:${el.dividerThickness || 1}px ${el.dividerStyle || 'dashed'} ${el.dividerColor || '#000'};margin:0;"></div>`;
+            return `<div style="${style}"><hr style="width:100%;border:none;border-top:${el.dividerThickness || 1}px ${el.dividerStyle || 'dashed'} ${el.dividerColor || '#000'};margin:0;" /></div>`;
 
         case 'table':
-            return renderThermalTable(el);
+            return `<div style="${style}">${renderThermalTable(el)}</div>`;
 
         case 'totals':
             return renderThermalTotals(el);
@@ -162,45 +162,53 @@ function renderThermalTable(el: DesignerElement): string {
         html += '<tbody>{{#each items}}';
         
         const visibleCols = config.columns.filter(c => !c.hidden);
-        const row1Parts: string[] = [];
-        if (visibleCols.some(c => c.key === 'serial_no')) row1Parts.push('{{increment @index}}.');
-        if (visibleCols.some(c => c.key === 'product_code')) row1Parts.push('{{product_code}}');
-        if (visibleCols.some(c => c.key === 'product_name')) row1Parts.push('{{product_name}}');
         
-        let row1Text = row1Parts.join(' ');
+        // Row 1 Left: [Count] [Code] [Name]
+        const row1LeftParts: string[] = [];
+        if (visibleCols.some(c => c.key === 'serial_no')) row1LeftParts.push('{{increment @index}}.');
+        if (visibleCols.some(c => c.key === 'count')) row1LeftParts.push('{{count}}');
+        if (visibleCols.some(c => c.key === 'product_code')) row1LeftParts.push('{{product_code}}');
+        if (visibleCols.some(c => c.key === 'product_name')) row1LeftParts.push('{{product_name}}');
+        let row1LeftText = row1LeftParts.join(' ');
         if (visibleCols.some(c => c.key === 'description')) {
-            row1Text += `{{#if description}}<br/><span style="font-size:${fontSize - 1}pt;font-weight:normal;">{{description}}</span>{{/if}}`;
+            row1LeftText += `{{#if description}}<br/><span style="font-size:${fontSize - 1}pt;font-weight:normal;">{{description}}</span>{{/if}}`;
         }
 
-        html += `<tr><td colspan="2" style="padding:4px 2px 0 2px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};">${row1Text}</td></tr>`;
-
-        // Row 2: Count | Qty | Less
-        const row2Parts: string[] = [];
-        if (visibleCols.some(c => c.key === 'count')) {
-            row2Parts.push('Count: {{count}}');
-        }
+        // Row 1 Right: Qty: [initial_quantity] [unit]
+        let row1RightText = '';
         if (visibleCols.some(c => c.key === 'initial_quantity')) {
-            row2Parts.push('Qty: {{format_number initial_quantity 2}}');
-        }
-        if (visibleCols.some(c => c.key === 'less_quantity')) {
-            row2Parts.push('Less: {{format_number less_quantity 2}}');
-        }
-        const row2Text = row2Parts.join(' &nbsp;|&nbsp; ');
-        
-        if (row2Parts.length > 0) {
-            html += `<tr><td colspan="2" style="padding:0 2px 2px 12px;text-align:left;font-size:${fontSize}pt;color:#666;font-weight:${bodyBold ? 'bold' : 'normal'};">${row2Text}</td></tr>`;
+            row1RightText = 'Qty: {{format_number initial_quantity 2}} {{unit}}';
         }
 
-        // Row 3: F.Qty @ Rate and Amt
-        const row3Parts: string[] = [];
+        html += `<tr>`;
+        html += `<td style="padding:4px 2px 0 2px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};">${row1LeftText}</td>`;
+        html += `<td style="padding:4px 2px 0 2px;text-align:right;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};white-space:nowrap;width:35%;">${row1RightText}</td>`;
+        html += `</tr>`;
+
+        // Row 2 Left: Less: [less_quantity] [unit]
+        let row2LeftText = '';
+        if (visibleCols.some(c => c.key === 'less_quantity')) {
+            row2LeftText = 'Less: {{format_number less_quantity 2}} {{unit}}';
+        }
+
+        // Row 2 Right: [final_quantity] X ₹[rate]
+        const calcParts: string[] = [];
         if (visibleCols.some(c => c.key === 'final_quantity')) {
-            row3Parts.push('F.Qty: {{format_number final_quantity 2}}');
+            calcParts.push('{{format_number final_quantity 2}}');
         }
         if (visibleCols.some(c => c.key === 'rate')) {
-            row3Parts.push('@ ₹{{format_number rate 2}}');
+            calcParts.push('₹{{format_number rate 2}}');
         }
-        const row3Text = row3Parts.join(' ');
+        const row2RightText = calcParts.join(' X ');
 
+        if (row2LeftText || row2RightText) {
+            html += `<tr>`;
+            html += `<td style="padding:0 2px 2px 12px;text-align:left;font-size:${fontSize}pt;color:#666;font-weight:${bodyBold ? 'bold' : 'normal'};">${row2LeftText}</td>`;
+            html += `<td style="padding:0 2px 2px 2px;text-align:right;font-size:${fontSize}pt;color:#666;font-weight:${bodyBold ? 'bold' : 'normal'};white-space:nowrap;width:45%;">${row2RightText}</td>`;
+            html += `</tr>`;
+        }
+
+        // Row 3: Amount (on the right)
         const amtCol = visibleCols.find(c => c.key === 'total' || c.key === 'amount') || visibleCols[visibleCols.length - 1];
         let amtContent = '';
         if (amtCol) {
@@ -208,7 +216,7 @@ function renderThermalTable(el: DesignerElement): string {
         }
 
         html += `<tr>`;
-        html += `<td style="padding:0 2px 4px 12px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};${borderBottomStyle}">${row3Text}</td>`;
+        html += `<td style="padding:0 2px 4px 12px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};${borderBottomStyle}"></td>`;
         html += `<td style="padding:0 2px 4px 2px;text-align:right;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};width:30%;${borderBottomStyle}">${amtContent}</td>`;
         html += `</tr>`;
 
@@ -368,7 +376,17 @@ function buildThermalInlineStyle(el: DesignerElement): string {
     if (s.textTransform && s.textTransform !== 'none') parts.push(`text-transform:${s.textTransform}`);
     if (s.border) parts.push(`border:${s.border}`);
     if (s.borderRadius) parts.push(`border-radius:${s.borderRadius}px`);
-    if (s.padding) parts.push(`padding:${s.padding}mm`);
+    if (s.paddingTop !== undefined) parts.push(`padding-top:${s.paddingTop}mm`);
+    else if (s.padding !== undefined) parts.push(`padding-top:${s.padding}mm`);
+
+    if (s.paddingRight !== undefined) parts.push(`padding-right:${s.paddingRight}mm`);
+    else if (s.padding !== undefined) parts.push(`padding-right:${s.padding}mm`);
+
+    if (s.paddingBottom !== undefined) parts.push(`padding-bottom:${s.paddingBottom}mm`);
+    else if (s.padding !== undefined) parts.push(`padding-bottom:${s.padding}mm`);
+
+    if (s.paddingLeft !== undefined) parts.push(`padding-left:${s.paddingLeft}mm`);
+    else if (s.padding !== undefined) parts.push(`padding-left:${s.padding}mm`);
 
     // Margin for spacing between elements
     parts.push('margin:2px 0');
@@ -569,7 +587,17 @@ function buildAbsoluteInlineStyle(el: DesignerElement): string {
     if (s.textTransform && s.textTransform !== 'none') parts.push(`text-transform:${s.textTransform}`);
     if (s.border) parts.push(`border:${s.border}`);
     if (s.borderRadius) parts.push(`border-radius:${s.borderRadius}px`);
-    if (s.padding) parts.push(`padding:${s.padding}mm`);
+    if (s.paddingTop !== undefined) parts.push(`padding-top:${s.paddingTop}mm`);
+    else if (s.padding !== undefined) parts.push(`padding-top:${s.padding}mm`);
+
+    if (s.paddingRight !== undefined) parts.push(`padding-right:${s.paddingRight}mm`);
+    else if (s.padding !== undefined) parts.push(`padding-right:${s.padding}mm`);
+
+    if (s.paddingBottom !== undefined) parts.push(`padding-bottom:${s.paddingBottom}mm`);
+    else if (s.padding !== undefined) parts.push(`padding-bottom:${s.padding}mm`);
+
+    if (s.paddingLeft !== undefined) parts.push(`padding-left:${s.paddingLeft}mm`);
+    else if (s.padding !== undefined) parts.push(`padding-left:${s.padding}mm`);
     if (el.zIndex) parts.push(`z-index:${el.zIndex}`);
 
     return parts.join(';');
