@@ -285,6 +285,7 @@ pub fn run() {
             // License
             get_license_info,
             activate_license,
+            download_and_install_update,
             // Settings & Printing
             get_app_setting,
             set_app_setting,

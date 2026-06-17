@@ -19,7 +19,7 @@ import {
     IconKey,
 } from '@tabler/icons-react';
 
-type UpdateStatus = 'idle' | 'checking' | 'up_to_date' | 'update_available' | 'error';
+type UpdateStatus = 'idle' | 'checking' | 'up_to_date' | 'update_available' | 'downloading' | 'installing' | 'error';
 
 const SUPPORT_PHONE = '8086094070';
 const GITHUB_REPO = 'munna98/Kola-biz';
@@ -35,7 +35,7 @@ export default function LicensePage() {
     const [updateStatus, setUpdateStatus] = useState<UpdateStatus>('idle');
     const [latestVersion, setLatestVersion] = useState<string>('');
     const [downloadUrl, setDownloadUrl] = useState<string>('');
-    const [releasePageUrl, setReleasePageUrl] = useState<string>('');
+    const [downloadProgress, setDownloadProgress] = useState<number>(0);
 
     useEffect(() => {
         invoke<string>('get_app_version')
@@ -47,7 +47,6 @@ export default function LicensePage() {
         setUpdateStatus('checking');
         setLatestVersion('');
         setDownloadUrl('');
-        setReleasePageUrl('');
         try {
             const res = await fetch(
                 `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`,
@@ -59,26 +58,29 @@ export default function LicensePage() {
             // tag_name is like "v1.1.77" — strip the leading "v"
             const latest: string = (data.tag_name as string).replace(/^v/, '');
             setLatestVersion(latest);
-            setReleasePageUrl(data.html_url as string);
 
-            // Look for an .msi installer asset; fall back to the release page
+            // Look for an .msi installer asset
             const msiAsset = (data.assets as any[])?.find((a) =>
                 (a.name as string).toLowerCase().endsWith('.msi')
             );
-            setDownloadUrl(msiAsset?.browser_download_url ?? data.html_url);
 
-            // Compare versions: split by "." and compare each part numerically
-            const isNewer = (a: string, b: string) => {
-                const pa = a.split('.').map(Number);
-                const pb = b.split('.').map(Number);
-                for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
-                    const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
-                    if (diff !== 0) return diff > 0;
-                }
-                return false;
-            };
+            if (msiAsset) {
+                setDownloadUrl(msiAsset.browser_download_url);
+                // Compare versions: split by "." and compare each part numerically
+                const isNewer = (a: string, b: string) => {
+                    const pa = a.split('.').map(Number);
+                    const pb = b.split('.').map(Number);
+                    for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+                        const diff = (pb[i] ?? 0) - (pa[i] ?? 0);
+                        if (diff !== 0) return diff > 0;
+                    }
+                    return false;
+                };
 
-            setUpdateStatus(isNewer(appVersion, latest) ? 'update_available' : 'up_to_date');
+                setUpdateStatus(isNewer(appVersion, latest) ? 'update_available' : 'up_to_date');
+            } else {
+                setUpdateStatus('up_to_date');
+            }
         } catch {
             setUpdateStatus('error');
         }
@@ -86,7 +88,25 @@ export default function LicensePage() {
 
     const handleDownloadInstall = async () => {
         if (!downloadUrl) return;
-        await openUrl(downloadUrl);
+        setUpdateStatus('downloading');
+        setDownloadProgress(0);
+
+        let unlistenProgress: (() => void) | undefined;
+        try {
+            const { listen } = await import('@tauri-apps/api/event');
+            unlistenProgress = await listen<number>('update-download-progress', (event) => {
+                setDownloadProgress(event.payload);
+            });
+
+            await invoke('download_and_install_update', { downloadUrl });
+        } catch (err) {
+            console.error('Update failed:', err);
+            setUpdateStatus('error');
+        } finally {
+            if (unlistenProgress) {
+                unlistenProgress();
+            }
+        }
     };
 
     const licenseStatusColor =
@@ -155,7 +175,7 @@ export default function LicensePage() {
                     <div className="flex items-center gap-3 flex-wrap">
                         <Button
                             onClick={checkForUpdates}
-                            disabled={updateStatus === 'checking'}
+                            disabled={updateStatus === 'checking' || updateStatus === 'downloading' || updateStatus === 'installing'}
                             variant="outline"
                             className="gap-2"
                             id="check-updates-btn"
@@ -206,7 +226,7 @@ export default function LicensePage() {
 
                     {updateStatus === 'idle' && (
                         <p className="text-xs text-muted-foreground">
-                            Click the button above to check GitHub for the latest release.
+                            Click the button above to check for the latest release.
                         </p>
                     )}
 
@@ -217,16 +237,43 @@ export default function LicensePage() {
                                 🔔 KolaBiz v{latestVersion} is ready
                             </p>
                             <p className="text-xs text-amber-700 dark:text-amber-400 leading-relaxed">
-                                Clicking <strong>Download &amp; Install</strong> will open the installer in your browser.
-                                Save and run the <code>.msi</code> file to update KolaBiz.
-                                Your data will not be affected.
+                                Clicking <strong>Download &amp; Install</strong> will download the update in the background and launch the installation wizard. Your data will not be affected.
                             </p>
-                            <button
-                                onClick={() => openUrl(releasePageUrl)}
-                                className="text-xs text-amber-600 dark:text-amber-400 underline underline-offset-2 hover:no-underline"
-                            >
-                                View release notes on GitHub →
-                            </button>
+                        </div>
+                    )}
+
+                    {/* Downloading panel */}
+                    {updateStatus === 'downloading' && (
+                        <div className="mt-3 p-4 rounded-lg bg-primary/5 border border-primary/20 space-y-3">
+                            <div className="flex justify-between items-center text-sm font-semibold">
+                                <span className="flex items-center gap-2 text-primary">
+                                    <IconLoader2 size={16} className="animate-spin" />
+                                    Downloading update...
+                                </span>
+                                <span className="font-mono">{downloadProgress}%</span>
+                            </div>
+                            <div className="w-full bg-muted rounded-full h-2 overflow-hidden border">
+                                <div 
+                                    className="bg-primary h-full transition-all duration-300 rounded-full"
+                                    style={{ width: `${downloadProgress}%` }}
+                                />
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                Please wait while KolaBiz retrieves the update. The app will automatically launch the installer and close once completed.
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Installing panel */}
+                    {updateStatus === 'installing' && (
+                        <div className="mt-3 p-4 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 space-y-2">
+                            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-2">
+                                <IconLoader2 size={16} className="animate-spin" />
+                                Launching Installer...
+                            </p>
+                            <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                                Launching the setup wizard. KolaBiz will close now to complete the update.
+                            </p>
                         </div>
                     )}
 
