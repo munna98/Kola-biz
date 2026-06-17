@@ -6,6 +6,7 @@ interface RecentActivityItem {
     voucher_no: string;
     voucher_type: string;
     voucher_date: string;
+    created_at: string;
     party_name: string | null;
     amount: number;
 }
@@ -15,13 +16,16 @@ interface RecentActivityProps {
     loading?: boolean;
 }
 
-const voucherTypeLabels: Record<string, { label: string; color: string }> = {
-    sales_invoice: { label: 'Sale', color: 'text-green-600 dark:text-green-400' },
-    purchase_invoice: { label: 'Purchase', color: 'text-blue-600 dark:text-blue-400' },
-    payment: { label: 'Payment', color: 'text-red-600 dark:text-red-400' },
-    receipt: { label: 'Receipt', color: 'text-purple-600 dark:text-purple-400' },
-    journal: { label: 'Journal', color: 'text-gray-600 dark:text-gray-400' },
-    stock_journal: { label: 'Stock Journal', color: 'text-indigo-600 dark:text-indigo-400' },
+const voucherTypeLabels: Record<string, string> = {
+    sales_invoice: 'Sale',
+    purchase_invoice: 'Purchase',
+    sales_return: 'Sales Return',
+    purchase_return: 'Purchase Return',
+    payment: 'Payment',
+    receipt: 'Receipt',
+    journal: 'Journal',
+    stock_journal: 'Stock Journal',
+    opening_stock: 'Opening Stock',
 };
 
 export default function RecentActivity({ data, loading }: RecentActivityProps) {
@@ -49,7 +53,18 @@ export default function RecentActivity({ data, loading }: RecentActivityProps) {
 
     const getTimeAgo = (dateStr: string) => {
         try {
-            return formatDistanceToNow(new Date(dateStr), { addSuffix: true });
+            if (!dateStr) return '';
+            // SQLite DATETIME values are stored as "YYYY-MM-DD HH:MM:SS" (in UTC by default).
+            // To ensure JavaScript correctly parses it as a UTC timestamp instead of local time,
+            // we replace the space with 'T' and append 'Z' if not already present.
+            let formattedStr = dateStr;
+            if (!formattedStr.includes('T')) {
+                formattedStr = formattedStr.replace(' ', 'T');
+            }
+            if (!formattedStr.endsWith('Z') && !/[+-]\d{2}:\d{2}$/.test(formattedStr)) {
+                formattedStr += 'Z';
+            }
+            return formatDistanceToNow(new Date(formattedStr), { addSuffix: true });
         } catch {
             return dateStr;
         }
@@ -76,7 +91,7 @@ export default function RecentActivity({ data, loading }: RecentActivityProps) {
                     </thead>
                     <tbody>
                         {data.map((item) => {
-                            const config = voucherTypeLabels[item.voucher_type] || { label: item.voucher_type, color: '' };
+                            const label = voucherTypeLabels[item.voucher_type] || item.voucher_type;
 
                             return (
                                 <tr
@@ -84,8 +99,8 @@ export default function RecentActivity({ data, loading }: RecentActivityProps) {
                                     className="border-b hover:bg-muted/20 cursor-pointer"
                                 >
                                     <td className="p-2">
-                                        <span className={`text-xs font-medium ${config.color}`}>
-                                            {config.label}
+                                        <span className="text-xs font-medium">
+                                            {label}
                                         </span>
                                     </td>
                                     <td className="p-2 text-xs font-mono">{item.voucher_no}</td>
@@ -96,7 +111,7 @@ export default function RecentActivity({ data, loading }: RecentActivityProps) {
                                         {formatCurrency(item.amount)}
                                     </td>
                                     <td className="p-2 text-xs text-muted-foreground">
-                                        {getTimeAgo(item.voucher_date)}
+                                        {getTimeAgo(item.created_at)}
                                     </td>
                                 </tr>
                             );

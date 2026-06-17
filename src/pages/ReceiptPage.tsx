@@ -51,6 +51,7 @@ import { AccountGroup, api } from '@/lib/tauri';
 interface AccountData {
     id: number;
     name: string;
+    account_group: string;
 }
 
 interface LedgerAccount {
@@ -106,6 +107,8 @@ export default function ReceiptPage() {
 
                 if (cashBankData.length > 0 && receiptState.form.account_id === 0) {
                     dispatch(setReceiptAccount({ id: cashBankData[0].id, name: cashBankData[0].name }));
+                    const method = cashBankData[0].account_group === 'Cash' ? 'cash' : 'bank';
+                    dispatch(setReceiptMethod(method));
                 }
             } catch (error) {
                 toast.error('Failed to load accounts');
@@ -493,7 +496,11 @@ export default function ReceiptPage() {
                                     options={depositToAccounts.map(a => ({ value: a.id, label: a.name }))}
                                     onChange={(val) => {
                                         const acc = depositToAccounts.find(a => a.id === val);
-                                        if (acc) dispatch(setReceiptAccount({ id: acc.id, name: acc.name }));
+                                        if (acc) {
+                                            dispatch(setReceiptAccount({ id: acc.id, name: acc.name }));
+                                            const method = acc.account_group === 'Cash' ? 'cash' : 'bank';
+                                            dispatch(setReceiptMethod(method));
+                                        }
                                     }}
                                     placeholder="Select destination account"
                                     searchPlaceholder="Search accounts..."

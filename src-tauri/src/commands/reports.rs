@@ -1396,13 +1396,15 @@ pub async fn get_dashboard_metrics(
     to_date: String,
 ) -> Result<DashboardMetrics, String> {
     let pool = registry.active_pool().await?;
-    // Get revenue (sales)
+    // Get revenue (credits - debits for Income accounts)
     let revenue: Option<f64> = sqlx::query_scalar(
-        "SELECT CAST(COALESCE(SUM(COALESCE(grand_total, total_amount, 0)), 0) AS REAL)
-         FROM vouchers
-         WHERE voucher_type = 'sales_invoice'
-         AND voucher_date >= ? AND voucher_date <= ?
-         AND deleted_at IS NULL",
+        "SELECT CAST(COALESCE(SUM(je.credit - je.debit), 0.0) AS REAL)
+         FROM journal_entries je
+         JOIN chart_of_accounts coa ON je.account_id = coa.id
+         JOIN vouchers v ON je.voucher_id = v.id
+         WHERE coa.account_type = 'Income'
+         AND v.voucher_date >= ? AND v.voucher_date <= ?
+         AND v.deleted_at IS NULL",
     )
     .bind(&from_date)
     .bind(&to_date)
@@ -1410,13 +1412,15 @@ pub async fn get_dashboard_metrics(
     .await
     .map_err(|e| e.to_string())?;
 
-    // Get expenses (purchases)
+    // Get expenses (debits - credits for Expense accounts)
     let expenses: Option<f64> = sqlx::query_scalar(
-        "SELECT CAST(COALESCE(SUM(COALESCE(grand_total, total_amount, 0)), 0) AS REAL)
-         FROM vouchers
-         WHERE voucher_type = 'purchase_invoice'
-         AND voucher_date >= ? AND voucher_date <= ?
-         AND deleted_at IS NULL",
+        "SELECT CAST(COALESCE(SUM(je.debit - je.credit), 0.0) AS REAL)
+         FROM journal_entries je
+         JOIN chart_of_accounts coa ON je.account_id = coa.id
+         JOIN vouchers v ON je.voucher_id = v.id
+         WHERE coa.account_type = 'Expense'
+         AND v.voucher_date >= ? AND v.voucher_date <= ?
+         AND v.deleted_at IS NULL",
     )
     .bind(&from_date)
     .bind(&to_date)
@@ -1516,11 +1520,13 @@ pub async fn get_dashboard_metrics(
     let prev_period_to = prev_to - chrono::Duration::days(period_days);
 
     let prev_revenue: Option<f64> = sqlx::query_scalar(
-        "SELECT CAST(COALESCE(SUM(COALESCE(grand_total, total_amount, 0)), 0) AS REAL)
-         FROM vouchers
-         WHERE voucher_type = 'sales_invoice'
-         AND voucher_date >= ? AND voucher_date <= ?
-         AND deleted_at IS NULL",
+        "SELECT CAST(COALESCE(SUM(je.credit - je.debit), 0.0) AS REAL)
+         FROM journal_entries je
+         JOIN chart_of_accounts coa ON je.account_id = coa.id
+         JOIN vouchers v ON je.voucher_id = v.id
+         WHERE coa.account_type = 'Income'
+         AND v.voucher_date >= ? AND v.voucher_date <= ?
+         AND v.deleted_at IS NULL",
     )
     .bind(prev_period_from.to_string())
     .bind(prev_period_to.to_string())
@@ -1583,11 +1589,13 @@ pub async fn get_revenue_trend(
         let date_str = current_date.to_string();
 
         let revenue: Option<f64> = sqlx::query_scalar(
-            "SELECT CAST(COALESCE(SUM(COALESCE(grand_total, total_amount, 0)), 0) AS REAL)
-             FROM vouchers
-             WHERE voucher_type = 'sales_invoice'
-             AND voucher_date = ?
-             AND deleted_at IS NULL",
+            "SELECT CAST(COALESCE(SUM(je.credit - je.debit), 0.0) AS REAL)
+             FROM journal_entries je
+             JOIN chart_of_accounts coa ON je.account_id = coa.id
+             JOIN vouchers v ON je.voucher_id = v.id
+             WHERE coa.account_type = 'Income'
+             AND v.voucher_date = ?
+             AND v.deleted_at IS NULL",
         )
         .bind(&date_str)
         .fetch_optional(&pool)
@@ -1595,11 +1603,13 @@ pub async fn get_revenue_trend(
         .map_err(|e| e.to_string())?;
 
         let expenses: Option<f64> = sqlx::query_scalar(
-            "SELECT CAST(COALESCE(SUM(COALESCE(grand_total, total_amount, 0)), 0) AS REAL)
-             FROM vouchers
-             WHERE voucher_type = 'purchase_invoice'
-             AND voucher_date = ?
-             AND deleted_at IS NULL",
+            "SELECT CAST(COALESCE(SUM(je.debit - je.credit), 0.0) AS REAL)
+             FROM journal_entries je
+             JOIN chart_of_accounts coa ON je.account_id = coa.id
+             JOIN vouchers v ON je.voucher_id = v.id
+             WHERE coa.account_type = 'Expense'
+             AND v.voucher_date = ?
+             AND v.deleted_at IS NULL",
         )
         .bind(&date_str)
         .fetch_optional(&pool)
@@ -1793,6 +1803,7 @@ pub struct RecentActivity {
     pub voucher_no: String,
     pub voucher_type: String,
     pub voucher_date: String,
+    pub created_at: String,
     pub party_name: Option<String>,
     pub amount: f64,
 }
@@ -1809,12 +1820,28 @@ pub async fn get_recent_activity(
             v.voucher_no,
             v.voucher_type,
             v.voucher_date,
-            coa.account_name as party_name,
+            v.created_at,
+            CASE
+                WHEN v.voucher_type IN ('payment', 'receipt') THEN (
+                    SELECT CASE
+                        WHEN COUNT(vi.id) = 1
+                            THEN COALESCE(
+                                (SELECT coa2.account_name FROM chart_of_accounts coa2 WHERE coa2.id = (SELECT vi2.ledger_id FROM voucher_items vi2 WHERE vi2.voucher_id = v.id LIMIT 1)),
+                                (SELECT vi3.description FROM voucher_items vi3 WHERE vi3.voucher_id = v.id LIMIT 1)
+                            )
+                        WHEN COUNT(vi.id) > 1
+                            THEN 'Multiple Parties'
+                        ELSE coa.account_name
+                    END
+                    FROM voucher_items vi WHERE vi.voucher_id = v.id
+                )
+                ELSE coa.account_name
+            END as party_name,
             CAST(COALESCE(v.grand_total, v.total_amount, 0.0) AS REAL) as amount
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         WHERE v.deleted_at IS NULL
-        ORDER BY v.voucher_date DESC, v.id DESC
+        ORDER BY v.created_at DESC, v.id DESC
         LIMIT ?
     ";
 

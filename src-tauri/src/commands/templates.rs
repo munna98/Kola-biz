@@ -1994,14 +1994,29 @@ async fn get_receipt_data(
     let items = crate::commands::entries::get_receipt_items_with_pool(pool, &id).await?;
     let company = crate::commands::company::get_company_profile_with_pool(pool).await.ok();
 
+    let received_from = items
+        .iter()
+        .map(|i| i.description.clone())
+        .collect::<Vec<String>>()
+        .join(", ");
+
     let mut val = serde_json::to_value(voucher).map_err(|e| e.to_string())?;
     if let Some(obj) = val.as_object_mut() {
         obj.insert(
             "items".to_string(),
             serde_json::to_value(items).unwrap_or(json!([])),
         );
+        obj.insert("received_from".to_string(), serde_json::json!(received_from));
         if let Some(c) = company {
             obj.insert("company".to_string(), serde_json::to_value(c).unwrap_or(json!({})));
+        }
+        if let Some(method) = obj.get("receipt_method").and_then(|v| v.as_str()) {
+            let capitalized = match method {
+                "cash" => "Cash",
+                "bank" => "Bank",
+                other => other,
+            };
+            obj.insert("receipt_method".to_string(), serde_json::json!(capitalized));
         }
     }
     Ok(val)

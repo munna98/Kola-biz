@@ -54,6 +54,7 @@ interface RecentActivityItem {
     voucher_no: string;
     voucher_type: string;
     voucher_date: string;
+    created_at: string;
     party_name: string | null;
     amount: number;
 }
