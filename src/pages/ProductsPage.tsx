@@ -372,7 +372,8 @@ export default function ProductsPage() {
 
       <Card>
         <CardContent className="p-0">
-          <table className="w-full">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px]">
             <thead className="border-b bg-muted/50">
               <tr className="text-left text-sm">
                 <th className="p-3 w-12">S.No</th>
@@ -550,6 +551,7 @@ export default function ProductsPage() {
               )}
             </tbody>
           </table>
+          </div>
         </CardContent>
       </Card>
 
