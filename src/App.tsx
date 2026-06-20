@@ -33,6 +33,7 @@ import CashFlowPage from './pages/reports/CashFlowPage';
 import DayBookPage from './pages/reports/DayBookPage';
 import PartyOutstandingPage from './pages/reports/PartyOutstandingPage';
 import StockReportPage from './pages/reports/StockReportPage';
+import ProductProfitPage from './pages/reports/ProductProfitPage';
 import TransactionReportPage from './pages/reports/TransactionReportPage';
 import SalesReturnReportPage from './pages/reports/SalesReturnReportPage';
 import LoginPage from './pages/LoginPage';
@@ -197,6 +198,7 @@ function AppContent() {
       case 'day_book': return <DayBookPage />;
       case 'outstanding': return <PartyOutstandingPage />;
       case 'stock_report': return <StockReportPage />;
+      case 'product_profit': return <ProductProfitPage />;
       case 'transactions': return <TransactionReportPage />;
       case 'sales_return_report': return <SalesReturnReportPage />;
       case 'company_profile': return <CompanyProfilePage />;

@@ -218,6 +218,8 @@ pub fn run() {
             get_product_stock_qty,
             get_transaction_report,
             get_sales_return_report,
+            get_product_profit_report,
+            get_product_profit_invoices,
             commands::parties::get_all_parties,
             // User Management (New)
             commands::auth::get_users,

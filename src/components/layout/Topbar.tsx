@@ -122,6 +122,7 @@ export default function Topbar() {
                     <MenubarTrigger>Reports</MenubarTrigger>
                     <MenubarContent>
                         <MenubarItem onClick={() => handleNavigation('stock_report')}>Stock Report</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('product_profit')}>Product Profit</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('sales_return_report')}>Sales & Returns</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('day_book')}>Day Book</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('outstanding')}>Party Outstanding</MenubarItem>

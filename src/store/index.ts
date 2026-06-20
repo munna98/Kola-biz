@@ -32,11 +32,28 @@ const initialNavigationState: VoucherNavigationState = {
   },
 };
 
-const savedSidebarItems = JSON.parse(localStorage.getItem('sidebar_items') || 'null') || [
-  'dashboard', 'products', 'customers', 'suppliers', 'employees',
-  'purchase', 'sales', 'payments', 'receipts', 'journal',
-  'stock_report', 'transactions', 'day_book', 'outstanding'
-];
+const getInitialSidebarItems = () => {
+  const items = JSON.parse(localStorage.getItem('sidebar_items') || 'null');
+  if (!items) {
+    return [
+      'dashboard', 'products', 'customers', 'suppliers', 'employees',
+      'purchase', 'sales', 'payments', 'receipts', 'journal',
+      'stock_report', 'product_profit', 'transactions', 'day_book', 'outstanding'
+    ];
+  }
+  if (!items.includes('product_profit')) {
+    const index = items.indexOf('stock_report');
+    if (index !== -1) {
+      items.splice(index + 1, 0, 'product_profit');
+    } else {
+      items.push('product_profit');
+    }
+    localStorage.setItem('sidebar_items', JSON.stringify(items));
+  }
+  return items;
+};
+
+const savedSidebarItems = getInitialSidebarItems();
 
 const initialState: AppState = {
   sidebarCollapsed: false,

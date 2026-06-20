@@ -60,6 +60,7 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
 
     // Reports
     { id: 'stock_report', label: 'Stock Report', icon: IconReportAnalytics, category: 'Report' },
+    { id: 'product_profit', label: 'Product Profit', icon: IconReportAnalytics, category: 'Report' },
     { id: 'transactions', label: 'Transaction Report', icon: IconHistory, category: 'Report' },
     { id: 'sales_return_report', label: 'Sales & Returns', icon: IconReceiptRefund, category: 'Report' },
     { id: 'day_book', label: 'Day Book', icon: IconCalendarStats, category: 'Report' },
@@ -76,5 +77,5 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
 export const DEFAULT_SIDEBAR_ITEMS = [
     'dashboard', 'products', 'customers', 'suppliers', 'employees',
     'purchase', 'sales', 'payments', 'receipts', 'journal',
-    'stock_report', 'transactions', 'day_book', 'outstanding'
+    'stock_report', 'product_profit', 'transactions', 'day_book', 'outstanding'
 ];

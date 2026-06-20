@@ -1891,3 +1891,211 @@ pub async fn get_product_groups_distribution(
         .await
         .map_err(|e| e.to_string())
 }
+
+// ============= PRODUCT PROFIT REPORT =============
+
+#[derive(Serialize, Deserialize)]
+pub struct ProductProfitRow {
+    pub product_id: String,
+    pub product_code: String,
+    pub product_name: String,
+    pub group_name: Option<String>,
+    pub base_unit_symbol: String,
+    pub qty_sold: f64,
+    pub total_revenue: f64,
+    pub total_cost: f64,
+    pub gross_profit: f64,
+    pub margin_percent: f64,
+    pub avg_selling_price: f64,
+    pub avg_cost_price: f64,
+    pub units_sold_text: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct ProductProfitInvoiceRow {
+    pub voucher_id: String,
+    pub voucher_no: String,
+    pub voucher_type: String,
+    pub voucher_date: String,
+    pub party_name: String,
+    pub qty_sold: f64,
+    pub unit_symbol: String,
+    pub rate: f64,
+    pub total_revenue: f64,
+    pub cost_rate: f64,
+    pub total_cost: f64,
+    pub gross_profit: f64,
+    pub margin_percent: f64,
+}
+
+#[tauri::command]
+pub async fn get_product_profit_report(
+    registry: State<'_, Arc<DbRegistry>>,
+    from_date: String,
+    to_date: String,
+    group_id: Option<String>,
+) -> Result<Vec<ProductProfitRow>, String> {
+    let pool = registry.active_pool().await?;
+    
+    // 1. Build and execute main profit query
+    let mut query_str = String::from("
+        SELECT
+            p.id as product_id,
+            p.code as product_code,
+            p.name as product_name,
+            pg.name as group_name,
+            u.symbol as base_unit_symbol,
+            CAST(COALESCE(SUM(
+                CASE
+                    WHEN sm.movement_type = 'OUT' THEN sm.quantity
+                    WHEN sm.movement_type = 'IN' THEN -sm.quantity
+                    ELSE 0
+                END
+            ), 0) AS REAL) as qty_sold,
+            CAST(COALESCE(SUM(
+                CASE
+                    WHEN sm.movement_type = 'OUT' THEN sm.amount
+                    WHEN sm.movement_type = 'IN' THEN -sm.amount
+                    ELSE 0
+                END
+            ), 0) AS REAL) as total_revenue,
+            CAST(COALESCE(SUM(
+                CASE
+                    WHEN sm.movement_type = 'OUT' THEN COALESCE(sm.cost_amount, 0)
+                    WHEN sm.movement_type = 'IN' THEN -COALESCE(sm.cost_amount, 0)
+                    ELSE 0
+                END
+            ), 0) AS REAL) as total_cost
+        FROM stock_movements sm
+        JOIN vouchers v ON sm.voucher_id = v.id
+        JOIN products p ON sm.product_id = p.id
+        LEFT JOIN product_groups pg ON p.group_id = pg.id
+        JOIN units u ON p.unit_id = u.id
+        WHERE (
+            (v.voucher_type = 'sales_invoice' AND sm.movement_type = 'OUT')
+            OR (v.voucher_type = 'sales_return' AND sm.movement_type = 'IN')
+        )
+          AND v.voucher_date >= ? AND v.voucher_date <= ?
+          AND v.deleted_at IS NULL
+          AND p.deleted_at IS NULL
+    ");
+
+    if group_id.is_some() {
+        query_str.push_str(" AND p.group_id = ?");
+    }
+
+    query_str.push_str(" GROUP BY p.id ORDER BY total_revenue DESC");
+
+    let mut query = sqlx::query_as::<_, (String, String, String, Option<String>, String, f64, f64, f64)>(&query_str)
+        .bind(&from_date)
+        .bind(&to_date);
+
+    if let Some(ref gid) = group_id {
+        query = query.bind(gid);
+    }
+
+    let rows = query.fetch_all(&pool).await.map_err(|e| e.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(prod_id, prod_code, prod_name, grp_name, base_unit, qty, rev, cost)| {
+            let gross = rev - cost;
+            let margin = if rev != 0.0 { (gross / rev) * 100.0 } else { 0.0 };
+            let avg_sell = if qty != 0.0 { rev / qty } else { 0.0 };
+            let avg_cost = if qty != 0.0 { cost / qty } else { 0.0 };
+
+            // Base unit display only
+            let units_sold_text = format!("{} {}", qty, base_unit);
+
+            ProductProfitRow {
+                product_id: prod_id,
+                product_code: prod_code,
+                product_name: prod_name,
+                group_name: grp_name,
+                base_unit_symbol: base_unit,
+                qty_sold: qty,
+                total_revenue: rev,
+                total_cost: cost,
+                gross_profit: gross,
+                margin_percent: margin,
+                avg_selling_price: avg_sell,
+                avg_cost_price: avg_cost,
+                units_sold_text: Some(units_sold_text),
+            }
+        })
+        .collect())
+}
+
+#[tauri::command]
+pub async fn get_product_profit_invoices(
+    registry: State<'_, Arc<DbRegistry>>,
+    product_id: String,
+    from_date: String,
+    to_date: String,
+) -> Result<Vec<ProductProfitInvoiceRow>, String> {
+    let pool = registry.active_pool().await?;
+    let query = "
+        SELECT
+            v.id as voucher_id,
+            v.voucher_no,
+            v.voucher_type,
+            v.voucher_date,
+            COALESCE(
+                (SELECT name FROM customers WHERE id = v.party_id),
+                (SELECT name FROM suppliers WHERE id = v.party_id),
+                (SELECT account_name FROM chart_of_accounts WHERE id = v.party_id),
+                (SELECT account_name FROM chart_of_accounts WHERE id = v.account_id),
+                'Cash/Bank Account'
+            ) as party_name,
+            CAST(CASE WHEN sm.movement_type = 'OUT' THEN sm.quantity ELSE -sm.quantity END AS REAL) as qty_sold,
+            u.symbol as unit_symbol,
+            CAST(sm.rate AS REAL) as rate,
+            CAST(CASE WHEN sm.movement_type = 'OUT' THEN sm.amount ELSE -sm.amount END AS REAL) as total_revenue,
+            CAST(COALESCE(sm.cost_rate, 0) AS REAL) as cost_rate,
+            CAST(CASE WHEN sm.movement_type = 'OUT' THEN COALESCE(sm.cost_amount, 0) ELSE -COALESCE(sm.cost_amount, 0) END AS REAL) as total_cost
+        FROM stock_movements sm
+        JOIN vouchers v ON sm.voucher_id = v.id
+        JOIN products p ON sm.product_id = p.id
+        JOIN units u ON p.unit_id = u.id
+        WHERE sm.product_id = ?
+          AND (
+            (v.voucher_type = 'sales_invoice' AND sm.movement_type = 'OUT')
+            OR (v.voucher_type = 'sales_return' AND sm.movement_type = 'IN')
+          )
+          AND v.voucher_date >= ? AND v.voucher_date <= ?
+          AND v.deleted_at IS NULL
+        ORDER BY v.voucher_date DESC, v.voucher_no DESC
+    ";
+
+    let rows = sqlx::query_as::<_, (String, String, String, String, String, f64, String, f64, f64, f64, f64)>(query)
+        .bind(&product_id)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(v_id, v_no, v_type, v_date, p_name, qty, unit, rate, rev, cost_rate, cost)| {
+            let gross = rev - cost;
+            let margin = if rev != 0.0 { (gross / rev) * 100.0 } else { 0.0 };
+            ProductProfitInvoiceRow {
+                voucher_id: v_id,
+                voucher_no: v_no,
+                voucher_type: v_type,
+                voucher_date: v_date,
+                party_name: p_name,
+                qty_sold: qty,
+                unit_symbol: unit,
+                rate,
+                total_revenue: rev,
+                cost_rate,
+                total_cost: cost,
+                gross_profit: gross,
+                margin_percent: margin,
+            }
+        })
+        .collect())
+}
+
