@@ -84,7 +84,7 @@ export default function PurchaseInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean, showProductInfoOnHover?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean, updateCost?: boolean, showProductInfoOnHover?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [gstDisabled, setGstDisabled] = useState(false);
@@ -662,6 +662,7 @@ export default function PurchaseInvoicePage() {
                 purchase_rate: voucherSettings?.updatePurchaseRate !== false ? item.rate : (product?.purchase_rate || 0),
                 sales_rate: voucherSettings?.updateSalesRate !== false ? (item.sales_rate !== undefined ? item.sales_rate : product?.sales_rate || 0) : (product?.sales_rate || 0),
                 mrp: voucherSettings?.updateMrp !== false ? (item.mrp !== undefined ? item.mrp : product?.mrp || 0) : (product?.mrp || 0),
+                cost: voucherSettings?.updateCost !== false ? item.rate : (product?.cost || 0),
               };
             });
           
@@ -771,6 +772,7 @@ export default function PurchaseInvoicePage() {
                 purchase_rate: voucherSettings?.updatePurchaseRate !== false ? item.rate : (product?.purchase_rate || 0),
                 sales_rate: voucherSettings?.updateSalesRate !== false ? (item.sales_rate !== undefined ? item.sales_rate : product?.sales_rate || 0) : (product?.sales_rate || 0),
                 mrp: voucherSettings?.updateMrp !== false ? (item.mrp !== undefined ? item.mrp : product?.mrp || 0) : (product?.mrp || 0),
+                cost: voucherSettings?.updateCost !== false ? item.rate : (product?.cost || 0),
               };
             });
           

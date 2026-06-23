@@ -40,6 +40,7 @@ interface VoucherSettings {
     updatePurchaseRate?: boolean;
     updateSalesRate?: boolean;
     updateMrp?: boolean;
+    updateCost?: boolean;
     showProductInfoOnHover?: boolean; // Show Stock, P Rate, MRP on Sl No hover
 }
 
@@ -96,6 +97,7 @@ export default function VoucherSettingsPage() {
     const [updatePurchaseRate, setUpdatePurchaseRate] = useState(true);
     const [updateSalesRate, setUpdateSalesRate] = useState(true);
     const [updateMrp, setUpdateMrp] = useState(true);
+    const [updateCost, setUpdateCost] = useState(true);
     const [showProductInfoOnHover, setShowProductInfoOnHover] = useState(false);
     const [loading, setLoading] = useState(false);
 
@@ -140,6 +142,7 @@ export default function VoucherSettingsPage() {
                 setUpdatePurchaseRate(savedSettings.updatePurchaseRate !== false);
                 setUpdateSalesRate(savedSettings.updateSalesRate !== false);
                 setUpdateMrp(savedSettings.updateMrp !== false);
+                setUpdateCost(savedSettings.updateCost !== false);
                 setShowProductInfoOnHover(savedSettings.showProductInfoOnHover || false);
 
                 // Merge saved settings with available columns (in case new columns were added to code)
@@ -185,6 +188,7 @@ export default function VoucherSettingsPage() {
                 setUpdatePurchaseRate(true);
                 setUpdateSalesRate(true);
                 setUpdateMrp(true);
+                setUpdateCost(true);
                 setShowProductInfoOnHover(false);
                 initialColumns = availableCols.map((col, index) => ({
                     id: col.id,
@@ -220,6 +224,7 @@ export default function VoucherSettingsPage() {
                 updatePurchaseRate: updatePurchaseRate,
                 updateSalesRate: updateSalesRate,
                 updateMrp: updateMrp,
+                updateCost: updateCost,
                 showProductInfoOnHover: showProductInfoOnHover,
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
@@ -425,6 +430,16 @@ export default function VoucherSettingsPage() {
                                                     />
                                                     <label htmlFor="update-mrp" className="text-sm font-medium cursor-pointer leading-none">
                                                         Update MRP
+                                                    </label>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <Checkbox
+                                                        id="update-cost"
+                                                        checked={updateCost}
+                                                        onCheckedChange={(checked) => setUpdateCost(checked as boolean)}
+                                                    />
+                                                    <label htmlFor="update-cost" className="text-sm font-medium cursor-pointer leading-none">
+                                                        Update Cost
                                                     </label>
                                                 </div>
                                             </div>

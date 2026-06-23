@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,7 +27,7 @@ import {
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+
 
 interface ProductProfitRow {
     product_id: string;
@@ -69,14 +70,9 @@ export default function ProductProfitPage() {
     const [reportData, setReportData] = useState<ProductProfitRow[]>([]);
     const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
     const [loading, setLoading] = useState(false);
-    const [showChart, setShowChart] = useState(true);
 
-    const [fromDate, setFromDate] = useState(() => {
-        const date = new Date();
-        date.setMonth(0); // Start of year
-        date.setDate(1);
-        return date.toISOString().split('T')[0];
-    });
+
+    const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0]);
     const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedGroup, setSelectedGroup] = useState<string>('all');
     const [searchQuery, setSearchQuery] = useState('');
@@ -192,15 +188,7 @@ export default function ProductProfitPage() {
     const grossProfit = totalRevenue - totalCost;
     const overallMargin = totalRevenue > 0 ? (grossProfit / totalRevenue) * 100 : 0;
 
-    // Chart Data (Top 10 by profit)
-    const chartData = [...filteredAndSortedData]
-        .sort((a, b) => b.gross_profit - a.gross_profit)
-        .slice(0, 10)
-        .map(row => ({
-            name: row.product_name.length > 15 ? `${row.product_name.substring(0, 15)}...` : row.product_name,
-            profit: row.gross_profit,
-            revenue: row.total_revenue,
-        }));
+
 
     const handlePrint = () => {
         window.print();
@@ -208,24 +196,42 @@ export default function ProductProfitPage() {
 
     const handleExport = () => {
         try {
-            let csvContent = 'data:text/csv;charset=utf-8,';
-            csvContent += 'Product Code,Product Name,Group,Qty Sold,Units,Revenue,COGS,Gross Profit,Margin %,Avg Selling Price,Avg Cost Price\n';
+            const headers = [
+                'Product Code',
+                'Product Name',
+                'Group',
+                'Qty Sold',
+                'Units',
+                'Revenue',
+                'COST',
+                'Gross Profit',
+                'Margin %',
+                'Avg Selling Price',
+                'Avg Cost Price'
+            ];
 
-            filteredAndSortedData.forEach(row => {
-                const nameEscaped = `"${row.product_name.replace(/"/g, '""')}"`;
-                const groupEscaped = row.group_name ? `"${row.group_name.replace(/"/g, '""')}"` : 'None';
-                
-                csvContent += `${row.product_code},${nameEscaped},${groupEscaped},${row.qty_sold},${row.base_unit_symbol},${row.total_revenue},${row.total_cost},${row.gross_profit},${row.margin_percent.toFixed(2)},${row.avg_selling_price.toFixed(2)},${row.avg_cost_price.toFixed(2)}\n`;
-            });
+            const data = filteredAndSortedData.map(row => [
+                row.product_code || '',
+                row.product_name || '',
+                row.group_name || 'None',
+                row.qty_sold,
+                row.base_unit_symbol || '',
+                row.total_revenue,
+                row.total_cost,
+                row.gross_profit,
+                row.margin_percent,
+                row.avg_selling_price,
+                row.avg_cost_price
+            ]);
 
-            const encodedUri = encodeURI(csvContent);
-            const link = document.createElement('a');
-            link.setAttribute('href', encodedUri);
-            link.setAttribute('download', `product_profit_report_${fromDate}_to_${toDate}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            toast.success('Report exported to CSV');
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...data]);
+            ws['!cols'] = [15, 25, 15, 12, 10, 15, 15, 15, 12, 18, 18].map(w => ({ wch: w }));
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Product Profit');
+
+            XLSX.writeFile(wb, `product_profit_report_${fromDate}_to_${toDate}.xlsx`);
+            toast.success('Report exported to Excel');
         } catch (error) {
             toast.error('Failed to export report');
             console.error(error);
@@ -252,16 +258,14 @@ export default function ProductProfitPage() {
                         </p>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setShowChart(!showChart)}>
-                            {showChart ? 'Hide Chart' : 'Show Chart'}
-                        </Button>
+
                         <Button variant="outline" size="sm" onClick={loadReport}>
                             <IconRefresh size={16} className="mr-1.5" />
                             Refresh
                         </Button>
                         <Button variant="outline" size="sm" onClick={handleExport}>
                             <IconDownload size={16} className="mr-1.5" />
-                            Export CSV
+                            Export
                         </Button>
                         <Button variant="outline" size="sm" onClick={handlePrint}>
                             <IconPrinter size={16} className="mr-1.5" />
@@ -345,7 +349,7 @@ export default function ProductProfitPage() {
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                     <Card className="shadow-sm border-neutral-200/50">
                         <CardContent className="p-4 flex items-center gap-4">
-                            <div className="p-2 bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-lg">
+                            <div className="p-2 bg-muted text-muted-foreground rounded-lg">
                                 <IconCash size={22} />
                             </div>
                             <div>
@@ -359,11 +363,11 @@ export default function ProductProfitPage() {
 
                     <Card className="shadow-sm border-neutral-200/50">
                         <CardContent className="p-4 flex items-center gap-4">
-                            <div className="p-2 bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 rounded-lg">
+                            <div className="p-2 bg-muted text-muted-foreground rounded-lg">
                                 <IconScale size={22} />
                             </div>
                             <div>
-                                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total COGS</p>
+                                <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total COST</p>
                                 <h3 className="text-lg font-bold font-mono mt-0.5">
                                     ₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
                                 </h3>
@@ -373,7 +377,7 @@ export default function ProductProfitPage() {
 
                     <Card className="shadow-sm border-neutral-200/50">
                         <CardContent className="p-4 flex items-center gap-4">
-                            <div className="p-2 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                            <div className="p-2 bg-muted text-muted-foreground rounded-lg">
                                 <IconTrendingUp size={22} />
                             </div>
                             <div>
@@ -387,7 +391,7 @@ export default function ProductProfitPage() {
 
                     <Card className="shadow-sm border-neutral-200/50">
                         <CardContent className="p-4 flex items-center gap-4">
-                            <div className="p-2 bg-purple-50 dark:bg-purple-950/40 text-purple-600 dark:text-purple-400 rounded-lg">
+                            <div className="p-2 bg-muted text-muted-foreground rounded-lg">
                                 <IconPercentage size={22} />
                             </div>
                             <div>
@@ -400,26 +404,7 @@ export default function ProductProfitPage() {
                     </Card>
                 </div>
 
-                {/* Top Profit Chart */}
-                {showChart && chartData.length > 0 && (
-                    <Card className="shadow-sm border-neutral-200/50 print:hidden p-4">
-                        <h3 className="text-sm font-semibold mb-4 text-muted-foreground uppercase tracking-wider">Top 10 Products by Gross Profit</h3>
-                        <div className="h-64">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <BarChart data={chartData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="name" fontSize={11} tickLine={false} />
-                                    <YAxis fontSize={11} tickLine={false} axisLine={false} />
-                                    <Tooltip
-                                        formatter={(val: any) => [`₹${(val || 0).toLocaleString('en-IN')}`, '']}
-                                        contentStyle={{ backgroundColor: 'hsl(var(--card))', borderColor: 'hsl(var(--border))' }}
-                                    />
-                                    <Bar dataKey="profit" fill="#10b981" radius={[4, 4, 0, 0]} name="Gross Profit" />
-                                </BarChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </Card>
-                )}
+
 
                 {/* Main Table */}
                 <Card className="shadow-sm border-neutral-200/50 overflow-hidden">
@@ -448,7 +433,7 @@ export default function ProductProfitPage() {
                                             Sales Revenue {sortField === 'total_revenue' && (sortDirection === 'asc' ? '▲' : '▼')}
                                         </th>
                                         <th className="p-3 text-right cursor-pointer hover:bg-muted/60" onClick={() => handleSort('total_cost')}>
-                                            COGS {sortField === 'total_cost' && (sortDirection === 'asc' ? '▲' : '▼')}
+                                            COST {sortField === 'total_cost' && (sortDirection === 'asc' ? '▲' : '▼')}
                                         </th>
                                         <th className="p-3 text-right cursor-pointer hover:bg-muted/60" onClick={() => handleSort('gross_profit')}>
                                             Gross Profit {sortField === 'gross_profit' && (sortDirection === 'asc' ? '▲' : '▼')}

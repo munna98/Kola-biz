@@ -1063,6 +1063,7 @@ pub struct UpdateProductRates {
     pub purchase_rate: f64,
     pub sales_rate: f64,
     pub mrp: f64,
+    pub cost: f64,
 }
 
 #[tauri::command]
@@ -1076,12 +1077,13 @@ pub async fn update_multiple_product_rates(
     for rate in rates {
         sqlx::query(
             "UPDATE products 
-             SET purchase_rate = ?, sales_rate = ?, mrp = ?, updated_at = CURRENT_TIMESTAMP 
+             SET purchase_rate = ?, sales_rate = ?, mrp = ?, cost = ?, updated_at = CURRENT_TIMESTAMP 
              WHERE id = ?",
         )
         .bind(rate.purchase_rate)
         .bind(rate.sales_rate)
         .bind(rate.mrp)
+        .bind(rate.cost)
         .bind(&rate.id)
         .execute(&mut *tx)
         .await

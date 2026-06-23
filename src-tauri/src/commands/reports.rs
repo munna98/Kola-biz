@@ -1937,7 +1937,9 @@ pub async fn get_product_profit_report(
 ) -> Result<Vec<ProductProfitRow>, String> {
     let pool = registry.active_pool().await?;
     
-    // 1. Build and execute main profit query
+    // 1. Build and execute main profit query using WAC (Weighted Average Cost from IN movements)
+    // WAC per unit = SUM(cost_amount from purchase IN movements) / SUM(quantity from purchase IN movements)
+    // Actual cost for the period = WAC * net_qty_sold
     let mut query_str = String::from("
         SELECT
             p.id as product_id,
@@ -1945,6 +1947,7 @@ pub async fn get_product_profit_report(
             p.name as product_name,
             pg.name as group_name,
             u.symbol as base_unit_symbol,
+            -- Net qty sold (sales OUT minus returns IN)
             CAST(COALESCE(SUM(
                 CASE
                     WHEN sm.movement_type = 'OUT' THEN sm.quantity
@@ -1952,6 +1955,7 @@ pub async fn get_product_profit_report(
                     ELSE 0
                 END
             ), 0) AS REAL) as qty_sold,
+            -- Total revenue (sales amount minus return amount)
             CAST(COALESCE(SUM(
                 CASE
                     WHEN sm.movement_type = 'OUT' THEN sm.amount
@@ -1959,6 +1963,7 @@ pub async fn get_product_profit_report(
                     ELSE 0
                 END
             ), 0) AS REAL) as total_revenue,
+            -- Total cost (sum of cost_amount from sales OUT minus returns IN)
             CAST(COALESCE(SUM(
                 CASE
                     WHEN sm.movement_type = 'OUT' THEN COALESCE(sm.cost_amount, 0)
