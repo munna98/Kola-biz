@@ -197,6 +197,21 @@ export default function SalesInvoicePage() {
     }
   }, [salesState.currentVoucherId]);
 
+  // Sync partyBalance when active tab changes (tab switch / new tab).
+  // partyBalance is local React state — it is NOT stored in the Redux tab snapshot,
+  // so we must reset it and re-fetch whenever the tab's party changes.
+  useEffect(() => {
+    if (salesState.form.customer_id && salesState.form.customer_id !== 0) {
+      setPartyBalance(null); // clear stale value immediately
+      invoke<number>('get_account_balance', { accountId: salesState.form.customer_id })
+        .then(bal => setPartyBalance(bal))
+        .catch(console.error);
+    } else {
+      setPartyBalance(null);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [salesState.activeTabId]);
+
   // Default Party Selection Effect
   useEffect(() => {
     if (salesState.mode === 'new' && salesState.form.customer_id === 0 && parties.length > 0) {
