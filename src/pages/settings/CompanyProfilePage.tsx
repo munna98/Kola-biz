@@ -174,12 +174,22 @@ export default function CompanyProfilePage() {
                                 </div>
                                 <div className="space-y-2">
                                     <Label htmlFor="business_type">Business Type</Label>
-                                    <Input
-                                        id="business_type"
-                                        value={profile.business_type}
-                                        onChange={(e) => handleInputChange('business_type', e.target.value)}
-                                        placeholder="e.g., Retail, Manufacturing"
-                                    />
+                                    <Select
+                                        value={profile.business_type || ''}
+                                        onValueChange={(value) => handleInputChange('business_type', value)}
+                                    >
+                                        <SelectTrigger id="business_type">
+                                            <SelectValue placeholder="Select Business Type" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="Export Business">Export Business</SelectItem>
+                                            <SelectItem value="Banana Merchant">Banana Merchant</SelectItem>
+                                            <SelectItem value="Fruits or Vegitables">Fruits or Vegitables</SelectItem>
+                                            <SelectItem value="Used Car Dealer">Used Car Dealer</SelectItem>
+                                            <SelectItem value="Retail Clothing">Retail Clothing</SelectItem>
+                                            <SelectItem value="Wholesale Clothing">Wholesale Clothing</SelectItem>
+                                        </SelectContent>
+                                    </Select>
                                 </div>
                             </div>
 

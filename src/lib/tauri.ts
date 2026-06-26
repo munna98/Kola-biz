@@ -216,6 +216,7 @@ export interface Customer {
   postal_code?: string;
   country?: string;
   gstin?: string;
+  currency?: string;
   is_active: number;
   created_at: string;
 }
@@ -233,6 +234,7 @@ export interface CreateCustomer {
   postal_code?: string;
   country?: string;
   gstin?: string;
+  currency?: string;
 }
 
 export interface Supplier {
@@ -249,6 +251,7 @@ export interface Supplier {
   postal_code?: string;
   country?: string;
   gstin?: string;
+  currency?: string;
   is_active: number;
   created_at: string;
 }
@@ -266,6 +269,7 @@ export interface CreateSupplier {
   postal_code?: string;
   country?: string;
   gstin?: string;
+  currency?: string;
 }
 
 // ======= CHART OF ACCOUNTS =======

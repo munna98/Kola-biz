@@ -295,7 +295,8 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            deleted_at DATETIME
+            deleted_at DATETIME,
+            currency TEXT
         )",
     )
     .execute(pool)
@@ -313,7 +314,8 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            deleted_at DATETIME
+            deleted_at DATETIME,
+            currency TEXT
         )",
     )
     .execute(pool)
@@ -1167,6 +1169,78 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     // Migration: Move legacy address to address_line_1 and drop address column
     let _ = sqlx::query("UPDATE suppliers SET address_line_1 = address WHERE address_line_1 IS NULL OR address_line_1 = ''").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE suppliers DROP COLUMN address").execute(pool).await;
+
+    // Migration: Add currency column to customers and suppliers, and convert country to ID reference
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN currency TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN currency TEXT").execute(pool).await;
+
+    // Map existing text country to country ID
+    let _ = sqlx::query(
+        "UPDATE customers 
+         SET country = (SELECT id FROM countries WHERE name = customers.country) 
+         WHERE country IN (SELECT name FROM countries)"
+    ).execute(pool).await;
+
+    let _ = sqlx::query(
+        "UPDATE customers 
+         SET country = (SELECT id FROM countries WHERE name = 'India') 
+         WHERE country IS NULL OR country = '' OR country NOT IN (SELECT id FROM countries)"
+    ).execute(pool).await;
+
+    let _ = sqlx::query(
+        "UPDATE suppliers 
+         SET country = (SELECT id FROM countries WHERE name = suppliers.country) 
+         WHERE country IN (SELECT name FROM countries)"
+    ).execute(pool).await;
+
+    let _ = sqlx::query(
+        "UPDATE suppliers 
+         SET country = (SELECT id FROM countries WHERE name = 'India') 
+         WHERE country IS NULL OR country = '' OR country NOT IN (SELECT id FROM countries)"
+    ).execute(pool).await;
+
+    // Map currency based on country, falling back to company's base_currency
+    let _ = sqlx::query(
+        "UPDATE customers 
+         SET currency = (
+             SELECT c.id 
+             FROM currencies c 
+             JOIN countries co ON co.name = c.country 
+             WHERE co.id = customers.country
+         )
+         WHERE currency IS NULL OR currency = ''"
+    ).execute(pool).await;
+
+    let _ = sqlx::query(
+        "UPDATE customers 
+         SET currency = (
+             SELECT id 
+             FROM currencies 
+             WHERE code = (SELECT COALESCE(base_currency, 'INR') FROM company_profile LIMIT 1)
+         ) 
+         WHERE currency IS NULL OR currency = '' OR currency NOT IN (SELECT id FROM currencies)"
+    ).execute(pool).await;
+
+    let _ = sqlx::query(
+        "UPDATE suppliers 
+         SET currency = (
+             SELECT c.id 
+             FROM currencies c 
+             JOIN countries co ON co.name = c.country 
+             WHERE co.id = suppliers.country
+         )
+         WHERE currency IS NULL OR currency = ''"
+    ).execute(pool).await;
+
+    let _ = sqlx::query(
+        "UPDATE suppliers 
+         SET currency = (
+             SELECT id 
+             FROM currencies 
+             WHERE code = (SELECT COALESCE(base_currency, 'INR') FROM company_profile LIMIT 1)
+         ) 
+         WHERE currency IS NULL OR currency = '' OR currency NOT IN (SELECT id FROM currencies)"
+    ).execute(pool).await;
 
     // Migration: Add GST columns to chart_of_accounts
     let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN gstin TEXT").execute(pool).await;

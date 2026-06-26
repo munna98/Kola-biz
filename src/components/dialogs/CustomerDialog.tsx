@@ -1,13 +1,16 @@
 import { useState, useEffect } from 'react';
+import { useSelector } from 'react-redux';
+import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Separator } from '@/components/ui/separator';
 import { api, Customer, CreateCustomer } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { useDialog } from '@/hooks/use-dialog';
+import { RootState } from '@/store';
 
 const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat',
@@ -15,15 +18,17 @@ const INDIAN_STATES = [
   'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab',
   'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand',
   'West Bengal',
-  // Union Territories
   'Andaman and Nicobar Islands', 'Chandigarh', 'Dadra and Nagar Haveli and Daman and Diu',
   'Delhi', 'Jammu and Kashmir', 'Ladakh', 'Lakshadweep', 'Puducherry',
 ];
 
+interface Country { id: string; name: string; code: string; }
+interface Currency { id: string; code: string; name: string; symbol?: string; country?: string; }
+
 const EMPTY_FORM: CreateCustomer = {
   code: '', name: '', email: '', phone: '',
   address_line_1: '', address_line_2: '', address_line_3: '',
-  city: '', state: '', postal_code: '', country: 'India', gstin: '',
+  city: '', state: '', postal_code: '', country: '', gstin: '', currency: '',
 };
 
 interface CustomerDialogProps {
@@ -36,11 +41,27 @@ interface CustomerDialogProps {
 
 export default function CustomerDialog({ open, onOpenChange, customerToEdit, onSave, initialName = '' }: CustomerDialogProps) {
     const [form, setForm] = useState<CreateCustomer>(EMPTY_FORM);
+    const [countries, setCountries] = useState<Country[]>([]);
+    const [currencies, setCurrencies] = useState<Currency[]>([]);
 
-    const orderedFields = ['code', 'name', 'email', 'phone', 'gstin', 'addr1', 'addr2', 'addr3', 'city', 'state', 'postal'];
+    const profile = useSelector((state: RootState) => state.companyProfile.profile);
+    const isExportBusiness = profile.business_type === 'Export Business';
+
+    const orderedFields = isExportBusiness
+        ? ['code', 'name', 'email', 'phone', 'gstin', 'addr1', 'addr2', 'addr3', 'city', 'state', 'postal', 'country', 'currency']
+        : ['code', 'name', 'email', 'phone', 'gstin', 'addr1', 'addr2', 'addr3', 'city', 'state', 'postal'];
     const { register, handleKeyDown, handleSelectKeyDown } = useDialog(open, onOpenChange, orderedFields);
 
+    // Fetch countries & currencies once when dialog opens
     useEffect(() => {
+        if (!open) return;
+        invoke<Country[]>('get_countries').then(setCountries).catch(console.error);
+        invoke<Currency[]>('get_currencies').then(setCurrencies).catch(console.error);
+    }, [open]);
+
+    // Populate form when editing or creating
+    useEffect(() => {
+        if (!open) return;
         if (customerToEdit) {
             setForm({
                 code: customerToEdit.code,
@@ -53,14 +74,32 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
                 city: customerToEdit.city || '',
                 state: customerToEdit.state || '',
                 postal_code: customerToEdit.postal_code || '',
-                country: customerToEdit.country || 'India',
+                country: customerToEdit.country || '',
                 gstin: customerToEdit.gstin || '',
+                currency: customerToEdit.currency || '',
             });
         } else {
             setForm({ ...EMPTY_FORM, name: initialName });
             api.customers.getNextCode().then(code => setForm(prev => ({ ...prev, code }))).catch(console.error);
         }
     }, [customerToEdit, open, initialName]);
+
+    // Apply defaults for new customers once lists are loaded
+    useEffect(() => {
+        if (customerToEdit || !open) return;
+        if (countries.length > 0 && !form.country) {
+            const india = countries.find(c => c.name === 'India');
+            if (india) setForm(prev => ({ ...prev, country: india.id }));
+        }
+        if (currencies.length > 0 && !form.currency) {
+            const defaultCode = profile.base_currency || 'INR';
+            const baseCurr = currencies.find(c => c.code === defaultCode);
+            if (baseCurr) setForm(prev => ({ ...prev, currency: baseCurr.id }));
+        }
+    }, [countries, currencies, customerToEdit, open]);
+
+    const countryOptions = countries.map(c => ({ value: c.id, label: c.name, searchString: `${c.name} ${c.code}` }));
+    const currencyOptions = currencies.map(c => ({ value: c.id, label: `${c.code} — ${c.name}`, searchString: `${c.code} ${c.name}` }));
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -92,7 +131,6 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
                     </DialogDescription>
                 </DialogHeader>
                 <form onSubmit={handleSubmit} className="space-y-4">
-                    {/* Basic info */}
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <Label className="text-xs font-medium">Code</Label>
@@ -114,18 +152,11 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
                         </div>
                     </div>
 
-                    <Separator />
-
-                    {/* GST */}
                     <div>
                         <Label className="text-xs font-medium">GSTIN</Label>
                         <Input ref={register('gstin') as any} value={form.gstin} onChange={e => setForm({ ...form, gstin: e.target.value.toUpperCase() })} onKeyDown={e => handleKeyDown(e, 'gstin')} placeholder="22AAAAA0000A1Z5" className="h-8 text-sm mt-1 font-mono" maxLength={15} />
                     </div>
 
-                    <Separator />
-
-                    {/* Address */}
-                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Address</p>
                     <div className="space-y-2">
                         <Input ref={register('addr1') as any} value={form.address_line_1} onChange={e => setForm({ ...form, address_line_1: e.target.value })} onKeyDown={e => handleKeyDown(e, 'addr1')} placeholder="Address Line 1" className="h-8 text-sm" />
                         <Input ref={register('addr2') as any} value={form.address_line_2} onChange={e => setForm({ ...form, address_line_2: e.target.value })} onKeyDown={e => handleKeyDown(e, 'addr2')} placeholder="Address Line 2" className="h-8 text-sm" />
@@ -152,6 +183,38 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
                             <Input ref={register('postal') as any} value={form.postal_code} onChange={e => setForm({ ...form, postal_code: e.target.value })} onKeyDown={e => handleKeyDown(e, 'postal')} className="h-8 text-sm mt-1" maxLength={6} />
                         </div>
                     </div>
+
+                    {/* Country & Currency — Export Business only */}
+                    {isExportBusiness && (
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <Label className="text-xs font-medium">Country</Label>
+                                <Combobox
+                                    ref={register('country') as any}
+                                    options={countryOptions}
+                                    value={form.country || ''}
+                                    onChange={v => setForm({ ...form, country: String(v) })}
+                                    placeholder="Select country"
+                                    searchPlaceholder="Search country..."
+                                    className="h-8 text-sm mt-1 w-full"
+                                    onKeyDown={e => handleKeyDown(e, 'country')}
+                                />
+                            </div>
+                            <div>
+                                <Label className="text-xs font-medium">Currency</Label>
+                                <Combobox
+                                    ref={register('currency') as any}
+                                    options={currencyOptions}
+                                    value={form.currency || ''}
+                                    onChange={v => setForm({ ...form, currency: String(v) })}
+                                    placeholder="Select currency"
+                                    searchPlaceholder="Search currency..."
+                                    className="h-8 text-sm mt-1 w-full"
+                                    onKeyDown={e => handleKeyDown(e, 'currency')}
+                                />
+                            </div>
+                        </div>
+                    )}
 
                     <Button type="submit" className="w-full">{customerToEdit ? 'Update' : 'Create'}</Button>
                 </form>
