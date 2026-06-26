@@ -244,6 +244,7 @@ pub fn run() {
             get_company_profile,
             update_company_profile,
             get_countries,
+            get_currencies,
             // Invoice Templates
             render_invoice,
             get_invoice_templates,

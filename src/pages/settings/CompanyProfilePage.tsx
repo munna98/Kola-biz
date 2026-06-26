@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { toast } from 'sonner';
 import { IconBuilding, IconFileText, IconCreditCard, IconPhoto } from '@tabler/icons-react';
 
@@ -27,10 +28,12 @@ export default function CompanyProfilePage() {
     const { profile, loading } = useSelector((state: RootState) => state.companyProfile);
     const [logoPreview, setLogoPreview] = useState<string>('');
     const [countries, setCountries] = useState<any[]>([]);
+    const [currencies, setCurrencies] = useState<any[]>([]);
 
     useEffect(() => {
         loadCompanyProfile();
         loadCountries();
+        loadCurrencies();
     }, []);
 
     useEffect(() => {
@@ -45,6 +48,15 @@ export default function CompanyProfilePage() {
             setCountries(list);
         } catch (error) {
             console.error('Failed to load countries', error);
+        }
+    };
+
+    const loadCurrencies = async () => {
+        try {
+            const list = await invoke<any[]>('get_currencies');
+            setCurrencies(list);
+        } catch (error) {
+            console.error('Failed to load currencies', error);
         }
     };
 
@@ -238,21 +250,36 @@ export default function CompanyProfilePage() {
                                 </div>
                             </div>
 
-                            <div className="space-y-2">
-                                <Label htmlFor="country">Country</Label>
-                                <Select
-                                    value={profile.country}
-                                    onValueChange={(value) => handleInputChange('country', value)}
-                                >
-                                    <SelectTrigger>
-                                        <SelectValue placeholder="Select Country" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {countries.map((c) => (
-                                            <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <Label htmlFor="country">Country</Label>
+                                    <Combobox
+                                        options={countries.map(c => ({
+                                            value: c.name,
+                                            label: c.name,
+                                            subLabel: c.code,
+                                            searchString: `${c.name} ${c.code}`
+                                        }))}
+                                        value={profile.country}
+                                        onChange={(value) => handleInputChange('country', value as string)}
+                                        placeholder="Select Country"
+                                        searchPlaceholder="Search countries..."
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="base_currency">Base Currency</Label>
+                                    <Combobox
+                                        options={currencies.map(c => ({
+                                            value: c.code,
+                                            label: `${c.name} (${c.code}) ${c.symbol ? `- ${c.symbol}` : ''}`,
+                                            searchString: `${c.name} ${c.code}`
+                                        }))}
+                                        value={profile.base_currency}
+                                        onChange={(value) => handleInputChange('base_currency', value as string)}
+                                        placeholder="Select Base Currency"
+                                        searchPlaceholder="Search currencies..."
+                                    />
+                                </div>
                             </div>
 
                             <div className="grid grid-cols-3 gap-4">

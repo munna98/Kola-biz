@@ -1317,6 +1317,7 @@ export interface CompanyProfileState {
     bank_ifsc: string;
     bank_branch: string;
     terms_and_conditions: string;
+    base_currency: string;
   };
   loading: boolean;
 }
@@ -1345,6 +1346,7 @@ const companyProfileInitialState: CompanyProfileState = {
     bank_ifsc: '',
     bank_branch: '',
     terms_and_conditions: '',
+    base_currency: 'INR',
   },
   loading: false,
 };

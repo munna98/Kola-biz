@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
 import { setNeedsCompanySetup } from '@/store';
 
 // Mark that company setup is complete
@@ -114,22 +114,20 @@ export default function CompanySetupPage() {
                             <Label htmlFor="country">Country *</Label>
                             <div className="relative">
                                 <IconWorld className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground z-10" />
-                                <Select
+                                <Combobox
+                                    options={countries.map(c => ({
+                                        value: c.name,
+                                        label: c.name,
+                                        subLabel: c.code,
+                                        searchString: `${c.name} ${c.code}`
+                                    }))}
                                     value={formData.country}
-                                    onValueChange={(value) => setFormData({ ...formData, country: value })}
+                                    onChange={(value) => setFormData({ ...formData, country: value as string })}
+                                    placeholder="Select country"
+                                    searchPlaceholder="Search countries..."
+                                    className="pl-10 h-10"
                                     disabled={isLoading}
-                                >
-                                    <SelectTrigger className="pl-10">
-                                        <SelectValue placeholder="Select country" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                        {countries.map((country) => (
-                                            <SelectItem key={country.id} value={country.name}>
-                                                {country.name}
-                                            </SelectItem>
-                                        ))}
-                                    </SelectContent>
-                                </Select>
+                                />
                             </div>
                         </div>
 

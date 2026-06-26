@@ -4,7 +4,7 @@ use sqlx::SqlitePool;
 use std::sync::Arc;
 use tauri::State;
 
-// ============= COUNTRIES =============
+// ============= COUNTRIES & CURRENCIES =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct Country {
     pub id: String,
@@ -12,10 +12,28 @@ pub struct Country {
     pub code: String,
 }
 
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct Currency {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub symbol: Option<String>,
+    pub country: Option<String>,
+}
+
 #[tauri::command]
 pub async fn get_countries(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Country>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Country>("SELECT * FROM countries ORDER BY name")
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_currencies(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Currency>, String> {
+    let pool = registry.active_pool().await?;
+    sqlx::query_as::<_, Currency>("SELECT * FROM currencies ORDER BY name")
         .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
@@ -46,6 +64,7 @@ pub struct CompanyProfile {
     pub bank_ifsc: Option<String>,
     pub bank_branch: Option<String>,
     pub terms_and_conditions: Option<String>,
+    pub base_currency: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -73,6 +92,7 @@ pub struct UpdateCompanyProfile {
     pub bank_ifsc: Option<String>,
     pub bank_branch: Option<String>,
     pub terms_and_conditions: Option<String>,
+    pub base_currency: Option<String>,
 }
 
 #[tauri::command]
@@ -138,6 +158,7 @@ pub async fn update_company_profile(
             bank_ifsc = ?,
             bank_branch = ?,
             terms_and_conditions = ?,
+            base_currency = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = 1",
     )
@@ -162,6 +183,7 @@ pub async fn update_company_profile(
     .bind(&profile.bank_ifsc)
     .bind(&profile.bank_branch)
     .bind(&profile.terms_and_conditions)
+    .bind(&profile.base_currency)
     .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;

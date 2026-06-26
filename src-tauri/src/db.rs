@@ -114,6 +114,20 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await?;
 
+    // Currencies
+    println!("DB: Creating currencies table...");
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS currencies (
+            id TEXT PRIMARY KEY,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            symbol TEXT,
+            country TEXT
+        )",
+    )
+    .execute(pool)
+    .await?;
+
     // Units
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS units (
@@ -987,12 +1001,18 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             bank_ifsc TEXT,
             bank_branch TEXT,
             terms_and_conditions TEXT,
+            base_currency TEXT DEFAULT 'INR',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
     )
     .execute(pool)
     .await?;
+
+    // Migration: Add base_currency if not exists
+    let _ = sqlx::query("ALTER TABLE company_profile ADD COLUMN base_currency TEXT DEFAULT 'INR'")
+        .execute(pool)
+        .await;
 
     // Voucher Settings
     sqlx::query(
