@@ -5,6 +5,33 @@ use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
+async fn get_next_party_code(
+    pool: &SqlitePool,
+    party_table: &str,
+    code_column: &str,
+    ledger_prefix: &str,
+) -> Result<String, String> {
+    let query = format!(
+        "SELECT MAX(CAST(SUBSTR(code_value, 2) AS INTEGER)) FROM (
+            SELECT {code_column} AS code_value
+            FROM {party_table}
+            WHERE {code_column} GLOB ?1
+            UNION ALL
+            SELECT account_code AS code_value
+            FROM chart_of_accounts
+            WHERE account_code GLOB ?1
+        )",
+    );
+
+    let max_num: Option<i64> = sqlx::query_scalar(&query)
+        .bind(format!("{ledger_prefix}[0-9]*"))
+        .fetch_one(pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(format!("{ledger_prefix}{}", max_num.unwrap_or(100) + 1))
+}
+
 // ============= CUSTOMERS =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct Customer {
@@ -69,19 +96,7 @@ pub async fn get_customer(
 }
 
 async fn generate_customer_code(pool: &SqlitePool) -> Result<String, String> {
-    let last_code: Option<String> = sqlx::query_scalar(
-        "SELECT code FROM customers WHERE code GLOB 'C[0-9]*' ORDER BY length(code) DESC, code DESC LIMIT 1"
-    )
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let next_num = if let Some(code) = last_code {
-        code.trim_start_matches('C').parse::<i32>().unwrap_or(100) + 1
-    } else {
-        101
-    };
-    Ok(format!("C{}", next_num))
+    get_next_party_code(pool, "customers", "code", "C").await
 }
 
 #[tauri::command]
@@ -98,6 +113,7 @@ pub async fn create_customer(
     customer: CreateCustomer,
 ) -> Result<Customer, String> {
     let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let id = Uuid::now_v7().to_string();
     let code = if let Some(c) = &customer.code {
         if c.trim().is_empty() {
@@ -126,7 +142,7 @@ pub async fn create_customer(
     .bind(&customer.country)
     .bind(&customer.gstin)
     .bind(&customer.currency)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -146,9 +162,11 @@ pub async fn create_customer(
     .bind("Customer account")
     .bind(&id)
     .bind("customer")
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at FROM customers WHERE id = ?")
         .bind(id)
@@ -164,17 +182,26 @@ pub async fn batch_create_customers(
 ) -> Result<usize, String> {
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    let mut next_generated_code = generate_customer_code(&pool)
+        .await?
+        .trim_start_matches('C')
+        .parse::<i64>()
+        .unwrap_or(101);
 
     for customer in customers {
         let id = Uuid::now_v7().to_string();
         let code = if let Some(c) = &customer.code {
             if c.trim().is_empty() {
-                generate_customer_code(&pool).await?
+                let generated = format!("C{}", next_generated_code);
+                next_generated_code += 1;
+                generated
             } else {
                 c.clone()
             }
         } else {
-            generate_customer_code(&pool).await?
+            let generated = format!("C{}", next_generated_code);
+            next_generated_code += 1;
+            generated
         };
 
         let _ = sqlx::query(
@@ -491,19 +518,7 @@ pub(crate) async fn get_customer_with_pool(
 }
 
 async fn generate_supplier_code(pool: &SqlitePool) -> Result<String, String> {
-    let last_code: Option<String> = sqlx::query_scalar(
-        "SELECT code FROM suppliers WHERE code GLOB 'S[0-9]*' ORDER BY length(code) DESC, code DESC LIMIT 1"
-    )
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let next_num = if let Some(code) = last_code {
-        code.trim_start_matches('S').parse::<i32>().unwrap_or(100) + 1
-    } else {
-        101
-    };
-    Ok(format!("S{}", next_num))
+    get_next_party_code(pool, "suppliers", "code", "S").await
 }
 
 #[tauri::command]
@@ -520,6 +535,7 @@ pub async fn create_supplier(
     supplier: CreateSupplier,
 ) -> Result<Supplier, String> {
     let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     let id = Uuid::now_v7().to_string();
     let code = if let Some(c) = &supplier.code {
         if c.trim().is_empty() {
@@ -548,7 +564,7 @@ pub async fn create_supplier(
     .bind(&supplier.country)
     .bind(&supplier.gstin)
     .bind(&supplier.currency)
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
@@ -568,9 +584,11 @@ pub async fn create_supplier(
     .bind("Supplier account")
     .bind(&id)
     .bind("supplier")
-    .execute(&pool)
+    .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     sqlx::query_as::<_, Supplier>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at FROM suppliers WHERE id = ?")
         .bind(id)
@@ -586,17 +604,26 @@ pub async fn batch_create_suppliers(
 ) -> Result<usize, String> {
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    let mut next_generated_code = generate_supplier_code(&pool)
+        .await?
+        .trim_start_matches('S')
+        .parse::<i64>()
+        .unwrap_or(101);
 
     for supplier in suppliers {
         let id = Uuid::now_v7().to_string();
         let code = if let Some(c) = &supplier.code {
             if c.trim().is_empty() {
-                generate_supplier_code(&pool).await?
+                let generated = format!("S{}", next_generated_code);
+                next_generated_code += 1;
+                generated
             } else {
                 c.clone()
             }
         } else {
-            generate_supplier_code(&pool).await?
+            let generated = format!("S{}", next_generated_code);
+            next_generated_code += 1;
+            generated
         };
 
         let _ = sqlx::query(
