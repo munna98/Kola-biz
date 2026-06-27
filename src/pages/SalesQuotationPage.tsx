@@ -1226,7 +1226,7 @@ export default function SalesQuotationPage() {
             taxInclusive={isTaxInclusive}
             footerRightContent={
               partyBalance !== null && shouldShowPartyBalance ? (
-                <div className={`text-sm font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                <div className={`text-base font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                   Balance: ₹ {Math.abs(partyBalance).toLocaleString()} {partyBalance >= 0 ? 'Dr' : 'Cr'}
                 </div>
               ) : null
