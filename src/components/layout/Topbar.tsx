@@ -106,7 +106,7 @@ export default function Topbar() {
                 <MenubarMenu>
                     <MenubarTrigger>Accounts</MenubarTrigger>
                     <MenubarContent>
-                        <MenubarItem onClick={() => handleNavigation('coa')}>Chart of Accounts</MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('coa')}>Ledgers</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('customers')}>Customers</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('suppliers')}>Suppliers</MenubarItem>
                         <MenubarSeparator />

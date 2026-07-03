@@ -39,7 +39,7 @@ const VOUCHER_TYPES = [
 const MASTER_TABLES = [
   { id: 'products', label: 'Products' },
   { id: 'product_groups', label: 'Product Groups' },
-  { id: 'chart_of_accounts', label: 'Chart of Accounts' },
+  { id: 'chart_of_accounts', label: 'Ledgers' },
   { id: 'customers', label: 'Customers (legacy)' },
   { id: 'suppliers', label: 'Suppliers (legacy)' },
   { id: 'opening_balances', label: 'Opening Balances' },

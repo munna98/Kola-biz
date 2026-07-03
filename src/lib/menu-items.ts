@@ -43,7 +43,7 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
     { id: 'customers', label: 'Customers', icon: IconUserDown, category: 'Master' },
     { id: 'suppliers', label: 'Suppliers', icon: IconUserUp, category: 'Master' },
     { id: 'employees', label: 'Employees', icon: IconBriefcase, category: 'Master' },
-    { id: 'coa', label: 'Chart of Accounts', icon: IconNotebook, category: 'Master' },
+    { id: 'coa', label: 'Ledgers', icon: IconNotebook, category: 'Master' },
     
     // Vouchers
     { id: 'purchase', label: 'Purchase Invoice', icon: IconTruck, category: 'Voucher' },

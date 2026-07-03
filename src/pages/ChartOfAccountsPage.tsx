@@ -109,7 +109,7 @@ export default function ChartOfAccountsPage() {
     <div className="h-full overflow-auto p-6 space-y-4">
       <div className="flex justify-between items-center gap-4">
         <div>
-          <h2 className="text-2xl font-bold">{showDeleted ? 'Recycle Bin - Accounts' : 'Chart of Accounts'}</h2>
+          <h2 className="text-2xl font-bold">{showDeleted ? 'Recycle Bin - Accounts' : 'Leadgers'}</h2>
           <p className="text-sm text-muted-foreground mt-1">
             {showDeleted ? 'View and restore deleted accounts' : 'Manage your accounting chart'}
           </p>
