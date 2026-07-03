@@ -2104,3 +2104,192 @@ pub async fn get_product_profit_invoices(
         .collect())
 }
 
+// ============= EXPENSE REPORT =============
+
+#[derive(Serialize, Deserialize)]
+pub struct ExpenseReportRow {
+    pub group_key: String,
+    pub group_label: String,
+    pub voucher_count: i64,
+    pub total_amount: f64,
+}
+
+#[tauri::command]
+pub async fn get_expense_report(
+    registry: State<'_, Arc<DbRegistry>>,
+    from_date: String,
+    to_date: String,
+    group_by: String,        // "day" | "account" | "product"
+    product_id: Option<String>,
+    account_id: Option<String>,
+) -> Result<Vec<ExpenseReportRow>, String> {
+    let pool = registry.active_pool().await?;
+
+    let mut params: Vec<String> = Vec::new();
+    let mut extra_where = String::new();
+
+    if let Some(ref pid) = product_id {
+        extra_where.push_str(" AND vi.product_id = ?");
+        params.push(pid.clone());
+    }
+    if let Some(ref aid) = account_id {
+        extra_where.push_str(" AND coa.id = ?");
+        params.push(aid.clone());
+    }
+
+    let (select_key, group_clause, order_clause) = match group_by.as_str() {
+        "day" => (
+            "v.voucher_date AS group_key, v.voucher_date AS group_label",
+            "v.voucher_date",
+            "v.voucher_date ASC",
+        ),
+        "product" => (
+            "COALESCE(p.name, '__none__') AS group_key, COALESCE(p.name, '__none__') AS group_label",
+            "COALESCE(p.id, '__none__')",
+            "total_amount DESC",
+        ),
+        _ => (
+            // default: account
+            "coa.account_name AS group_key, coa.account_name AS group_label",
+            "coa.id",
+            "total_amount DESC",
+        ),
+    };
+
+    // For product grouping: exclude rows with no product_id
+    let product_filter = if group_by == "product" {
+        " AND vi.product_id IS NOT NULL AND vi.product_id != ''"
+    } else {
+        ""
+    };
+
+    let query_str = format!(
+        "SELECT
+            {select_key},
+            CAST(COUNT(DISTINCT v.id) AS INTEGER) AS voucher_count,
+            CAST(COALESCE(SUM(vi.amount), 0) AS REAL) AS total_amount
+         FROM voucher_items vi
+         JOIN vouchers v ON vi.voucher_id = v.id
+         JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
+         LEFT JOIN products p ON vi.product_id = p.id
+         WHERE v.voucher_type = 'payment'
+           AND coa.account_type = 'Expense'
+           AND v.voucher_date >= ?
+           AND v.voucher_date <= ?
+           AND v.deleted_at IS NULL
+           {product_filter}
+           {extra_where}
+         GROUP BY {group_clause}
+         ORDER BY {order_clause}",
+    );
+
+    let mut query = sqlx::query_as::<_, (String, String, i64, f64)>(&query_str)
+        .bind(&from_date)
+        .bind(&to_date);
+
+    for p in &params {
+        query = query.bind(p);
+    }
+
+    let rows = query.fetch_all(&pool).await.map_err(|e| e.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(key, label, count, amount)| ExpenseReportRow {
+            group_key: key,
+            group_label: label,
+            voucher_count: count,
+            total_amount: amount,
+        })
+        .collect())
+}
+
+// -------- Entry-level detail (used when a specific product is selected OR to expand a group row) --------
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct ExpenseDetail {
+    pub voucher_no: String,
+    pub voucher_date: String,
+    pub account_name: String,
+    pub product_name: Option<String>,
+    pub amount: f64,
+    pub narration: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_expense_report_details(
+    registry: State<'_, Arc<DbRegistry>>,
+    from_date: String,
+    to_date: String,
+    product_id: Option<String>,   // filter to a specific product
+    account_id: Option<String>,   // filter to a specific expense ledger
+    group_by: Option<String>,     // when expanding a group row: "day"|"account"|"product"
+    group_value: Option<String>,  // the group key value to filter on
+) -> Result<Vec<ExpenseDetail>, String> {
+    let pool = registry.active_pool().await?;
+
+    let mut params: Vec<String> = Vec::new();
+    let mut extra_where = String::new();
+
+    // Specific product filter (entry-level product view)
+    if let Some(ref pid) = product_id {
+        extra_where.push_str(" AND vi.product_id = ?");
+        params.push(pid.clone());
+    }
+
+    // Specific account filter
+    if let Some(ref aid) = account_id {
+        extra_where.push_str(" AND coa.id = ?");
+        params.push(aid.clone());
+    }
+
+    // Group-row expansion filters
+    if let (Some(gb), Some(gv)) = (&group_by, &group_value) {
+        match gb.as_str() {
+            "day" => {
+                extra_where.push_str(" AND v.voucher_date = ?");
+                params.push(gv.clone());
+            }
+            "account" => {
+                extra_where.push_str(" AND coa.account_name = ?");
+                params.push(gv.clone());
+            }
+            "product" => {
+                extra_where.push_str(" AND p.name = ?");
+                params.push(gv.clone());
+            }
+            _ => {}
+        }
+    }
+
+    let query_str = format!(
+        "SELECT
+            v.voucher_no,
+            v.voucher_date,
+            coa.account_name,
+            p.name AS product_name,
+            CAST(vi.amount AS REAL) AS amount,
+            COALESCE(vi.remarks, v.narration, '') AS narration
+         FROM voucher_items vi
+         JOIN vouchers v ON vi.voucher_id = v.id
+         JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
+         LEFT JOIN products p ON vi.product_id = p.id
+         WHERE v.voucher_type = 'payment'
+           AND coa.account_type = 'Expense'
+           AND v.voucher_date >= ?
+           AND v.voucher_date <= ?
+           AND v.deleted_at IS NULL
+           {extra_where}
+         ORDER BY v.voucher_date ASC, v.created_at ASC"
+    );
+
+    let mut query = sqlx::query_as::<_, ExpenseDetail>(&query_str)
+        .bind(&from_date)
+        .bind(&to_date);
+
+    for p in &params {
+        query = query.bind(p);
+    }
+
+    query.fetch_all(&pool).await.map_err(|e| e.to_string())
+}

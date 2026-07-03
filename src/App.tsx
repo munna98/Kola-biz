@@ -36,6 +36,7 @@ import StockReportPage from './pages/reports/StockReportPage';
 import ProductProfitPage from './pages/reports/ProductProfitPage';
 import TransactionReportPage from './pages/reports/TransactionReportPage';
 import SalesReturnReportPage from './pages/reports/SalesReturnReportPage';
+import ExpenseReportPage from './pages/reports/ExpenseReportPage';
 import LoginPage from './pages/LoginPage';
 // import InitialSetupPage from './pages/InitialSetupPage'; // Removed
 import CompanySetupPage from './pages/CompanySetupPage';
@@ -201,6 +202,7 @@ function AppContent() {
       case 'product_profit': return <ProductProfitPage />;
       case 'transactions': return <TransactionReportPage />;
       case 'sales_return_report': return <SalesReturnReportPage />;
+      case 'expense_report': return <ExpenseReportPage />;
       case 'company_profile': return <CompanyProfilePage />;
       case 'invoice_settings': return <InvoiceTemplatesPage />;
       case 'voucher_settings': return <VoucherSettingsPage />;

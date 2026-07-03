@@ -23,7 +23,8 @@ import {
     IconChartPie,
     IconCurrencyRupee,
     IconFileReport,
-    IconAdjustments
+    IconAdjustments,
+    IconReceiptTax,
 } from '@tabler/icons-react';
 
 export interface MenuItem {
@@ -35,7 +36,7 @@ export interface MenuItem {
 
 export const ALL_MENU_ITEMS: MenuItem[] = [
     { id: 'dashboard', label: 'Dashboard', icon: IconLayoutDashboard, category: 'General' },
-    
+
     // Master
     { id: 'products', label: 'Products', icon: IconPackage, category: 'Master' },
     { id: 'product_settings', label: 'Product Settings', icon: IconAdjustments, category: 'Master' },
@@ -44,7 +45,7 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
     { id: 'suppliers', label: 'Suppliers', icon: IconUserUp, category: 'Master' },
     { id: 'employees', label: 'Employees', icon: IconBriefcase, category: 'Master' },
     { id: 'coa', label: 'Ledgers', icon: IconNotebook, category: 'Master' },
-    
+
     // Vouchers
     { id: 'purchase', label: 'Purchase Invoice', icon: IconTruck, category: 'Voucher' },
     { id: 'purchase_return', label: 'Purchase Return', icon: IconTruckReturn, category: 'Voucher' },
@@ -63,6 +64,7 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
     { id: 'product_profit', label: 'Product Profit', icon: IconReportAnalytics, category: 'Report' },
     { id: 'transactions', label: 'Transaction Report', icon: IconHistory, category: 'Report' },
     { id: 'sales_return_report', label: 'Sales & Returns', icon: IconReceiptRefund, category: 'Report' },
+    { id: 'expense_report', label: 'Expense Report', icon: IconReceiptTax, category: 'Report' },
     { id: 'day_book', label: 'Day Book', icon: IconCalendarStats, category: 'Report' },
     { id: 'outstanding', label: 'Party Outstanding', icon: IconFileInvoice, category: 'Report' },
     { id: 'ledger', label: 'Ledger Report', icon: IconNotebook, category: 'Report' },

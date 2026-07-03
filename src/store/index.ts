@@ -38,7 +38,7 @@ const getInitialSidebarItems = () => {
     return [
       'dashboard', 'products', 'customers', 'suppliers', 'employees',
       'purchase', 'sales', 'payments', 'receipts', 'journal',
-      'stock_report', 'product_profit', 'transactions', 'day_book', 'outstanding'
+      'stock_report', 'product_profit', 'transactions', 'expense_report', 'day_book', 'outstanding'
     ];
   }
   if (!items.includes('product_profit')) {
@@ -47,6 +47,15 @@ const getInitialSidebarItems = () => {
       items.splice(index + 1, 0, 'product_profit');
     } else {
       items.push('product_profit');
+    }
+    localStorage.setItem('sidebar_items', JSON.stringify(items));
+  }
+  if (!items.includes('expense_report')) {
+    const index = items.indexOf('transactions');
+    if (index !== -1) {
+      items.splice(index + 1, 0, 'expense_report');
+    } else {
+      items.push('expense_report');
     }
     localStorage.setItem('sidebar_items', JSON.stringify(items));
   }

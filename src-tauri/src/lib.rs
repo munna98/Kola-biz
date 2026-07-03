@@ -220,6 +220,8 @@ pub fn run() {
             get_sales_return_report,
             get_product_profit_report,
             get_product_profit_invoices,
+            get_expense_report,
+            get_expense_report_details,
             commands::parties::get_all_parties,
             // User Management (New)
             commands::auth::get_users,
