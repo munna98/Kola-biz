@@ -99,7 +99,7 @@ export default function SalesInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost' } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
@@ -118,6 +118,29 @@ export default function SalesInvoicePage() {
   const linkedReturnTotal = draftReturnTotal || linkedReturnSummary?.total || 0;
   const linkedReturnCount = salesState.returnDraft?.items.length || linkedReturnSummary?.count || 0;
   const netPayableTotal = Math.max(0, salesState.totals.grandTotal - linkedReturnTotal);
+
+  // ---- Invoice Profit Calculation ----
+  const profitStats = useMemo(() => {
+    if (!voucherSettings?.showInvoiceProfit) return { totalCost: 0, grossProfit: 0, profitPercent: 0 };
+    let totalCost = 0;
+    salesState.items.forEach(item => {
+      if (item.item_type === 'service' || !item.product_id) return; // skip services
+      const product = products.find(p => String(p.id) === String(item.product_id));
+      if (!product) return;
+      const finalQty = item.initial_quantity - item.count * item.deduction_per_unit;
+      if (finalQty <= 0) return;
+      const unitCost =
+        voucherSettings.profitCostSource === 'product_master_cost'
+          ? (product.cost ?? product.purchase_rate ?? 0)
+          : (product.purchase_rate ?? 0);
+      totalCost += finalQty * unitCost;
+    });
+    const grossProfit = salesState.totals.grandTotal - totalCost;
+    const profitPercent = salesState.totals.grandTotal > 0
+      ? (grossProfit / salesState.totals.grandTotal) * 100
+      : 0;
+    return { totalCost, grossProfit, profitPercent };
+  }, [voucherSettings?.showInvoiceProfit, voucherSettings?.profitCostSource, salesState.items, salesState.totals.grandTotal, products]);
 
   // Create Customer Shortcut State
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
@@ -1611,27 +1634,50 @@ export default function SalesInvoicePage() {
 
           {/* Bottom Actions - Hidden in viewing mode as they are in header */}
           {!isReadOnly && (
-            <div className="flex justify-end gap-2 pt-4 border-t shrink-0">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={handleCancel}
-                className="h-9"
-                title="Cancel"
-              >
-                <IconX size={16} />
-                Cancel
-              </Button>
-              <Button
-                type="submit"
-                disabled={salesState.loading}
-                className="h-9"
-                title="Save (Ctrl+S)"
-                id="voucher-save-btn"
-              >
-                <IconCheck size={16} />
-                {salesState.loading ? 'Saving...' : (salesState.mode === 'editing' ? 'Update Invoice' : 'Save Invoice')}
-              </Button>
+            <div className="flex justify-between items-center gap-2 pt-4 border-t shrink-0">
+              {/* Left: Profit display (only when setting is enabled) */}
+              {voucherSettings?.showInvoiceProfit ? (
+                <div className="flex items-center gap-5 px-3 py-1.5 bg-muted/40 rounded-md border">
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground">Cost:</span>
+                    <span className="font-mono font-medium text-orange-500">
+                      ₹ {profitStats.totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="w-px h-4 bg-border" />
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-muted-foreground">Profit:</span>
+                    <span className={`font-mono font-semibold ${profitStats.grossProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      ₹ {profitStats.grossProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      <span className="ml-1 text-[10px] opacity-70">({profitStats.profitPercent.toFixed(1)}%)</span>
+                    </span>
+                  </div>
+                </div>
+              ) : <div />}
+
+              {/* Right: Action buttons */}
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleCancel}
+                  className="h-9"
+                  title="Cancel"
+                >
+                  <IconX size={16} />
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={salesState.loading}
+                  className="h-9"
+                  title="Save (Ctrl+S)"
+                  id="voucher-save-btn"
+                >
+                  <IconCheck size={16} />
+                  {salesState.loading ? 'Saving...' : (salesState.mode === 'editing' ? 'Update Invoice' : 'Save Invoice')}
+                </Button>
+              </div>
             </div>
           )}
         </form>

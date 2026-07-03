@@ -42,6 +42,8 @@ interface VoucherSettings {
     updateMrp?: boolean;
     updateCost?: boolean;
     showProductInfoOnHover?: boolean; // Show Stock, P Rate, MRP on Sl No hover
+    showInvoiceProfit?: boolean; // Show total cost & gross profit in invoice footer
+    profitCostSource?: 'cost_rate' | 'product_master_cost'; // Which cost field to use for profit calculation
 }
 
 const AVAILABLE_COLUMNS = [
@@ -99,6 +101,8 @@ export default function VoucherSettingsPage() {
     const [updateMrp, setUpdateMrp] = useState(true);
     const [updateCost, setUpdateCost] = useState(true);
     const [showProductInfoOnHover, setShowProductInfoOnHover] = useState(false);
+    const [showInvoiceProfit, setShowInvoiceProfit] = useState(false);
+    const [profitCostSource, setProfitCostSource] = useState<'cost_rate' | 'product_master_cost'>('cost_rate');
     const [loading, setLoading] = useState(false);
 
     // ---- Reassign Voucher Numbers state ----
@@ -144,6 +148,8 @@ export default function VoucherSettingsPage() {
                 setUpdateMrp(savedSettings.updateMrp !== false);
                 setUpdateCost(savedSettings.updateCost !== false);
                 setShowProductInfoOnHover(savedSettings.showProductInfoOnHover || false);
+                setShowInvoiceProfit(savedSettings.showInvoiceProfit || false);
+                setProfitCostSource(savedSettings.profitCostSource || 'cost_rate');
 
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
@@ -190,6 +196,8 @@ export default function VoucherSettingsPage() {
                 setUpdateMrp(true);
                 setUpdateCost(true);
                 setShowProductInfoOnHover(false);
+                setShowInvoiceProfit(false);
+                setProfitCostSource('cost_rate');
                 initialColumns = availableCols.map((col, index) => ({
                     id: col.id,
                     label: col.label,
@@ -226,6 +234,8 @@ export default function VoucherSettingsPage() {
                 updateMrp: updateMrp,
                 updateCost: updateCost,
                 showProductInfoOnHover: showProductInfoOnHover,
+                showInvoiceProfit: showInvoiceProfit,
+                profitCostSource: profitCostSource,
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -543,6 +553,59 @@ export default function VoucherSettingsPage() {
                                 </p>
                             </div>
                         </div>
+
+                        {/* Show Invoice Profit — sales voucher types only */}
+                        {['sales_invoice', 'sales_quotation', 'sales_return'].includes(selectedVoucher) && (
+                            <div className="flex items-start gap-4 mb-6">
+                                <Checkbox
+                                    id="show-invoice-profit"
+                                    checked={showInvoiceProfit}
+                                    onCheckedChange={(checked) => setShowInvoiceProfit(checked as boolean)}
+                                    className="mt-1"
+                                />
+                                <div className="grid gap-1.5 leading-none w-full">
+                                    <label
+                                        htmlFor="show-invoice-profit"
+                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                    >
+                                        Show Invoice Profit
+                                    </label>
+                                    <p className="text-sm text-muted-foreground">
+                                        Display total cost and gross profit in the invoice footer while creating or editing.
+                                    </p>
+
+                                    {showInvoiceProfit && (
+                                        <div className="flex flex-col gap-3 mt-3 ml-1 p-3 bg-muted/30 rounded-md border">
+                                            <p className="text-xs font-semibold text-foreground">Cost Source</p>
+                                            <div className="flex flex-col gap-2">
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="profit-cost-source"
+                                                        value="cost_rate"
+                                                        checked={profitCostSource === 'cost_rate'}
+                                                        onChange={() => setProfitCostSource('cost_rate')}
+                                                        className="accent-primary"
+                                                    />
+                                                    <span className="text-sm font-medium">Cost Rate <span className="text-xs font-normal text-muted-foreground">(default) — uses product's Purchase Rate, same as used in Profit Report</span></span>
+                                                </label>
+                                                <label className="flex items-center gap-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="profit-cost-source"
+                                                        value="product_master_cost"
+                                                        checked={profitCostSource === 'product_master_cost'}
+                                                        onChange={() => setProfitCostSource('product_master_cost')}
+                                                        className="accent-primary"
+                                                    />
+                                                    <span className="text-sm font-medium">Product Master Cost <span className="text-xs font-normal text-muted-foreground">— uses the dedicated Cost field on the product master</span></span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
 
                         <h3 className="text-lg font-medium mb-4">Column Configuration</h3>
                         <div className="space-y-2">
