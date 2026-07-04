@@ -2144,7 +2144,7 @@ pub async fn get_expense_report(
             "v.voucher_date ASC",
         ),
         "product" => (
-            "COALESCE(p.name, '__none__') AS group_key, COALESCE(p.name, '__none__') AS group_label",
+            "COALESCE(p.code || ' - ' || p.name, '__none__') AS group_key, COALESCE(p.code || ' - ' || p.name, '__none__') AS group_label",
             "COALESCE(p.id, '__none__')",
             "total_amount DESC",
         ),
@@ -2255,41 +2255,66 @@ pub async fn get_expense_report_details(
                 params.push(gv.clone());
             }
             "product" => {
-                extra_where.push_str(" AND p.name = ?");
+                extra_where.push_str(" AND p.code || ' - ' || p.name = ?");
                 params.push(gv.clone());
             }
             _ => {}
         }
     }
 
-    let query_str = format!(
-        "SELECT
-            v.voucher_no,
-            v.voucher_date,
-            coa.account_name,
-            p.name AS product_name,
-            CAST(vi.amount AS REAL) AS amount,
-            COALESCE(vi.remarks, v.narration, '') AS narration
-         FROM voucher_items vi
-         JOIN vouchers v ON vi.voucher_id = v.id
-         JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
-         LEFT JOIN products p ON vi.product_id = p.id
-         WHERE v.voucher_type = 'payment'
-           AND coa.account_type = 'Expense'
-           AND v.voucher_date >= ?
-           AND v.voucher_date <= ?
-           AND v.deleted_at IS NULL
-           {extra_where}
-         ORDER BY v.voucher_date ASC, v.created_at ASC"
-    );
-
-    let mut query = sqlx::query_as::<_, ExpenseDetail>(&query_str)
-        .bind(&from_date)
-        .bind(&to_date);
-
-    for p in &params {
-        query = query.bind(p);
-    }
+    let (query_str, mut query) = if product_id.is_some() {
+        let qs = format!(
+            "SELECT
+                v.voucher_no,
+                v.voucher_date,
+                coa.account_name,
+                p.code || ' - ' || p.name AS product_name,
+                CAST(vi.amount AS REAL) AS amount,
+                COALESCE(vi.remarks, v.narration, '') AS narration
+             FROM voucher_items vi
+             JOIN vouchers v ON vi.voucher_id = v.id
+             JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
+             LEFT JOIN products p ON vi.product_id = p.id
+             WHERE v.voucher_type = 'payment'
+               AND coa.account_type = 'Expense'
+               AND v.deleted_at IS NULL
+               {extra_where}
+             ORDER BY v.voucher_date ASC, v.created_at ASC"
+        );
+        let mut q = sqlx::query_as::<_, ExpenseDetail>(&qs);
+        for p in &params {
+            q = q.bind(p);
+        }
+        (qs, q)
+    } else {
+        let qs = format!(
+            "SELECT
+                v.voucher_no,
+                v.voucher_date,
+                coa.account_name,
+                p.code || ' - ' || p.name AS product_name,
+                CAST(vi.amount AS REAL) AS amount,
+                COALESCE(vi.remarks, v.narration, '') AS narration
+             FROM voucher_items vi
+             JOIN vouchers v ON vi.voucher_id = v.id
+             JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
+             LEFT JOIN products p ON vi.product_id = p.id
+             WHERE v.voucher_type = 'payment'
+               AND coa.account_type = 'Expense'
+               AND v.voucher_date >= ?
+               AND v.voucher_date <= ?
+               AND v.deleted_at IS NULL
+               {extra_where}
+             ORDER BY v.voucher_date ASC, v.created_at ASC"
+        );
+        let mut q = sqlx::query_as::<_, ExpenseDetail>(&qs)
+            .bind(&from_date)
+            .bind(&to_date);
+        for p in &params {
+            q = q.bind(p);
+        }
+        (qs, q)
+    };
 
     query.fetch_all(&pool).await.map_err(|e| e.to_string())
 }

@@ -285,26 +285,30 @@ export default function ExpenseReportPage() {
         {/* ── Filters ── */}
         <div className="mt-4 flex flex-wrap gap-3 items-end">
           {/* From Date */}
-          <div className="min-w-[140px]">
-            <Label className="text-xs mb-1 block">From Date</Label>
-            <Input
-              type="date"
-              value={fromDate}
-              onChange={e => setFromDate(e.target.value)}
-              className="h-9"
-            />
-          </div>
+          {!isProductEntryMode && (
+            <div className="min-w-[140px]">
+              <Label className="text-xs mb-1 block">From Date</Label>
+              <Input
+                type="date"
+                value={fromDate}
+                onChange={e => setFromDate(e.target.value)}
+                className="h-9"
+              />
+            </div>
+          )}
 
           {/* To Date */}
-          <div className="min-w-[140px]">
-            <Label className="text-xs mb-1 block">To Date</Label>
-            <Input
-              type="date"
-              value={toDate}
-              onChange={e => setToDate(e.target.value)}
-              className="h-9"
-            />
-          </div>
+          {!isProductEntryMode && (
+            <div className="min-w-[140px]">
+              <Label className="text-xs mb-1 block">To Date</Label>
+              <Input
+                type="date"
+                value={toDate}
+                onChange={e => setToDate(e.target.value)}
+                className="h-9"
+              />
+            </div>
+          )}
 
           {/* Group By — hidden in product entry mode */}
           {!isProductEntryMode && (
@@ -375,12 +379,13 @@ export default function ExpenseReportPage() {
         {/* Print header */}
         <div className="hidden print:block text-center mb-6">
           <h1 className="text-2xl font-bold">Expense Report</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Period: {formatDate(fromDate)} to {formatDate(toDate)}
-          </p>
-          {isProductEntryMode && selectedProduct && (
-            <p className="text-sm text-muted-foreground mt-0.5">
-              Product: {selectedProduct.name}
+          {isProductEntryMode && selectedProduct ? (
+            <p className="text-sm text-muted-foreground mt-1">
+              All entries for Product: <strong>{selectedProduct.code} - {selectedProduct.name}</strong>
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground mt-1">
+              Period: {formatDate(fromDate)} to {formatDate(toDate)}
             </p>
           )}
         </div>
@@ -440,7 +445,7 @@ export default function ExpenseReportPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                    Total for {selectedProduct?.name ?? 'Product'}
+                    Total for {selectedProduct ? `${selectedProduct.code} - ${selectedProduct.name}` : 'Product'}
                   </p>
                   <p className="text-xl font-bold font-mono mt-0.5 text-rose-600 dark:text-rose-400">
                     {fmt(entryTotal)}
@@ -479,7 +484,9 @@ export default function ExpenseReportPage() {
                   <IconPackage size={14} className="text-muted-foreground" />
                   <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                     Payment entries for{' '}
-                    <span className="text-foreground">{selectedProduct?.name ?? '—'}</span>
+                    <span className="text-foreground">
+                      {selectedProduct ? `${selectedProduct.code} - ${selectedProduct.name}` : '—'}
+                    </span>
                   </span>
                 </div>
 
@@ -497,7 +504,7 @@ export default function ExpenseReportPage() {
                     {entryDetails.length === 0 ? (
                       <tr>
                         <td colSpan={5} className="p-10 text-center text-muted-foreground">
-                          No expense entries found for this product in the selected period.
+                          No expense entries found for this product.
                         </td>
                       </tr>
                     ) : (
