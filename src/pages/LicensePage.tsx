@@ -22,7 +22,7 @@ import {
 type UpdateStatus = 'idle' | 'checking' | 'up_to_date' | 'update_available' | 'downloading' | 'installing' | 'error';
 
 const SUPPORT_PHONE = '8086094070';
-const GITHUB_REPO = 'munna98/Kola-biz';
+const GITHUB_REPO = 'munna98/kolabiz-releases';
 
 export default function LicensePage() {
     const { status } = useLicense();
