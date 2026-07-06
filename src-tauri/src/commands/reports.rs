@@ -2262,8 +2262,8 @@ pub async fn get_expense_report_details(
         }
     }
 
-    let (query_str, mut query) = if product_id.is_some() {
-        let qs = format!(
+    let query_str = if product_id.is_some() {
+        format!(
             "SELECT
                 v.voucher_no,
                 v.voucher_date,
@@ -2280,14 +2280,9 @@ pub async fn get_expense_report_details(
                AND v.deleted_at IS NULL
                {extra_where}
              ORDER BY v.voucher_date ASC, v.created_at ASC"
-        );
-        let mut q = sqlx::query_as::<_, ExpenseDetail>(&qs);
-        for p in &params {
-            q = q.bind(p);
-        }
-        (qs, q)
+        )
     } else {
-        let qs = format!(
+        format!(
             "SELECT
                 v.voucher_no,
                 v.voucher_date,
@@ -2306,15 +2301,17 @@ pub async fn get_expense_report_details(
                AND v.deleted_at IS NULL
                {extra_where}
              ORDER BY v.voucher_date ASC, v.created_at ASC"
-        );
-        let mut q = sqlx::query_as::<_, ExpenseDetail>(&qs)
-            .bind(&from_date)
-            .bind(&to_date);
-        for p in &params {
-            q = q.bind(p);
-        }
-        (qs, q)
+        )
     };
+
+    let mut query = sqlx::query_as::<_, ExpenseDetail>(&query_str);
+    if product_id.is_none() {
+        query = query.bind(&from_date)
+            .bind(&to_date);
+    }
+    for p in &params {
+        query = query.bind(p);
+    }
 
     query.fetch_all(&pool).await.map_err(|e| e.to_string())
 }
