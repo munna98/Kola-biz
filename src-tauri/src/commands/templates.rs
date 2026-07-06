@@ -681,7 +681,7 @@ async fn get_purchase_invoice_data(
     // Fetch company profile and state for inter-state detection
     let company = crate::commands::company::get_company_profile_with_pool(pool).await.ok();
     let company_state = company.as_ref().and_then(|c| c.state.clone()).unwrap_or_default();
-    let company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
+    let _company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
 
     // Calculate Old Balance (Ledger balance BEFORE this invoice)
     let account_id = invoice.supplier_id.clone();
@@ -971,7 +971,7 @@ async fn get_sales_invoice_data(
     // Fetch company profile and state for inter-state detection
     let company = crate::commands::company::get_company_profile_with_pool(pool).await.ok();
     let company_state = company.as_ref().and_then(|c| c.state.clone()).unwrap_or_default();
-    let company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
+    let _company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
 
     // Calculate Old Balance (Ledger balance BEFORE this invoice)
     let account_id = invoice.customer_id.clone();
@@ -1315,7 +1315,7 @@ async fn get_sales_quotation_data(
     // Fetch company profile and state for inter-state detection
     let company = crate::commands::company::get_company_profile_with_pool(pool).await.ok();
     let company_state = company.as_ref().and_then(|c| c.state.clone()).unwrap_or_default();
-    let company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
+    let _company_gstin = company.as_ref().and_then(|c| c.gstin.clone()).unwrap_or_default();
 
     // Calculate Old Balance (Ledger balance BEFORE this invoice)
     let account_id = invoice.customer_id.clone();
