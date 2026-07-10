@@ -230,8 +230,8 @@ pub async fn get_gstr1_summary(
     to_date: String,
 ) -> Result<serde_json::Value, String> {
     let pool = registry.active_pool().await?;
-    // Each row: (invoice_no, invoice_date, party_name, party_gstin, description, hsn, uqc, gst_rate, taxable, cgst, sgst, igst, tax, total)
-    let rows: Vec<(String, String, String, String, String, String, String, f64, f64, f64, f64, f64, f64, f64)> = sqlx::query_as(
+    // Each row: (invoice_no, invoice_date, party_name, party_gstin, description, hsn, uqc, qty, gst_rate, taxable, cgst, sgst, igst, tax, total)
+    let rows: Vec<(String, String, String, String, String, String, String, f64, f64, f64, f64, f64, f64, f64, f64)> = sqlx::query_as(
         "SELECT
             v.voucher_no                                                           AS invoice_no,
             v.voucher_date                                                         AS invoice_date,
@@ -240,6 +240,7 @@ pub async fn get_gstr1_summary(
             COALESCE(p.name, vi.description, 'N/A')                               AS description,
             COALESCE(vi.hsn_sac_code, 'N/A')                                      AS hsn_sac_code,
             COALESCE(u.symbol, 'NOS')                                             AS uqc,
+            COALESCE(SUM(vi.final_quantity), 0)                                   AS final_qty,
             COALESCE(vi.resolved_gst_rate, 0)                                     AS gst_rate,
             COALESCE(SUM(vi.amount), 0)                                           AS taxable_value,
             COALESCE(SUM(vi.cgst_amount), 0)                                      AS cgst,
@@ -267,7 +268,7 @@ pub async fn get_gstr1_summary(
     let items: Vec<serde_json::Value> = rows
         .into_iter()
         .enumerate()
-        .map(|(i, (invoice_no, invoice_date, party_name, party_gstin, desc, hsn, uqc, rate, taxable, cgst, sgst, igst, tax, total))| {
+        .map(|(i, (invoice_no, invoice_date, party_name, party_gstin, desc, hsn, uqc, qty, rate, taxable, cgst, sgst, igst, tax, total))| {
             json!({
                 "sl": i + 1,
                 "invoice_no": invoice_no,
@@ -277,6 +278,7 @@ pub async fn get_gstr1_summary(
                 "description": desc,
                 "hsn_sac_code": hsn,
                 "uqc": uqc,
+                "qty": qty,
                 "gst_rate": rate,
                 "taxable_value": taxable,
                 "cgst": cgst,

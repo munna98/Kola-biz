@@ -84,6 +84,7 @@ export interface GstSummaryRow {
   description: string;
   hsn_sac_code: string;
   uqc: string;
+  qty: number;
   gst_rate: number;
   taxable_value: number;
   cgst: number;

@@ -45,6 +45,7 @@ export default function Gstr1ReportPage() {
   };
 
   const totals = {
+    qty: rows.reduce((s, r) => s + r.qty, 0),
     taxable: rows.reduce((s, r) => s + r.taxable_value, 0),
     cgst: rows.reduce((s, r) => s + r.cgst, 0),
     sgst: rows.reduce((s, r) => s + r.sgst, 0),
@@ -61,7 +62,7 @@ export default function Gstr1ReportPage() {
 
     const headers = [
       'Sl.', 'Invoice No', 'Invoice Date', 'Party', 'Party GST No',
-      'Description', 'HSN/SAC', 'UQC', 'GST Rate (%)',
+      'Description', 'HSN/SAC', 'UQC', 'Qty', 'GST Rate (%)',
       'Taxable Value', 'CGST', 'SGST', 'IGST', 'Total Tax', 'Invoice Value',
     ];
     const data = rows.map(r => [
@@ -73,6 +74,7 @@ export default function Gstr1ReportPage() {
       r.description,
       r.hsn_sac_code || '',
       r.uqc,
+      r.qty,
       r.gst_rate,
       r.taxable_value,
       r.cgst,
@@ -82,7 +84,7 @@ export default function Gstr1ReportPage() {
       r.total_value,
     ]);
     const totalRow = [
-      '', '', '', '', '', 'TOTAL', '', '', '',
+      '', '', '', '', '', 'TOTAL', '', '', totals.qty, '',
       totals.taxable,
       totals.cgst,
       totals.sgst,
@@ -92,7 +94,7 @@ export default function Gstr1ReportPage() {
     ];
 
     const ws = XLSX.utils.aoa_to_sheet([headers, ...data, totalRow]);
-    ws['!cols'] = [8, 16, 14, 24, 18, 28, 14, 8, 14, 16, 16, 16, 16, 14, 16].map(w => ({ wch: w }));
+    ws['!cols'] = [8, 16, 14, 24, 18, 28, 14, 8, 10, 14, 16, 16, 16, 16, 14, 16].map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'GSTR-1');
     XLSX.writeFile(wb, `GSTR1_Report_${fromDate}_to_${toDate}.xlsx`);
@@ -159,7 +161,7 @@ export default function Gstr1ReportPage() {
           </CardHeader>
           <CardContent className="p-0">
             <div className="overflow-x-auto">
-            <table className="w-full text-sm min-w-[1200px]">
+            <table className="w-full text-sm min-w-[1300px]">
               <thead className="border-b border-t bg-muted/40">
                 <tr className="text-left">
                   <th className="px-3 py-2.5 font-medium w-10">Sl.</th>
@@ -170,6 +172,7 @@ export default function Gstr1ReportPage() {
                   <th className="px-3 py-2.5 font-medium">Description</th>
                   <th className="px-3 py-2.5 font-medium">HSN/SAC</th>
                   <th className="px-3 py-2.5 font-medium">UQC</th>
+                  <th className="px-3 py-2.5 font-medium text-right">Qty</th>
                   <th className="px-3 py-2.5 font-medium text-right">GST Rate</th>
                   <th className="px-3 py-2.5 font-medium text-right">Taxable Value</th>
                   <th className="px-3 py-2.5 font-medium text-right">CGST</th>
@@ -190,6 +193,7 @@ export default function Gstr1ReportPage() {
                     <td className="px-3 py-2.5">{row.description}</td>
                     <td className="px-3 py-2.5 font-mono text-xs">{row.hsn_sac_code || '—'}</td>
                     <td className="px-3 py-2.5 text-xs font-medium">{row.uqc}</td>
+                    <td className="px-3 py-2.5 text-right font-medium">{row.qty}</td>
                     <td className="px-3 py-2.5 text-right">{row.gst_rate}%</td>
                     <td className="px-3 py-2.5 text-right">{fmt(row.taxable_value)}</td>
                     <td className="px-3 py-2.5 text-right">{fmt(row.cgst)}</td>
@@ -202,7 +206,9 @@ export default function Gstr1ReportPage() {
               </tbody>
               <tfoot className="border-t-2 bg-muted/40 font-semibold">
                 <tr>
-                  <td className="px-3 py-2.5" colSpan={9}>Total</td>
+                  <td className="px-3 py-2.5" colSpan={8}>Total</td>
+                  <td className="px-3 py-2.5 text-right">{totals.qty}</td>
+                  <td className="px-3 py-2.5 text-right"></td>
                   <td className="px-3 py-2.5 text-right">{fmt(totals.taxable)}</td>
                   <td className="px-3 py-2.5 text-right">{fmt(totals.cgst)}</td>
                   <td className="px-3 py-2.5 text-right">{fmt(totals.sgst)}</td>
