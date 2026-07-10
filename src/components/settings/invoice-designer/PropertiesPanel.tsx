@@ -457,6 +457,20 @@ export default function PropertiesPanel({
                                         />
                                     </div>
                                     <div className="flex items-center justify-between">
+                                        <Label className="text-[11px]">Show S.No</Label>
+                                        <Switch
+                                            checked={el.tableConfig.columns.some(c => c.key === 'serial_no' && !c.hidden)}
+                                            onCheckedChange={v => {
+                                                const cols = el.tableConfig!.columns.filter(c => c.key !== 'serial_no');
+                                                const newCols = v
+                                                    ? [{ key: 'serial_no', label: 'S.No', width: 6, align: 'center' as const }, ...cols]
+                                                    : cols;
+                                                onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, columns: newCols, showSerialNo: v } });
+                                            }}
+                                            className="h-4 w-7"
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between">
                                         <Label className="text-[11px]">Striped Rows</Label>
                                         <Switch
                                             checked={el.tableConfig.stripedRows}
@@ -497,6 +511,8 @@ export default function PropertiesPanel({
                                     <ColorInput label="Header Text" value={el.tableConfig.headerColor} onChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, headerColor: v } })} />
                                     <NumberInput label="Header Font" value={el.tableConfig.headerFontSize} onChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, headerFontSize: v } })} min={6} max={16} unit="pt" />
                                     <NumberInput label="Body Font" value={el.tableConfig.bodyFontSize} onChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, bodyFontSize: v } })} min={6} max={16} unit="pt" />
+                                    <NumberInput label="Row Pad V" value={el.tableConfig.rowPaddingV ?? 4} onChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, rowPaddingV: v } })} min={0} max={20} unit="px" />
+                                    <NumberInput label="Row Pad H" value={el.tableConfig.rowPaddingH ?? 2} onChange={v => onUpdateElement(el.id, { tableConfig: { ...el.tableConfig!, rowPaddingH: v } })} min={0} max={20} unit="px" />
                                     <div className="flex items-center justify-between">
                                         <Label className="text-[11px]">Body Bold</Label>
                                         <Switch

@@ -131,6 +131,14 @@ impl TemplateEngine {
                 "show_discount_column".to_string(),
                 json!(template.show_discount_column.unwrap_or(0) == 1),
             );
+            let show_bal = template.show_balance_section.unwrap_or(1) == 1;
+            obj.insert(
+                "show_balance_section".to_string(),
+                json!(show_bal),
+            );
+            if !show_bal {
+                obj.insert("is_cash".to_string(), json!(true));
+            }
             // Balance section style settings (thermal only, but safe for all)
             let bal_font = template.balance_font_size.unwrap_or(10);
             obj.insert("balance_font_size".to_string(), json!(bal_font));

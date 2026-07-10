@@ -101,6 +101,9 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
             if (!config) return <div style={effectiveStyles}>Table</div>;
 
             const visibleColumns = config.columns.filter(c => !c.hidden);
+            // Canvas preview padding (slightly smaller than print since canvas is scaled)
+            const cpv = config.rowPaddingV !== undefined ? Math.max(1, Math.round(config.rowPaddingV * 0.6)) : 2;
+            const cph = config.rowPaddingH !== undefined ? Math.max(1, Math.round(config.rowPaddingH * 0.6)) : 3;
 
             if (config.threeRowLayout) {
                 const amtCol = visibleColumns.find(c => c.key === 'total' || c.key === 'amount') || visibleColumns[visibleColumns.length - 1];
@@ -145,28 +148,28 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                                     return (
                                         <React.Fragment key={row}>
                                             <tr>
-                                                <td style={{ padding: '2px 3px 0 3px', textAlign: 'left', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', fontSize: `${config.bodyFontSize || 8}pt`, color: '#666' }}>
+                                                <td style={{ padding: `${cpv}px ${cph}px 0 ${cph}px`, textAlign: 'left', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', fontSize: `${config.bodyFontSize || 8}pt`, color: '#666' }}>
                                                     {row1LeftText}
                                                 </td>
-                                                <td style={{ padding: '2px 3px 0 3px', textAlign: 'right', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', fontSize: `${config.bodyFontSize || 8}pt`, color: '#666', whiteSpace: 'nowrap', width: '35%' }}>
+                                                <td style={{ padding: `${cpv}px ${cph}px 0 ${cph}px`, textAlign: 'right', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', fontSize: `${config.bodyFontSize || 8}pt`, color: '#666', whiteSpace: 'nowrap', width: '35%' }}>
                                                     {row1RightText}
                                                 </td>
                                             </tr>
                                             {(row2LeftText || row2RightText) && (
                                                 <tr>
-                                                    <td style={{ padding: '0 3px 2px 12px', textAlign: 'left', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal' }}>
+                                                    <td style={{ padding: `0 ${cph}px ${cpv}px ${cph * 3}px`, textAlign: 'left', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal' }}>
                                                         {row2LeftText}
                                                     </td>
-                                                    <td style={{ padding: '0 3px 2px 3px', textAlign: 'right', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', whiteSpace: 'nowrap', width: '45%' }}>
+                                                    <td style={{ padding: `0 ${cph}px ${cpv}px ${cph}px`, textAlign: 'right', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', whiteSpace: 'nowrap', width: '45%' }}>
                                                         {row2RightText}
                                                     </td>
                                                 </tr>
                                             )}
                                             <tr>
-                                                <td style={{ padding: '0 3px 2px 12px', textAlign: 'left', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: borderStyle, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal' }}>
+                                                <td style={{ padding: `0 ${cph}px ${cpv}px ${cph * 3}px`, textAlign: 'left', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: borderStyle, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal' }}>
                                                     {/* Left side empty as per layout specifications */}
                                                 </td>
-                                                <td style={{ padding: '0 3px 2px 3px', textAlign: 'right', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: borderStyle, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', width: '30%' }}>
+                                                <td style={{ padding: `0 ${cph}px ${cpv}px ${cph}px`, textAlign: 'right', fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: borderStyle, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', width: '30%' }}>
                                                     {amtText}
                                                 </td>
                                             </tr>
@@ -190,13 +193,13 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                             {config.showHeader && (
                                 <thead>
                                     <tr>
-                                        <th colSpan={totalCols} style={{ backgroundColor: config.headerBg || '#f0f0f0', color: config.headerColor || '#000', padding: '2px 3px 0 3px', textAlign: 'left', fontSize: `${config.headerFontSize || 8}pt` }}>
+                                        <th colSpan={totalCols} style={{ backgroundColor: config.headerBg || '#f0f0f0', color: config.headerColor || '#000', padding: `${cpv}px ${cph}px 0 ${cph}px`, textAlign: 'left', fontSize: `${config.headerFontSize || 8}pt` }}>
                                             {row1Cols.map(c => c.label).join(' / ') || 'Item'}
                                         </th>
                                     </tr>
                                     <tr>
                                         {row2Cols.map((col, i) => (
-                                            <th key={i} style={{ backgroundColor: config.headerBg || '#f0f0f0', color: config.headerColor || '#000', padding: '0 3px 2px 3px', borderBottom: '1px solid #000', textAlign: col.align, width: `${col.width}%`, fontSize: `${config.headerFontSize || 8}pt` }}>
+                                            <th key={i} style={{ backgroundColor: config.headerBg || '#f0f0f0', color: config.headerColor || '#000', padding: `0 ${cph}px ${cpv}px ${cph}px`, borderBottom: '1px solid #000', textAlign: col.align, width: `${col.width}%`, fontSize: `${config.headerFontSize || 8}pt` }}>
                                                 {col.label}
                                             </th>
                                         ))}
@@ -207,7 +210,7 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                                 {[1, 2, 3].map(row => (
                                     <React.Fragment key={row}>
                                         <tr>
-                                            <td colSpan={totalCols} style={{ padding: '2px 3px 0 3px', textAlign: 'left', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', fontSize: `${config.bodyFontSize || 8}pt`, color: '#666' }}>
+                                            <td colSpan={totalCols} style={{ padding: `${cpv}px ${cph}px 0 ${cph}px`, textAlign: 'left', fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', fontSize: `${config.bodyFontSize || 8}pt`, color: '#666' }}>
                                                 {row1Cols.find(c => c.key === 'serial_no') ? `${row}. ` : ''}
                                                 {row1Cols.find(c => c.key === 'product_code') ? `{{product_code}} ` : ''}
                                                 {row1Cols.find(c => c.key === 'product_name') ? `{{product_name}}` : ''}
@@ -215,7 +218,7 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                                         </tr>
                                         <tr>
                                             {row2Cols.map((col, i) => (
-                                                <td key={i} style={{ padding: '0 3px 2px 3px', textAlign: col.align, fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: config.borderStyle && config.borderStyle !== 'none' ? '1px dotted #ccc' : undefined, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', width: `${col.width}%` }}>
+                                                <td key={i} style={{ padding: `0 ${cph}px ${cpv}px ${cph}px`, textAlign: col.align, fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: config.borderStyle && config.borderStyle !== 'none' ? '1px dotted #ccc' : undefined, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', width: `${col.width}%` }}>
                                                     {`{{${col.key}}}`}
                                                 </td>
                                             ))}
@@ -240,9 +243,9 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                                             style={{
                                                 backgroundColor: config.headerBg || '#f0f0f0',
                                                 color: config.headerColor || '#000',
-                                                padding: '2px 3px',
+                                                padding: `${cpv}px ${cph}px`,
                                                 border: config.borderStyle !== 'none' ? '1px solid #ddd' : 'none',
-                                                textAlign: col.align,
+                                                textAlign: col.key === 'serial_no' ? 'left' : col.align,
                                                 width: `${col.width}%`,
                                                 fontSize: `${config.headerFontSize || 8}pt`,
                                                 whiteSpace: 'nowrap',
@@ -262,12 +265,12 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                                         <td
                                             key={i}
                                             style={{
-                                                padding: '4px 3px',
+                                                padding: `${cpv}px ${cph}px`,
                                                 borderBottom: config.borderStyle && config.borderStyle !== 'none' ? '1px dotted #ccc' : undefined,
                                                 borderTop: config.borderStyle === 'full' ? '1px solid #ddd' : undefined,
                                                 borderLeft: config.borderStyle === 'full' ? '1px solid #ddd' : undefined,
                                                 borderRight: config.borderStyle === 'full' ? '1px solid #ddd' : undefined,
-                                                textAlign: col.align,
+                                                textAlign: col.key === 'serial_no' ? 'left' : col.align,
                                                 fontSize: `${config.bodyFontSize || 8}pt`,
                                                 color: '#999',
                                                 fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal',

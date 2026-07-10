@@ -46,6 +46,7 @@ pub struct InvoiceTemplate {
     pub show_terms: Option<i64>,
     pub show_less_column: Option<i64>,
     pub show_discount_column: Option<i64>,
+    pub show_balance_section: Option<i64>,
     pub balance_font_size: Option<i64>,  // pt — applies to balance section in thermal templates
     pub balance_bold: Option<i64>,        // 0 = normal, 1 = bold
 
@@ -122,6 +123,7 @@ pub struct TemplateSettingsUpdate {
     pub show_terms: Option<bool>,
     pub show_less_column: Option<bool>,
     pub show_discount_column: Option<bool>,
+    pub show_balance_section: Option<bool>,
     pub balance_font_size: Option<i64>,
     pub balance_bold: Option<bool>,
 }
@@ -190,6 +192,10 @@ pub async fn update_template_settings(
     }
     if let Some(val) = settings.show_discount_column {
         separated.push("show_discount_column = ");
+        separated.push_bind_unseparated(if val { 1 } else { 0 });
+    }
+    if let Some(val) = settings.show_balance_section {
+        separated.push("show_balance_section = ");
         separated.push_bind_unseparated(if val { 1 } else { 0 });
     }
     if let Some(val) = settings.balance_font_size {

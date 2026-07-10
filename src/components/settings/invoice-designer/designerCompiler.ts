@@ -154,6 +154,9 @@ function renderThermalTable(el: DesignerElement): string {
     const bodyBold = config.bodyFontBold !== false;  // default true for thermal
     const fontFamilyStyle = config.fontFamily ? `font-family:${config.fontFamily};` : '';
     const borderBottomStyle = config.borderStyle && config.borderStyle !== 'none' ? 'border-bottom:1px dotted #ccc;' : '';
+    // Row padding — configurable, defaults: 4px vertical, 2px horizontal
+    const pv = config.rowPaddingV ?? 4;
+    const ph = config.rowPaddingH ?? 2;
 
     let html = `<table style="width:100%;border-collapse:collapse;font-size:${fontSize}pt;color:#000;${fontFamilyStyle}">`;
 
@@ -181,8 +184,8 @@ function renderThermalTable(el: DesignerElement): string {
         }
 
         html += `<tr>`;
-        html += `<td style="padding:4px 2px 0 2px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};">${row1LeftText}</td>`;
-        html += `<td style="padding:4px 2px 0 2px;text-align:right;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};white-space:nowrap;width:35%;">${row1RightText}</td>`;
+        html += `<td style="padding:${pv}px ${ph}px 0 ${ph}px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};">${row1LeftText}</td>`;
+        html += `<td style="padding:${pv}px ${ph}px 0 ${ph}px;text-align:right;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};white-space:nowrap;width:35%;">${row1RightText}</td>`;
         html += `</tr>`;
 
         // Row 2 Left: Less: [less_quantity] [unit]
@@ -203,8 +206,8 @@ function renderThermalTable(el: DesignerElement): string {
 
         if (row2LeftText || row2RightText) {
             html += `<tr>`;
-            html += `<td style="padding:0 2px 2px 12px;text-align:left;font-size:${fontSize}pt;color:#666;font-weight:${bodyBold ? 'bold' : 'normal'};">${row2LeftText}</td>`;
-            html += `<td style="padding:0 2px 2px 2px;text-align:right;font-size:${fontSize}pt;color:#666;font-weight:${bodyBold ? 'bold' : 'normal'};white-space:nowrap;width:45%;">${row2RightText}</td>`;
+            html += `<td style="padding:0 ${ph}px ${pv}px ${ph * 3}px;text-align:left;font-size:${fontSize}pt;color:#666;font-weight:${bodyBold ? 'bold' : 'normal'};">${row2LeftText}</td>`;
+            html += `<td style="padding:0 ${ph}px ${pv}px ${ph}px;text-align:right;font-size:${fontSize}pt;color:#666;font-weight:${bodyBold ? 'bold' : 'normal'};white-space:nowrap;width:45%;">${row2RightText}</td>`;
             html += `</tr>`;
         }
 
@@ -216,8 +219,8 @@ function renderThermalTable(el: DesignerElement): string {
         }
 
         html += `<tr>`;
-        html += `<td style="padding:0 2px 4px 12px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};${borderBottomStyle}"></td>`;
-        html += `<td style="padding:0 2px 4px 2px;text-align:right;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};width:30%;${borderBottomStyle}">${amtContent}</td>`;
+        html += `<td style="padding:0 ${ph}px ${pv}px ${ph * 3}px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};${borderBottomStyle}"></td>`;
+        html += `<td style="padding:0 ${ph}px ${pv}px ${ph}px;text-align:right;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};width:30%;${borderBottomStyle}">${amtContent}</td>`;
         html += `</tr>`;
 
         html += '{{/each}}</tbody></table>';
@@ -235,11 +238,11 @@ function renderThermalTable(el: DesignerElement): string {
             html += '<thead>';
             const bgStyle = config.headerBg && config.headerBg !== '#f0f0f0' ? `background:${config.headerBg};` : '';
             const row1Label = row1Cols.map(c => c.label).join(' / ') || 'Item';
-            html += `<tr><th colspan="${totalCols}" style="text-align:left;padding:4px 2px 0 2px;font-size:${headerFontSize}pt;color:#000;${bgStyle}">${escapeHtml(row1Label)}</th></tr>`;
+            html += `<tr><th colspan="${totalCols}" style="text-align:left;padding:${pv}px ${ph}px 0 ${ph}px;font-size:${headerFontSize}pt;color:#000;${bgStyle}">${escapeHtml(row1Label)}</th></tr>`;
             
             html += '<tr>';
             for (const col of row2Cols) {
-                html += `<th style="text-align:${col.align};padding:0 2px 4px 2px;font-size:${headerFontSize}pt;border-bottom:1px solid #000;font-weight:bold;color:#000;width:${col.width}%;${bgStyle}">${escapeHtml(col.label)}</th>`;
+                html += `<th style="text-align:${col.align};padding:0 ${ph}px ${pv}px ${ph}px;font-size:${headerFontSize}pt;border-bottom:1px solid #000;font-weight:bold;color:#000;width:${col.width}%;${bgStyle}">${escapeHtml(col.label)}</th>`;
             }
             html += '</tr></thead>';
         }
@@ -247,7 +250,7 @@ function renderThermalTable(el: DesignerElement): string {
         html += '<tbody>{{#each items}}';
         
         // Row 1
-        html += `<tr><td colspan="${totalCols}" style="padding:4px 2px 0 2px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};">`;
+        html += `<tr><td colspan="${totalCols}" style="padding:${pv}px ${ph}px 0 ${ph}px;text-align:left;font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};">`;
         if (row1Cols.find(c => c.key === 'serial_no')) html += '{{increment @index}}. ';
         if (row1Cols.find(c => c.key === 'product_code')) html += '{{product_code}} ';
         if (row1Cols.find(c => c.key === 'product_name')) html += '{{product_name}} ';
@@ -265,7 +268,7 @@ function renderThermalTable(el: DesignerElement): string {
             } else {
                 cellContent = `{{${col.key}}}`;
             }
-            html += `<td style="padding:0 2px 4px 2px;text-align:${col.align};font-size:${fontSize}pt;color:#000;${borderBottomStyle}font-weight:${bodyBold ? 'bold' : 'normal'};width:${col.width}%;">${cellContent}</td>`;
+            html += `<td style="padding:0 ${ph}px ${pv}px ${ph}px;text-align:${col.align};font-size:${fontSize}pt;color:#000;${borderBottomStyle}font-weight:${bodyBold ? 'bold' : 'normal'};width:${col.width}%;">${cellContent}</td>`;
         }
         html += `</tr>`;
         
@@ -280,7 +283,8 @@ function renderThermalTable(el: DesignerElement): string {
         for (const col of visibleColumns) {
             const bgStyle = config.headerBg && config.headerBg !== '#f0f0f0'
                 ? `background:${config.headerBg};` : '';
-            html += `<th style="text-align:${col.align};padding:4px 2px;font-size:${headerFontSize}pt;border-bottom:1px solid #000;font-weight:bold;color:#000;width:${col.width}%;${bgStyle}">${escapeHtml(col.label)}</th>`;
+            const align = col.key === 'serial_no' ? 'left' : col.align;
+            html += `<th style="text-align:${align};padding:${pv}px ${ph}px;font-size:${headerFontSize}pt;border-bottom:1px solid #000;font-weight:bold;color:#000;width:${col.width}%;${bgStyle}">${escapeHtml(col.label)}</th>`;
         }
         html += '</tr></thead>';
     }
@@ -299,7 +303,8 @@ function renderThermalTable(el: DesignerElement): string {
         } else {
             cellContent = `{{${col.key}}}`;
         }
-        html += `<td style="padding:4px 2px;text-align:${col.align};font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};width:${col.width}%;${borderBottomStyle}">${cellContent}</td>`;
+        const align = col.key === 'serial_no' ? 'left' : col.align;
+        html += `<td style="padding:${pv}px ${ph}px;text-align:${align};font-size:${fontSize}pt;color:#000;font-weight:${bodyBold ? 'bold' : 'normal'};width:${col.width}%;${borderBottomStyle}">${cellContent}</td>`;
     }
     html += '</tr>{{/each}}</tbody>';
     html += '</table>';
@@ -492,10 +497,13 @@ function renderA4TableElement(el: DesignerElement): string {
     html += `<table style="width:100%;border-collapse:collapse;font-size:${config.bodyFontSize || 9}pt;${fontFamilyStyle}">`;
 
     const visibleCols = config.columns.filter(c => !c.hidden);
+    // A4 padding: use rowPaddingV/H if set, otherwise sensible A4 defaults (4px / 6px)
+    const a4pv = config.rowPaddingV ?? 4;
+    const a4ph = config.rowPaddingH ?? 6;
     if (config.showHeader) {
         html += '<thead><tr>';
         for (const col of visibleCols) {
-            html += `<th style="background:${config.headerBg || '#f0f0f0'};color:${config.headerColor || '#000'};padding:4px 6px;${borderStyle}text-align:${col.align};width:${col.width}%;font-size:${config.headerFontSize || 9}pt;">${escapeHtml(col.label)}</th>`;
+            html += `<th style="background:${config.headerBg || '#f0f0f0'};color:${config.headerColor || '#000'};padding:${a4pv}px ${a4ph}px;${borderStyle}text-align:${col.align};width:${col.width}%;font-size:${config.headerFontSize || 9}pt;">${escapeHtml(col.label)}</th>`;
         }
         html += '</tr></thead>';
     }
@@ -515,7 +523,7 @@ function renderA4TableElement(el: DesignerElement): string {
             cellContent = `{{${col.key}}}`;
         }
         const a4BodyBold = config.bodyFontBold ? 'font-weight:bold;' : '';
-        html += `<td style="padding:4px 6px;${borderStyle}text-align:${col.align};${a4BodyBold}">${cellContent}</td>`;
+        html += `<td style="padding:${a4pv}px ${a4ph}px;${borderStyle}text-align:${col.align};${a4BodyBold}">${cellContent}</td>`;
     }
     html += '</tr>{{/each}}</tbody>';
     html += '</table></div>';

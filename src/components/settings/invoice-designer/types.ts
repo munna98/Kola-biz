@@ -48,6 +48,8 @@ export interface TableConfig {
     stripedColor?: string;
     borderStyle?: 'full' | 'horizontal' | 'none';
     rowHeight?: number;       // mm
+    rowPaddingV?: number;     // px — top/bottom cell padding (thermal rows)
+    rowPaddingH?: number;     // px — left/right cell padding (thermal rows)
     twoRowLayout?: boolean;   // Split items into 2 rows for thermal
     threeRowLayout?: boolean; // Stack items into 3 rows for thermal
 }
