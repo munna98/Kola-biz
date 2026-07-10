@@ -231,7 +231,8 @@ function renderThermalTable(el: DesignerElement): string {
         const visibleCols = config.columns.filter(c => !c.hidden);
         const row1Cols = visibleCols.filter(c => c.key === 'product_code' || c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
         const row2Cols = visibleCols.filter(c => c.key !== 'product_code' && c.key !== 'product_name' && c.key !== 'description' && c.key !== 'serial_no');
-        const totalCols = row2Cols.length || 1;
+        // Add 1 for the empty spacer column
+        const totalCols = (row2Cols.length || 1) + 1;
 
         // Header for both rows
         if (config.showHeader) {
@@ -241,6 +242,8 @@ function renderThermalTable(el: DesignerElement): string {
             html += `<tr><th colspan="${totalCols}" style="text-align:left;padding:${pv}px ${ph}px 0 ${ph}px;font-size:${headerFontSize}pt;color:#000;${bgStyle}">${escapeHtml(row1Label)}</th></tr>`;
             
             html += '<tr>';
+            // Empty spacer header cell
+            html += `<th style="padding:0 ${ph}px ${pv}px ${ph}px;border-bottom:1px solid #000;${bgStyle}"></th>`;
             for (const col of row2Cols) {
                 html += `<th style="text-align:${col.align};padding:0 ${ph}px ${pv}px ${ph}px;font-size:${headerFontSize}pt;border-bottom:1px solid #000;font-weight:bold;color:#000;width:${col.width}%;${bgStyle}">${escapeHtml(col.label)}</th>`;
             }
@@ -259,6 +262,8 @@ function renderThermalTable(el: DesignerElement): string {
 
         // Row 2
         html += `<tr>`;
+        // Empty spacer data cell
+        html += `<td style="padding:0 ${ph}px ${pv}px ${ph}px;${borderBottomStyle}"></td>`;
         for (const col of row2Cols) {
             let cellContent: string;
             if (col.format === 'currency' || col.format === 'number') {

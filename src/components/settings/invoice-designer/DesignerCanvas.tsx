@@ -185,7 +185,8 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
             if (config.twoRowLayout) {
                 const row1Cols = visibleColumns.filter(c => c.key === 'product_code' || c.key === 'product_name' || c.key === 'description' || c.key === 'serial_no');
                 const row2Cols = visibleColumns.filter(c => c.key !== 'product_code' && c.key !== 'product_name' && c.key !== 'description' && c.key !== 'serial_no');
-                const totalCols = row2Cols.length || 1;
+                // Add 1 for the empty spacer column
+                const totalCols = (row2Cols.length || 1) + 1;
 
                 return (
                     <div style={{ ...effectiveStyles, overflow: 'hidden' }}>
@@ -198,6 +199,8 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                                         </th>
                                     </tr>
                                     <tr>
+                                        {/* Empty spacer header cell */}
+                                        <th style={{ backgroundColor: config.headerBg || '#f0f0f0', padding: `0 ${cph}px ${cpv}px ${cph}px`, borderBottom: '1px solid #000' }}></th>
                                         {row2Cols.map((col, i) => (
                                             <th key={i} style={{ backgroundColor: config.headerBg || '#f0f0f0', color: config.headerColor || '#000', padding: `0 ${cph}px ${cpv}px ${cph}px`, borderBottom: '1px solid #000', textAlign: col.align, width: `${col.width}%`, fontSize: `${config.headerFontSize || 8}pt` }}>
                                                 {col.label}
@@ -217,6 +220,8 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                                             </td>
                                         </tr>
                                         <tr>
+                                            {/* Empty spacer data cell */}
+                                            <td style={{ padding: `0 ${cph}px ${cpv}px ${cph}px`, borderBottom: config.borderStyle && config.borderStyle !== 'none' ? '1px dotted #ccc' : undefined }}></td>
                                             {row2Cols.map((col, i) => (
                                                 <td key={i} style={{ padding: `0 ${cph}px ${cpv}px ${cph}px`, textAlign: col.align, fontSize: `${config.bodyFontSize || 8}pt`, color: '#999', borderBottom: config.borderStyle && config.borderStyle !== 'none' ? '1px dotted #ccc' : undefined, fontWeight: config.bodyFontBold !== false ? 'bold' : 'normal', width: `${col.width}%` }}>
                                                     {`{{${col.key}}}`}
