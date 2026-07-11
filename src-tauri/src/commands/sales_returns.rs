@@ -33,6 +33,7 @@ pub struct SalesReturn {
     pub created_at: String,
     pub deleted_at: Option<String>,
     pub tax_inclusive: i64,
+    pub is_margin_scheme_invoice: i64,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -68,6 +69,9 @@ pub struct SalesReturnItem {
     pub hsn_sac_code: Option<String>,
     pub gst_slab_id: Option<String>,
     pub resolved_gst_rate: f64,
+    pub purchase_cost: f64,
+    pub is_margin_scheme: i64,
+    pub margin_amount: f64,
 }
 
 #[derive(Clone, Deserialize)]
@@ -86,6 +90,9 @@ pub struct CreateSalesReturnItem {
     pub discount_percent: Option<f64>,
     pub discount_amount: Option<f64>,
     pub remarks: Option<String>,
+    /// Purchase cost per unit for margin scheme returns.
+    #[serde(default)]
+    pub purchase_cost: f64,
 }
 
 fn default_item_type() -> String {
@@ -230,6 +237,9 @@ pub struct CreateSalesReturn {
     pub items: Vec<CreateSalesReturnItem>,
     pub tax_inclusive: Option<bool>,
     pub gst_disabled: Option<bool>,
+    /// When true, this return is against a Margin Scheme invoice.
+    #[serde(default)]
+    pub is_margin_scheme_invoice: bool,
 }
 
 #[tauri::command]
@@ -255,7 +265,8 @@ pub async fn get_sales_returns(
             v.status,
             v.created_at,
             v.deleted_at,
-            COALESCE(v.tax_inclusive, 0) as tax_inclusive
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -292,7 +303,8 @@ pub async fn get_sales_return(
             v.status,
             v.created_at,
             v.deleted_at,
-            COALESCE(v.tax_inclusive, 0) as tax_inclusive
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -383,28 +395,37 @@ pub(crate) async fn create_sales_return_in_tx(
         } else {
             item.product_id.as_deref().unwrap_or("")
         };
-        prepared_lines.push(
-            prepare_voucher_line(
-                tx,
-                pool,
-                "sale",
-                &item.item_type,
-                item_id,
-                item.unit_id.as_deref(),
-                item.description.clone(),
-                item.initial_quantity,
-                item.count,
-                item.deduction_per_unit,
-                item.rate,
-                item.tax_rate,
-                item.discount_percent,
-                item.discount_amount,
-                item.remarks.clone(),
-                tax_inclusive,
-                gst_disabled,
-            )
-            .await?,
-        );
+        let mut line = prepare_voucher_line(
+            tx,
+            pool,
+            "sale",
+            &item.item_type,
+            item_id,
+            item.unit_id.as_deref(),
+            item.description.clone(),
+            item.initial_quantity,
+            item.count,
+            item.deduction_per_unit,
+            item.rate,
+            item.tax_rate,
+            item.discount_percent,
+            item.discount_amount,
+            item.remarks.clone(),
+            tax_inclusive,
+            gst_disabled,
+        )
+        .await?;
+        if invoice.is_margin_scheme_invoice {
+            line.is_margin_scheme = true;
+            line.purchase_cost = if item.purchase_cost > 0.0 {
+                item.purchase_cost
+            } else if item.item_type != "service" {
+                get_product_purchase_cost_rate(tx, item_id).await.unwrap_or(0.0)
+            } else {
+                0.0
+            };
+        }
+        prepared_lines.push(line);
     }
 
     let (processed, discount_rate, discount_amount) = finalize_processed_items(
@@ -424,8 +445,8 @@ pub(crate) async fn create_sales_return_in_tx(
 
     let voucher_id = Uuid::now_v7().to_string();
     sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total)
-         VALUES (?, ?, 'sales_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?)",
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total, is_margin_scheme_invoice)
+         VALUES (?, ?, 'sales_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?)",
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -441,14 +462,15 @@ pub(crate) async fn create_sales_return_in_tx(
     .bind(&invoice.narration)
     .bind(tax_inclusive as i64)
     .bind(grand_total)
+    .bind(invoice.is_margin_scheme_invoice as i64)
     .execute(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
 
     for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, item_type, product_id, service_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO voucher_items (id, voucher_id, item_type, product_id, service_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate, is_margin_scheme, purchase_cost, margin_amount)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&item.id)
         .bind(&voucher_id)
@@ -480,6 +502,9 @@ pub(crate) async fn create_sales_return_in_tx(
         .bind(&item.hsn_sac_code)
         .bind(&item.gst_slab_id)
         .bind(item.resolved_gst_rate)
+        .bind(item.is_margin_scheme as i64)
+        .bind(item.purchase_cost)
+        .bind(item.margin_amount)
         .execute(&mut **tx)
         .await
         .map_err(|e| e.to_string())?;

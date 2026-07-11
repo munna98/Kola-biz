@@ -155,6 +155,7 @@ export default function ProductDialog({
   const [showUnitSection, setShowUnitSection] = useState(false);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [dialogFields, setDialogFields] = useState<ProductDialogFields>(DEFAULT_DIALOG_FIELDS);
+  const [marginSchemeEnabled, setMarginSchemeEnabled] = useState(false);
   const unitLocked = Boolean(product?.has_transactions);
 
   const orderedFields = ['code', 'name', 'group', 'brand', 'unit', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp', 'cost', 'barcode'];
@@ -168,6 +169,7 @@ export default function ProductDialog({
   // Load GST slabs once
   useEffect(() => {
     api.gst.getSlabs().then(setGstSlabs).catch(console.error);
+    api.gst.getSettings().then(s => setMarginSchemeEnabled(s.margin_scheme_enabled)).catch(console.error);
     // Load master product feature flag
     invoke<string | null>('get_app_setting', { key: 'enable_master_products' })
       .then(v => setMasterProductsEnabled(v === 'true'))
@@ -208,6 +210,7 @@ export default function ProductDialog({
           hsn_sac_code: product.hsn_sac_code || '',
           gst_slab_id: product.gst_slab_id,
           is_master: product.is_master === 1,
+          is_margin_scheme_default: product.is_margin_scheme_default === 1,
           vehicle_manufacturer: product.vehicle_manufacturer,
           vehicle_model: product.vehicle_model,
           vehicle_year: product.vehicle_year,
@@ -259,6 +262,7 @@ export default function ProductDialog({
           hsn_sac_code: '',
           gst_slab_id: 'gst_0',
           is_master: false,
+          is_margin_scheme_default: false,
           vehicle_manufacturer: undefined,
           vehicle_model: undefined,
           vehicle_year: undefined,
@@ -311,6 +315,7 @@ export default function ProductDialog({
       hsn_sac_code: '',
       gst_slab_id: 'gst_0',
       is_master: false,
+      is_margin_scheme_default: false,
       vehicle_manufacturer: undefined,
       vehicle_model: undefined,
       vehicle_year: undefined,
@@ -673,6 +678,24 @@ export default function ProductDialog({
                   </Select>
                 </div>
               )}
+            </div>
+          )}
+
+          {marginSchemeEnabled && (dialogFields.hsn_sac_code || dialogFields.gst_slab) && (
+            <div className="flex items-center gap-3 rounded-lg border border-blue-100 bg-blue-50/50 dark:border-blue-900/30 dark:bg-blue-950/10 px-4 py-2.5">
+              <Switch
+                id="is-margin-scheme-default-toggle"
+                checked={!!form.is_margin_scheme_default}
+                onCheckedChange={(checked) => setForm(prev => ({ ...prev, is_margin_scheme_default: checked }))}
+              />
+              <div>
+                <Label htmlFor="is-margin-scheme-default-toggle" className="text-sm font-medium cursor-pointer">
+                  Margin scheme product
+                </Label>
+                <p className="text-xs text-muted-foreground">
+                  Enable Margin Scheme by default when selling this product.
+                </p>
+              </div>
             </div>
           )}
 

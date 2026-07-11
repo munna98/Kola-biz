@@ -1396,6 +1396,24 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await?;
 
+    // ==================== MARGIN SCHEME MIGRATIONS ====================
+
+    // Migration: Add margin scheme columns to voucher_items
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN is_margin_scheme INTEGER DEFAULT 0")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN purchase_cost REAL DEFAULT 0")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN margin_amount REAL DEFAULT 0")
+        .execute(pool).await;
+
+    // Migration: Add margin scheme default flag to products
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN is_margin_scheme_default INTEGER DEFAULT 0")
+        .execute(pool).await;
+
+    // Migration: Add margin scheme flag to vouchers
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN is_margin_scheme_invoice INTEGER DEFAULT 0")
+        .execute(pool).await;
+
     crate::seeds::seed_initial_data(pool).await?;
     crate::seeds::seed_handlebars_templates(pool).await?;
 

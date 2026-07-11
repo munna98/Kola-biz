@@ -4,6 +4,7 @@ export interface VoucherDiscountLineInput {
   deduction_per_unit: number;
   rate: number;
   discount_amount?: number;
+  purchase_cost?: number;
 }
 
 export interface VoucherDiscountLineResult {
@@ -76,6 +77,7 @@ export function calculateVoucherDiscounts<T extends VoucherDiscountLineInput>(
     discountAmount?: number;
     taxInclusive: boolean;
     resolveGstRate: (item: T) => number;
+    isMarginScheme?: boolean;
   }
 ): VoucherDiscountCalculationResult {
   const preparedLines = items.map((item) => {
@@ -113,7 +115,18 @@ export function calculateVoucherDiscounts<T extends VoucherDiscountLineInput>(
     const taxableAmount = round2(
       Math.max(line.netBeforeInvoiceDiscount - allocations[index], 0)
     );
-    const taxAmount = round2(taxableAmount * (line.gstRate / 100));
+    const taxAmount = options.isMarginScheme
+      ? round2(
+          Math.max(
+            0,
+            (options.taxInclusive
+              ? (line.finalQty > 0 ? line.netBeforeInvoiceDiscount / line.finalQty : 0)
+              : (items[index].rate || 0)) - (items[index].purchase_cost || 0)
+          ) *
+            line.finalQty *
+            (line.gstRate / 100)
+        )
+      : round2(taxableAmount * (line.gstRate / 100));
     return {
       finalQty: line.finalQty,
       grossAmount: line.grossAmount,

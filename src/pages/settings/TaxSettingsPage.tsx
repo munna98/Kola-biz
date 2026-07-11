@@ -20,6 +20,8 @@ const DEFAULT_GST_SETTINGS: GstSettings = {
   gst_enabled: false,
   gst_registration_type: 'Regular',
   composition_rate: 1,
+  margin_scheme_enabled: false,
+  margin_scheme_note: 'Supply of second-hand goods under the Margin Scheme as per Rule 32(5) of CGST Rules, 2017. Input Tax Credit is not available to the purchaser on this supply.',
 };
 
 interface SlabForm {
@@ -215,6 +217,55 @@ export default function TaxSettingsPage() {
               </div>
             )}
           </div>
+
+          <div className="flex justify-end">
+            <Button onClick={saveSettings} disabled={saving}>
+              {saving ? 'Saving...' : 'Save Settings'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* ── Section 1b: Margin Scheme ── */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <IconPercentage size={16} /> Margin Scheme (Rule 32(5))
+          </CardTitle>
+          <CardDescription>
+            Enable the GST Margin Scheme for second-hand goods dealers. GST is charged only on the profit margin, not the full selling price.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <Label className="text-sm font-medium">Enable Margin Scheme</Label>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                When enabled, sales invoices can be marked as Margin Scheme invoices. GST is computed on (Selling Price − Purchase Cost).
+              </p>
+            </div>
+            <Switch
+              checked={settings.margin_scheme_enabled}
+              onCheckedChange={v => setSettings(s => ({ ...s, margin_scheme_enabled: v }))}
+            />
+          </div>
+
+          {settings.margin_scheme_enabled && (
+            <>
+              <Separator />
+              <div className="space-y-1.5">
+                <Label>Invoice Declaration Note</Label>
+                <p className="text-xs text-muted-foreground">
+                  This text is printed on every Margin Scheme invoice as the statutory declaration.
+                </p>
+                <textarea
+                  className="w-full min-h-[80px] rounded-md border border-input bg-background px-3 py-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring resize-none"
+                  value={settings.margin_scheme_note}
+                  onChange={e => setSettings(s => ({ ...s, margin_scheme_note: e.target.value }))}
+                />
+              </div>
+            </>
+          )}
 
           <div className="flex justify-end">
             <Button onClick={saveSettings} disabled={saving}>

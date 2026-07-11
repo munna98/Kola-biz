@@ -22,6 +22,7 @@ import {
     setSalesReturnNavigationData,
     setActiveSectionWithParams,
     setSalesReturnDraft,
+    setSalesReturnMarginScheme,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -137,6 +138,7 @@ export default function SalesReturnPage() {
                     dispatch(setSalesReturnNarration(invoicePrefill.invoiceNo
                         ? `Return against Sales Invoice ${invoicePrefill.invoiceNo}`
                         : 'Return against current Sales Invoice'));
+                    dispatch(setSalesReturnMarginScheme(!!invoicePrefill.isMarginSchemeInvoice));
                     if (invoicePrefill.returnDraft) {
                         invoicePrefill.returnDraft.items?.forEach((item: any) => {
                             dispatch(addSalesReturnItem(item));
@@ -362,6 +364,7 @@ export default function SalesReturnPage() {
                         : salesReturnState.form.discount_amount,
             taxInclusive: !!voucherSettings?.taxInclusive,
             resolveGstRate: resolveItemGstRate,
+            isMarginScheme: salesReturnState.form.is_margin_scheme_invoice,
         });
 
         dispatch(setSalesReturnDiscountRate(calculation.discountRate));
@@ -440,8 +443,10 @@ export default function SalesReturnPage() {
                             tax_rate: item.tax_rate,
                             discount_percent: item.discount_percent || 0,
                             discount_amount: item.discount_amount || 0,
+                            purchase_cost: item.purchase_cost || 0,
                         })),
                         gst_disabled: gstDisabled,
+                        is_margin_scheme_invoice: salesReturnState.form.is_margin_scheme_invoice,
                     },
                 });
                 toast.success('Sales return updated successfully');
@@ -466,8 +471,10 @@ export default function SalesReturnPage() {
                             tax_rate: item.tax_rate,
                             discount_percent: item.discount_percent || 0,
                             discount_amount: item.discount_amount || 0,
+                            purchase_cost: item.purchase_cost || 0,
                         })),
                         gst_disabled: gstDisabled,
+                        is_margin_scheme_invoice: salesReturnState.form.is_margin_scheme_invoice,
                     },
                 });
                 toast.success('Sales return created successfully');
@@ -523,6 +530,7 @@ export default function SalesReturnPage() {
             dispatch(setSalesReturnNarration(invoice.narration || ''));
             dispatch(setSalesReturnDiscountRate(invoice.discount_rate || 0));
             dispatch(setSalesReturnDiscountAmount(invoice.discount_amount || 0));
+            dispatch(setSalesReturnMarginScheme(!!invoice.is_margin_scheme_invoice));
 
             // Populate Items
             items.forEach(item => {
@@ -548,6 +556,7 @@ export default function SalesReturnPage() {
                     tax_rate: item.tax_rate,
                     discount_percent: item.discount_percent || 0,
                     discount_amount: item.discount_amount || 0,
+                    purchase_cost: item.purchase_cost || 0,
                 }));
             });
 
@@ -575,6 +584,7 @@ export default function SalesReturnPage() {
                 tax_rate: item.tax_rate,
                 discount_percent: item.discount_percent || 0,
                 discount_amount: item.discount_amount || 0,
+                purchase_cost: item.purchase_cost || 0,
             }));
 
             updateTotalsWithItems(
@@ -693,11 +703,11 @@ export default function SalesReturnPage() {
             discountAmount: salesReturnState.form.discount_amount,
             taxInclusive: !!voucherSettings?.taxInclusive,
             resolveGstRate: () => gstRate,
+            isMarginScheme: salesReturnState.form.is_margin_scheme_invoice,
         });
         const lineIndex = sourceItems.length === 1 ? 0 : sourceItems.findIndex((candidate) => candidate.id === item.id);
         const line = calculation.lines[Math.max(lineIndex, 0)];
-        const grossTax = Math.round(line.netBeforeInvoiceDiscount * (gstRate / 100) * 100) / 100;
-        return { finalQty: line.finalQty, amount: line.netBeforeInvoiceDiscount, taxAmount: grossTax, total: Math.round((line.netBeforeInvoiceDiscount + grossTax) * 100) / 100 };
+        return { finalQty: line.finalQty, amount: line.netBeforeInvoiceDiscount, taxAmount: line.taxAmount, total: line.total };
     };
 
     // Determine if form should be disabled (viewing mode)
@@ -814,6 +824,7 @@ export default function SalesReturnPage() {
                         addItemLabel="Add Return Item (Ctrl+N)"
                         disableAdd={isReadOnly}
                         settings={voucherSettings}
+                        isMarginSchemeInvoice={salesReturnState.form.is_margin_scheme_invoice}
                         onSectionExit={() => {
                             // Focus discount amount input
                             setTimeout(() => {

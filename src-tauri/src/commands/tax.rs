@@ -153,6 +153,10 @@ pub struct GstSettings {
     pub gst_enabled: bool,
     pub gst_registration_type: String, // "Regular" | "Composition" | "Unregistered"
     pub composition_rate: f64,
+    /// Whether the Margin Scheme feature (Rule 32(5) CGST Rules) is enabled for this company.
+    pub margin_scheme_enabled: bool,
+    /// Custom declaration text printed on margin-scheme invoices.
+    pub margin_scheme_note: String,
 }
 
 #[tauri::command]
@@ -182,11 +186,18 @@ pub async fn get_gst_settings(
     let composition_rate = read("composition_rate").await
         .and_then(|v| v.parse::<f64>().ok())
         .unwrap_or(1.0);
+    let margin_scheme_enabled = read("margin_scheme_enabled").await
+        .map(|v| v == "true")
+        .unwrap_or(false);
+    let margin_scheme_note = read("margin_scheme_note").await
+        .unwrap_or_else(|| "Supply of second-hand goods under the Margin Scheme as per Rule 32(5) of CGST Rules, 2017. Input Tax Credit is not available to the purchaser on this supply.".to_string());
 
     Ok(GstSettings {
         gst_enabled,
         gst_registration_type,
         composition_rate,
+        margin_scheme_enabled,
+        margin_scheme_note,
     })
 }
 
@@ -200,6 +211,8 @@ pub async fn save_gst_settings(
         ("gst_enabled",            settings.gst_enabled.to_string()),
         ("gst_registration_type",  settings.gst_registration_type.clone()),
         ("composition_rate",       settings.composition_rate.to_string()),
+        ("margin_scheme_enabled",  settings.margin_scheme_enabled.to_string()),
+        ("margin_scheme_note",     settings.margin_scheme_note.clone()),
     ];
 
     for (key, value) in pairs {
@@ -242,7 +255,7 @@ pub async fn get_gstr1_summary(
             COALESCE(u.symbol, 'NOS')                                             AS uqc,
             COALESCE(SUM(vi.final_quantity), 0)                                   AS final_qty,
             COALESCE(vi.resolved_gst_rate, 0)                                     AS gst_rate,
-            COALESCE(SUM(vi.amount), 0)                                           AS taxable_value,
+            COALESCE(SUM(CASE WHEN vi.is_margin_scheme = 1 THEN vi.margin_amount ELSE vi.amount END), 0) AS taxable_value,
             COALESCE(SUM(vi.cgst_amount), 0)                                      AS cgst,
             COALESCE(SUM(vi.sgst_amount), 0)                                      AS sgst,
             COALESCE(SUM(vi.igst_amount), 0)                                      AS igst,

@@ -488,6 +488,8 @@ pub struct Product {
     pub gst_slab_id: Option<String>,
     pub is_master: i64,
     pub parent_product_id: Option<String>,
+    /// When 1, this product defaults to Margin Scheme mode on sales invoices.
+    pub is_margin_scheme_default: i64,
     // Vehicle fields
     pub vehicle_manufacturer: Option<String>,
     pub vehicle_model: Option<String>,
@@ -551,6 +553,9 @@ pub struct CreateProduct {
     /// automatically during purchase entry.
     #[serde(default)]
     pub is_master: bool,
+    /// When true, this product defaults to Margin Scheme mode on sales invoices.
+    #[serde(default)]
+    pub is_margin_scheme_default: bool,
     // Vehicle fields
     pub vehicle_manufacturer: Option<String>,
     pub vehicle_model: Option<String>,
@@ -775,6 +780,7 @@ pub async fn get_products(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Pr
                 hsn_sac_code, gst_slab_id,
                 COALESCE(is_master, 0) as is_master,
                 parent_product_id,
+                COALESCE(is_margin_scheme_default, 0) as is_margin_scheme_default,
                 vehicle_manufacturer, vehicle_model, vehicle_year, vehicle_odometer, vehicle_fuel_type, vehicle_transmission, vehicle_owner, vehicle_color
          FROM products
          WHERE deleted_at IS NULL 
@@ -834,9 +840,9 @@ pub async fn create_product(
     };
 
     sqlx::query(
-        "INSERT INTO products (id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, hsn_sac_code, gst_slab_id, is_master,
+        "INSERT INTO products (id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, hsn_sac_code, gst_slab_id, is_master, is_margin_scheme_default,
                               vehicle_manufacturer, vehicle_model, vehicle_year, vehicle_odometer, vehicle_fuel_type, vehicle_transmission, vehicle_owner, vehicle_color) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&code)
@@ -852,6 +858,7 @@ pub async fn create_product(
     .bind(&product.hsn_sac_code)
     .bind(&product.gst_slab_id)
     .bind(if product.is_master { 1i64 } else { 0i64 })
+    .bind(if product.is_margin_scheme_default { 1i64 } else { 0i64 })
     .bind(&product.vehicle_manufacturer)
     .bind(&product.vehicle_model)
     .bind(product.vehicle_year)
@@ -882,6 +889,7 @@ pub async fn create_product(
                 hsn_sac_code, gst_slab_id,
                 COALESCE(is_master, 0) as is_master,
                 parent_product_id,
+                COALESCE(is_margin_scheme_default, 0) as is_margin_scheme_default,
                 vehicle_manufacturer, vehicle_model, vehicle_year, vehicle_odometer, vehicle_fuel_type, vehicle_transmission, vehicle_owner, vehicle_color
          FROM products WHERE id = ?",
     )
@@ -1011,7 +1019,7 @@ pub async fn update_product(
     sqlx::query(
         "UPDATE products 
          SET code = ?, name = ?, group_id = ?, brand_id = ?, unit_id = ?, purchase_rate = ?, sales_rate = ?, mrp = ?, cost = ?,
-             barcode = ?, hsn_sac_code = ?, gst_slab_id = ?, is_master = ?,
+             barcode = ?, hsn_sac_code = ?, gst_slab_id = ?, is_master = ?, is_margin_scheme_default = ?,
              vehicle_manufacturer = ?, vehicle_model = ?, vehicle_year = ?, vehicle_odometer = ?, vehicle_fuel_type = ?, vehicle_transmission = ?, vehicle_owner = ?, vehicle_color = ?,
              updated_at = CURRENT_TIMESTAMP 
          WHERE id = ?",
@@ -1029,6 +1037,7 @@ pub async fn update_product(
     .bind(&product.hsn_sac_code)
     .bind(&product.gst_slab_id)
     .bind(if product.is_master { 1i64 } else { 0i64 })
+    .bind(if product.is_margin_scheme_default { 1i64 } else { 0i64 })
     .bind(&product.vehicle_manufacturer)
     .bind(&product.vehicle_model)
     .bind(product.vehicle_year)

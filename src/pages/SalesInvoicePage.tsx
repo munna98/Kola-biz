@@ -27,6 +27,7 @@ import {
   switchSalesTab,
   closeSalesTab,
   setActiveSectionWithParams,
+  setSalesMarginScheme,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -107,6 +108,8 @@ export default function SalesInvoicePage() {
   const [services, setServices] = useState<any[]>([]);
   const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
   const [linkedReturnSummary, setLinkedReturnSummary] = useState<{ id: string; total: number; count: number } | null>(null);
+  /** Whether Margin Scheme is enabled globally in Tax Settings (controls visibility of the toggle) */
+  const [marginSchemeEnabled, setMarginSchemeEnabled] = useState(false);
 
 
 
@@ -120,6 +123,9 @@ export default function SalesInvoicePage() {
   const netPayableTotal = Math.max(0, salesState.totals.grandTotal - linkedReturnTotal);
 
   // ---- Invoice Profit Calculation ----
+  // Revenue base: use subtotal (taxable base, always tax-exclusive) so that
+  // profit is compared on the same tax-exclusive footing as purchase cost.
+  // Using grandTotal would inflate profit by the GST amount on the sale.
   const profitStats = useMemo(() => {
     if (!voucherSettings?.showInvoiceProfit) return { totalCost: 0, grossProfit: 0, profitPercent: 0 };
     let totalCost = 0;
@@ -135,12 +141,14 @@ export default function SalesInvoicePage() {
           : (product.purchase_rate ?? 0);
       totalCost += finalQty * unitCost;
     });
-    const grossProfit = salesState.totals.grandTotal - totalCost;
-    const profitPercent = salesState.totals.grandTotal > 0
-      ? (grossProfit / salesState.totals.grandTotal) * 100
+    // subtotal = taxable base after item discounts and invoice discounts (excl. tax)
+    const revenueBase = salesState.totals.subtotal;
+    const grossProfit = revenueBase - totalCost;
+    const profitPercent = revenueBase > 0
+      ? (grossProfit / revenueBase) * 100
       : 0;
     return { totalCost, grossProfit, profitPercent };
-  }, [voucherSettings?.showInvoiceProfit, voucherSettings?.profitCostSource, salesState.items, salesState.totals.grandTotal, products]);
+  }, [voucherSettings?.showInvoiceProfit, voucherSettings?.profitCostSource, salesState.items, salesState.totals.subtotal, products]);
 
   // Create Customer Shortcut State
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
@@ -185,6 +193,7 @@ export default function SalesInvoicePage() {
         if (gstSettings?.gst_enabled) {
           setGstSlabs(slabsData);
         }
+        setMarginSchemeEnabled(gstSettings?.margin_scheme_enabled === true);
 
         const combinedParties = accountsData.map(acc => ({
           id: acc.id,
@@ -326,6 +335,13 @@ export default function SalesInvoicePage() {
           product.sales_rate || 0
         );
         finalValue = value;
+        const isMarginDefault = product.is_margin_scheme_default === 1;
+        const willBeMarginInvoice = salesState.form.is_margin_scheme_invoice || isMarginDefault;
+
+        if (isMarginDefault && !salesState.form.is_margin_scheme_invoice) {
+          dispatch(setSalesMarginScheme(true));
+        }
+
         const updatedItems = [...salesState.items];
         updatedItems[index] = {
           ...updatedItems[index],
@@ -335,6 +351,8 @@ export default function SalesInvoicePage() {
           product_name: product.name,
           unit_id: defaultUnitId,
           rate,
+          // Auto-fill purchase_cost from WAC when margin scheme is active
+          ...(willBeMarginInvoice ? { purchase_cost: product.purchase_rate || 0 } : {}),
           ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
         };
         dispatch(
@@ -347,6 +365,7 @@ export default function SalesInvoicePage() {
               product_name: product.name,
               unit_id: defaultUnitId,
               rate,
+              ...(willBeMarginInvoice ? { purchase_cost: product.purchase_rate || 0 } : {}),
               ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
             },
           })
@@ -482,6 +501,7 @@ export default function SalesInvoicePage() {
             : salesState.form.discount_amount,
       taxInclusive: isTaxInclusive,
       resolveGstRate: resolveItemGstRate,
+      isMarginScheme: salesState.form.is_margin_scheme_invoice,
     });
 
     dispatch(setSalesDiscountRate(calculation.discountRate));
@@ -566,9 +586,11 @@ export default function SalesInvoicePage() {
               tax_rate: item.tax_rate,
               discount_percent: item.discount_percent || null,
               discount_amount: item.discount_amount || null,
+              purchase_cost: item.purchase_cost ?? 0,
             })),
             tax_inclusive: isTaxInclusive,
             gst_disabled: gstDisabled,
+            is_margin_scheme_invoice: salesState.form.is_margin_scheme_invoice,
             return_items: buildSalesReturnDraftPayload(),
           },
         });
@@ -618,10 +640,12 @@ export default function SalesInvoicePage() {
               tax_rate: item.tax_rate,
               discount_percent: item.discount_percent || null,
               discount_amount: item.discount_amount || null,
+              purchase_cost: item.purchase_cost ?? 0,
             })),
             user_id: user?.id.toString(),
             tax_inclusive: isTaxInclusive,
             gst_disabled: gstDisabled,
+            is_margin_scheme_invoice: salesState.form.is_margin_scheme_invoice,
             return_items: buildSalesReturnDraftPayload(),
           },
         });
@@ -935,6 +959,7 @@ export default function SalesInvoicePage() {
         voucherDate: salesState.form.voucher_date,
         linkedReturnId: linkedReturnSummary?.id,
         returnDraft: salesState.returnDraft,
+        isMarginSchemeInvoice: salesState.form.is_margin_scheme_invoice,
       },
     }));
   };
@@ -1205,15 +1230,15 @@ export default function SalesInvoicePage() {
       discountAmount: salesState.form.discount_amount,
       taxInclusive: isTaxInclusive,
       resolveGstRate: () => gstRate,
+      isMarginScheme: salesState.form.is_margin_scheme_invoice,
     });
     const lineIndex = sourceItems.length === 1 ? 0 : sourceItems.findIndex((candidate) => candidate.id === item.id);
     const line = calculation.lines[Math.max(lineIndex, 0)];
-    const grossTax = Math.round(line.netBeforeInvoiceDiscount * (gstRate / 100) * 100) / 100;
     return {
       finalQty: line.finalQty,
       amount: line.netBeforeInvoiceDiscount,
-      taxAmount: grossTax,
-      total: Math.round((line.netBeforeInvoiceDiscount + grossTax) * 100) / 100
+      taxAmount: line.taxAmount,
+      total: line.total
     };
   };
 
@@ -1469,6 +1494,7 @@ export default function SalesInvoicePage() {
             addItemLabel="Add Item (Ctrl+N)"
             disableAdd={isReadOnly}
             settings={voucherSettings}
+            isMarginSchemeInvoice={salesState.form.is_margin_scheme_invoice}
             onProductCreate={handleProductCreate}
             services={services}
             onServiceCreate={(_name, _idx) => { /* TODO: service quick-create dialog */ }}
@@ -1506,24 +1532,44 @@ export default function SalesInvoicePage() {
                         <IconSettings2 size={14} />
                       </button>
                     </PopoverTrigger>
-                    <PopoverContent side="top" align="start" className="w-56 p-3">
-                      <p className="text-xs font-semibold mb-2 text-foreground">GST Options</p>
-                      <div className="flex items-center justify-between gap-2">
-                        <label className="text-xs text-muted-foreground cursor-pointer select-none" htmlFor="sales-gst-disable-switch">
-                          Disable GST for this voucher
-                        </label>
-                        <Switch
-                          id="sales-gst-disable-switch"
-                          checked={gstDisabled}
-                          onCheckedChange={setGstDisabled}
-                        />
-                      </div>
-                      {gstDisabled && (
-                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
-                          GST columns hidden. Invoice will be saved without tax.
-                        </p>
-                      )}
-                    </PopoverContent>
+                    <PopoverContent side="top" align="start" className="w-64 p-3">
+                        <p className="text-xs font-semibold mb-2 text-foreground">GST Options</p>
+                        <div className="flex items-center justify-between gap-2">
+                          <label className="text-xs text-muted-foreground cursor-pointer select-none" htmlFor="sales-gst-disable-switch">
+                            Disable GST for this voucher
+                          </label>
+                          <Switch
+                            id="sales-gst-disable-switch"
+                            checked={gstDisabled}
+                            onCheckedChange={setGstDisabled}
+                          />
+                        </div>
+                        {gstDisabled && (
+                          <p className="text-xs text-amber-600 dark:text-amber-400 mt-2">
+                            GST columns hidden. Invoice will be saved without tax.
+                          </p>
+                        )}
+                        {marginSchemeEnabled && !gstDisabled && (
+                          <>
+                            <div className="border-t my-2" />
+                            <div className="flex items-center justify-between gap-2">
+                              <label className="text-xs text-muted-foreground cursor-pointer select-none" htmlFor="sales-margin-scheme-switch">
+                                Margin Scheme invoice
+                              </label>
+                              <Switch
+                                id="sales-margin-scheme-switch"
+                                checked={salesState.form.is_margin_scheme_invoice}
+                                onCheckedChange={v => dispatch(setSalesMarginScheme(v))}
+                              />
+                            </div>
+                            {salesState.form.is_margin_scheme_invoice && (
+                              <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                                GST calculated on (Selling Price − Purchase Cost) per item.
+                              </p>
+                            )}
+                          </>
+                        )}
+                      </PopoverContent>
                   </Popover>
                 ) : null}
                 <button

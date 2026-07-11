@@ -46,6 +46,40 @@ pub fn calculate_gst(
     compute_split(taxable_value, effective_rate, is_inter_state)
 }
 
+/// Calculate GST on the MARGIN (selling_price - purchase_cost) per unit × qty.
+/// As per Rule 32(5) of CGST Rules, 2017 — Margin Scheme for second-hand goods.
+/// Returns all-zero ResolvedGst silently if margin ≤ 0 (no GST payable).
+/// Also returns the taxable margin amount.
+pub fn calculate_margin_gst(
+    rate: f64,           // discounted unit selling price
+    purchase_cost: f64,  // original purchase cost per unit (WAC or overridden)
+    qty: f64,
+    slab: &GstTaxSlab,
+    is_inter_state: bool,
+) -> (ResolvedGst, f64) {
+    let margin_per_unit = rate - purchase_cost;
+    if margin_per_unit <= 0.0 {
+        return (
+            ResolvedGst {
+                effective_rate: 0.0,
+                cgst_rate: 0.0,
+                sgst_rate: 0.0,
+                igst_rate: 0.0,
+                cgst_amount: 0.0,
+                sgst_amount: 0.0,
+                igst_amount: 0.0,
+                total_tax: 0.0,
+            },
+            0.0,
+        );
+    }
+    let taxable_margin = round2(margin_per_unit * qty);
+    let effective_rate = resolve_effective_rate(rate, slab);
+    let gst = compute_split(taxable_margin, effective_rate, is_inter_state);
+    (gst, taxable_margin)
+}
+
+
 /// Resolve the effective GST rate from a slab and a unit price.
 pub fn resolve_effective_rate(unit_price: f64, slab: &GstTaxSlab) -> f64 {
     if slab.is_dynamic == 1 {

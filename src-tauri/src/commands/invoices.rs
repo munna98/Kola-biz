@@ -21,6 +21,37 @@ pub(crate) async fn get_product_purchase_cost_rate(
         return Ok(0.0);
     }
 
+    // Compute Weighted Average Cost (WAC) from actual purchase stock movements.
+    // cost_amount and quantity on IN movements are already tax-exclusive and
+    // discount-applied (set by prepare_voucher_line), so WAC is the true
+    // per-unit cost irrespective of how products.purchase_rate is set.
+    // Falls back to products.purchase_rate when no purchase history exists yet.
+    let wac: Option<f64> = sqlx::query_scalar(
+        "SELECT CASE
+             WHEN SUM(sm.quantity) > 0 THEN SUM(sm.cost_amount) / SUM(sm.quantity)
+             ELSE NULL
+         END
+         FROM stock_movements sm
+         JOIN vouchers v ON sm.voucher_id = v.id
+         WHERE sm.product_id = ?
+           AND sm.movement_type = 'IN'
+           AND v.voucher_type IN ('purchase_invoice', 'opening_stock', 'stock_journal')
+           AND v.deleted_at IS NULL",
+    )
+    .bind(product_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?
+    .flatten();
+
+    if let Some(w) = wac {
+        if w > 0.0 {
+            return Ok(w);
+        }
+    }
+
+    // Fallback: use the product master purchase_rate (e.g. for new products
+    // that have not yet had a purchase invoice recorded against them).
     sqlx::query_scalar::<_, f64>("SELECT COALESCE(purchase_rate, 0) FROM products WHERE id = ?")
         .bind(product_id)
         .fetch_optional(&mut **tx)
@@ -28,6 +59,7 @@ pub(crate) async fn get_product_purchase_cost_rate(
         .map_err(|e| e.to_string())
         .map(|value| value.unwrap_or(0.0))
 }
+
 
 // ============= GST INVOICE HELPERS =============
 
@@ -62,6 +94,10 @@ pub struct ProcessedVoucherItem {
     pub hsn_sac_code: Option<String>,
     pub gst_slab_id: Option<String>,
     pub resolved_gst_rate: f64,
+    // Margin Scheme fields
+    pub is_margin_scheme: bool,
+    pub purchase_cost: f64,
+    pub margin_amount: f64,
 }
 
 pub struct ProcessedVoucher {
@@ -157,6 +193,9 @@ pub(crate) struct PreparedVoucherLine {
     hsn_sac_code: Option<String>,
     gst_slab_id: Option<String>,
     effective_rate: f64,
+    // Margin Scheme — pub(crate) so sales_returns.rs can mutate them after prepare
+    pub(crate) is_margin_scheme: bool,
+    pub(crate) purchase_cost: f64,
 }
 
 pub(crate) fn normalize_invoice_discount(
@@ -338,6 +377,8 @@ pub(crate) async fn prepare_voucher_line(
         hsn_sac_code,
         gst_slab_id,
         effective_rate,
+        is_margin_scheme: false, // default; caller sets this from invoice-level flag
+        purchase_cost: 0.0,      // default; caller sets this from item payload
     })
 }
 
@@ -377,11 +418,32 @@ pub(crate) fn finalize_processed_items(
         // net_amount = amount after invoice discount (taxable base)
         let net_amount =
             round2((line.net_before_invoice_discount - invoice_discount_amount).max(0.0));
-        let split = crate::commands::tax_utils::compute_split(
-            net_amount,
-            line.effective_rate,
-            is_inter_state,
-        );
+
+        let (split, margin_amount) = if line.is_margin_scheme && !line.gst_slab_id.is_none() {
+            // Margin scheme: GST on (selling_price - purchase_cost) × qty
+            if let Some(ref slab_id) = line.gst_slab_id {
+                // We need a pool here but finalize is sync; purchase_cost and slab resolved by caller
+                // Use pre-resolved effective_rate and calculate on margin
+                let margin_per_unit = (line.rate - line.purchase_cost).max(0.0);
+                let taxable_margin = round2(margin_per_unit * line.final_quantity);
+                let gst = crate::commands::tax_utils::compute_split(
+                    taxable_margin,
+                    line.effective_rate,
+                    is_inter_state,
+                );
+                let _ = slab_id; // suppress unused warning
+                (gst, taxable_margin)
+            } else {
+                (crate::commands::tax_utils::compute_split(net_amount, line.effective_rate, is_inter_state), 0.0)
+            }
+        } else {
+            let split = crate::commands::tax_utils::compute_split(
+                net_amount,
+                line.effective_rate,
+                is_inter_state,
+            );
+            (split, 0.0)
+        };
 
         total_cgst += split.cgst_amount;
         total_sgst += split.sgst_amount;
@@ -417,6 +479,9 @@ pub(crate) fn finalize_processed_items(
             hsn_sac_code: line.hsn_sac_code,
             gst_slab_id: line.gst_slab_id,
             resolved_gst_rate: line.effective_rate,
+            is_margin_scheme: line.is_margin_scheme,
+            purchase_cost: line.purchase_cost,
+            margin_amount,
         });
     }
 
@@ -1439,6 +1504,7 @@ pub struct SalesInvoice {
     pub created_by_name: Option<String>,
     pub tax_inclusive: i64,
     pub linked_return_id: Option<String>,
+    pub is_margin_scheme_invoice: i64,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -1476,6 +1542,9 @@ pub struct SalesInvoiceItem {
     pub hsn_sac_code: Option<String>,
     pub gst_slab_id: Option<String>,
     pub resolved_gst_rate: f64,
+    pub purchase_cost: f64,
+    pub is_margin_scheme: i64,
+    pub margin_amount: f64,
 }
 
 #[derive(Deserialize)]
@@ -1494,6 +1563,10 @@ pub struct CreateSalesInvoiceItem {
     pub discount_percent: Option<f64>,
     pub discount_amount: Option<f64>,
     pub remarks: Option<String>,
+    /// Purchase cost per unit — used when the invoice is a Margin Scheme invoice.
+    /// Auto-filled from WAC on the frontend; user can override.
+    #[serde(default)]
+    pub purchase_cost: f64,
 }
 
 #[derive(Deserialize)]
@@ -1511,6 +1584,10 @@ pub struct CreateSalesInvoice {
     pub tax_inclusive: Option<bool>,
     pub gst_disabled: Option<bool>,
     pub return_items: Option<Vec<CreateSalesReturnItem>>,
+    /// When true, this invoice is under GST Margin Scheme (Rule 32(5) CGST Rules).
+    /// All items on this invoice are treated as margin-scheme items.
+    #[serde(default)]
+    pub is_margin_scheme_invoice: bool,
 }
 
 #[tauri::command]
@@ -1580,7 +1657,8 @@ pub async fn get_sales_invoice(
             v.deleted_at,
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
-            v.linked_return_id
+            v.linked_return_id,
+            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -1644,7 +1722,8 @@ pub(crate) async fn get_sales_invoice_with_pool(
             v.deleted_at,
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
-            v.linked_return_id
+            v.linked_return_id,
+            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -1742,6 +1821,7 @@ async fn create_draft_return_for_sales_invoice_in_tx(
         items: return_items,
         tax_inclusive: invoice.tax_inclusive,
         gst_disabled: invoice.gst_disabled,
+        is_margin_scheme_invoice: invoice.is_margin_scheme_invoice,
     };
     let return_id = create_sales_return_in_tx(pool, tx, &sales_return).await?;
 
@@ -1802,28 +1882,38 @@ pub async fn create_sales_invoice(
         } else {
             item.product_id.as_deref().unwrap_or("")
         };
-        prepared_lines.push(
-            prepare_voucher_line(
-                &mut tx,
-                &pool,
-                "sale",
-                &item.item_type,
-                item_id,
-                item.unit_id.as_deref(),
-                item.description.clone(),
-                item.initial_quantity,
-                item.count,
-                item.deduction_per_unit,
-                item.rate,
-                item.tax_rate,
-                item.discount_percent,
-                item.discount_amount,
-                item.remarks.clone(),
-                tax_inclusive,
-                gst_disabled,
-            )
-            .await?,
-        );
+        let mut line = prepare_voucher_line(
+            &mut tx,
+            &pool,
+            "sale",
+            &item.item_type,
+            item_id,
+            item.unit_id.as_deref(),
+            item.description.clone(),
+            item.initial_quantity,
+            item.count,
+            item.deduction_per_unit,
+            item.rate,
+            item.tax_rate,
+            item.discount_percent,
+            item.discount_amount,
+            item.remarks.clone(),
+            tax_inclusive,
+            gst_disabled,
+        )
+        .await?;
+        // Apply margin scheme: set per-item purchase_cost (WAC fallback if not provided)
+        if invoice.is_margin_scheme_invoice {
+            line.is_margin_scheme = true;
+            line.purchase_cost = if item.purchase_cost > 0.0 {
+                item.purchase_cost
+            } else if item.item_type != "service" {
+                get_product_purchase_cost_rate(&mut tx, item_id).await.unwrap_or(0.0)
+            } else {
+                0.0
+            };
+        }
+        prepared_lines.push(line);
     }
 
     let (processed, discount_rate, discount_amount) = finalize_processed_items(
@@ -1843,19 +1933,20 @@ pub async fn create_sales_invoice(
 
     let voucher_id = Uuid::now_v7().to_string();
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, is_margin_scheme_invoice)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("sales_invoice").bind(&invoice.voucher_date).bind(&invoice.customer_id)
     .bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(discount_rate)
     .bind(discount_amount).bind(total_tax).bind(total_amount).bind(&invoice.narration)
-    .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total)
+    .bind(invoice.is_margin_scheme_invoice as i64).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
     for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, item_type, product_id, service_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, item_type, product_id, service_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate, is_margin_scheme, purchase_cost, margin_amount)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item.id).bind(&voucher_id).bind(&item.item_type).bind(&item.product_id).bind(&item.service_id)
         .bind(&item.description).bind(item.initial_quantity)
@@ -1863,6 +1954,7 @@ pub async fn create_sales_invoice(
         .bind(item.rate).bind(item.amount).bind(item.net_amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
         .bind(item.invoice_discount_amount).bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
         .bind(item.igst_amount).bind(&item.hsn_sac_code).bind(&item.gst_slab_id).bind(item.resolved_gst_rate)
+        .bind(item.is_margin_scheme as i64).bind(item.purchase_cost).bind(item.margin_amount)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;

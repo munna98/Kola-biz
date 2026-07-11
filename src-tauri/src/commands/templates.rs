@@ -2041,7 +2041,7 @@ async fn inject_gst_context(
     is_inter_state: bool,
 ) {
     // 1. GST enabled setting
-    let gst_enabled: bool = sqlx::query_scalar::<_, String>(
+    let mut gst_enabled: bool = sqlx::query_scalar::<_, String>(
         "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'",
     )
     .fetch_optional(pool)
@@ -2051,12 +2051,9 @@ async fn inject_gst_context(
     .map(|v| v == "true")
     .unwrap_or(false);
 
-    obj.insert("gst_enabled".to_string(), json!(gst_enabled));
-    obj.insert("is_inter_state".to_string(), json!(is_inter_state));
-
-    // 2. e-Invoice fields from voucher
-    let einv: Option<(Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
-        "SELECT irn, ack_no, ack_date FROM vouchers WHERE id = ?",
+    // 2. e-Invoice and Margin Scheme fields from voucher
+    let einv: Option<(Option<String>, Option<String>, Option<String>, Option<i64>)> = sqlx::query_as(
+        "SELECT irn, ack_no, ack_date, is_margin_scheme_invoice FROM vouchers WHERE id = ?",
     )
     .bind(voucher_id)
     .fetch_optional(pool)
@@ -2064,18 +2061,40 @@ async fn inject_gst_context(
     .ok()
     .flatten();
 
-    let (irn, ack_no, ack_date) = einv.unwrap_or((None, None, None));
+    let (irn, ack_no, ack_date, is_margin) = einv.unwrap_or((None, None, None, None));
+    let is_margin_scheme = is_margin.unwrap_or(0) == 1;
+
+    obj.insert("gst_enabled".to_string(), json!(gst_enabled));
+    obj.insert("is_inter_state".to_string(), json!(is_inter_state));
+    obj.insert("is_margin_scheme_invoice".to_string(), json!(is_margin_scheme));
+
+    let margin_scheme_note: String = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'margin_scheme_note'",
+    )
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+    .unwrap_or_else(|| "Supply of second-hand goods under the Margin Scheme as per Rule 32(5) of CGST Rules, 2017. Input Tax Credit is not available to the purchaser on this supply.".to_string());
+    obj.insert("margin_scheme_note".to_string(), json!(margin_scheme_note));
+
     let qr_data = irn.as_deref().and_then(crate::commands::tax_utils::irn_to_qr_base64);
     obj.insert("irn".to_string(), json!(irn));
     obj.insert("ack_no".to_string(), json!(ack_no));
     obj.insert("ack_date".to_string(), json!(ack_date));
     obj.insert("qr_code_data".to_string(), json!(qr_data));
 
-    // 3. GST amounts from the already-formatted items â€” base_amount is already reverse-calculated if tax_inclusive
-    // We sum base_amount (ex-tax) and the split tax amounts directly from the formatted items passed in.
+    // 3. GST amounts from the already-formatted items — base_amount is already reverse-calculated if tax_inclusive
+    // Under margin scheme, the taxable total is the sum of margin_amount (the profit margin), not the base sale amount.
     let taxable_total: f64 = items
         .iter()
-        .filter_map(|i| i["base_amount"].as_f64())
+        .filter_map(|i| {
+            if is_margin_scheme {
+                i["margin_amount"].as_f64()
+            } else {
+                i["base_amount"].as_f64()
+            }
+        })
         .sum();
     let cgst_total: f64 = items
         .iter()
@@ -2115,7 +2134,12 @@ async fn inject_gst_context(
     let mut hsn_map: BTreeMap<String, (f64, f64, f64, f64, f64, f64, f64)> = BTreeMap::new();
     for item in items {
         let hsn = item["hsn_sac_code"].as_str().unwrap_or("").to_string();
-        let taxable = item["base_amount"].as_f64().unwrap_or(0.0);
+        // Under margin scheme, HSN taxable value is the margin amount, not the full sale base
+        let taxable = if is_margin_scheme {
+            item["margin_amount"].as_f64().unwrap_or(0.0)
+        } else {
+            item["base_amount"].as_f64().unwrap_or(0.0)
+        };
         let gst_r = item["tax_rate"].as_f64().unwrap_or(0.0);
         let cgst_r = item["cgst_rate"].as_f64().unwrap_or(0.0);
         let sgst_r = item["sgst_rate"].as_f64().unwrap_or(0.0);

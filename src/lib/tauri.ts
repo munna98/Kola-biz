@@ -73,6 +73,8 @@ export interface GstSettings {
   gst_enabled: boolean;
   gst_registration_type: string;
   composition_rate: number;
+  margin_scheme_enabled: boolean;
+  margin_scheme_note?: string;
 }
 
 export interface GstSummaryRow {
@@ -140,6 +142,7 @@ export interface Product {
   vehicle_transmission?: string;
   vehicle_owner?: string;
   vehicle_color?: string;
+  is_margin_scheme_default: number;
 }
 
 export interface ProductImage {
@@ -199,6 +202,7 @@ export interface CreateProduct {
   vehicle_transmission?: string;
   vehicle_owner?: string;
   vehicle_color?: string;
+  is_margin_scheme_default?: boolean;
 }
 
 // ======= PARTIES =======

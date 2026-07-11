@@ -31,7 +31,9 @@
 </div>
 {{/if}}
 
-<div class="invoice-title-row">Tax Invoice</div>
+<div class="invoice-title-row">
+  {{#if is_margin_scheme_invoice}}Tax Invoice (Under Margin Scheme){{else}}Tax Invoice{{/if}}
+</div>
 
 <table class="header-outer">
   <tbody>
@@ -181,6 +183,11 @@
       <th class="col-desc">Description of Goods</th>
       <th class="col-hsn">HSN/SAC</th>
       <th class="col-qty">Quantity</th>
+      {{#if @root.is_margin_scheme_invoice}}
+      <th class="col-rate">Purchase<br/>Price</th>
+      <th class="col-rate">Sales<br/>Price</th>
+      <th class="col-amount">Taxable Value</th>
+      {{else}}
       <th class="col-rate">Rate</th>
       <th class="col-per">per</th>
       <th class="col-disc">Disc %</th>
@@ -188,6 +195,7 @@
       <th class="col-disc-amt">Disc</th>
       {{/if}}
       <th class="col-amount">Amount</th>
+      {{/if}}
     </tr>
   </thead>
   <tbody class="items-tbody">
@@ -201,6 +209,11 @@
       </td>
       <td class="center">{{hsn_sac_code}}</td>
       <td class="right">{{format_number initial_quantity 2}}</td>
+      {{#if @root.is_margin_scheme_invoice}}
+      <td class="right">{{format_number purchase_cost 2}}</td>
+      <td class="right">{{format_number inclusive_rate 2}}</td>
+      <td class="right">{{format_number margin_amount 2}}</td>
+      {{else}}
       <td class="right">{{format_number rate 2}}</td>
       <td class="center">{{unit}}</td>
       <td class="right">{{format_number discount_percent 2}}</td>
@@ -208,6 +221,7 @@
       <td class="right">{{format_number discount_amount 2}}</td>
       {{/if}}
       <td class="right">{{format_number amount 2}}</td>
+      {{/if}}
     </tr>
     {{/each}}
 
@@ -218,6 +232,11 @@
       <td class="sp-desc"></td>
       <td class="sp-hsn"></td>
       <td class="sp-qty"></td>
+      {{#if is_margin_scheme_invoice}}
+      <td class="sp-rate"></td>
+      <td class="sp-rate"></td>
+      <td class="sp-amount"></td>
+      {{else}}
       <td class="sp-rate"></td>
       <td class="sp-per"></td>
       <td class="sp-disc"></td>
@@ -225,6 +244,7 @@
       <td class="sp-disc-amt"></td>
       {{/if}}
       <td class="sp-amount"></td>
+      {{/if}}
     </tr>
 
     <!-- GST sub-rows: intra-state CGST + SGST -->
@@ -238,11 +258,16 @@
       <td class="sp-desc"></td>
       <td class="sp-hsn"></td>
       <td class="sp-qty"></td>
+      {{#if is_margin_scheme_invoice}}
+      <td class="sp-rate"></td>
+      <td class="right tax-label"><em>CGST</em></td>
+      {{else}}
       <td class="sp-rate"></td>
       <td class="sp-per"></td>
       <td class="right tax-label"><em>CGST</em></td>
       {{#if show_discount_column}}
       <td class="sp-disc-amt"></td>
+      {{/if}}
       {{/if}}
       <td class="right">{{format_number cgst_total 2}}</td>
     </tr>
@@ -254,11 +279,16 @@
       <td class="sp-desc"></td>
       <td class="sp-hsn"></td>
       <td class="sp-qty"></td>
+      {{#if is_margin_scheme_invoice}}
+      <td class="sp-rate"></td>
+      <td class="right tax-label"><em>SGST</em></td>
+      {{else}}
       <td class="sp-rate"></td>
       <td class="sp-per"></td>
       <td class="right tax-label"><em>SGST</em></td>
       {{#if show_discount_column}}
       <td class="sp-disc-amt"></td>
+      {{/if}}
       {{/if}}
       <td class="right">{{format_number sgst_total 2}}</td>
     </tr>
@@ -276,11 +306,16 @@
       <td class="sp-desc"></td>
       <td class="sp-hsn"></td>
       <td class="sp-qty"></td>
+      {{#if is_margin_scheme_invoice}}
+      <td class="sp-rate"></td>
+      <td class="right tax-label"><em>IGST</em></td>
+      {{else}}
       <td class="sp-rate"></td>
       <td class="sp-per"></td>
       <td class="right tax-label"><em>IGST</em></td>
       {{#if show_discount_column}}
       <td class="sp-disc-amt"></td>
+      {{/if}}
       {{/if}}
       <td class="right">{{format_number igst_total 2}}</td>
     </tr>
@@ -292,6 +327,10 @@
     <tr class="summary-footer-row">
       <td colspan="4" class="sf-left-empty"></td>
       <td class="right sf-qty"><strong>{{total_quantity_display}}</strong></td>
+      {{#if is_margin_scheme_invoice}}
+      <td class="sf-rate-empty"></td>
+      <td class="right sf-disc-total-label"><strong>Total</strong></td>
+      {{else}}
       <td class="sf-rate-empty"></td>
       <td class="sf-per-empty"></td>
       {{#if show_discount_column}}
@@ -307,6 +346,7 @@
         {{/if}}
         <strong>Total</strong>
       </td>
+      {{/if}}
       <td class="right sf-amount-cell">
         {{#if has_discount}}
         <span class="sf-subtotal-ghost">{{format_number bill_discount 2}}</span><br/>
@@ -316,18 +356,26 @@
     </tr>
     {{#if has_returns}}
     <tr class="summary-footer-row">
+      {{#if is_margin_scheme_invoice}}
+      <td colspan="7" class="right sf-disc-total-label">Less Returns</td>
+      {{else}}
       {{#if show_discount_column}}
       <td colspan="9" class="right sf-disc-total-label">Less Returns</td>
       {{else}}
       <td colspan="8" class="right sf-disc-total-label">Less Returns</td>
       {{/if}}
+      {{/if}}
       <td class="right sf-amount-cell">-&#8377;&nbsp;{{format_number return_total 2}}</td>
     </tr>
     <tr class="summary-footer-row">
+      {{#if is_margin_scheme_invoice}}
+      <td colspan="7" class="right sf-disc-total-label"><strong>Net Payable</strong></td>
+      {{else}}
       {{#if show_discount_column}}
       <td colspan="9" class="right sf-disc-total-label"><strong>Net Payable</strong></td>
       {{else}}
       <td colspan="8" class="right sf-disc-total-label"><strong>Net Payable</strong></td>
+      {{/if}}
       {{/if}}
       <td class="right sf-amount-cell"><strong class="sf-grand-total">&#8377;&nbsp;{{format_number net_payable 2}}</strong></td>
     </tr>
@@ -350,7 +398,7 @@
   <thead>
     <tr class="hsn-header-row">
       <th rowspan="2" class="hsn-col-code">HSN/SAC</th>
-      <th rowspan="2" class="hsn-col-taxable">Taxable<br/>Value</th>
+      <th rowspan="2" class="hsn-col-taxable">Taxable Value{{#if @root.is_margin_scheme_invoice}}<br/>(Margin){{/if}}</th>
       {{#unless is_inter_state}}
       <th colspan="2" class="hsn-group-header">Central Tax</th>
       <th colspan="2" class="hsn-group-header">State Tax</th>
@@ -414,8 +462,13 @@
 <div class="declaration-signature-row">
   <div class="declaration-block">
     <div class="declaration-title">Declaration</div>
-    <div class="declaration-text">We declare that this invoice shows the actual price of the goods
-    described and that all particulars are true and correct.</div>
+    <div class="declaration-text">
+      {{#if is_margin_scheme_invoice}}
+        {{margin_scheme_note}}
+      {{else}}
+        We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
+      {{/if}}
+    </div>
   </div>
   <div class="signature-block">
     <div class="for-company">for <strong>{{company.name}}</strong></div>

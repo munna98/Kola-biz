@@ -302,6 +302,7 @@ export interface VoucherItemsSectionProps {
     gstSlabs?: GstTaxSlab[];
     fullProducts?: TauriProduct[];
     taxInclusive?: boolean;
+    isMarginSchemeInvoice?: boolean;
 }
 export interface VoucherItemsSectionRef {
     focusFirstProduct: () => void;
@@ -346,13 +347,14 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     gstSlabs = [],
     fullProducts = [],
     taxInclusive = false,
+    isMarginSchemeInvoice = false,
 }, ref) => {
     // Ref to the first product combobox
     const firstProductRef = useRef<HTMLButtonElement>(null);
 
     // FOCUSABLE_FIELDS: the column ids (in order) that can receive keyboard focus after product selection.
     // 'product' itself is excluded; 'final_qty', 'amount', 'total' are read-only display cells.
-    const FOCUSABLE_FIELD_IDS = ['quantity', 'unit', 'rate', 'count', 'deduction', 'discount_percent', 'discount_amount', 'tax_rate'];
+    const FOCUSABLE_FIELD_IDS = ['quantity', 'unit', 'rate', 'count', 'deduction', 'discount_percent', 'discount_amount', 'tax_rate', 'purchase_cost'];
 
     /**
      * Focus the first editable field after 'product' in the current column order.
@@ -413,8 +415,14 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
         }
         // else: user already has GST cols in saved voucher settings -- respect them
 
+        if (isMarginSchemeInvoice) {
+            const rateIdx = cols.findIndex(c => c.id === 'rate');
+            const insertAt = rateIdx >= 0 ? rateIdx + 1 : cols.length;
+            cols.splice(insertAt, 0, { id: 'purchase_cost', label: 'P. Cost \u20b9', visible: true, order: 3.5 });
+        }
+
         return [{ id: 'sl_no', label: '#', visible: true, order: -1 } as ColumnSettings, ...cols];
-    }, [settings, gstSlabs]);
+    }, [settings, gstSlabs, isMarginSchemeInvoice]);
 
     // Replicate grid-cols-12 behavior dynamically
     const getGridTemplate = () => {
@@ -422,7 +430,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
             if (col.id === 'sl_no') return '24px';
             if (col.id === 'product') return '3fr';
             if (['cgst', 'sgst', 'igst'].includes(col.id)) return '0.8fr';
-            if (['sales_rate', 'mrp'].includes(col.id)) return '0.75fr';
+            if (['sales_rate', 'mrp', 'purchase_cost'].includes(col.id)) return '0.75fr';
             if (['deduction', 'amount', 'discount_percent', 'discount_amount', 'tax_rate', 'gst_rate'].includes(col.id)) return '0.6fr';
             return '1fr';
         }).join(' ') + ' 64px';
@@ -519,12 +527,10 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                 const baseAmt = taxInclusive && resolvedGstRate > 0
                     ? grossAmt / (1 + resolvedGstRate / 100)
                     : grossAmt;
-                const totalGstAmt = taxInclusive
-                    ? grossAmt - baseAmt
-                    : grossAmt * (resolvedGstRate / 100);
-                const cgstAmt = typeof item.cgst_amount === 'number' ? item.cgst_amount : totalGstAmt / 2;
-                const sgstAmt = typeof item.sgst_amount === 'number' ? item.sgst_amount : totalGstAmt / 2;
-                const igstAmt = typeof item.igst_amount === 'number' ? item.igst_amount : totalGstAmt;
+                const totalGstAmt = calc.taxAmount;
+                const cgstAmt = typeof item.cgst_amount === 'number' && item.cgst_amount > 0 ? item.cgst_amount : totalGstAmt / 2;
+                const sgstAmt = typeof item.sgst_amount === 'number' && item.sgst_amount > 0 ? item.sgst_amount : totalGstAmt / 2;
+                const igstAmt = typeof item.igst_amount === 'number' && item.igst_amount > 0 ? item.igst_amount : totalGstAmt;
                 // Reverse ex-tax rate per unit (for display when blurred)
                 const exTaxRate = taxInclusive && resolvedGstRate > 0 && finalQty > 0
                     ? baseAmt / finalQty
@@ -761,6 +767,20 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     resolvedGstRate={resolvedGstRate}
                                     isReadOnly={isReadOnly}
                                     onChange={(val) => handleNumberChange('rate', val)}
+                                />
+                            );
+                        case 'purchase_cost':
+                            return (
+                                <FormattedNumberInput
+                                    key={col.id}
+                                    data-field="purchase_cost"
+                                    value={item.purchase_cost || 0}
+                                    onChangeValue={(val) => handleNumberChange('purchase_cost', val)}
+                                    className="h-7 text-xs text-right font-mono"
+                                    placeholder="0.00"
+                                    step="0.01"
+                                    disabled={isReadOnly || item.item_type === 'service'}
+                                    emptyWhenZero={false}
                                 />
                             );
                         case 'count':

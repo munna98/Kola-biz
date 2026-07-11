@@ -1007,6 +1007,8 @@ export interface SalesInvoiceItem {
   tax_rate: number;
   discount_percent: number;
   discount_amount: number;
+  /** Purchase cost per unit — used for margin scheme GST calculation */
+  purchase_cost?: number;
 }
 
 export interface SalesInvoiceReturnDraft {
@@ -1035,6 +1037,8 @@ export interface SalesInvoiceState extends VoucherNavigationState {
     narration: string;
     discount_rate: number;
     discount_amount: number;
+    /** Whether this invoice uses the GST Margin Scheme */
+    is_margin_scheme_invoice: boolean;
   };
   items: SalesInvoiceItem[];
   returnDraft?: SalesInvoiceReturnDraft;
@@ -1068,6 +1072,7 @@ const salesInitialState: SalesInvoiceState = {
     narration: '',
     discount_rate: 0,
     discount_amount: 0,
+    is_margin_scheme_invoice: false,
   },
   items: [],
   returnDraft: undefined,
@@ -1163,10 +1168,15 @@ const salesInvoiceSlice = createSlice({
         narration: '',
         discount_rate: 0,
         discount_amount: 0,
+        is_margin_scheme_invoice: false,
       };
       state.items = [];
       state.returnDraft = undefined;
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+    },
+    setSalesMarginScheme: (state, action: PayloadAction<boolean>) => {
+      state.form.is_margin_scheme_invoice = action.payload;
+      state.hasUnsavedChanges = true;
     },
     setSavedSalesInvoices: (state, action: PayloadAction<any[]>) => {
       state.savedInvoices = action.payload;
@@ -1299,6 +1309,7 @@ export const {
   createNewSalesTab,
   switchSalesTab,
   closeSalesTab,
+  setSalesMarginScheme,
 } = salesInvoiceSlice.actions;
 
 // ========== COMPANY PROFILE SLICE ==========
@@ -1586,6 +1597,7 @@ export interface SalesReturnItem {
   tax_rate: number;
   discount_percent: number;
   discount_amount: number;
+  purchase_cost?: number;
 }
 
 export interface SalesReturnState extends VoucherNavigationState {
@@ -1599,6 +1611,7 @@ export interface SalesReturnState extends VoucherNavigationState {
     narration: string;
     discount_rate: number;
     discount_amount: number;
+    is_margin_scheme_invoice: boolean;
   };
   items: SalesReturnItem[];
   loading: boolean;
@@ -1623,6 +1636,7 @@ const salesReturnInitialState: SalesReturnState = {
     narration: '',
     discount_rate: 0,
     discount_amount: 0,
+    is_margin_scheme_invoice: false,
   },
   items: [],
   loading: false,
@@ -1704,9 +1718,14 @@ const salesReturnSlice = createSlice({
         narration: '',
         discount_rate: 0,
         discount_amount: 0,
+        is_margin_scheme_invoice: false,
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+    },
+    setSalesReturnMarginScheme: (state, action: PayloadAction<boolean>) => {
+      state.form.is_margin_scheme_invoice = action.payload;
+      state.hasUnsavedChanges = true;
     },
     setSavedSalesReturns: (state, action: PayloadAction<any[]>) => {
       state.savedReturns = action.payload;
@@ -1736,6 +1755,7 @@ export const {
   resetSalesReturnForm,
   setSavedSalesReturns,
   setSalesReturnLoading,
+  setSalesReturnMarginScheme,
 } = salesReturnSlice.actions;
 
 // ========== OPENING STOCK SLICE ==========
