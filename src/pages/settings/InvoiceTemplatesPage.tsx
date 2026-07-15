@@ -83,6 +83,7 @@ const VOUCHER_TYPE_OPTIONS = [
     { value: 'all', label: 'All Vouchers' },
     { value: 'sales_invoice', label: 'Sales Invoice' },
     { value: 'sales_return', label: 'Sales Return' },
+    { value: 'delivery_note', label: 'Delivery Note' },
     { value: 'purchase_invoice', label: 'Purchase Invoice' },
     { value: 'payment', label: 'Payment Voucher' },
     { value: 'receipt', label: 'Receipt Voucher' },
@@ -420,47 +421,241 @@ export function InvoiceTemplatesPage() {
                                                 })}
                                             </div>
 
-                                            {/* Table Row Padding Slider */}
-                                            {template.template_format !== 'thermal_80mm' && (
-                                                <div className="border-t pt-3 mt-3 space-y-2">
-                                                    <div className="flex justify-between items-center">
-                                                        <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                                                            Table Row Padding
-                                                        </Label>
-                                                        <span className="text-[11px] font-medium text-foreground bg-muted px-1.5 py-0.5 rounded">
-                                                            {template.table_row_padding ?? 8}px
-                                                        </span>
-                                                    </div>
-                                                    <div className="flex items-center gap-3">
-                                                        <span className="text-[10px] text-muted-foreground">Compact</span>
-                                                        <input
-                                                            type="range"
-                                                            min="2"
-                                                            max="20"
-                                                            value={template.table_row_padding ?? 8}
-                                                            onChange={async (e) => {
-                                                                const val = parseInt(e.target.value, 10);
-                                                                try {
-                                                                    await invoke('update_template_settings', {
-                                                                        templateId: template.id,
-                                                                        settings: { table_row_padding: val },
-                                                                    });
-                                                                    setTemplates((prev) =>
-                                                                        prev.map((t) =>
-                                                                            t.id === template.id ? { ...t, table_row_padding: val } : t
-                                                                        )
-                                                                    );
-                                                                } catch (error) {
-                                                                    toast.error('Failed to update padding');
-                                                                }
-                                                            }}
-                                                            className="flex-1 h-1 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
-                                                        />
-                                                        <span className="text-[10px] text-muted-foreground">Spacious</span>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
+                                             {/* Table Row Padding Slider */}
+                                             {template.template_format !== 'thermal_80mm' && (
+                                                 <div className="border-t pt-3 mt-3 space-y-2">
+                                                     <div className="flex justify-between items-center">
+                                                         <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                                                             Table Row Padding
+                                                         </Label>
+                                                         <span className="text-[11px] font-medium text-foreground bg-muted px-1.5 py-0.5 rounded">
+                                                             {template.table_row_padding ?? 8}px
+                                                         </span>
+                                                     </div>
+                                                     <div className="flex items-center gap-3">
+                                                         <span className="text-[10px] text-muted-foreground">Compact</span>
+                                                         <input
+                                                             type="range"
+                                                             min="2"
+                                                             max="20"
+                                                             value={template.table_row_padding ?? 8}
+                                                             onChange={async (e) => {
+                                                                 const val = parseInt(e.target.value, 10);
+                                                                 try {
+                                                                     await invoke('update_template_settings', {
+                                                                         templateId: template.id.toString(),
+                                                                         settings: { table_row_padding: val },
+                                                                     });
+                                                                     setTemplates((prev) =>
+                                                                         prev.map((t) =>
+                                                                             t.id === template.id ? { ...t, table_row_padding: val } : t
+                                                                         )
+                                                                     );
+                                                                 } catch (error) {
+                                                                     toast.error('Failed to update padding');
+                                                                 }
+                                                             }}
+                                                             className="flex-1 h-1 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                                                         />
+                                                         <span className="text-[10px] text-muted-foreground">Spacious</span>
+                                                     </div>
+                                                 </div>
+                                             )}
+
+                                             {/* Background Letterhead Scan Settings */}
+                                             {template.template_format !== 'thermal_80mm' && (
+                                                 <div className="border-t pt-3 mt-3 space-y-3">
+                                                     <div className="flex items-center justify-between">
+                                                         <div className="space-y-0.5">
+                                                             <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                                                                 Use Letterhead Background
+                                                             </Label>
+                                                             <span className="text-[10px] text-muted-foreground block">
+                                                                 Render blank scanned pad as background
+                                                             </span>
+                                                         </div>
+                                                         <Switch
+                                                             checked={(template as any).use_letterhead === 1}
+                                                             onCheckedChange={async (checked) => {
+                                                                 try {
+                                                                     await invoke('update_template_settings', {
+                                                                         templateId: template.id.toString(),
+                                                                         settings: { use_letterhead: checked },
+                                                                     });
+                                                                     setTemplates((prev) =>
+                                                                         prev.map((t) =>
+                                                                             t.id === template.id ? { ...t, use_letterhead: checked ? 1 : 0 } : t
+                                                                         )
+                                                                     );
+                                                                     toast.success(checked ? 'Letterhead background enabled' : 'Letterhead background disabled');
+                                                                 } catch (error) {
+                                                                     toast.error('Failed to update letterhead setting');
+                                                                 }
+                                                             }}
+                                                             className="h-4 w-7"
+                                                         />
+                                                     </div>
+
+                                                     {(template as any).use_letterhead === 1 && (
+                                                         <div className="space-y-3 bg-muted/40 p-2.5 rounded-md border border-dashed">
+                                                             {/* Image upload area */}
+                                                             <div className="space-y-1">
+                                                                 <Label className="text-[10px] font-medium text-muted-foreground">
+                                                                     Letterhead Image (Scan)
+                                                                 </Label>
+                                                                 <div className="flex items-center gap-2">
+                                                                     {(template as any).letterhead_data ? (
+                                                                         <div className="relative group w-12 h-16 border rounded bg-background overflow-hidden flex items-center justify-center">
+                                                                             <img
+                                                                                 src={(template as any).letterhead_data}
+                                                                                 alt="Letterhead Preview"
+                                                                                 className="w-full h-full object-contain"
+                                                                             />
+                                                                             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                                                                 <Button
+                                                                                     type="button"
+                                                                                     variant="ghost"
+                                                                                     size="icon"
+                                                                                     className="h-6 w-6 text-white hover:text-red-400"
+                                                                                     onClick={async () => {
+                                                                                         try {
+                                                                                             await invoke('update_template_settings', {
+                                                                                                 templateId: template.id.toString(),
+                                                                                                 settings: { letterhead_data: null },
+                                                                                             });
+                                                                                             setTemplates((prev) =>
+                                                                                                 prev.map((t) =>
+                                                                                                     t.id === template.id ? { ...t, letterhead_data: null } : t
+                                                                                                 )
+                                                                                             );
+                                                                                             toast.success('Letterhead image removed');
+                                                                                         } catch (error) {
+                                                                                             toast.error('Failed to remove image');
+                                                                                         }
+                                                                                     }}
+                                                                                 >
+                                                                                     <span className="text-[10px] font-bold">Remove</span>
+                                                                                 </Button>
+                                                                             </div>
+                                                                         </div>
+                                                                     ) : null}
+                                                                     <Button
+                                                                         type="button"
+                                                                         variant="outline"
+                                                                         size="sm"
+                                                                         className="h-8 text-xs flex-1"
+                                                                         onClick={() => {
+                                                                             const input = document.createElement('input');
+                                                                             input.type = 'file';
+                                                                             input.accept = 'image/*';
+                                                                             input.onchange = (e) => {
+                                                                                 const file = (e.target as HTMLInputElement).files?.[0];
+                                                                                 if (!file) return;
+                                                                                 const reader = new FileReader();
+                                                                                 reader.onload = async () => {
+                                                                                     const base64 = reader.result as string;
+                                                                                     try {
+                                                                                         await invoke('update_template_settings', {
+                                                                                             templateId: template.id.toString(),
+                                                                                             settings: { letterhead_data: base64 },
+                                                                                         });
+                                                                                         setTemplates((prev) =>
+                                                                                             prev.map((t) =>
+                                                                                                 t.id === template.id ? { ...t, letterhead_data: base64 } : t
+                                                                                             )
+                                                                                         );
+                                                                                         toast.success('Letterhead image uploaded');
+                                                                                     } catch (err) {
+                                                                                         toast.error('Failed to save image');
+                                                                                     }
+                                                                                 };
+                                                                                 reader.readAsDataURL(file);
+                                                                             };
+                                                                             input.click();
+                                                                         }}
+                                                                     >
+                                                                         {(template as any).letterhead_data ? 'Change Scan' : 'Upload Blank Scan'}
+                                                                     </Button>
+                                                                 </div>
+                                                             </div>
+
+                                                             {/* Margins */}
+                                                             <div className="grid grid-cols-2 gap-2 border-t pt-2.5">
+                                                                 <div className="space-y-1">
+                                                                     <div className="flex justify-between items-center">
+                                                                         <Label className="text-[9px] font-medium text-muted-foreground uppercase">
+                                                                             Top Margin
+                                                                         </Label>
+                                                                         <span className="text-[9px] font-mono bg-muted px-1 rounded">
+                                                                             {((template as any).letterhead_margin_top ?? 45)}mm
+                                                                         </span>
+                                                                     </div>
+                                                                     <input
+                                                                         type="range"
+                                                                         min="0"
+                                                                         max="150"
+                                                                         step="1"
+                                                                         value={((template as any).letterhead_margin_top ?? 45)}
+                                                                         onChange={async (e) => {
+                                                                             const val = parseFloat(e.target.value);
+                                                                             try {
+                                                                                 await invoke('update_template_settings', {
+                                                                                     templateId: template.id.toString(),
+                                                                                     settings: { letterhead_margin_top: val },
+                                                                                 });
+                                                                                 setTemplates((prev) =>
+                                                                                     prev.map((t) =>
+                                                                                         t.id === template.id ? { ...t, letterhead_margin_top: val } : t
+                                                                                     )
+                                                                                 );
+                                                                             } catch (error) {
+                                                                                 console.error(error);
+                                                                             }
+                                                                         }}
+                                                                         className="w-full h-1 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                                                                     />
+                                                                 </div>
+
+                                                                 <div className="space-y-1">
+                                                                     <div className="flex justify-between items-center">
+                                                                         <Label className="text-[9px] font-medium text-muted-foreground uppercase">
+                                                                             Bottom Margin
+                                                                         </Label>
+                                                                         <span className="text-[9px] font-mono bg-muted px-1 rounded">
+                                                                             {((template as any).letterhead_margin_bottom ?? 25)}mm
+                                                                         </span>
+                                                                     </div>
+                                                                     <input
+                                                                         type="range"
+                                                                         min="0"
+                                                                         max="100"
+                                                                         step="1"
+                                                                         value={((template as any).letterhead_margin_bottom ?? 25)}
+                                                                         onChange={async (e) => {
+                                                                             const val = parseFloat(e.target.value);
+                                                                             try {
+                                                                                 await invoke('update_template_settings', {
+                                                                                     templateId: template.id.toString(),
+                                                                                     settings: { letterhead_margin_bottom: val },
+                                                                                 });
+                                                                                 setTemplates((prev) =>
+                                                                                     prev.map((t) =>
+                                                                                         t.id === template.id ? { ...t, letterhead_margin_bottom: val } : t
+                                                                                     )
+                                                                                 );
+                                                                             } catch (error) {
+                                                                                 console.error(error);
+                                                                             }
+                                                                         }}
+                                                                         className="w-full h-1 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+                                                                     />
+                                                                 </div>
+                                                             </div>
+                                                         </div>
+                                                     )}
+                                                 </div>
+                                             )}
+                                         </div>
 
                                     </div>
                                 ))}

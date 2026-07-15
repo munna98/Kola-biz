@@ -146,6 +146,22 @@ impl TemplateEngine {
                 "balance_bold".to_string(),
                 json!(template.balance_bold.unwrap_or(0) == 1),
             );
+            // Letterhead settings
+            obj.insert(
+                "use_letterhead".to_string(),
+                json!(template.use_letterhead.unwrap_or(0) == 1),
+            );
+            if let Some(ref lh) = template.letterhead_data {
+                obj.insert("letterhead_data".to_string(), json!(lh));
+            }
+            obj.insert(
+                "letterhead_margin_top".to_string(),
+                json!(template.letterhead_margin_top.unwrap_or(45.0)),
+            );
+            obj.insert(
+                "letterhead_margin_bottom".to_string(),
+                json!(template.letterhead_margin_bottom.unwrap_or(25.0)),
+            );
         }
 
         // Add company data

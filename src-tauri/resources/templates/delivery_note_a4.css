@@ -1,0 +1,176 @@
+body {
+    font-size: 10pt;
+    line-height: 1.35;
+    color: #1a1a1a;
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 9mm 10mm;
+    font-family: Arial, Helvetica, sans-serif;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+}
+
+/* ── HEADER ──────────────────────────────────── */
+.dn-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding-bottom: 10px;
+    border-bottom: 3px solid #2563eb;
+    margin-bottom: 14px;
+}
+.dn-logo { flex: 0 0 auto; }
+.dn-logo-img { max-width: 100px; max-height: 70px; object-fit: contain; }
+.dn-company-info { flex: 1; }
+.dn-company-info h1 { font-size: 18pt; color: #2563eb; margin: 0 0 4px; font-weight: bold; }
+.dn-company-info p { font-size: 8.5pt; color: #4b5563; margin: 1px 0; }
+.dn-contact-line { display: flex; gap: 18px; margin-top: 3px; }
+.dn-contact-line span { font-size: 8.5pt; color: #374151; }
+.dn-gstin { font-weight: 600; color: #2563eb; margin-top: 4px; font-size: 8.5pt; }
+.dn-title-block {
+    flex: 0 0 auto;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+.dn-title {
+    font-size: 15pt;
+    font-weight: bold;
+    color: #2563eb;
+    letter-spacing: 1.5px;
+    white-space: nowrap;
+    border: 2px solid #2563eb;
+    padding: 4px 12px;
+    border-radius: 4px;
+}
+.dn-badge {
+    background: #2563eb;
+    color: #fff;
+    font-size: 8pt;
+    font-weight: 700;
+    padding: 2px 10px;
+    border-radius: 10px;
+    letter-spacing: 2px;
+}
+
+/* ── META ROW ────────────────────────────────── */
+.dn-meta-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 20px;
+    margin-bottom: 16px;
+    padding: 10px 12px;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 6px;
+}
+.dn-meta-table { border-collapse: collapse; margin-left: auto; }
+.dn-meta-table tr td { padding: 3px 8px 3px 0; font-size: 9pt; }
+.dn-meta-label { color: #6b7280; white-space: nowrap; font-size: 8.5pt; text-align: right; }
+.dn-meta-value { color: #111827; text-align: left; }
+.dn-deliver-to { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+.dn-deliver-label { font-size: 8pt; color: #6b7280; font-weight: 600; white-space: nowrap; }
+.dn-party-name { font-size: 11pt; font-weight: bold; color: #1e3a8a; }
+.dn-party-addr { font-size: 8.5pt; color: #374151; margin: 1px 0 1px 0; }
+
+/* ── ITEMS TABLE ─────────────────────────────── */
+.dn-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 12px;
+    table-layout: fixed;
+}
+.dn-items-table thead tr {
+    background: #1e3a8a !important; /* Slightly darker blue for higher contrast */
+    color: #ffffff !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+}
+.dn-items-table th {
+    padding: 9px 8px;
+    text-align: left;
+    font-size: 9pt;
+    font-weight: bold;
+    white-space: nowrap;
+    border-bottom: 2px solid #172554; /* Add a distinct dark border below header */
+}
+.dn-items-table td {
+    padding: 7px 8px;
+    border-bottom: 1px solid #dbeafe;
+    font-size: 9pt;
+    vertical-align: middle;
+}
+.dn-row-alt { background: #eff6ff; }
+.dn-items-table tfoot tr { background: #dbeafe; }
+.dn-items-table tfoot td { padding: 6px 8px; font-size: 8.8pt; border-top: 2px solid #2563eb; border-bottom: none; }
+.dn-center { text-align: center; }
+.dn-right { text-align: right; }
+.dn-subdesc { font-size: 8pt; color: #6b7280; }
+.dn-qty-cell { font-weight: 600; color: #1e40af; }
+.dn-total-qty { font-size: 10pt; color: #1e40af; }
+
+/* ── NARRATION ───────────────────────────────── */
+.dn-narration {
+    padding: 8px 12px;
+    background: #fef9c3;
+    border-left: 4px solid #facc15;
+    border-radius: 4px;
+    font-size: 8.8pt;
+    margin-bottom: 10px;
+}
+
+/* ── FOOTER ──────────────────────────────────── */
+.dn-footer {
+    border-top: 2px solid #e5e7eb;
+    padding-top: 14px;
+    margin-top: 8px;
+}
+.dn-sig-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 18px;
+}
+.dn-sig-box { text-align: center; }
+.dn-sig-line {
+    height: 40px;
+    border-bottom: 1.5px solid #374151;
+    margin-bottom: 6px;
+}
+.dn-sig-line-dashed {
+    border-bottom: 1.5px dashed #2563eb;
+}
+.dn-sig-received { background: #eff6ff; border-radius: 4px; padding: 4px; }
+.dn-sig-label { font-size: 8pt; color: #374151; margin: 0; line-height: 1.4; }
+.dn-sig-sub { font-size: 7.5pt; color: #6b7280; }
+.dn-bank {
+    font-size: 8pt;
+    color: #374151;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin-bottom: 8px;
+}
+.dn-terms {
+    font-size: 7.5pt;
+    color: #6b7280;
+    margin-bottom: 6px;
+}
+.dn-website {
+    text-align: center;
+    font-size: 7.5pt;
+    color: #9ca3af;
+    margin-top: 10px;
+    border-top: 1px solid #e5e7eb;
+    padding-top: 6px;
+}
+
+@media print {
+    body { margin: 0; padding: 9mm 10mm; }
+    .dn-items-table tr { page-break-inside: avoid; }
+    .dn-sig-row { page-break-inside: avoid; }
+    .dn-footer { page-break-inside: avoid; }
+}

@@ -757,6 +757,10 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             copies INTEGER DEFAULT 1,
             is_default INTEGER DEFAULT 0,
             is_active INTEGER DEFAULT 1,
+            letterhead_data TEXT,
+            use_letterhead INTEGER DEFAULT 0,
+            letterhead_margin_top REAL DEFAULT 45.0,
+            letterhead_margin_bottom REAL DEFAULT 25.0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
@@ -918,6 +922,10 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             copies INTEGER DEFAULT 1,
             is_default INTEGER DEFAULT 0,
             is_active INTEGER DEFAULT 1,
+            letterhead_data TEXT,
+            use_letterhead INTEGER DEFAULT 0,
+            letterhead_margin_top REAL DEFAULT 45.0,
+            letterhead_margin_bottom REAL DEFAULT 25.0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
@@ -971,6 +979,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         ('vs_' || hex(randomblob(16)), 'sales_invoice', 'SI'),
         ('vs_' || hex(randomblob(16)), 'sales_return', 'SR'),
         ('vs_' || hex(randomblob(16)), 'sales_quotation', 'SQ'),
+        ('vs_' || hex(randomblob(16)), 'delivery_note', 'DN'),
         ('vs_' || hex(randomblob(16)), 'purchase_invoice', 'PI'),
         ('vs_' || hex(randomblob(16)), 'purchase_return', 'PR'),
         ('vs_' || hex(randomblob(16)), 'purchase_quotation', 'PQ'),
@@ -1414,8 +1423,19 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN is_margin_scheme_invoice INTEGER DEFAULT 0")
         .execute(pool).await;
 
+    // Migration: Add letterhead settings to invoice_templates
+    let _ = sqlx::query("ALTER TABLE invoice_templates ADD COLUMN letterhead_data TEXT")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE invoice_templates ADD COLUMN use_letterhead INTEGER DEFAULT 0")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE invoice_templates ADD COLUMN letterhead_margin_top REAL DEFAULT 45.0")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE invoice_templates ADD COLUMN letterhead_margin_bottom REAL DEFAULT 25.0")
+        .execute(pool).await;
+
     crate::seeds::seed_initial_data(pool).await?;
     crate::seeds::seed_handlebars_templates(pool).await?;
+
 
     Ok(())
 }

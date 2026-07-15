@@ -1,4 +1,42 @@
 <!-- [HEADER] -->
+{{#if use_letterhead}}
+<style>
+@media print, screen {
+    body {
+        padding-top: {{letterhead_margin_top}}mm !important;
+        padding-bottom: {{letterhead_margin_bottom}}mm !important;
+        background: transparent !important;
+    }
+    .header {
+        display: none !important;
+    }
+    .bank-details, .terms {
+        display: none !important;
+    }
+    .letterhead-bg-wrapper {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 210mm;
+        height: 297mm;
+        z-index: -9999;
+        pointer-events: none;
+    }
+    .letterhead-bg-wrapper svg {
+        display: block;
+        width: 100%;
+        height: 100%;
+        image-rendering: -webkit-optimize-contrast !important;
+        image-rendering: crisp-edges !important;
+    }
+}
+</style>
+<div class="letterhead-bg-wrapper">
+    <svg viewBox="0 0 210 297" width="100%" height="100%" preserveAspectRatio="none">
+        <image href="{{letterhead_data}}" x="0" y="0" width="210" height="297" preserveAspectRatio="none" />
+    </svg>
+</div>
+{{/if}}
 <div class="header">
     {{#if company.has_logo}}
     <div class="logo-section">

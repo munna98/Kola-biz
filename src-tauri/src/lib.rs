@@ -167,6 +167,13 @@ pub fn run() {
             create_sales_quotation,
             update_sales_quotation,
             delete_sales_quotation,
+            // Delivery Notes
+            get_delivery_notes,
+            get_delivery_note,
+            get_delivery_note_items,
+            create_delivery_note,
+            update_delivery_note,
+            delete_delivery_note,
             get_party_phone_for_voucher,
             open_whatsapp_url,
             // Sales Returns

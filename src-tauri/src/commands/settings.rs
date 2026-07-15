@@ -680,6 +680,7 @@ pub async fn reassign_voucher_numbers(
     const ALLOWED: &[&str] = &[
         "sales_invoice",
         "sales_quotation",
+        "delivery_note",
         "purchase_invoice",
         "sales_return",
         "purchase_return",

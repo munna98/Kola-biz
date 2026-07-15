@@ -16,6 +16,9 @@ const MINIMAL_CSS: &str = include_str!("../../resources/templates/minimal_clean.
 const GST_TAX_INVOICE_HTML: &str = include_str!("../../resources/templates/tax_invoice_gst.html");
 const GST_TAX_INVOICE_CSS: &str = include_str!("../../resources/templates/tax_invoice_gst.css");
 
+const DELIVERY_NOTE_HTML: &str = include_str!("../../resources/templates/delivery_note_a4.html");
+const DELIVERY_NOTE_CSS: &str = include_str!("../../resources/templates/delivery_note_a4.css");
+
 fn split_template(html: &str) -> (String, String, String) {
     let sections: Vec<&str> = html.split("<!-- [").collect();
     let mut header = String::new();
@@ -111,7 +114,58 @@ pub async fn seed_handlebars_templates(
     .execute(pool)
     .await?;
 
-    // Minimal Clean Invoice Template
+    // ==================== DELIVERY NOTE TEMPLATES ====================
+
+    // Delivery Note Professional A4 Template (dedicated DN layout)
+    let (dn_h, dn_b, dn_f) = split_template(DELIVERY_NOTE_HTML);
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-DN-001")
+    .bind("Professional A4 Delivery Note")
+    .bind("Dedicated delivery note layout with quantity-only table, signature boxes and no pricing")
+    .bind("delivery_note")
+    .bind("a4_portrait")
+    .bind("standard")
+    .bind(&dn_h)
+    .bind(&dn_b)
+    .bind(&dn_f)
+    .bind(DELIVERY_NOTE_CSS)
+    .bind(1)
+    .execute(pool)
+    .await?;
+
+    // Delivery Note Thermal 80mm Template (reuse thermal but with DN labels)
+    let (dn_t80_h, dn_t80_b, dn_t80_f) = split_template(THERMAL_80MM_HTML);
+    let dn_t80_h = dn_t80_h.replace("INVOICE", "DELIVERY NOTE").replace("Invoice No:", "DN No:");
+    let dn_t80_b = dn_t80_b.replace("Invoice", "Delivery Note");
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-DN-002")
+    .bind("Thermal 80mm Delivery Note")
+    .bind("Compact delivery note for 80mm thermal printers")
+    .bind("delivery_note")
+    .bind("thermal_80mm")
+    .bind("compact")
+    .bind(&dn_t80_h)
+    .bind(&dn_t80_b)
+    .bind(&dn_t80_f)
+    .bind(THERMAL_80MM_CSS)
+    .bind(0)
+    .execute(pool)
+    .await?;
+
     let (min_h, min_b, min_f) = split_template(MINIMAL_HTML);
     sqlx::query(
         "INSERT OR IGNORE INTO invoice_templates (
@@ -225,6 +279,23 @@ pub async fn seed_handlebars_templates(
         .bind(&t80_h)
         .bind(&t80_b)
         .bind(&t80_f)
+        .bind(THERMAL_80MM_CSS)
+        .execute(pool)
+        .await?;
+
+    // Update Delivery Note Templates
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-DN-001' AND design_mode != 'designer'")
+        .bind(&dn_h)
+        .bind(&dn_b)
+        .bind(&dn_f)
+        .bind(DELIVERY_NOTE_CSS)
+        .execute(pool)
+        .await?;
+
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-DN-002' AND design_mode != 'designer'")
+        .bind(&dn_t80_h)
+        .bind(&dn_t80_b)
+        .bind(&dn_t80_f)
         .bind(THERMAL_80MM_CSS)
         .execute(pool)
         .await?;

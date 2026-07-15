@@ -70,6 +70,7 @@ const AVAILABLE_COLUMNS = [
 const VOUCHER_TYPES = [
     { value: 'sales_invoice', label: 'Sales Invoice' },
     { value: 'sales_quotation', label: 'Sales Quotation' },
+    { value: 'delivery_note', label: 'Delivery Note' },
     { value: 'purchase_invoice', label: 'Purchase Invoice' },
     { value: 'sales_return', label: 'Sales Return' },
     { value: 'purchase_return', label: 'Purchase Return' },
@@ -79,6 +80,7 @@ const VOUCHER_TYPES = [
 const REASSIGN_SUPPORTED_TYPES = [
     'sales_invoice',
     'sales_quotation',
+    'delivery_note',
     'purchase_invoice',
     'sales_return',
     'purchase_return',

@@ -86,6 +86,9 @@ export default function Topbar() {
                         <MenubarItem onClick={() => handleNavigation('sales_quotation')}>
                             Sales Quotation
                         </MenubarItem>
+                        <MenubarItem onClick={() => handleNavigation('delivery_note')}>
+                            Delivery Note
+                        </MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('sales')}>
                             Sales Invoice
                         </MenubarItem>

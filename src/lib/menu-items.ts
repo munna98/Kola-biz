@@ -50,6 +50,7 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
     { id: 'purchase', label: 'Purchase Invoice', icon: IconTruck, category: 'Voucher' },
     { id: 'purchase_return', label: 'Purchase Return', icon: IconTruckReturn, category: 'Voucher' },
     { id: 'sales_quotation', label: 'Sales Quotation', icon: IconShoppingBag, category: 'Voucher' },
+    { id: 'delivery_note', label: 'Delivery Note', icon: IconTruck, category: 'Voucher' },
     { id: 'sales', label: 'Sales Invoice', icon: IconShoppingBag, category: 'Voucher' },
     { id: 'sales_return', label: 'Sales Return', icon: IconReceiptRefund, category: 'Voucher' },
     { id: 'payments', label: 'Payments', icon: IconCashBanknoteMove, category: 'Voucher' },
