@@ -796,15 +796,6 @@ async fn get_purchase_invoice_data(
                 let less_quantity = round2((item.count as f64) * item.deduction_per_unit);
                 obj.insert("less_quantity".to_string(), json!(less_quantity));
 
-                // Inject per-unit margin for margin scheme display in invoice template
-                let final_qty_for_margin = item.initial_quantity - (item.count as f64) * item.deduction_per_unit;
-                let margin_per_unit = if final_qty_for_margin > 0.0 {
-                    round2(item.margin_amount / final_qty_for_margin)
-                } else {
-                    0.0
-                };
-                obj.insert("margin_per_unit".to_string(), json!(margin_per_unit));
-
                 // Inject HSN code and unit from product data
                 let (hsn, unit) = meta_map.get(&item.id).cloned().unwrap_or_default();
                 obj.insert("hsn_sac_code".to_string(), json!(hsn));
