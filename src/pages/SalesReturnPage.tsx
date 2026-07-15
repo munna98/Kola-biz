@@ -319,7 +319,7 @@ export default function SalesReturnPage() {
         dispatch(setSalesReturnHasUnsavedChanges(true));
     };
 
-    const updateTotalsWithItems = (items: typeof salesReturnState.items, discountRate?: number, discountAmount?: number) => {
+    const updateTotalsWithItems = (items: typeof salesReturnState.items, discountRate?: number, discountAmount?: number, isMarginSchemeOverride?: boolean) => {
         // Slab-aware GST resolution mapper
         const slabMap: Record<string, GstTaxSlab> = {};
         gstSlabs.forEach(s => { slabMap[s.id] = s; });
@@ -354,6 +354,11 @@ export default function SalesReturnPage() {
             return item.tax_rate || 0;
         };
 
+        // Use the override if provided (needed to avoid stale closure when state changes)
+        const isMarginScheme = isMarginSchemeOverride !== undefined
+            ? isMarginSchemeOverride
+            : salesReturnState.form.is_margin_scheme_invoice;
+
         const calculation = calculateVoucherDiscounts(items, {
             discountRate: discountRate !== undefined ? discountRate : salesReturnState.form.discount_rate,
             discountAmount:
@@ -364,7 +369,7 @@ export default function SalesReturnPage() {
                         : salesReturnState.form.discount_amount,
             taxInclusive: !!voucherSettings?.taxInclusive,
             resolveGstRate: resolveItemGstRate,
-            isMarginScheme: salesReturnState.form.is_margin_scheme_invoice,
+            isMarginScheme,
         });
 
         dispatch(setSalesReturnDiscountRate(calculation.discountRate));

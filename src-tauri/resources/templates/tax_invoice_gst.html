@@ -184,8 +184,8 @@
       <th class="col-hsn">HSN/SAC</th>
       <th class="col-qty">Quantity</th>
       {{#if @root.is_margin_scheme_invoice}}
-      <th class="col-rate">Purchase<br/>Price</th>
       <th class="col-rate">Sales<br/>Price</th>
+      <th class="col-rate">Margin</th>
       <th class="col-amount">Taxable Value</th>
       {{else}}
       <th class="col-rate">Rate</th>
@@ -210,8 +210,8 @@
       <td class="center">{{hsn_sac_code}}</td>
       <td class="right">{{format_number initial_quantity 2}}</td>
       {{#if @root.is_margin_scheme_invoice}}
-      <td class="right">{{format_number purchase_cost 2}}</td>
       <td class="right">{{format_number inclusive_rate 2}}</td>
+      <td class="right">{{format_number margin_per_unit 2}}</td>
       <td class="right">{{format_number margin_amount 2}}</td>
       {{else}}
       <td class="right">{{format_number rate 2}}</td>

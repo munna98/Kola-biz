@@ -456,7 +456,7 @@ export default function SalesInvoicePage() {
     dispatch(setSalesHasUnsavedChanges(true));
   };
 
-  const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number) => {
+  const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number, isMarginSchemeOverride?: boolean) => {
     // Slab-aware GST resolution
     const productMap: Record<string, Product> = {};
     products.forEach(p => { productMap[String(p.id)] = p; });
@@ -491,6 +491,11 @@ export default function SalesInvoicePage() {
       return item.tax_rate || 0;
     };
 
+    // Use the override if provided (needed when toggling margin scheme before React re-renders)
+    const isMarginScheme = isMarginSchemeOverride !== undefined
+      ? isMarginSchemeOverride
+      : salesState.form.is_margin_scheme_invoice;
+
     const calculation = calculateVoucherDiscounts(items, {
       discountRate: discountRate !== undefined ? discountRate : salesState.form.discount_rate,
       discountAmount:
@@ -501,7 +506,7 @@ export default function SalesInvoicePage() {
             : salesState.form.discount_amount,
       taxInclusive: isTaxInclusive,
       resolveGstRate: resolveItemGstRate,
-      isMarginScheme: salesState.form.is_margin_scheme_invoice,
+      isMarginScheme,
     });
 
     dispatch(setSalesDiscountRate(calculation.discountRate));
@@ -1559,7 +1564,10 @@ export default function SalesInvoicePage() {
                               <Switch
                                 id="sales-margin-scheme-switch"
                                 checked={salesState.form.is_margin_scheme_invoice}
-                                onCheckedChange={v => dispatch(setSalesMarginScheme(v))}
+                                onCheckedChange={v => {
+                                  dispatch(setSalesMarginScheme(v));
+                                  updateTotalsWithItems(salesState.items, undefined, undefined, v);
+                                }}
                               />
                             </div>
                             {salesState.form.is_margin_scheme_invoice && (
