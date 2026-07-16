@@ -1481,6 +1481,17 @@ pub async fn update_purchase_invoice(
     Ok(voucher_id.to_string())
 }
 
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct ShipToAddress {
+    pub name: Option<String>,
+    pub address_line_1: Option<String>,
+    pub address_line_2: Option<String>,
+    pub city: Option<String>,
+    pub state: Option<String>,
+    pub postal_code: Option<String>,
+    pub gstin: Option<String>,
+}
+
 // ============= SALES INVOICE =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct SalesInvoice {
@@ -1505,6 +1516,7 @@ pub struct SalesInvoice {
     pub tax_inclusive: i64,
     pub linked_return_id: Option<String>,
     pub is_margin_scheme_invoice: i64,
+    pub metadata: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -1588,6 +1600,8 @@ pub struct CreateSalesInvoice {
     /// All items on this invoice are treated as margin-scheme items.
     #[serde(default)]
     pub is_margin_scheme_invoice: bool,
+    #[serde(default)]
+    pub ship_to: Option<ShipToAddress>,
 }
 
 #[tauri::command]
@@ -1616,7 +1630,9 @@ pub async fn get_sales_invoices(
             v.deleted_at,
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
-            v.linked_return_id
+            v.linked_return_id,
+            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice,
+            v.metadata
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -1658,7 +1674,8 @@ pub async fn get_sales_invoice(
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
             v.linked_return_id,
-            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice
+            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice,
+            v.metadata
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -1932,15 +1949,19 @@ pub async fn create_sales_invoice(
     let grand_total = round2(total_amount + total_tax);
 
     let voucher_id = Uuid::now_v7().to_string();
+    
+    let metadata_obj = serde_json::json!({ "ship_to": invoice.ship_to });
+    let metadata_json = metadata_obj.to_string();
+
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, is_margin_scheme_invoice)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, is_margin_scheme_invoice, metadata)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("sales_invoice").bind(&invoice.voucher_date).bind(&invoice.customer_id)
     .bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(discount_rate)
     .bind(discount_amount).bind(total_tax).bind(total_amount).bind(&invoice.narration)
     .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total)
-    .bind(invoice.is_margin_scheme_invoice as i64).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    .bind(invoice.is_margin_scheme_invoice as i64).bind(&metadata_json).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
     for item in &processed_items {
@@ -2270,18 +2291,21 @@ pub async fn update_sales_invoice(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
+    let metadata_obj = serde_json::json!({ "ship_to": invoice.ship_to });
+    let metadata_json = metadata_obj.to_string();
+
     let _ = sqlx::query(
         "UPDATE vouchers 
          SET voucher_date = ?, party_id = ?, salesperson_id = ?, party_type = ?, reference = ?, subtotal = ?, 
              discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?,
-             tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?
+             tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, metadata = ?
          WHERE id = ?"
     )
     .bind(&invoice.voucher_date).bind(&invoice.customer_id).bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference)
     .bind(subtotal).bind(discount_rate).bind(discount_amount)
     .bind(total_tax).bind(total_amount).bind(&invoice.narration)
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
-    .bind(grand_total).bind(&voucher_id)
+    .bind(grand_total).bind(&metadata_json).bind(&voucher_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     if let Some(old_id) = &old_party_id {

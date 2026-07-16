@@ -55,6 +55,7 @@ import ProductDialog from '@/components/dialogs/ProductDialog';
 import { Product, ProductGroup, ProductUnitConversion, Unit, Employee, GstTaxSlab, api } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
+import { ShipToPopover, ShipToAddress } from '@/components/voucher/ShipToPopover';
 
 interface Party {
   id: number;
@@ -97,6 +98,14 @@ export default function DeliveryNotePage() {
 
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
+
+  // Ship To State
+  const [shipToMap, setShipToMap] = useState<Record<string, ShipToAddress | undefined>>({});
+  const activeShipTo = shipToMap[noteState.activeTabId];
+  const setActiveShipTo = (shipTo: ShipToAddress | undefined) => {
+    setShipToMap(prev => ({ ...prev, [noteState.activeTabId]: shipTo }));
+    dispatch(setDeliveryNoteHasUnsavedChanges(true));
+  };
 
   const formRef = useRef<HTMLFormElement>(null);
   const customerRef = useRef<HTMLDivElement>(null);
@@ -384,6 +393,7 @@ export default function DeliveryNotePage() {
       })),
       tax_inclusive: isTaxInclusive,
       gst_disabled: gstDisabled,
+      ship_to: activeShipTo,
     };
 
     try {
@@ -434,6 +444,22 @@ export default function DeliveryNotePage() {
       const loadedTaxInclusive = Boolean(note.tax_inclusive);
       setIsTaxInclusive(loadedTaxInclusive);
       dispatch(setDeliveryNoteCreatedByName(note.created_by_name));
+
+      if (note.metadata) {
+        try {
+          const meta = JSON.parse(note.metadata);
+          if (meta.ship_to) {
+            setShipToMap(prev => ({ ...prev, [id]: meta.ship_to }));
+          } else {
+            setShipToMap(prev => ({ ...prev, [id]: undefined }));
+          }
+        } catch (e) {
+          console.error("Failed to parse metadata", e);
+          setShipToMap(prev => ({ ...prev, [id]: undefined }));
+        }
+      } else {
+        setShipToMap(prev => ({ ...prev, [id]: undefined }));
+      }
 
       items.forEach(item => {
         const storedGstRate = item.resolved_gst_rate || item.tax_rate || 0;
@@ -812,25 +838,38 @@ export default function DeliveryNotePage() {
           <div className="bg-card border rounded-lg p-3 space-y-3 shrink-0">
             <div className="grid grid-cols-6 gap-3">
               {/* Customer */}
-              <div ref={customerRef} className="col-span-2">
-                <Label className="text-xs font-medium mb-1 block">Party *</Label>
-                <Combobox
-                  options={parties.map(p => ({ value: p.id, label: p.name, subLabel: p.address_line_1 || undefined }))}
-                  value={noteState.form.customer_id}
-                  onChange={(value) => {
-                    const party = parties.find((p) => p.id === value);
-                    if (party) {
-                      dispatch(setDeliveryNoteCustomer({ id: party.id, name: party.name, type: party.type }));
-                      invoke<number>('get_account_balance', { accountId: party.id }).then(bal => setPartyBalance(bal)).catch(console.error);
-                      setTimeout(() => { voucherItemsRef.current?.focusFirstProduct(); }, 100);
-                    }
-                  }}
-                  placeholder="Select party"
-                  searchPlaceholder="Search parties..."
-                  disabled={isReadOnly}
-                  onActionClick={() => { setNewCustomerName(''); setShowCreateCustomer(true); }}
-                  onCreate={(name) => { setNewCustomerName(name); setShowCreateCustomer(true); }}
-                />
+              <div ref={customerRef} className="col-span-2 flex gap-2 items-end">
+                <div className="flex-1">
+                  <Label className="text-xs font-medium mb-1 block">Party *</Label>
+                  <Combobox
+                    options={parties.map(p => ({ value: p.id, label: p.name, subLabel: p.address_line_1 || undefined }))}
+                    value={noteState.form.customer_id}
+                    onChange={(value) => {
+                      const party = parties.find((p) => p.id === value);
+                      if (party) {
+                        dispatch(setDeliveryNoteCustomer({ id: party.id, name: party.name, type: party.type }));
+                        invoke<number>('get_account_balance', { accountId: party.id }).then(bal => setPartyBalance(bal)).catch(console.error);
+                        setTimeout(() => { voucherItemsRef.current?.focusFirstProduct(); }, 100);
+                      }
+                    }}
+                    placeholder="Select party"
+                    searchPlaceholder="Search parties..."
+                    disabled={isReadOnly}
+                    onActionClick={() => { setNewCustomerName(''); setShowCreateCustomer(true); }}
+                    onCreate={(name) => { setNewCustomerName(name); setShowCreateCustomer(true); }}
+                  />
+                </div>
+                {voucherSettings?.showShipTo && (
+                  <ShipToPopover
+                    shipTo={activeShipTo}
+                    onChange={setActiveShipTo}
+                    defaultAddress={noteState.form.customer_id ? {
+                      name: noteState.form.customer_name,
+                      address_line_1: parties.find(p => p.id === noteState.form.customer_id)?.address_line_1
+                    } : undefined}
+                    disabled={isReadOnly || !noteState.form.customer_id}
+                  />
+                )}
               </div>
 
               {/* Date */}

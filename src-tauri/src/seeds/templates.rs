@@ -142,7 +142,7 @@ pub async fn seed_handlebars_templates(
 
     // Delivery Note Thermal 80mm Template (reuse thermal but with DN labels)
     let (dn_t80_h, dn_t80_b, dn_t80_f) = split_template(THERMAL_80MM_HTML);
-    let dn_t80_h = dn_t80_h.replace("INVOICE", "DELIVERY NOTE").replace("Invoice No:", "DN No:");
+    let dn_t80_h = dn_t80_h.replace("INVOICE", "DELIVERY NOTE");
     let dn_t80_b = dn_t80_b.replace("Invoice", "Delivery Note");
 
     sqlx::query(

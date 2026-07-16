@@ -11,8 +11,8 @@ export default function Sidebar() {
     const visibleMenuItems = ALL_MENU_ITEMS.filter(item => sidebarItems.includes(item.id));
 
     return (
-        <aside className={`bg-card border-r transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-56'}`}>
-            <div className="flex items-center justify-between p-4 border-b h-14">
+        <aside className={`bg-card border-r transition-all duration-300 flex flex-col h-full ${sidebarCollapsed ? 'w-16' : 'w-56'}`}>
+            <div className="flex items-center justify-between p-4 border-b h-14 shrink-0">
                 {!sidebarCollapsed && (
                     <h1 className="font-bold text-lg font-hammersmith">
                         <span className="text-yellow-500">KolaB</span>
@@ -27,7 +27,7 @@ export default function Sidebar() {
                     {sidebarCollapsed ? <IconLayoutSidebar size={20} /> : <IconLayoutSidebarLeftCollapse size={20} />}
                 </button>
             </div>
-            <nav className="p-2">
+            <nav className="p-2 flex-1 overflow-y-auto scrollbar-hide">
                 {visibleMenuItems.map(item => (
                     <button
                         key={item.id}

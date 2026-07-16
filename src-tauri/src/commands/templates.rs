@@ -1210,7 +1210,10 @@ async fn get_sales_invoice_data(
             };
 
             obj.insert("party".to_string(), party_obj.clone());
-            obj.insert("ship_to".to_string(), party_obj); // defaults to same
+            let ship_to_obj = build_ship_to_obj(&invoice.metadata, &party_obj);
+            let has_ship_to = ship_to_obj != party_obj;
+            obj.insert("ship_to".to_string(), ship_to_obj);
+            obj.insert("has_ship_to".to_string(), json!(has_ship_to));
 
             // Calculate subtotal for template
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
@@ -1554,7 +1557,10 @@ async fn get_sales_quotation_data(
             };
 
             obj.insert("party".to_string(), party_obj.clone());
-            obj.insert("ship_to".to_string(), party_obj); // defaults to same
+            let ship_to_obj = build_ship_to_obj(&invoice.metadata, &party_obj);
+            let has_ship_to = ship_to_obj != party_obj;
+            obj.insert("ship_to".to_string(), ship_to_obj);
+            obj.insert("has_ship_to".to_string(), json!(has_ship_to));
 
             // Calculate subtotal for template
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
@@ -1809,7 +1815,10 @@ async fn get_delivery_note_data(
             };
 
             obj.insert("party".to_string(), party_obj.clone());
-            obj.insert("ship_to".to_string(), party_obj);
+            let ship_to_obj = build_ship_to_obj(&invoice.metadata, &party_obj);
+            let has_ship_to = ship_to_obj != party_obj;
+            obj.insert("ship_to".to_string(), ship_to_obj);
+            obj.insert("has_ship_to".to_string(), json!(has_ship_to));
 
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
             let subtotal = invoice.grand_total - invoice.tax_amount + bill_discount;
@@ -2513,4 +2522,29 @@ fn number_to_words_indian(amount: f64) -> String {
         result = format!("{} and {} Paise", result, two_digit(paise));
     }
     result
+}
+
+fn build_ship_to_obj(
+    metadata: &Option<String>,
+    billing_party: &serde_json::Value,
+) -> serde_json::Value {
+    if let Some(meta_str) = metadata {
+        if let Ok(meta) = serde_json::from_str::<serde_json::Value>(meta_str) {
+            if let Some(ship_to) = meta.get("ship_to") {
+                if !ship_to.is_null() {
+                    return serde_json::json!({
+                        "name": ship_to["name"],
+                        "address_line_1": ship_to["address_line_1"],
+                        "address_line_2": ship_to["address_line_2"],
+                        "city": ship_to["city"],
+                        "state": ship_to["state"],
+                        "postal_code": ship_to["postal_code"],
+                        "gstin": ship_to["gstin"],
+                    });
+                }
+            }
+        }
+    }
+    // Fallback: ship-to = billing party
+    billing_party.clone()
 }

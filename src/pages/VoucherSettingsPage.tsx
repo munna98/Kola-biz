@@ -44,6 +44,7 @@ interface VoucherSettings {
     showProductInfoOnHover?: boolean; // Show Stock, P Rate, MRP on Sl No hover
     showInvoiceProfit?: boolean; // Show total cost & gross profit in invoice footer
     profitCostSource?: 'cost_rate' | 'product_master_cost'; // Which cost field to use for profit calculation
+    showShipTo?: boolean; // Show Ship To address section
 }
 
 const AVAILABLE_COLUMNS = [
@@ -105,6 +106,7 @@ export default function VoucherSettingsPage() {
     const [showProductInfoOnHover, setShowProductInfoOnHover] = useState(false);
     const [showInvoiceProfit, setShowInvoiceProfit] = useState(false);
     const [profitCostSource, setProfitCostSource] = useState<'cost_rate' | 'product_master_cost'>('cost_rate');
+    const [showShipTo, setShowShipTo] = useState(false);
     const [loading, setLoading] = useState(false);
 
     // ---- Reassign Voucher Numbers state ----
@@ -152,6 +154,7 @@ export default function VoucherSettingsPage() {
                 setShowProductInfoOnHover(savedSettings.showProductInfoOnHover || false);
                 setShowInvoiceProfit(savedSettings.showInvoiceProfit || false);
                 setProfitCostSource(savedSettings.profitCostSource || 'cost_rate');
+                setShowShipTo(savedSettings.showShipTo || false);
 
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
@@ -200,6 +203,7 @@ export default function VoucherSettingsPage() {
                 setShowProductInfoOnHover(false);
                 setShowInvoiceProfit(false);
                 setProfitCostSource('cost_rate');
+                setShowShipTo(false);
                 initialColumns = availableCols.map((col, index) => ({
                     id: col.id,
                     label: col.label,
@@ -238,6 +242,7 @@ export default function VoucherSettingsPage() {
                 showProductInfoOnHover: showProductInfoOnHover,
                 showInvoiceProfit: showInvoiceProfit,
                 profitCostSource: profitCostSource,
+                showShipTo: showShipTo,
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -372,6 +377,27 @@ export default function VoucherSettingsPage() {
                                 </p>
                             </div>
                         </div>
+
+                        {['sales_invoice', 'sales_quotation', 'delivery_note'].includes(selectedVoucher) && (
+                            <div className="flex items-center gap-4 mb-6">
+                                <Checkbox
+                                    id="show-ship-to"
+                                    checked={showShipTo}
+                                    onCheckedChange={(checked) => setShowShipTo(checked as boolean)}
+                                />
+                                <div className="grid gap-1.5 leading-none">
+                                    <label
+                                        htmlFor="show-ship-to"
+                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                    >
+                                        Enable Ship To Address
+                                    </label>
+                                    <p className="text-sm text-muted-foreground">
+                                        Allow specifying a different shipping address for this voucher type.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
 
                         {selectedVoucher === 'purchase_invoice' && (
                             <>

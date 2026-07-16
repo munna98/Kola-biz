@@ -4,8 +4,17 @@
 @media print, screen {
     body {
         padding-top: {{letterhead_margin_top}}mm !important;
-        padding-bottom: {{letterhead_margin_bottom}}mm !important;
+        /* extra 50mm ensures content never slides under the pinned footer */
+        padding-bottom: calc({{letterhead_margin_bottom}}mm + 50mm) !important;
         background: transparent !important;
+    }
+    .dn-footer {
+        /* Override base CSS: pin footer to the letterhead bottom margin */
+        position: fixed !important;
+        bottom: {{letterhead_margin_bottom}}mm !important;
+        left: 10mm !important;
+        right: 10mm !important;
+        background: transparent !important; /* Let the pre-printed letterhead show through */
     }
     .dn-header {
         display: none !important;
@@ -37,6 +46,7 @@
     </svg>
 </div>
 {{/if}}
+<div class="dn-content-wrapper">
 <div class="dn-header">
     {{#if company.has_logo}}
     <div class="dn-logo">
@@ -64,30 +74,31 @@
     <div class="dn-meta-left">
         {{#if show_party_name}}
         <div class="dn-deliver-to">
-            <span class="dn-deliver-label">Deliver To:</span>
-            <span class="dn-party-name">{{party.name}}</span>
+            <span class="dn-deliver-label">Customer Name:</span>
+            <span class="dn-party-name">{{ship_to.name}}</span>
         </div>
         {{/if}}
         {{#if show_party_address}}
-        {{#if party.address_line_1}}<div class="dn-party-addr">{{party.address_line_1}}</div>{{/if}}
-        {{#if party.city}}<div class="dn-party-addr">{{party.city}}{{#if party.state}}, {{party.state}}{{/if}}{{#if party.postal_code}} – {{party.postal_code}}{{/if}}</div>{{/if}}
-        {{#if party.phone}}<div class="dn-party-addr">Phone: {{party.phone}}</div>{{/if}}
-        {{#if party.gstin}}<div class="dn-party-addr">GSTIN: {{party.gstin}}</div>{{/if}}
+        <div class="dn-party-addr-label" style="font-size: 8pt; color: #6b7280; font-weight: 600; margin-top: 4px;">Address:</div>
+        {{#if ship_to.address_line_1}}<div class="dn-party-addr">{{ship_to.address_line_1}}</div>{{/if}}
+        {{#if ship_to.city}}<div class="dn-party-addr">{{ship_to.city}}{{#if ship_to.state}}, {{ship_to.state}}{{/if}}{{#if ship_to.postal_code}} – {{ship_to.postal_code}}{{/if}}</div>{{/if}}
+        {{#if ship_to.phone}}<div class="dn-party-addr">Phone: {{ship_to.phone}}</div>{{/if}}
+        {{#if ship_to.gstin}}<div class="dn-party-addr">GSTIN: {{ship_to.gstin}}</div>{{/if}}
         {{/if}}
     </div>
     <div class="dn-meta-right">
         <table class="dn-meta-table">
             <tr>
-                <td class="dn-meta-label">DN No.</td>
+                <td class="dn-meta-label">Invoice No:</td>
                 <td class="dn-meta-value"><strong>{{voucher_no}}</strong></td>
             </tr>
             <tr>
-                <td class="dn-meta-label">Date</td>
+                <td class="dn-meta-label">Date:</td>
                 <td class="dn-meta-value"><strong>{{format_date voucher_date}}</strong></td>
             </tr>
             {{#if reference}}
             <tr>
-                <td class="dn-meta-label">Ref / PO No.</td>
+                <td class="dn-meta-label">Ref / PO No:</td>
                 <td class="dn-meta-value">{{reference}}</td>
             </tr>
             {{/if}}
@@ -126,16 +137,6 @@
         </tr>
         {{/each}}
     </tbody>
-    <tfoot>
-        <tr class="dn-total-row">
-            <td colspan="{{#if show_item_hsn}}2{{else}}1{{/if}}" class="dn-center"><em>Total Items: {{total_items}}</em></td>
-            <td></td>
-            <td class="dn-right dn-total-qty">
-                <strong>{{format_number total_delivered_qty 2}}</strong>
-            </td>
-            <td></td>
-        </tr>
-    </tfoot>
 </table>
 
 {{#if narration}}
@@ -143,9 +144,15 @@
     <strong>Notes:</strong> {{narration}}
 </div>
 {{/if}}
+</div>
 
 <!-- [FOOTER] -->
 <div class="dn-footer">
+    <!-- Totals bar mirrors the items-table column layout -->
+    <div class="dn-totals-bar">
+        <span class="dn-totals-label">Total Items: <strong>{{total_items}}</strong></span>
+        <span class="dn-totals-qty">Total Qty: <strong>{{format_number total_delivered_qty 2}}</strong></span>
+    </div>
     <div class="dn-sig-row">
         <div class="dn-sig-box">
             <div class="dn-sig-line"></div>

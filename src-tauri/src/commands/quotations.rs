@@ -34,6 +34,7 @@ pub struct SalesQuotation {
     pub created_by_name: Option<String>,
     pub tax_inclusive: i64,
     pub valid_until: Option<String>, // Added for quotations
+    pub metadata: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -109,6 +110,8 @@ pub struct CreateSalesQuotation {
     pub user_id: Option<String>,
     pub tax_inclusive: Option<bool>,
     pub gst_disabled: Option<bool>,
+    #[serde(default)]
+    pub ship_to: Option<crate::commands::invoices::ShipToAddress>,
 }
 
 #[tauri::command]
@@ -137,7 +140,8 @@ pub async fn get_sales_quotations(
             v.deleted_at,
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
-            json_extract(v.metadata, '$.valid_until') as valid_until
+            json_extract(v.metadata, '$.valid_until') as valid_until,
+            v.metadata
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -255,10 +259,14 @@ pub async fn create_sales_quotation(
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let grand_total = round2(total_amount + total_tax);
 
-    let metadata = match &quotation.valid_until {
-        Some(date) => serde_json::json!({ "valid_until": date }).to_string(),
-        None => "{}".to_string(),
-    };
+    let mut meta_obj = serde_json::json!({});
+    if let Some(date) = &quotation.valid_until {
+        meta_obj["valid_until"] = serde_json::json!(date);
+    }
+    if let Some(ship_to) = &quotation.ship_to {
+        meta_obj["ship_to"] = serde_json::json!(ship_to);
+    }
+    let metadata = meta_obj.to_string();
 
     let voucher_id = Uuid::now_v7().to_string();
     let _ = sqlx::query(
@@ -406,10 +414,14 @@ pub async fn update_sales_quotation(
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let grand_total = round2(total_amount + total_tax);
 
-    let metadata = match &quotation.valid_until {
-        Some(date) => serde_json::json!({ "valid_until": date }).to_string(),
-        None => "{}".to_string(),
-    };
+    let mut meta_obj = serde_json::json!({});
+    if let Some(date) = &quotation.valid_until {
+        meta_obj["valid_until"] = serde_json::json!(date);
+    }
+    if let Some(ship_to) = &quotation.ship_to {
+        meta_obj["ship_to"] = serde_json::json!(ship_to);
+    }
+    let metadata = meta_obj.to_string();
 
     sqlx::query(
         "UPDATE vouchers 
@@ -481,7 +493,8 @@ pub async fn get_sales_quotation_with_pool(
             v.deleted_at,
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
-            json_extract(v.metadata, '$.valid_until') as valid_until
+            json_extract(v.metadata, '$.valid_until') as valid_until,
+            v.metadata
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id

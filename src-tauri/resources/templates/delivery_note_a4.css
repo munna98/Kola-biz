@@ -4,10 +4,11 @@ body {
     color: #1a1a1a;
     max-width: 210mm;
     margin: 0 auto;
-    padding: 9mm 10mm;
+    padding: 9mm 10mm 55mm; /* 55mm bottom reserves space for fixed footer */
     font-family: Arial, Helvetica, sans-serif;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
+    box-sizing: border-box;
 }
 
 /* ── HEADER ──────────────────────────────────── */
@@ -68,7 +69,7 @@ body {
 }
 .dn-meta-table { border-collapse: collapse; margin-left: auto; }
 .dn-meta-table tr td { padding: 3px 8px 3px 0; font-size: 9pt; }
-.dn-meta-label { color: #6b7280; white-space: nowrap; font-size: 8.5pt; text-align: right; }
+.dn-meta-label { color: #6b7280; white-space: nowrap; font-size: 8.5pt; text-align: left; }
 .dn-meta-value { color: #111827; text-align: left; }
 .dn-deliver-to { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
 .dn-deliver-label { font-size: 8pt; color: #6b7280; font-weight: 600; white-space: nowrap; }
@@ -121,11 +122,39 @@ body {
     margin-bottom: 10px;
 }
 
-/* ── FOOTER ──────────────────────────────────── */
+.dn-content-wrapper {
+    /* Content area — bottom space reserved by body padding-bottom */
+}
+
+/* ── TOTALS BAR (inside fixed footer) ───────────── */
+.dn-totals-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: #dbeafe;
+    border-top: 2px solid #2563eb;
+    border-bottom: 1px solid #bfdbfe;
+    padding: 5px 8px;
+    font-size: 9pt;
+    margin-bottom: 8px;
+    border-radius: 0 0 4px 4px;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+}
+.dn-totals-label { color: #1e3a8a; }
+.dn-totals-qty { color: #1e40af; }
+
+/* ── FOOTER ──────────────────────────────────────── */
 .dn-footer {
-    border-top: 2px solid #e5e7eb;
-    padding-top: 14px;
-    margin-top: 8px;
+    /* position: fixed pins to the printed page bottom in Chromium/WebView2,
+       unlike absolute which only reaches the content height */
+    position: fixed;
+    bottom: 9mm;
+    left: 10mm;
+    right: 10mm;
+    background: white;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
 }
 .dn-sig-row {
     display: grid;
@@ -169,8 +198,15 @@ body {
 }
 
 @media print {
-    body { margin: 0; padding: 9mm 10mm; }
+    body { margin: 0; padding: 9mm 10mm 55mm; }
     .dn-items-table tr { page-break-inside: avoid; }
     .dn-sig-row { page-break-inside: avoid; }
-    .dn-footer { page-break-inside: avoid; }
+    .dn-footer {
+        position: fixed;
+        bottom: 9mm;
+        left: 10mm;
+        right: 10mm;
+        page-break-inside: avoid;
+        background: white;
+    }
 }
