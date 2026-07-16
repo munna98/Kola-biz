@@ -1740,7 +1740,8 @@ pub(crate) async fn get_sales_invoice_with_pool(
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
             v.linked_return_id,
-            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice
+            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice,
+            v.metadata
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
