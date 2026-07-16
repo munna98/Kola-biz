@@ -4,17 +4,12 @@
 @media print, screen {
     body {
         padding-top: {{letterhead_margin_top}}mm !important;
-        /* extra 50mm ensures content never slides under the pinned footer */
-        padding-bottom: calc({{letterhead_margin_bottom}}mm + 50mm) !important;
+        padding-bottom: {{letterhead_margin_bottom}}mm !important;
         background: transparent !important;
     }
     .dn-footer {
-        /* Override base CSS: pin footer to the letterhead bottom margin */
-        position: fixed !important;
-        bottom: {{letterhead_margin_bottom}}mm !important;
-        left: 10mm !important;
-        right: 10mm !important;
-        background: transparent !important; /* Let the pre-printed letterhead show through */
+        position: static !important;
+        background: transparent !important;
     }
     .dn-header {
         display: none !important;
@@ -46,7 +41,6 @@
     </svg>
 </div>
 {{/if}}
-<div class="dn-content-wrapper">
 <div class="dn-header">
     {{#if company.has_logo}}
     <div class="dn-logo">
@@ -144,11 +138,16 @@
     <strong>Notes:</strong> {{narration}}
 </div>
 {{/if}}
-</div>
+
+<!--
+  dn-spacer: invisible flex-grow element.
+  In @media print, body is display:flex + flex-direction:column with min-height:100vh.
+  This spacer expands to fill all empty space, pushing the footer to the page bottom.
+-->
+<div class="dn-spacer"></div>
 
 <!-- [FOOTER] -->
-<div class="dn-footer">
-    <!-- Totals bar mirrors the items-table column layout -->
+<div class="dn-footer" id="dn-footer">
     <div class="dn-totals-bar">
         <span class="dn-totals-label">Total Items: <strong>{{total_items}}</strong></span>
         <span class="dn-totals-qty">Total Qty: <strong>{{format_number total_delivered_qty 2}}</strong></span>
@@ -190,3 +189,5 @@
     <div class="dn-website">{{company.website}}</div>
     {{/if}}
 </div>
+
+
