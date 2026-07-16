@@ -703,7 +703,7 @@ export default function SalesInvoicePage() {
           } else {
             // Payment modal disabled for non-cash parties: invoice remains unpaid
             if (voucherSettings?.autoPrint) {
-              setTimeout(() => printVoucher({ voucherId: newInvoiceId, voucherType: 'sales_invoice' }), 100);
+              setTimeout(() => printVoucher({ voucherId: newInvoiceId, voucherType: 'sales_invoice', filename: newInvoice.voucher_no }), 100);
             }
           }
         }
@@ -1020,7 +1020,7 @@ export default function SalesInvoicePage() {
       toast.error("Please save the invoice before printing");
       return;
     }
-    printVoucher({ voucherId: salesState.currentVoucherId, voucherType: 'sales_invoice' });
+    printVoucher({ voucherId: salesState.currentVoucherId, voucherType: 'sales_invoice', filename: salesState.currentVoucherNo });
   };
 
   const handleSend = async () => {
@@ -1381,7 +1381,7 @@ export default function SalesInvoicePage() {
             autoPrintPending.current = false;
             const idToPrint = savedInvoiceId || salesState.currentVoucherId;
             if (idToPrint) {
-              setTimeout(() => printVoucher({ voucherId: idToPrint, voucherType: 'sales_invoice' }), 100);
+              setTimeout(() => printVoucher({ voucherId: idToPrint, voucherType: 'sales_invoice', filename: savedInvoiceNo || salesState.currentVoucherNo }), 100);
             }
           }
         }}

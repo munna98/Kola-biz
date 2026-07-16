@@ -402,13 +402,14 @@ export default function DeliveryNotePage() {
         await invoke('update_delivery_note', { id: noteState.currentVoucherId, note: notePayload });
         toast.success('Delivery note updated successfully');
         if (voucherSettings?.autoPrint) {
-          setTimeout(() => printVoucher({ voucherId: noteState.currentVoucherId!, voucherType: 'delivery_note' }), 100);
+          setTimeout(() => printVoucher({ voucherId: noteState.currentVoucherId!, voucherType: 'delivery_note', filename: noteState.currentVoucherNo }), 100);
         }
       } else {
         const newNoteId = await invoke<string>('create_delivery_note', { note: { ...notePayload, user_id: user?.id.toString() } });
         toast.success('Delivery note created successfully');
         if (voucherSettings?.autoPrint) {
-          setTimeout(() => printVoucher({ voucherId: newNoteId, voucherType: 'delivery_note' }), 100);
+          const newNote = await invoke<any>('get_delivery_note', { id: newNoteId });
+          setTimeout(() => printVoucher({ voucherId: newNoteId, voucherType: 'delivery_note', filename: newNote.voucher_no }), 100);
         }
       }
 
@@ -579,7 +580,7 @@ export default function DeliveryNotePage() {
       toast.error('Please save before printing');
       return;
     }
-    printVoucher({ voucherId: noteState.currentVoucherId, voucherType: 'delivery_note' });
+    printVoucher({ voucherId: noteState.currentVoucherId, voucherType: 'delivery_note', filename: noteState.currentVoucherNo });
   };
 
   const handleSend = async () => {

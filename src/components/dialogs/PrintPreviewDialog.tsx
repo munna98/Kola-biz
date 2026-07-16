@@ -102,8 +102,13 @@ export function PrintPreviewDialog({
         if (!content || !frameRef.current) return;
         setIsPrinting(true);
         try {
+            // Temporarily set document.title so browsers use it as the PDF filename
+            const prevTitle = document.title;
+            document.title = title;
             frameRef.current.contentWindow?.focus();
             frameRef.current.contentWindow?.print();
+            // Restore after a short delay to allow the dialog to capture the title
+            setTimeout(() => { document.title = prevTitle; }, 1000);
         } catch (e) {
             console.error('Print failed:', e);
             toast.error('Failed to print');

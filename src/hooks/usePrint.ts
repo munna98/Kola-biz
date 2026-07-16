@@ -6,6 +6,8 @@ interface PrintOptions {
     voucherId: string;
     voucherType: string;
     templateId?: number | null;
+    /** Optional filename (voucher number) used as the default PDF filename in the print dialog. */
+    filename?: string;
 }
 
 interface PrintSettings {
@@ -25,7 +27,7 @@ export function usePrint() {
      * Prints the provided HTML content.
      * Handles both silent printing and system dialog via iframe.
      */
-    const printRaw = useCallback(async (content: string, settings?: PrintSettings) => {
+    const printRaw = useCallback(async (content: string, settings?: PrintSettings, filename?: string) => {
         try {
             setIsPrinting(true);
 
@@ -83,8 +85,13 @@ export function usePrint() {
 
             setTimeout(() => {
                 try {
+                    // Temporarily set document.title so browsers use it as the PDF filename
+                    const prevTitle = document.title;
+                    if (filename) document.title = filename;
                     iframe.contentWindow?.focus();
                     iframe.contentWindow?.print();
+                    // Restore after a short delay to allow the dialog to capture the title
+                    setTimeout(() => { document.title = prevTitle; }, 1000);
                 } catch (e) {
                     console.error('Print failed:', e);
                     toast.error('Failed to print');
@@ -99,7 +106,7 @@ export function usePrint() {
         }
     }, []);
 
-    const print = useCallback(async ({ voucherId, voucherType, templateId }: PrintOptions) => {
+    const print = useCallback(async ({ voucherId, voucherType, templateId, filename }: PrintOptions) => {
         if (!voucherId) {
             toast.error('Please save the invoice before printing');
             return;
@@ -113,7 +120,7 @@ export function usePrint() {
                 templateId: templateId || null,
             });
 
-            await printRaw(content);
+            await printRaw(content, undefined, filename);
 
         } catch (error) {
             console.error('Failed to fetch/render print content:', error);

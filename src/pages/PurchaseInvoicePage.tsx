@@ -702,7 +702,7 @@ export default function PurchaseInvoicePage() {
             }
             const idToPrint = purchaseState.currentVoucherId;
             if (idToPrint) setTimeout(() => {
-              printVoucher({ voucherId: idToPrint, voucherType: 'purchase_invoice' }).then(() => {
+              printVoucher({ voucherId: idToPrint, voucherType: 'purchase_invoice', filename: purchaseState.currentVoucherNo }).then(() => {
                 if (barcodePending.current) { barcodePending.current = false; setShowBarcodeDialog(true); }
               });
             }, 100);
@@ -799,7 +799,7 @@ export default function PurchaseInvoicePage() {
                 barcodePending.current = true;
               }
               setTimeout(() => {
-                printVoucher({ voucherId: newInvoiceId, voucherType: 'purchase_invoice' }).then(() => {
+                printVoucher({ voucherId: newInvoiceId, voucherType: 'purchase_invoice', filename: newInvoice.voucher_no }).then(() => {
                   if (barcodePending.current) { barcodePending.current = false; setShowBarcodeDialog(true); }
                 });
               }, 100);
@@ -823,7 +823,7 @@ export default function PurchaseInvoicePage() {
             // Payment modal disabled for non-cash parties: invoice remains unpaid
             if (voucherSettings?.autoPrint) {
               setTimeout(() => {
-                printVoucher({ voucherId: newInvoiceId, voucherType: 'purchase_invoice' });
+                printVoucher({ voucherId: newInvoiceId, voucherType: 'purchase_invoice', filename: newInvoice.voucher_no });
               }, 100);
             } else if (voucherSettings?.enableBarcodePrinting) {
               // No print preview, but barcode is enabled — open barcode dialog directly
@@ -884,7 +884,7 @@ export default function PurchaseInvoicePage() {
       toast.error("Please save the invoice before printing");
       return;
     }
-    printVoucher({ voucherId: purchaseState.currentVoucherId, voucherType: 'purchase_invoice' });
+    printVoucher({ voucherId: purchaseState.currentVoucherId, voucherType: 'purchase_invoice', filename: purchaseState.currentVoucherNo });
   };
 
   const handlePrintBarcodes = () => {
@@ -1112,7 +1112,7 @@ export default function PurchaseInvoicePage() {
             const idToPrint = savedInvoiceId || purchaseState.currentVoucherId;
             if (idToPrint) {
               setTimeout(() => {
-                printVoucher({ voucherId: idToPrint, voucherType: 'purchase_invoice' }).then(() => {
+                printVoucher({ voucherId: idToPrint, voucherType: 'purchase_invoice', filename: savedInvoiceNo || purchaseState.currentVoucherNo }).then(() => {
                   if (barcodePending.current) { barcodePending.current = false; setShowBarcodeDialog(true); }
                 });
               }, 100);

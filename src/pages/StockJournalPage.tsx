@@ -342,7 +342,7 @@ export default function StockJournalPage() {
             toast.error('Please save the voucher before printing');
             return;
         }
-        printVoucher({ voucherId: stockJournalState.currentVoucherId, voucherType: 'stock_journal' });
+        printVoucher({ voucherId: stockJournalState.currentVoucherId, voucherType: 'stock_journal', filename: stockJournalState.currentVoucherNo });
     };
 
     const handleAddItem = (section: JournalSection, insertAt?: number) => {

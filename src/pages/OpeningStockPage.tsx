@@ -230,7 +230,7 @@ export default function OpeningStockPage() {
             toast.error("Please save the voucher before printing");
             return;
         }
-        printVoucher({ voucherId: openingStockState.currentVoucherId, voucherType: 'opening_stock' });
+        printVoucher({ voucherId: openingStockState.currentVoucherId, voucherType: 'opening_stock', filename: openingStockState.currentVoucherNo });
     };
 
     const handleAddItem = (insertAt?: number) => {

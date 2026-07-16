@@ -501,7 +501,7 @@ export default function SalesQuotationPage() {
         toast.success('Sales quotation updated successfully');
         
         if (voucherSettings?.autoPrint) {
-          setTimeout(() => printVoucher({ voucherId: salesState.currentVoucherId!, voucherType: 'sales_quotation' }), 100);
+          setTimeout(() => printVoucher({ voucherId: salesState.currentVoucherId!, voucherType: 'sales_quotation', filename: salesState.currentVoucherNo }), 100);
         }
       } else {
         const newInvoiceId = await invoke<string>('create_sales_quotation', {
@@ -537,7 +537,8 @@ export default function SalesQuotationPage() {
         toast.success('Sales quotation created successfully');
         
         if (voucherSettings?.autoPrint) {
-          setTimeout(() => printVoucher({ voucherId: newInvoiceId, voucherType: 'sales_quotation' }), 100);
+          const newInvoice = await invoke<any>('get_sales_quotation', { id: newInvoiceId });
+          setTimeout(() => printVoucher({ voucherId: newInvoiceId, voucherType: 'sales_quotation', filename: newInvoice.voucher_no }), 100);
         }
       }
 
@@ -734,7 +735,7 @@ export default function SalesQuotationPage() {
       toast.error("Please save the invoice before printing");
       return;
     }
-    printVoucher({ voucherId: salesState.currentVoucherId, voucherType: 'sales_quotation' });
+    printVoucher({ voucherId: salesState.currentVoucherId, voucherType: 'sales_quotation', filename: salesState.currentVoucherNo });
   };
 
   const handleSend = async () => {
