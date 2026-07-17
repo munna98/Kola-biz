@@ -317,6 +317,9 @@ pub async fn delete_sales_quotation(
         .await
         .map_err(|e| e.to_string())?;
 
+    // Handle voucher deletion sequence decrement and rename to free the unique constraint
+    crate::voucher_seq::handle_voucher_deletion_in_tx(&mut tx, &id).await?;
+
     // Soft delete the voucher
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'sales_quotation'")
         .bind(&id)

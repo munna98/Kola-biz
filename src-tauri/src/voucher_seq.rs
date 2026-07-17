@@ -174,3 +174,92 @@ pub async fn preview_voucher_number_for(
         format!("{}{}{}", base, sep, seq.suffix)
     })
 }
+
+/// Helper to derive the financial year from a "YYYY-MM-DD" date string.
+fn financial_year_from_date(date_str: &str) -> String {
+    let year: i32 = date_str.get(..4).and_then(|s| s.parse().ok()).unwrap_or(2024);
+    let month: u32 = date_str.get(5..7).and_then(|s| s.parse().ok()).unwrap_or(1);
+    if month >= 4 {
+        format!("{}-{}", year % 100, (year + 1) % 100)
+    } else {
+        format!("{}-{}", (year - 1) % 100, year % 100)
+    }
+}
+
+/// Handles the sequence check and unique constraint free for a voucher being deleted.
+/// If the voucher's number matches the last generated one, decrements the sequence.
+/// In all cases, renames the voucher_no to __TEMP_{voucher_id}__ to release the UNIQUE constraint.
+pub async fn handle_voucher_deletion_in_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    voucher_id: &str,
+) -> Result<(), String> {
+    // 1. Fetch voucher_no, voucher_type, and voucher_date from vouchers
+    let voucher: Option<(String, String, String)> = sqlx::query_as(
+        "SELECT voucher_no, voucher_type, voucher_date FROM vouchers WHERE id = ?"
+    )
+    .bind(voucher_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| format!("Failed to fetch voucher for deletion logic: {}", e))?;
+
+    if let Some((voucher_no, voucher_type, voucher_date)) = voucher {
+        // 2. Fetch sequence settings for this voucher type
+        let seq_opt = sqlx::query_as::<_, VoucherSeqRow>(
+            "SELECT prefix, COALESCE(suffix, '') as suffix, COALESCE(separator, '-') as separator,
+                    next_number, padding, COALESCE(include_financial_year, 0) as include_financial_year
+             FROM voucher_sequences WHERE voucher_type = ?",
+        )
+        .bind(&voucher_type)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(|e| format!("Failed to fetch voucher sequence settings: {}", e))?;
+
+        if let Some(seq) = seq_opt {
+            if seq.next_number > 1 {
+                // 3. Compute what the last generated voucher number would be (for next_number - 1)
+                let last_val = seq.next_number - 1;
+                let number = format!("{:0>width$}", last_val, width = seq.padding as usize);
+                let sep = &seq.separator;
+
+                let mut parts: Vec<String> = Vec::new();
+                if !seq.prefix.is_empty() {
+                    parts.push(seq.prefix.clone());
+                }
+                if seq.include_financial_year {
+                    parts.push(financial_year_from_date(&voucher_date));
+                }
+                parts.push(number);
+
+                let base = parts.join(sep);
+                let expected_last_no = if seq.suffix.is_empty() {
+                    base
+                } else {
+                    format!("{}{}{}", base, sep, seq.suffix)
+                };
+
+                // 4. Compare with the deleted voucher's number
+                if expected_last_no == voucher_no {
+                    // Decrement next_number in voucher_sequences
+                    sqlx::query(
+                        "UPDATE voucher_sequences SET next_number = next_number - 1 WHERE voucher_type = ?"
+                    )
+                    .bind(&voucher_type)
+                    .execute(&mut **tx)
+                    .await
+                    .map_err(|e| format!("Failed to decrement voucher sequence next_number: {}", e))?;
+                }
+            }
+        }
+
+        // 5. Rename voucher_no to __TEMP_{voucher_id}__ to free the unique constraint
+        let temp_no = format!("__TEMP_{}__", voucher_id);
+        sqlx::query("UPDATE vouchers SET voucher_no = ? WHERE id = ?")
+            .bind(&temp_no)
+            .bind(voucher_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| format!("Failed to rename deleted voucher number to temp placeholder: {}", e))?;
+    }
+
+    Ok(())
+}

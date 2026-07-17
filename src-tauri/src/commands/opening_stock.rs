@@ -474,6 +474,9 @@ pub async fn delete_opening_stock(
     // Wait, let's look at `delete_purchase_invoice`... it does `UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP`.
     // I will do the same for consistency.
 
+    // Handle voucher deletion sequence decrement and rename to free the unique constraint
+    crate::voucher_seq::handle_voucher_deletion_in_tx(&mut tx, &id).await?;
+
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'opening_stock'")
         .bind(&id)
         .execute(&mut *tx)

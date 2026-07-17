@@ -519,6 +519,9 @@ pub async fn delete_payment(
         .await
         .map_err(|e| e.to_string())?;
 
+    // Handle voucher deletion sequence decrement and rename to free the unique constraint
+    crate::voucher_seq::handle_voucher_deletion_in_tx(&mut tx, &id).await?;
+
     // Soft delete voucher
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'payment'")
         .bind(&id)
@@ -1318,6 +1321,9 @@ pub async fn delete_receipt(
         .await
         .map_err(|e| e.to_string())?;
 
+    // Handle voucher deletion sequence decrement and rename to free the unique constraint
+    crate::voucher_seq::handle_voucher_deletion_in_tx(&mut tx, &id).await?;
+
     // Soft delete voucher
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'receipt'")
         .bind(&id)
@@ -1849,10 +1855,12 @@ pub async fn delete_journal_entry(
     id: String,
 ) -> Result<(), String> {
     let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
     // Check if this is a manual journal entry
     let voucher_type: String = sqlx::query_scalar("SELECT voucher_type FROM vouchers WHERE id = ?")
         .bind(&id)
-        .fetch_one(&pool)
+        .fetch_one(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
 
@@ -1860,12 +1868,17 @@ pub async fn delete_journal_entry(
         return Err("Can only delete manual journal entries".to_string());
     }
 
+    // Handle voucher deletion sequence decrement and rename to free the unique constraint
+    crate::voucher_seq::handle_voucher_deletion_in_tx(&mut tx, &id).await?;
+
     // Soft delete voucher
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
         .bind(&id)
-        .execute(&pool)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
@@ -1994,11 +2007,18 @@ pub async fn delete_opening_balance(
     id: String,
 ) -> Result<(), String> {
     let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    // Handle voucher deletion sequence decrement and rename to free the unique constraint
+    crate::voucher_seq::handle_voucher_deletion_in_tx(&mut tx, &id).await?;
+
     sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ? AND voucher_type = 'opening_balance'")
-        .bind(id)
-        .execute(&pool)
+        .bind(&id)
+        .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
 
     Ok(())
 }
