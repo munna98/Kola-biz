@@ -7,8 +7,8 @@ export interface CurrencyInfo {
   symbol: string;     // e.g. "$"
 }
 
-export async function getPartyCurrencyInfo(party_id: string): Promise<CurrencyInfo | null> {
-  return invoke<CurrencyInfo | null>('get_party_currency_info', { party_id });
+export async function getPartyCurrencyInfo(partyId: string): Promise<CurrencyInfo | null> {
+  return invoke<CurrencyInfo | null>('get_party_currency_info', { partyId });
 }
 
 // ======= UNITS =======
@@ -390,6 +390,9 @@ export interface SalesInvoice {
   subtotal: number;
   tax: number;
   grand_total: number;
+  currency_id?: string;
+  exchange_rate?: number;
+  foreign_total?: number;
   created_at: string;
   created_by_name?: string;
 }
@@ -464,6 +467,7 @@ export interface ResetPassword {
 // ======= API =======
 
 export const api = {
+  getPartyCurrencyInfo: (partyId: string) => invoke<CurrencyInfo | null>('get_party_currency_info', { partyId }),
   units: {
     list: () => invoke<Unit[]>('get_units'),
     create: (data: CreateUnit) => invoke<Unit>('create_unit', { unit: data }),

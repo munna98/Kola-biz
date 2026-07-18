@@ -4,7 +4,7 @@ body {
     color: #1a1a1a;
     max-width: 210mm;
     margin: 0 auto;
-    padding: 9mm 10mm 12mm;
+    padding: 0;
     font-family: Arial, Helvetica, sans-serif;
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
@@ -192,29 +192,43 @@ body {
     padding-top: 6px;
 }
 
+.print-layout-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0;
+    padding: 0;
+    table-layout: fixed;
+}
+.print-layout-table > tbody > tr > td {
+    padding: 0 10mm;
+}
+.dn-footer-spacer {
+    display: none;
+}
+
 @media print {
-    body {
-        margin: 0;
-        padding: 9mm 10mm 12mm;
-        /* In Chromium print, 100vh = one page height (297mm for A4).
-           min-height: 100vh makes the body at least one page tall.
-           display:flex + flex-direction:column lets the spacer
-           fill the gap so the footer always sits at the page bottom. */
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
+    html, body {
+        position: static !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        height: auto !important;
+        min-height: 0 !important;
+    }
+    .print-layout-table > tbody > tr > td {
+        padding: 0 10mm !important;
     }
     .dn-items-table tr { page-break-inside: avoid; break-inside: avoid; }
-    /* Spacer grows to consume all empty space above the footer */
-    .dn-spacer {
-        flex: 1;
-        min-height: 0;
+    .dn-footer-spacer {
+        display: block;
+        page-break-inside: avoid;
+        break-inside: avoid;
     }
     .dn-footer {
-        position: static;
+        position: static !important;
         margin-top: 0;
         page-break-inside: avoid;
         break-inside: avoid;
+        background: transparent !important;
     }
     .dn-sig-row { page-break-inside: avoid; break-inside: avoid; }
 }

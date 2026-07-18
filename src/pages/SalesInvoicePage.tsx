@@ -23,15 +23,17 @@ import {
   setSalesHasUnsavedChanges,
   setSalesCreatedByName,
   setSalesReturnDraft,
+  setActiveSectionWithParams,
+  setSalesMarginScheme,
+  setSalesForexInfo,
+  setSalesExchangeRate,
+  clearSalesForex,
   createNewSalesTab,
   switchSalesTab,
   closeSalesTab,
-  setActiveSectionWithParams,
-  setSalesMarginScheme,
-  setSalesCurrency,
-  setSalesExchangeRate,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
+
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -67,7 +69,6 @@ import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
 import { ShipToPopover, ShipToAddress } from '@/components/voucher/ShipToPopover';
 import { useCurrencyLabel, useMoney, useForexMoney } from '@/hooks/useMoney';
-import { getPartyCurrencyInfo } from '@/lib/tauri';
 
 
 
@@ -84,13 +85,11 @@ export default function SalesInvoicePage() {
   const salesState = useSelector((state: RootState) => state.salesInvoice);
   const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
   const user = useSelector((state: RootState) => state.auth.user);
+  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
+  const isExportBusiness = companyProfile?.business_type === 'Export Business';
   const money = useMoney();
   const currencyLabel = useCurrencyLabel();
-  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
-  const isExportBusiness = companyProfile.business_type === 'Export Business';
-  const { currency_id, exchange_rate, foreign_currency_code, foreign_currency_symbol } = salesState;
-  const isForeignCurrency = isExportBusiness && !!currency_id;
-  const forexMoney = useForexMoney(foreign_currency_code, foreign_currency_symbol);
+  const forexMoney = useForexMoney(salesState.foreign_currency_code, salesState.foreign_currency_symbol);
   const [products, setProducts] = useState<Product[]>([]);
   const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -123,7 +122,18 @@ export default function SalesInvoicePage() {
   /** Whether Margin Scheme is enabled globally in Tax Settings (controls visibility of the toggle) */
   const [marginSchemeEnabled, setMarginSchemeEnabled] = useState(false);
 
-
+  const effectiveSettings = useMemo(() => {
+    if (!voucherSettings || !voucherSettings.columns) return voucherSettings;
+    if (isExportBusiness && salesState.currency_id) {
+      return {
+        ...voucherSettings,
+        columns: voucherSettings.columns.map(c =>
+          c.id === 'rate' ? { ...c, label: `Rate (${salesState.foreign_currency_symbol})` } : c
+        )
+      };
+    }
+    return voucherSettings;
+  }, [voucherSettings, isExportBusiness, salesState.currency_id, salesState.foreign_currency_symbol]);
 
   const productUnitsByProduct = useMemo(
     () => buildProductUnitMap(productUnitConversions),
@@ -592,6 +602,8 @@ export default function SalesInvoicePage() {
           invoice: {
             customer_id: salesState.form.customer_id,
             salesperson_id: salesState.form.salesperson_id || null,
+            currency_id: isExportBusiness ? salesState.currency_id : null,
+            exchange_rate: isExportBusiness && salesState.currency_id ? salesState.exchange_rate : 1.0,
             party_type: salesState.form.party_type,
             voucher_date: salesState.form.voucher_date,
             reference: salesState.form.reference || null,
@@ -618,8 +630,6 @@ export default function SalesInvoicePage() {
             is_margin_scheme_invoice: salesState.form.is_margin_scheme_invoice,
             return_items: buildSalesReturnDraftPayload(),
             ship_to: activeShipTo,
-            currency_id: isForeignCurrency ? currency_id : undefined,
-            exchange_rate: isForeignCurrency ? exchange_rate : undefined,
           },
         });
         toast.success('Sales invoice updated successfully');
@@ -649,6 +659,8 @@ export default function SalesInvoicePage() {
           invoice: {
             customer_id: salesState.form.customer_id,
             salesperson_id: salesState.form.salesperson_id || null,
+            currency_id: isExportBusiness ? salesState.currency_id : null,
+            exchange_rate: isExportBusiness && salesState.currency_id ? salesState.exchange_rate : 1.0,
             party_type: salesState.form.party_type,
             voucher_date: salesState.form.voucher_date,
             reference: salesState.form.reference || null,
@@ -676,8 +688,6 @@ export default function SalesInvoicePage() {
             is_margin_scheme_invoice: salesState.form.is_margin_scheme_invoice,
             return_items: buildSalesReturnDraftPayload(),
             ship_to: activeShipTo,
-            currency_id: isForeignCurrency ? currency_id : undefined,
-            exchange_rate: isForeignCurrency ? exchange_rate : undefined,
           },
         });
         toast.success('Sales invoice created successfully');
@@ -815,6 +825,7 @@ export default function SalesInvoicePage() {
       dispatch(setSalesLoading(true));
       dispatch(setSalesHasUnsavedChanges(false));
       dispatch(resetSalesForm()); // Clear first
+      dispatch(clearSalesForex());
 
       // Fetch header and items using existing commands
       const invoice = await invoke<any>('get_sales_invoice', { id });
@@ -855,14 +866,14 @@ export default function SalesInvoicePage() {
       dispatch(setSalesCreatedByName(invoice.created_by_name));
 
       if (invoice.currency_id) {
-        dispatch(setSalesCurrency({
+        dispatch(setSalesForexInfo({
           currency_id: invoice.currency_id,
           code: invoice.foreign_currency_code || '',
           symbol: invoice.foreign_currency_symbol || '',
         }));
         dispatch(setSalesExchangeRate(invoice.exchange_rate || 1.0));
       } else {
-        dispatch(setSalesCurrency(null));
+        dispatch(clearSalesForex());
       }
 
       // Parse Ship To Address
@@ -1001,6 +1012,7 @@ export default function SalesInvoicePage() {
   const handleNewInvoice = (skipConfirm?: boolean) => {
     setLinkedReturnSummary(null);
     dispatch(setSalesReturnDraft(undefined));
+    dispatch(clearSalesForex());
     handleNew(skipConfirm);
   };
 
@@ -1301,7 +1313,6 @@ export default function SalesInvoicePage() {
     };
   };
 
-  // Determine if form should be disabled (viewing mode)
   const isReadOnly = salesState.mode === 'viewing';
 
   // Compute isCashBankParty dynamically so 'Manage Payments' in view mode also routes correctly.
@@ -1459,7 +1470,7 @@ export default function SalesInvoicePage() {
                       subLabel: p.address_line_1 || undefined,
                     }))}
                     value={salesState.form.customer_id}
-                    onChange={(value) => {
+                    onChange={async (value) => {
                       const party = parties.find((p) => p.id === value);
                       if (party) {
                         dispatch(setSalesCustomer({ id: party.id, name: party.name, type: party.type }));
@@ -1467,17 +1478,27 @@ export default function SalesInvoicePage() {
                           .then(bal => setPartyBalance(bal))
                           .catch(console.error);
 
-                        // Auto-detect currency when customer is selected (Export Business only)
+                        console.log("Customer select - isExportBusiness:", isExportBusiness);
                         if (isExportBusiness) {
-                          getPartyCurrencyInfo(party.id.toString()).then((currencyInfo) => {
+                          try {
+                            const currencyInfo = await invoke<{ id: string; code: string; name: string; symbol: string } | null>(
+                              'get_party_currency_info',
+                              { partyId: party.id }
+                            );
+                            console.log("Customer Currency Info response:", currencyInfo);
                             if (currencyInfo) {
-                              dispatch(setSalesCurrency({ currency_id: currencyInfo.id, code: currencyInfo.code, symbol: currencyInfo.symbol }));
+                              dispatch(setSalesForexInfo({ currency_id: currencyInfo.id, code: currencyInfo.code, symbol: currencyInfo.symbol }));
                             } else {
-                              dispatch(setSalesCurrency(null)); // domestic customer
+                              console.log("No foreign currency info found for customer. Clearing forex state.");
+                              dispatch(clearSalesForex());
                             }
-                          }).catch(() => dispatch(setSalesCurrency(null)));
+                          } catch (err) {
+                            console.error("Failed to fetch party currency info:", err);
+                            dispatch(clearSalesForex());
+                          }
                         } else {
-                          dispatch(setSalesCurrency(null));
+                          console.log("Not an Export Business. Clearing forex state.");
+                          dispatch(clearSalesForex());
                         }
 
                         // Auto-focus first product after party selection
@@ -1499,6 +1520,44 @@ export default function SalesInvoicePage() {
                     }}
                   />
                 </div>
+                {salesState.currency_id && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 px-2.5 flex items-center gap-1 shrink-0 font-medium text-xs rounded-md transition-colors"
+                      >
+                        <span className="font-semibold">{salesState.foreign_currency_code}</span>
+                        <span className="text-[10px] text-muted-foreground">@ {salesState.exchange_rate}</span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-3" align="end">
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-xs text-foreground">Exchange Rate Settings</h4>
+                        <p className="text-[10px] text-muted-foreground leading-normal">
+                          Set conversion rate from {salesState.foreign_currency_code} to base currency ({currencyLabel || 'INR'}).
+                        </p>
+                        <div className="flex items-center gap-2 pt-1">
+                          <span className="text-xs font-semibold text-foreground shrink-0">1 {salesState.foreign_currency_code} =</span>
+                          <Input
+                            type="number"
+                            min="0.0001"
+                            step="0.0001"
+                            value={salesState.exchange_rate}
+                            onChange={(e) => {
+                              dispatch(setSalesExchangeRate(parseFloat(e.target.value) || 1.0));
+                              dispatch(setSalesHasUnsavedChanges(true));
+                            }}
+                            className="h-7 text-xs flex-1 bg-white focus-visible:ring-primary"
+                            disabled={isReadOnly}
+                          />
+                          <span className="text-xs font-medium text-muted-foreground shrink-0">{currencyLabel || 'INR'}</span>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )}
                 {voucherSettings?.showShipTo && (
                   <ShipToPopover
                     shipTo={activeShipTo}
@@ -1561,24 +1620,6 @@ export default function SalesInvoicePage() {
                 />
               </div>
             </div>
-            {isExportBusiness && isForeignCurrency && (
-              <div className="flex items-center gap-3 p-2 rounded-md bg-blue-50 border border-blue-200 text-sm mt-1">
-                <span className="font-medium text-blue-700">Currency: {foreign_currency_code}</span>
-                <span className="text-muted-foreground">Exchange Rate:</span>
-                <span className="text-muted-foreground">1 {foreign_currency_code} =</span>
-                <span className="text-muted-foreground">{currencyLabel}</span>
-                <Input
-                  type="number"
-                  min="0.0001"
-                  step="0.0001"
-                  className="w-32 h-7 text-sm"
-                  value={exchange_rate}
-                  onChange={(e) => dispatch(setSalesExchangeRate(parseFloat(e.target.value) || 1))}
-                  placeholder="Rate"
-                  disabled={isReadOnly}
-                />
-              </div>
-            )}
           </div>
 
           {/* Items Section */}
@@ -1596,7 +1637,7 @@ export default function SalesInvoicePage() {
             getItemAmount={getItemAmount}
             addItemLabel="Add Item (Ctrl+N)"
             disableAdd={isReadOnly}
-            settings={voucherSettings}
+            settings={effectiveSettings}
             isMarginSchemeInvoice={salesState.form.is_margin_scheme_invoice}
             onProductCreate={handleProductCreate}
             services={services}
@@ -1754,46 +1795,38 @@ export default function SalesInvoicePage() {
                     />
                   </div>
                 </div>
-                <div className="text-right space-y-1">
+                <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
                     <span className="text-muted-foreground">Subtotal:</span>
-                    {isForeignCurrency ? (
-                      <span className="font-mono font-medium">{forexMoney(salesState.totals.subtotal)} <span className="text-[10px] text-muted-foreground">(≈ {money(salesState.totals.subtotal * exchange_rate)})</span></span>
-                    ) : (
-                      <span className="font-mono font-medium">{money(salesState.totals.subtotal)}</span>
-                    )}
+                    <span className="font-mono font-medium">{money(salesState.totals.subtotal)}</span>
                   </div>
                   {salesState.totals.discount > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">
-                      Discount: {isForeignCurrency ? `${forexMoney(salesState.totals.discount)} (≈ ${money(salesState.totals.discount * exchange_rate)})` : money(salesState.totals.discount)}
+                      Discount: {money(salesState.totals.discount)}
                     </div>
                   )}
                   {salesState.totals.tax > 0 && (
-                    <div className="text-xs font-mono text-muted-foreground">
-                      Tax: {isForeignCurrency ? `${forexMoney(salesState.totals.tax)} (≈ ${money(salesState.totals.tax * exchange_rate)})` : money(salesState.totals.tax)}
-                    </div>
+                    <div className="text-xs font-mono text-muted-foreground">Tax: {money(salesState.totals.tax)}</div>
                   )}
                   {linkedReturnTotal > 0 && (
                     <div className="flex justify-between items-center gap-2 text-xs font-mono text-red-600">
                       <span>Less Returns ({linkedReturnCount}):</span>
-                      <span>-{isForeignCurrency ? forexMoney(linkedReturnTotal) : money(linkedReturnTotal)}</span>
+                      <span>-{money(linkedReturnTotal)}</span>
                     </div>
                   )}
                   {linkedReturnTotal > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">
-                      Invoice Total: {isForeignCurrency ? forexMoney(salesState.totals.grandTotal) : money(salesState.totals.grandTotal)}
+                      Invoice Total: {money(salesState.totals.grandTotal)}
                     </div>
                   )}
-                  <div className="text-lg font-mono font-bold">
-                    {isForeignCurrency ? (
-                      <div>
-                        <div>{forexMoney(netPayableTotal)}</div>
-                        <div className="text-xs text-muted-foreground font-normal">≈ {money(netPayableTotal * exchange_rate)}</div>
-                      </div>
-                    ) : (
-                      money(netPayableTotal)
-                    )}
-                  </div>
+                  {isExportBusiness && salesState.currency_id ? (
+                    <div>
+                      <div className="font-bold text-lg">{forexMoney(netPayableTotal / salesState.exchange_rate)}</div>
+                      <div className="text-xs text-muted-foreground">{money(netPayableTotal)}</div>
+                    </div>
+                  ) : (
+                    <div className="text-lg font-mono font-bold">{money(netPayableTotal)}</div>
+                  )}
                 </div>
               </div>
             </div>

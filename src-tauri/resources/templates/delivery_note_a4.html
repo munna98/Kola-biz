@@ -1,17 +1,24 @@
 <!-- [HEADER] -->
 <style>
+/* Dynamic settings based on letterhead configurations */
 @media print {
     @page {
         size: A4 portrait;
-        margin-top: {{#if use_letterhead}}{{letterhead_margin_top}}{{else}}9{{/if}}mm;
-        margin-bottom: {{#if use_letterhead}}{{letterhead_margin_bottom}}{{else}}12{{/if}}mm;
-        margin-left: 10mm;
-        margin-right: 10mm;
+        margin: 0 !important; /* Keep page margin 0 so preprinted background fills the sheet */
     }
     body {
-        margin: 0 !important;
         padding: 0 !important;
+        margin: 0 !important;
         background: transparent !important;
+    }
+    .dn-footer {
+        bottom: {{#if use_letterhead}}{{letterhead_margin_bottom}}{{else}}15{{/if}}mm !important;
+    }
+}
+@media screen {
+    body {
+        padding-top: {{#if use_letterhead}}{{letterhead_margin_top}}{{else}}10{{/if}}mm !important;
+        padding-bottom: {{#if use_letterhead}}{{letterhead_margin_bottom}}{{else}}15{{/if}}mm !important;
     }
 }
 </style>
@@ -19,13 +26,6 @@
 {{#if use_letterhead}}
 <style>
 @media print, screen {
-    body {
-        background: transparent !important;
-    }
-    .dn-footer {
-        position: static !important;
-        background: transparent !important;
-    }
     .dn-header {
         display: none !important;
     }
@@ -49,12 +49,6 @@
         image-rendering: crisp-edges !important;
     }
 }
-@media screen {
-    body {
-        padding-top: {{letterhead_margin_top}}mm !important;
-        padding-bottom: {{letterhead_margin_bottom}}mm !important;
-    }
-}
 </style>
 <div class="letterhead-bg-wrapper">
     <svg viewBox="0 0 210 297" width="100%" height="100%" preserveAspectRatio="none">
@@ -62,201 +56,282 @@
     </svg>
 </div>
 {{/if}}
-<div class="dn-header">
-    {{#if company.has_logo}}
-    <div class="dn-logo">
-        <img src="{{company.logo}}" alt="{{company.name}}" class="dn-logo-img" />
-    </div>
-    {{/if}}
-    <div class="dn-company-info">
-        <h1>{{company.name}}</h1>
-        {{#if company.address_line1}}<p>{{company.address_line1}}</p>{{/if}}
-        {{#if company.address_line2}}<p>{{company.address_line2}}</p>{{/if}}
-        <p>{{company.city}}{{#if company.state}}, {{company.state}}{{/if}}{{#if company.pincode}} – {{company.pincode}}{{/if}}</p>
-        <div class="dn-contact-line">
-            {{#if company.phone}}<span>📞 {{company.phone}}</span>{{/if}}
-            {{#if company.email}}<span>✉ {{company.email}}</span>{{/if}}
-        </div>
-        {{#if company.gstin}}<p class="dn-gstin">GSTIN: {{company.gstin}}</p>{{/if}}
-    </div>
-    <div class="dn-title-block">
-        <div class="dn-title">DELIVERY NOTE</div>
-        <div class="dn-badge">DN</div>
-    </div>
-</div>
-
-<div class="dn-meta-row">
-    <div class="dn-meta-left">
-        {{#if show_party_name}}
-        <div class="dn-deliver-to">
-            <span class="dn-deliver-label">Customer Name:</span>
-            <span class="dn-party-name">{{ship_to.name}}</span>
-        </div>
-        {{/if}}
-        {{#if show_party_address}}
-        <div class="dn-party-addr-label" style="font-size: 8pt; color: #6b7280; font-weight: 600; margin-top: 4px;">Address:</div>
-        {{#if ship_to.address_line_1}}<div class="dn-party-addr">{{ship_to.address_line_1}}</div>{{/if}}
-        {{#if ship_to.city}}<div class="dn-party-addr">{{ship_to.city}}{{#if ship_to.state}}, {{ship_to.state}}{{/if}}{{#if ship_to.postal_code}} – {{ship_to.postal_code}}{{/if}}</div>{{/if}}
-        {{#if ship_to.phone}}<div class="dn-party-addr">Phone: {{ship_to.phone}}</div>{{/if}}
-        {{#if ship_to.gstin}}<div class="dn-party-addr">GSTIN: {{ship_to.gstin}}</div>{{/if}}
-        {{/if}}
-    </div>
-    <div class="dn-meta-right">
-        <table class="dn-meta-table">
-            <tr>
-                <td class="dn-meta-label">Invoice No:</td>
-                <td class="dn-meta-value"><strong>{{voucher_no}}</strong></td>
-            </tr>
-            <tr>
-                <td class="dn-meta-label">Date:</td>
-                <td class="dn-meta-value"><strong>{{format_date voucher_date}}</strong></td>
-            </tr>
-            {{#if reference}}
-            <tr>
-                <td class="dn-meta-label">Ref / PO No:</td>
-                <td class="dn-meta-value">{{reference}}</td>
-            </tr>
+<table class="print-layout-table">
+  <thead>
+    <tr>
+      <td>
+        <div style="height: {{#if use_letterhead}}{{letterhead_margin_top}}{{else}}10{{/if}}mm;"></div>
+      </td>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>
+        <div class="dn-header">
+            {{#if company.has_logo}}
+            <div class="dn-logo">
+                <img src="{{company.logo}}" alt="{{company.name}}" class="dn-logo-img" />
+            </div>
             {{/if}}
+            <div class="dn-company-info">
+                <h1>{{company.name}}</h1>
+                {{#if company.address_line1}}<p>{{company.address_line1}}</p>{{/if}}
+                {{#if company.address_line2}}<p>{{company.address_line2}}</p>{{/if}}
+                <p>{{company.city}}{{#if company.state}}, {{company.state}}{{/if}}{{#if company.pincode}} – {{company.pincode}}{{/if}}</p>
+                <div class="dn-contact-line">
+                    {{#if company.phone}}<span>📞 {{company.phone}}</span>{{/if}}
+                    {{#if company.email}}<span>✉ {{company.email}}</span>{{/if}}
+                </div>
+                {{#if company.gstin}}<p class="dn-gstin">GSTIN: {{company.gstin}}</p>{{/if}}
+            </div>
+            <div class="dn-title-block">
+                <div class="dn-title">DELIVERY NOTE</div>
+                <div class="dn-badge">DN</div>
+            </div>
+        </div>
+
+        <div class="dn-meta-row">
+            <div class="dn-meta-left">
+                {{#if show_party_name}}
+                <div class="dn-deliver-to">
+                    <span class="dn-deliver-label">Customer Name:</span>
+                    <span class="dn-party-name">{{ship_to.name}}</span>
+                </div>
+                {{/if}}
+                {{#if show_party_address}}
+                <div class="dn-party-addr-label" style="font-size: 8pt; color: #6b7280; font-weight: 600; margin-top: 4px;">Address:</div>
+                {{#if ship_to.address_line_1}}<div class="dn-party-addr">{{ship_to.address_line_1}}</div>{{/if}}
+                {{#if ship_to.city}}<div class="dn-party-addr">{{ship_to.city}}{{#if ship_to.state}}, {{ship_to.state}}{{/if}}{{#if ship_to.postal_code}} – {{ship_to.postal_code}}{{/if}}</div>{{/if}}
+                {{#if ship_to.phone}}<div class="dn-party-addr">Phone: {{ship_to.phone}}</div>{{/if}}
+                {{#if ship_to.gstin}}<div class="dn-party-addr">GSTIN: {{ship_to.gstin}}</div>{{/if}}
+                {{/if}}
+            </div>
+            <div class="dn-meta-right">
+                <table class="dn-meta-table">
+                    <tr>
+                        <td class="dn-meta-label">Invoice No:</td>
+                        <td class="dn-meta-value"><strong>{{voucher_no}}</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="dn-meta-label">Date:</td>
+                        <td class="dn-meta-value"><strong>{{format_date voucher_date}}</strong></td>
+                    </tr>
+                    {{#if reference}}
+                    <tr>
+                        <td class="dn-meta-label">Ref / PO No:</td>
+                        <td class="dn-meta-value">{{reference}}</td>
+                    </tr>
+                    {{/if}}
+                </table>
+            </div>
+        </div>
+
+        <!-- [BODY] -->
+        <style>
+        .dn-items-table th, .dn-items-table td {
+            padding: {{#if table_row_padding}}{{table_row_padding}}{{else}}8{{/if}}px 8px !important;
+        }
+        </style>
+
+        <table class="dn-items-table">
+            <thead>
+                <tr>
+                    <th style="width:5%;">#</th>
+                    {{#if show_item_hsn}}<th style="width:10%;">HSN/SAC</th>{{/if}}
+                    <th>Product / Description</th>
+                    <th style="width:10%;">Qty</th>
+                    <th style="width:10%;">Unit</th>
+                </tr>
+            </thead>
+            <tbody>
+                {{#each items}}
+                <tr class="{{#if @odd}}dn-row-alt{{/if}}">
+                    <td class="dn-center">{{increment @index}}</td>
+                    {{#if @root.show_item_hsn}}<td class="dn-center">{{hsn_sac_code}}</td>{{/if}}
+                    <td>
+                        <strong>{{product_name}}</strong>
+                        {{#if description}}<br /><span class="dn-subdesc">{{description}}</span>{{/if}}
+                    </td>
+                    <td class="dn-right dn-qty-cell">{{format_number final_quantity 2}}</td>
+                    <td class="dn-center">{{unit}}</td>
+                </tr>
+                {{/each}}
+            </tbody>
         </table>
-    </div>
-</div>
 
-<!-- [BODY] -->
-<style>
-.dn-items-table th, .dn-items-table td {
-    padding: {{#if table_row_padding}}{{table_row_padding}}{{else}}8{{/if}}px 8px !important;
-}
-</style>
+        {{#if narration}}
+        <div class="dn-narration">
+            <strong>Notes:</strong> {{narration}}
+        </div>
+        {{/if}}
 
-<table class="dn-items-table">
-    <thead>
-        <tr>
-            <th style="width:5%;">#</th>
-            {{#if show_item_hsn}}<th style="width:10%;">HSN/SAC</th>{{/if}}
-            <th>Product / Description</th>
-            <th style="width:10%;">Qty</th>
-            <th style="width:10%;">Unit</th>
-        </tr>
-    </thead>
-    <tbody>
-        {{#each items}}
-        <tr class="{{#if @odd}}dn-row-alt{{/if}}">
-            <td class="dn-center">{{increment @index}}</td>
-            {{#if @root.show_item_hsn}}<td class="dn-center">{{hsn_sac_code}}</td>{{/if}}
-            <td>
-                <strong>{{product_name}}</strong>
-                {{#if description}}<br /><span class="dn-subdesc">{{description}}</span>{{/if}}
-            </td>
-            <td class="dn-right dn-qty-cell">{{format_number final_quantity 2}}</td>
-            <td class="dn-center">{{unit}}</td>
-        </tr>
-        {{/each}}
-    </tbody>
+        <!--
+          dn-footer-spacer: invisible element.
+          This spacer reserves vertical space at the end of the document flow equal to the height
+          of the absolute-positioned footer, preventing content/table overlap.
+        -->
+        <div class="dn-footer-spacer"></div>
+
+        <!-- [FOOTER] -->
+        <div class="dn-footer" id="dn-footer">
+            <div class="dn-totals-bar">
+                <span class="dn-totals-label">Total Items: <strong>{{total_items}}</strong></span>
+                <span class="dn-totals-qty">Total Qty: <strong>{{format_number total_delivered_qty 2}}</strong></span>
+            </div>
+            <div class="dn-sig-row">
+                <div class="dn-sig-box">
+                    <div class="dn-sig-line"></div>
+                    <p class="dn-sig-label">Prepared By</p>
+                </div>
+                <div class="dn-sig-box">
+                    <div class="dn-sig-line"></div>
+                    <p class="dn-sig-label">Checked By</p>
+                </div>
+                <div class="dn-sig-box">
+                    <div class="dn-sig-line"></div>
+                    <p class="dn-sig-label">For {{company.name}}<br /><span class="dn-sig-sub">Authorized Signatory</span></p>
+                </div>
+                <div class="dn-sig-box dn-sig-received">
+                    <div class="dn-sig-line dn-sig-line-dashed"></div>
+                    <p class="dn-sig-label"><strong>Receiver's Signature</strong><br /><span class="dn-sig-sub">Name &amp; Date</span></p>
+                </div>
+            </div>
+
+            {{#if bank.has_details}}
+            <div class="dn-bank">
+                <strong>Bank:</strong> {{bank.name}} &nbsp;|&nbsp;
+                <strong>A/c:</strong> {{bank.account_no}} &nbsp;|&nbsp;
+                <strong>IFSC:</strong> {{bank.ifsc}}{{#if bank.branch}} &nbsp;|&nbsp; <strong>Branch:</strong> {{bank.branch}}{{/if}}
+            </div>
+            {{/if}}
+
+            {{#if has_terms}}
+            <div class="dn-terms">
+                <strong>Terms &amp; Conditions:</strong> {{terms_and_conditions}}
+            </div>
+            {{/if}}
+
+            {{#if company.website}}
+            <div class="dn-website">{{company.website}}</div>
+            {{/if}}
+        </div>
+      </td>
+    </tr>
+  </tbody>
+  <tfoot>
+    <tr>
+      <td>
+        <div style="height: {{#if use_letterhead}}{{letterhead_margin_bottom}}{{else}}15{{/if}}mm;"></div>
+      </td>
+    </tr>
+  </tfoot>
 </table>
-
-{{#if narration}}
-<div class="dn-narration">
-    <strong>Notes:</strong> {{narration}}
-</div>
-{{/if}}
-
-<!--
-  dn-spacer: invisible flex-grow element.
-  In @media print, body is display:flex + flex-direction:column with min-height:100vh.
-  This spacer expands to fill all empty space, pushing the footer to the page bottom.
--->
-<div class="dn-spacer"></div>
-
-<!-- [FOOTER] -->
-<div class="dn-footer" id="dn-footer">
-    <div class="dn-totals-bar">
-        <span class="dn-totals-label">Total Items: <strong>{{total_items}}</strong></span>
-        <span class="dn-totals-qty">Total Qty: <strong>{{format_number total_delivered_qty 2}}</strong></span>
-    </div>
-    <div class="dn-sig-row">
-        <div class="dn-sig-box">
-            <div class="dn-sig-line"></div>
-            <p class="dn-sig-label">Prepared By</p>
-        </div>
-        <div class="dn-sig-box">
-            <div class="dn-sig-line"></div>
-            <p class="dn-sig-label">Checked By</p>
-        </div>
-        <div class="dn-sig-box">
-            <div class="dn-sig-line"></div>
-            <p class="dn-sig-label">For {{company.name}}<br /><span class="dn-sig-sub">Authorized Signatory</span></p>
-        </div>
-        <div class="dn-sig-box dn-sig-received">
-            <div class="dn-sig-line dn-sig-line-dashed"></div>
-            <p class="dn-sig-label"><strong>Receiver's Signature</strong><br /><span class="dn-sig-sub">Name &amp; Date</span></p>
-        </div>
-    </div>
-
-    {{#if bank.has_details}}
-    <div class="dn-bank">
-        <strong>Bank:</strong> {{bank.name}} &nbsp;|&nbsp;
-        <strong>A/c:</strong> {{bank.account_no}} &nbsp;|&nbsp;
-        <strong>IFSC:</strong> {{bank.ifsc}}{{#if bank.branch}} &nbsp;|&nbsp; <strong>Branch:</strong> {{bank.branch}}{{/if}}
-    </div>
-    {{/if}}
-
-    {{#if has_terms}}
-    <div class="dn-terms">
-        <strong>Terms &amp; Conditions:</strong> {{terms_and_conditions}}
-    </div>
-    {{/if}}
-
-    {{#if company.website}}
-    <div class="dn-website">{{company.website}}</div>
-    {{/if}}
-</div>
 
 <script>
 (function () {
-    function pushFooterToPageBottom() {
+    function adjustSpacer() {
         var footer = document.getElementById('dn-footer');
-        if (!footer) return;
+        var spacer = document.querySelector('.dn-footer-spacer');
+        if (!footer || !spacer) return;
 
-        // Reset margin
-        footer.style.marginTop = '0px';
+        // Reset spacer to measure natural layout
+        spacer.style.height = '0px';
 
-        // A4 height in CSS pixels at 96 dpi
-        var PX_PER_MM = 96 / 25.4;
-        var PAGE_H_PX = 297 * PX_PER_MM; // 1122.5 px
+        // Measure A4 page height in pixels
+        var temp = document.createElement('div');
+        temp.style.height = '297mm';
+        temp.style.position = 'absolute';
+        temp.style.visibility = 'hidden';
+        document.body.appendChild(temp);
+        var PAGE_H_PX = temp.offsetHeight;
+        document.body.removeChild(temp);
 
-        // Get page margins from Handlebars parameters
-        var marginTopMM = {{#if use_letterhead}}{{letterhead_margin_top}}{{else}}9{{/if}};
-        var marginBottomMM = {{#if use_letterhead}}{{letterhead_margin_bottom}}{{else}}12{{/if}};
+        var px_per_mm = PAGE_H_PX / 297;
 
-        var marginTopPx = marginTopMM * PX_PER_MM;
-        var marginBottomPx = marginBottomMM * PX_PER_MM;
+        // Save original body styles to guarantee print-accurate coordinate environment during measurement
+        var originalPaddingTop = document.body.style.paddingTop;
+        var originalPaddingBottom = document.body.style.paddingBottom;
+        var originalMargin = document.body.style.margin;
 
-        var usablePageHeight = PAGE_H_PX - marginTopPx - marginBottomPx;
+        // Temporarily apply exact print mode margins
+        document.body.style.setProperty('padding-top', '0px', 'important');
+        document.body.style.setProperty('padding-bottom', '0px', 'important');
+        document.body.style.setProperty('margin', '0px', 'important');
 
-        // offsetTop is relative to parent offsetParent. Since body is body and has padding/margin removed in print,
-        // offsetTop is exactly the content height from the start of page area.
-        var footerTop = footer.offsetTop;
-        var footerHeight = footer.offsetHeight;
+        // Get letterhead margins in pixels
+        var marginTop = {{#if use_letterhead}}{{letterhead_margin_top}}{{else}}10{{/if}} * px_per_mm;
+        var marginBottom = {{#if use_letterhead}}{{letterhead_margin_bottom}}{{else}}15{{/if}} * px_per_mm;
 
-        // Calculate page index on which the footer starts
-        var pageIndex = Math.floor(footerTop / usablePageHeight);
-        
-        // Calculate the bottom coordinate of that page area
-        var targetBottom = (pageIndex + 1) * usablePageHeight;
-        
-        // Calculate the remaining space on that page
-        var remainingSpace = targetBottom - (footerTop + footerHeight);
+        var contentHeight = PAGE_H_PX - marginTop - marginBottom;
 
-        if (remainingSpace > 5) {
-            footer.style.marginTop = Math.floor(remainingSpace - 2) + 'px';
+        // Measure Page 1 elements above the table
+        var header = document.querySelector('.dn-header');
+        var metaRow = document.querySelector('.dn-meta-row');
+        var headerHeight = 0;
+        if (header && window.getComputedStyle(header).display !== 'none') {
+            headerHeight += header.offsetHeight + 14 * px_per_mm;
         }
+        if (metaRow && window.getComputedStyle(metaRow).display !== 'none') {
+            headerHeight += metaRow.offsetHeight + 16 * px_per_mm;
+        }
+
+        // Get elements in table
+        var tableHeader = document.querySelector('.dn-items-table thead');
+        var tableRows = document.querySelectorAll('.dn-items-table tbody tr');
+        var tableHeaderHeight = tableHeader ? tableHeader.offsetHeight : 0;
+
+        // Simulate page-by-page table break logic in Chromium print engine
+        var currentPageHeight = headerHeight + tableHeaderHeight;
+        var pageIndex = 0;
+
+        for (var i = 0; i < tableRows.length; i++) {
+            var rowHeight = tableRows[i].offsetHeight;
+            if (currentPageHeight + rowHeight > contentHeight) {
+                pageIndex++;
+                currentPageHeight = tableHeaderHeight; // thead repeats on next pages
+            }
+            currentPageHeight += rowHeight;
+        }
+
+        // Process narration
+        var narration = document.querySelector('.dn-narration');
+        if (narration && window.getComputedStyle(narration).display !== 'none') {
+            var narrationHeight = narration.offsetHeight + 10 * px_per_mm;
+            if (currentPageHeight + narrationHeight > contentHeight) {
+                pageIndex++;
+                currentPageHeight = 0;
+            }
+            currentPageHeight += narrationHeight;
+        }
+
+        // Process footer height
+        var footerHeight = footer.offsetHeight;
+        if (currentPageHeight + footerHeight > contentHeight) {
+            pageIndex++;
+            currentPageHeight = 0;
+        }
+
+        // Restore original body preview styles
+        document.body.style.paddingTop = originalPaddingTop;
+        document.body.style.paddingBottom = originalPaddingBottom;
+        document.body.style.margin = originalMargin;
+
+        // Calculate remaining spacing on the final page
+        var remaining = contentHeight - (currentPageHeight + footerHeight);
+
+        // 35px safety buffer to prevent edge overflow
+        var spacerHeight = remaining - 35;
+        if (spacerHeight < 0) {
+            spacerHeight = 0;
+        }
+
+        spacer.style.height = spacerHeight + 'px';
     }
 
-    // Sized offscreen iframe is active now, so measurements are accurate on load
+    // Run both on load and immediately
+    window.addEventListener('load', adjustSpacer);
     if (document.readyState === 'complete') {
-        pushFooterToPageBottom();
-    } else {
-        window.addEventListener('load', pushFooterToPageBottom);
+        adjustSpacer();
     }
 })();
 </script>

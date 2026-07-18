@@ -34,20 +34,19 @@ export function useCurrencyLabel() {
 }
 
 /**
- * Returns a money formatter for a specific foreign currency.
- * Used when an invoice is in a foreign currency (Export Business).
+ * Returns a money formatter for a specific foreign currency (e.g., USD).
+ * Used on invoice/receipt forms when a foreign customer is selected.
  */
 export function useForexMoney(currencyCode: string, currencySymbol: string) {
   const profile = useSelector((state: RootState) => state.companyProfile.profile);
-
   return useCallback(
     (amount: number | null | undefined, options: MoneyOptions = {}) =>
       formatMoney(amount, {
         ...options,
-        currencyCode,
-        currencySymbol,
-        currencyDisplay: profile.currency_display,
+        currencyCode: currencyCode || profile.base_currency,
+        currencySymbol: currencySymbol || profile.base_currency_symbol,
+        currencyDisplay: currencyCode ? 'symbol' : profile.currency_display,
       }),
-    [currencyCode, currencySymbol, profile.currency_display]
+    [currencyCode, currencySymbol, profile.base_currency, profile.base_currency_symbol, profile.currency_display]
   );
 }

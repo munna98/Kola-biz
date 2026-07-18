@@ -61,7 +61,7 @@ export function ShipToPopover({ shipTo, onChange, defaultAddress, disabled }: Sh
                             <Button
                                 variant={hasCustomAddress ? "default" : "outline"}
                                 size="icon"
-                                className="h-10 w-10 shrink-0"
+                                className="h-8 w-8 shrink-0"
                                 disabled={disabled}
                             >
                                 <MapPin className="h-4 w-4" />

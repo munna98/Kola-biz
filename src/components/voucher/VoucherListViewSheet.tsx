@@ -23,6 +23,11 @@ interface VoucherSummary {
     voucher_type: string;
     total_debit?: number | null;
     total_credit?: number | null;
+    currency_id?: string | null;
+    exchange_rate?: number | null;
+    foreign_total?: number | null;
+    currency_code?: string | null;
+    currency_symbol?: string | null;
 }
 
 interface VoucherListViewSheetProps {
@@ -127,9 +132,16 @@ export function VoucherListViewSheet({
                                                 </span>
                                             </div>
                                         ) : (
-                                            <span className="font-bold text-sm">
-                                                {money(voucher.total_amount)}
-                                            </span>
+                                            <div className="text-right">
+                                                <span className="font-bold text-sm block">
+                                                    {money(voucher.total_amount)}
+                                                </span>
+                                                {voucher.currency_id && voucher.foreign_total && (
+                                                    <span className="text-[10px] text-muted-foreground block font-mono">
+                                                        {voucher.currency_symbol || voucher.currency_code}{voucher.foreign_total.toFixed(2)} @ {voucher.exchange_rate}
+                                                    </span>
+                                                )}
+                                            </div>
                                         )}
                                     </div>
                                 </button>

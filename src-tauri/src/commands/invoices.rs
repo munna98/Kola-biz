@@ -1653,11 +1653,16 @@ pub async fn get_sales_invoices(
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
             v.linked_return_id,
             COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice,
-            v.metadata
+            v.metadata,
+            v.currency_id,
+            v.exchange_rate,
+            cur.code as foreign_currency_code,
+            cur.symbol as foreign_currency_symbol
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
          LEFT JOIN users u ON v.created_by = u.id
+         LEFT JOIN currencies cur ON v.currency_id = cur.id
          WHERE v.voucher_type = 'sales_invoice' AND v.deleted_at IS NULL
          GROUP BY v.id
          ORDER BY v.voucher_date DESC, v.id DESC",
@@ -2681,6 +2686,11 @@ pub struct VoucherSummary {
     pub voucher_type: String,
     pub total_debit: Option<f64>,
     pub total_credit: Option<f64>,
+    pub currency_id: Option<String>,
+    pub exchange_rate: Option<f64>,
+    pub foreign_total: Option<f64>,
+    pub currency_code: Option<String>,
+    pub currency_symbol: Option<String>,
 }
 
 #[tauri::command]
@@ -2733,9 +2743,15 @@ pub async fn list_vouchers(
                 WHEN v.voucher_type = 'journal' THEN
                     (SELECT COALESCE(SUM(credit), 0.0) FROM journal_entries WHERE voucher_id = v.id)
                 ELSE NULL
-            END as total_credit
+            END as total_credit,
+            v.currency_id,
+            v.exchange_rate,
+            v.foreign_total,
+            cur.code as currency_code,
+            cur.symbol as currency_symbol
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+        LEFT JOIN currencies cur ON v.currency_id = cur.id
         WHERE v.voucher_type = ? AND v.deleted_at IS NULL ",
     );
 

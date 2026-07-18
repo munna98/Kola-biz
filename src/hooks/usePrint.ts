@@ -60,7 +60,7 @@ export function usePrint() {
             // Fallback/Standard: Iframe Print (System Dialog)
             if (!iframeRef.current) {
                 const iframe = document.createElement('iframe');
-                iframe.style.position = 'fixed';
+                iframe.style.position = 'absolute';
                 iframe.style.left = '-9999px';
                 iframe.style.top = '-9999px';
                 iframe.style.width = '210mm';

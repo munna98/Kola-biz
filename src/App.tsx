@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Provider, useSelector, useDispatch } from 'react-redux';
 import { store, RootState } from './store';
-import { setAuthLoading, setNeedsCompanySetup, loginSuccess, setIsFirstRun } from './store';
+import { setAuthLoading, setNeedsCompanySetup, loginSuccess, setIsFirstRun, setCompanyProfile } from './store';
 import { invoke } from '@tauri-apps/api/core';
 import ProductsPage from './pages/ProductsPage';
 import ServicesPage from './pages/ServicesPage';
@@ -104,9 +104,12 @@ function AppContent() {
             try {
               const companyProfile: any = await invoke('get_company_profile');
               console.log('Company Profile check:', companyProfile);
-              if (companyProfile && companyProfile.company_name === 'My Company') {
-                console.log('Company not set up. Redirecting to company setup.');
-                dispatch(setNeedsCompanySetup(true));
+              if (companyProfile) {
+                dispatch(setCompanyProfile(companyProfile));
+                if (companyProfile.company_name === 'My Company') {
+                  console.log('Company not set up. Redirecting to company setup.');
+                  dispatch(setNeedsCompanySetup(true));
+                }
               }
             } catch (e) {
               console.error('Failed to check company profile:', e);

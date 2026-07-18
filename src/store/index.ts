@@ -1040,6 +1040,11 @@ export interface SalesInvoiceState extends VoucherNavigationState {
     /** Whether this invoice uses the GST Margin Scheme */
     is_margin_scheme_invoice: boolean;
   };
+  currency_id: string | null;
+  exchange_rate: number;
+  foreign_currency_code: string;
+  foreign_currency_symbol: string;
+  foreign_grand_total: number;
   items: SalesInvoiceItem[];
   returnDraft?: SalesInvoiceReturnDraft;
   loading: boolean;
@@ -1056,12 +1061,6 @@ export interface SalesInvoiceState extends VoucherNavigationState {
     title: string;
     state: Omit<SalesInvoiceState, 'activeTabId' | 'inactiveTabs'>;
   }[];
-  // Multi-currency (only active for Export Business)
-  currency_id: string | null;
-  exchange_rate: number;
-  foreign_currency_code: string;
-  foreign_currency_symbol: string;
-  foreign_total: number;
 }
 
 const salesInitialState: SalesInvoiceState = {
@@ -1080,6 +1079,11 @@ const salesInitialState: SalesInvoiceState = {
     discount_amount: 0,
     is_margin_scheme_invoice: false,
   },
+  currency_id: null,
+  exchange_rate: 1.0,
+  foreign_currency_code: '',
+  foreign_currency_symbol: '',
+  foreign_grand_total: 0,
   items: [],
   returnDraft: undefined,
   loading: false,
@@ -1092,11 +1096,6 @@ const salesInitialState: SalesInvoiceState = {
   },
   activeTabId: `tab-1`,
   inactiveTabs: [],
-  currency_id: null,
-  exchange_rate: 1.0,
-  foreign_currency_code: '',
-  foreign_currency_symbol: '',
-  foreign_total: 0,
 };
 
 const salesInvoiceSlice = createSlice({
@@ -1188,33 +1187,32 @@ const salesInvoiceSlice = createSlice({
       state.exchange_rate = 1.0;
       state.foreign_currency_code = '';
       state.foreign_currency_symbol = '';
-      state.foreign_total = 0;
+      state.foreign_grand_total = 0;
     },
     setSalesMarginScheme: (state, action: PayloadAction<boolean>) => {
       state.form.is_margin_scheme_invoice = action.payload;
       state.hasUnsavedChanges = true;
+    },
+    setSalesForexInfo: (state, action: PayloadAction<{ currency_id: string | null; code: string; symbol: string }>) => {
+      state.currency_id = action.payload.currency_id;
+      state.foreign_currency_code = action.payload.code;
+      state.foreign_currency_symbol = action.payload.symbol;
+    },
+    setSalesExchangeRate: (state, action: PayloadAction<number>) => {
+      state.exchange_rate = action.payload;
+    },
+    clearSalesForex: (state) => {
+      state.currency_id = null;
+      state.exchange_rate = 1.0;
+      state.foreign_currency_code = '';
+      state.foreign_currency_symbol = '';
+      state.foreign_grand_total = 0;
     },
     setSavedSalesInvoices: (state, action: PayloadAction<any[]>) => {
       state.savedInvoices = action.payload;
     },
     setSalesLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
-    },
-    setSalesCurrency: (state, action: PayloadAction<{ currency_id: string; code: string; symbol: string } | null>) => {
-      if (action.payload === null) {
-        state.currency_id = null;
-        state.exchange_rate = 1.0;
-        state.foreign_currency_code = '';
-        state.foreign_currency_symbol = '';
-        state.foreign_total = 0;
-      } else {
-        state.currency_id = action.payload.currency_id;
-        state.foreign_currency_code = action.payload.code;
-        state.foreign_currency_symbol = action.payload.symbol;
-      }
-    },
-    setSalesExchangeRate: (state, action: PayloadAction<number>) => {
-      state.exchange_rate = action.payload > 0 ? action.payload : 1.0;
     },
     createNewSalesTab: (state) => {
       const currentTabState = {
@@ -1234,7 +1232,7 @@ const salesInvoiceSlice = createSlice({
          exchange_rate: state.exchange_rate,
          foreign_currency_code: state.foreign_currency_code,
          foreign_currency_symbol: state.foreign_currency_symbol,
-         foreign_total: state.foreign_total,
+         foreign_grand_total: state.foreign_grand_total,
       };
       
       let title = "New Invoice";
@@ -1282,7 +1280,7 @@ const salesInvoiceSlice = createSlice({
          exchange_rate: state.exchange_rate,
          foreign_currency_code: state.foreign_currency_code,
          foreign_currency_symbol: state.foreign_currency_symbol,
-         foreign_total: state.foreign_total,
+         foreign_grand_total: state.foreign_grand_total,
       };
       
       let title = "New Invoice";
@@ -1352,8 +1350,9 @@ export const {
   switchSalesTab,
   closeSalesTab,
   setSalesMarginScheme,
-  setSalesCurrency,
+  setSalesForexInfo,
   setSalesExchangeRate,
+  clearSalesForex,
 } = salesInvoiceSlice.actions;
 
 // ========== COMPANY PROFILE SLICE ==========

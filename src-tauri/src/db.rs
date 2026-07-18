@@ -1475,6 +1475,55 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE invoice_templates ADD COLUMN letterhead_margin_bottom REAL DEFAULT 25.0")
         .execute(pool).await;
 
+    // ==================== MULTI-CURRENCY / FOREX MIGRATIONS ====================
+
+    // Migration: Add foreign-currency columns to vouchers
+    // currency_id  — FK to currencies.id; NULL means base/domestic currency
+    // exchange_rate — 1 foreign unit = N base-currency units (default 1.0 for domestic)
+    // foreign_total — total amount expressed in the foreign currency (reference only)
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN currency_id TEXT REFERENCES currencies(id)")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN exchange_rate REAL DEFAULT 1.0")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN foreign_total REAL DEFAULT 0")
+        .execute(pool).await;
+
+    // Migration: Add foreign-currency reference columns to journal_entries
+    // Accounting amounts (debit/credit) always remain in base currency (INR).
+    // foreign_debit / foreign_credit store the equivalent in the transaction currency.
+    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN foreign_debit REAL DEFAULT 0")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN foreign_credit REAL DEFAULT 0")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN currency_id TEXT")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN exchange_rate REAL DEFAULT 1.0")
+        .execute(pool).await;
+
+    // Migration: Add forex columns to payment_allocations
+    // exchange_rate    — receipt/payment exchange rate at time of allocation
+    // forex_difference — (receipt_rate - invoice_rate) × foreign_amount in base currency;
+    //                    positive = gain for exporter, negative = loss
+    let _ = sqlx::query("ALTER TABLE payment_allocations ADD COLUMN exchange_rate REAL DEFAULT 1.0")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE payment_allocations ADD COLUMN forex_difference REAL DEFAULT 0")
+        .execute(pool).await;
+
+    // Seed: Forex Exchange Gain — posted when receipt rate > invoice rate (exporter gets more INR)
+    // is_system = 1 so it cannot be deleted from the UI.
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO chart_of_accounts
+         (id, account_code, account_name, account_type, account_group, is_system, is_active)
+         VALUES ('sys_forex_gain', 'FOREX-001', 'Forex Exchange Gain', 'Income', 'Indirect Income', 1, 1)"
+    ).execute(pool).await;
+
+    // Seed: Forex Exchange Loss — posted when receipt rate < invoice rate (exporter gets less INR)
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO chart_of_accounts
+         (id, account_code, account_name, account_type, account_group, is_system, is_active)
+         VALUES ('sys_forex_loss', 'FOREX-002', 'Forex Exchange Loss', 'Expense', 'Indirect Expenses', 1, 1)"
+    ).execute(pool).await;
+
     crate::seeds::seed_initial_data(pool).await?;
     crate::seeds::seed_handlebars_templates(pool).await?;
 

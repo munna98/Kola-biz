@@ -29,6 +29,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Combobox } from '@/components/ui/combobox';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
     IconCheck,
     IconX,
@@ -48,7 +49,6 @@ import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialo
 import ChartOfAccountDialog from '@/components/dialogs/ChartOfAccountDialog';
 import { AccountGroup, api } from '@/lib/tauri';
 import { useMoney, useForexMoney } from '@/hooks/useMoney';
-import { getPartyCurrencyInfo } from '@/lib/tauri';
 
 interface AccountData {
     id: number;
@@ -67,16 +67,16 @@ export default function ReceiptPage() {
     const receiptState = useSelector((state: RootState) => state.receipt);
     const user = useSelector((state: RootState) => state.auth.user);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
+    const companyProfile = useSelector((state: any) => state.companyProfile?.profile);
+    const isExportBusiness = companyProfile?.business_type === 'Export Business';
     const money = useMoney();
 
-    const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
-    const isExportBusiness = companyProfile.business_type === 'Export Business';
-    const [foreignCurrencyId, setForeignCurrencyId] = useState<string | null>(null);
-    const [foreignCurrencyCode, setForeignCurrencyCode] = useState('');
-    const [foreignCurrencySymbol, setForeignCurrencySymbol] = useState('');
-    const [exchangeRate, setExchangeRate] = useState(1.0);
-    const isForeignCurrency = isExportBusiness && !!foreignCurrencyId;
-    const forexMoney = useForexMoney(foreignCurrencyCode, foreignCurrencySymbol);
+    const [forexCurrencyId, setForexCurrencyId] = useState<string | null>(null);
+    const [forexCurrencyCode, setForexCurrencyCode] = useState<string>('');
+    const [forexCurrencySymbol, setForexCurrencySymbol] = useState<string>('');
+    const [forexExchangeRate, setForexExchangeRate] = useState<number>(1.0);
+    const _forexMoney = useForexMoney(forexCurrencyCode, forexCurrencySymbol);
+    void _forexMoney; // available for future use in BillAllocationDialog
 
     const [depositToAccounts, setDepositToAccounts] = useState<AccountData[]>([]);
     const [receivedFromLedgers, setReceivedFromLedgers] = useState<LedgerAccount[]>([]);
@@ -161,31 +161,24 @@ export default function ReceiptPage() {
                     .then(bal => setRowBalances(prev => ({ ...prev, [index]: bal })))
                     .catch(console.error);
 
-                // Auto-detect currency when customer is selected (Export Business only)
-                if (index === 0 && isExportBusiness) {
-                    getPartyCurrencyInfo(ledger.id.toString()).then((info) => {
-                        if (info) {
-                            setForeignCurrencyId(info.id);
-                            setForeignCurrencyCode(info.code);
-                            setForeignCurrencySymbol(info.symbol);
+                if (isExportBusiness) {
+                    invoke<{ id: string; code: string; name: string; symbol: string } | null>(
+                        'get_party_currency_info',
+                        { partyId: ledger.id }
+                    ).then(currencyInfo => {
+                        if (currencyInfo) {
+                            setForexCurrencyId(currencyInfo.id);
+                            setForexCurrencyCode(currencyInfo.code);
+                            setForexCurrencySymbol(currencyInfo.symbol);
                         } else {
-                            setForeignCurrencyId(null);
-                            setForeignCurrencyCode('');
-                            setForeignCurrencySymbol('');
-                            setExchangeRate(1.0);
+                            setForexCurrencyId(null);
+                            setForexCurrencyCode('');
+                            setForexCurrencySymbol('');
                         }
                     }).catch(() => {
-                        setForeignCurrencyId(null);
-                        setForeignCurrencyCode('');
-                        setForeignCurrencySymbol('');
-                        setExchangeRate(1.0);
+                        setForexCurrencyId(null);
                     });
                 }
-            } else if (index === 0) {
-                setForeignCurrencyId(null);
-                setForeignCurrencyCode('');
-                setForeignCurrencySymbol('');
-                setExchangeRate(1.0);
             }
         }
 
@@ -234,23 +227,17 @@ export default function ReceiptPage() {
         try {
             dispatch(setReceiptLoading(true));
 
-            const payload = {
-                ...receiptState.form,
-                items: receiptState.items,
-                currency_id: isForeignCurrency ? foreignCurrencyId : undefined,
-                exchange_rate: isForeignCurrency ? exchangeRate : undefined,
-            };
-
             if (receiptState.mode === 'editing' && receiptState.currentVoucherId) {
                 await invoke('update_receipt', {
                     id: receiptState.currentVoucherId,
-                    receipt: payload
+                    receipt: { 
+                        ...receiptState.form, 
+                        items: receiptState.items,
+                        currency_id: isExportBusiness && forexCurrencyId ? forexCurrencyId : null,
+                        exchange_rate: isExportBusiness && forexCurrencyId ? forexExchangeRate : 1.0,
+                    }
                 });
-                if (isForeignCurrency) {
-                    toast.success('Receipt updated. Any forex exchange difference has been automatically posted.');
-                } else {
-                    toast.success('Receipt updated successfully');
-                }
+                toast.success('Receipt updated successfully');
                 dispatch(setReceiptLoading(false));
 
                 if (voucherSettings?.autoPrint) {
@@ -258,21 +245,28 @@ export default function ReceiptPage() {
                 }
 
                 dispatch(resetReceiptForm());
-                setForeignCurrencyId(null);
-                setForeignCurrencyCode('');
-                setForeignCurrencySymbol('');
-                setExchangeRate(1.0);
                 handleAddItem();
                 dispatch(setReceiptHasUnsavedChanges(false));
                 dispatch(setReceiptMode('new'));
+                setForexCurrencyId(null);
+                setForexCurrencyCode('');
+                setForexCurrencySymbol('');
+                setForexExchangeRate(1.0);
                 return;
             }
 
-            const newVoucherId = await invoke<string>('create_receipt', { receipt: { ...payload, user_id: user?.id.toString() } });
-            if (isForeignCurrency) {
-                toast.success('Receipt saved. Any forex exchange difference has been automatically posted.');
-            } else {
-                toast.success('Receipt saved successfully');
+            const newVoucherId = await invoke<string>('create_receipt', { 
+                receipt: { 
+                    ...receiptState.form, 
+                    items: receiptState.items, 
+                    user_id: user?.id.toString(),
+                    currency_id: isExportBusiness && forexCurrencyId ? forexCurrencyId : null,
+                    exchange_rate: isExportBusiness && forexCurrencyId ? forexExchangeRate : 1.0,
+                } 
+            });
+            toast.success('Receipt saved successfully');
+            if (isExportBusiness && forexCurrencyId && forexExchangeRate !== 1.0) {
+                toast.info(`Receipt saved. Exchange rate: 1 ${forexCurrencyCode} = ₹${forexExchangeRate.toFixed(4)}`);
             }
 
             if (voucherSettings?.autoPrint) {
@@ -280,11 +274,11 @@ export default function ReceiptPage() {
             }
 
             dispatch(resetReceiptForm());
-            setForeignCurrencyId(null);
-            setForeignCurrencyCode('');
-            setForeignCurrencySymbol('');
-            setExchangeRate(1.0);
             handleAddItem();
+            setForexCurrencyId(null);
+            setForexCurrencyCode('');
+            setForexCurrencySymbol('');
+            setForexExchangeRate(1.0);
 
             // Focus back to deposit to after save
             setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
@@ -298,6 +292,10 @@ export default function ReceiptPage() {
     const handleClear = () => {
         dispatch(resetReceiptForm());
         handleAddItem();
+        setForexCurrencyId(null);
+        setForexCurrencyCode('');
+        setForexCurrencySymbol('');
+        setForexExchangeRate(1.0);
         setTimeout(() => depositToRef.current?.querySelector('button')?.focus(), 100);
     };
 
@@ -308,6 +306,10 @@ export default function ReceiptPage() {
             dispatch(setReceiptLoading(true));
             dispatch(setReceiptHasUnsavedChanges(false));
             dispatch(resetReceiptForm());
+            setForexCurrencyId(null);
+            setForexCurrencyCode('');
+            setForexCurrencySymbol('');
+            setForexExchangeRate(1.0);
 
             const receipt = await invoke<any>('get_receipt', { id });
             const items = await invoke<any[]>('get_receipt_items', { voucherId: id });
@@ -323,23 +325,6 @@ export default function ReceiptPage() {
 
             // Set Creator Name
             dispatch(setReceiptCreatedByName(receipt.created_by_name));
-
-            if (receipt.currency_id) {
-                setForeignCurrencyId(receipt.currency_id);
-                setExchangeRate(receipt.exchange_rate || 1.0);
-                invoke<any[]>('get_currencies').then((currencies) => {
-                    const curr = currencies.find(c => c.id === receipt.currency_id);
-                    if (curr) {
-                        setForeignCurrencyCode(curr.code);
-                        setForeignCurrencySymbol(curr.symbol || curr.code);
-                    }
-                }).catch(console.error);
-            } else {
-                setForeignCurrencyId(null);
-                setForeignCurrencyCode('');
-                setForeignCurrencySymbol('');
-                setExchangeRate(1.0);
-            }
 
             // Populate Items
             dispatch(setReceiptItems(items.map(item => ({
@@ -604,15 +589,52 @@ export default function ReceiptPage() {
                             </div>
 
                             {/* Reference */}
-                            <div className="col-span-1">
-                                <Label className="text-xs font-medium mb-1 block">Reference Number</Label>
-                                <Input
-                                    value={receiptState.form.reference_number}
-                                    onChange={(e) => dispatch(setReceiptReference(e.target.value))}
-                                    placeholder="Cheque/Ref No"
-                                    className="h-8 text-sm"
-                                    disabled={receiptState.mode === 'viewing'}
-                                />
+                            <div className="col-span-1 flex gap-2 items-end">
+                                <div className="flex-1">
+                                    <Label className="text-xs font-medium mb-1 block">Reference Number</Label>
+                                    <Input
+                                        value={receiptState.form.reference_number}
+                                        onChange={(e) => dispatch(setReceiptReference(e.target.value))}
+                                        placeholder="Cheque/Ref No"
+                                        className="h-8 text-sm"
+                                        disabled={receiptState.mode === 'viewing'}
+                                    />
+                                </div>
+                                {isExportBusiness && forexCurrencyId && (
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                className="h-8 px-2.5 flex items-center gap-1 shrink-0 font-medium text-xs rounded-md transition-colors"
+                                            >
+                                                <span className="font-semibold">{forexCurrencyCode}</span>
+                                                <span className="text-[10px] text-muted-foreground">@ {forexExchangeRate}</span>
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-64 p-3" align="end">
+                                            <div className="space-y-2">
+                                                <h4 className="font-semibold text-xs text-foreground">Exchange Rate Settings</h4>
+                                                <p className="text-[10px] text-muted-foreground leading-normal">
+                                                    Set conversion rate from {forexCurrencyCode} to base currency ({money(1)?.replace('1.00','').trim() || 'INR'}).
+                                                </p>
+                                                <div className="flex items-center gap-2 pt-1">
+                                                    <span className="text-xs font-semibold text-foreground shrink-0">1 {forexCurrencyCode} =</span>
+                                                    <Input
+                                                        type="number"
+                                                        min="0.0001"
+                                                        step="0.0001"
+                                                        value={forexExchangeRate}
+                                                        onChange={(e) => setForexExchangeRate(parseFloat(e.target.value) || 1.0)}
+                                                        className="h-7 text-xs flex-1 bg-white focus-visible:ring-primary"
+                                                        disabled={receiptState.mode === 'viewing'}
+                                                    />
+                                                    <span className="text-xs font-medium text-muted-foreground shrink-0">{money(1)?.replace('1.00','').trim() || 'INR'}</span>
+                                                </div>
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                )}
                             </div>
 
                             {/* Narration */}
@@ -627,22 +649,6 @@ export default function ReceiptPage() {
                                 />
                             </div>
                         </div>
-                        {isExportBusiness && isForeignCurrency && (
-                            <div className="flex items-center gap-3 p-2 rounded-md bg-blue-50 border border-blue-200 text-sm mt-2">
-                                <span className="font-medium text-blue-700">Currency: {foreignCurrencyCode}</span>
-                                <span className="text-muted-foreground">Exchange Rate: 1 {foreignCurrencyCode} =</span>
-                                <Input
-                                    type="number"
-                                    min="0.0001"
-                                    step="0.0001"
-                                    className="w-28 h-7 text-sm"
-                                    value={exchangeRate}
-                                    onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 1)}
-                                    disabled={receiptState.mode === 'viewing'}
-                                />
-                                <span className="text-muted-foreground">{companyProfile.base_currency || 'INR'}</span>
-                            </div>
-                        )}
                     </div>
 
                     {/* Items Section */}
@@ -696,14 +702,7 @@ export default function ReceiptPage() {
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Receipt</div>
                                 <div className="text-lg font-mono font-bold">
-                                    {isForeignCurrency ? (
-                                        <div>
-                                            <div>{forexMoney(receiptState.totals.grandTotal)}</div>
-                                            <div className="text-xs text-muted-foreground font-normal">≈ {money(receiptState.totals.grandTotal * exchangeRate)}</div>
-                                        </div>
-                                    ) : (
-                                        money(receiptState.totals.grandTotal)
-                                    )}
+                                    {money(receiptState.totals.grandTotal)}
                                 </div>
                             </div>
                         </div>
