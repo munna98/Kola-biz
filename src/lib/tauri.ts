@@ -1,5 +1,16 @@
 import { invoke } from '@tauri-apps/api/core';
 
+export interface CurrencyInfo {
+  id: string;
+  code: string;       // e.g. "USD"
+  name: string;       // e.g. "US Dollar"
+  symbol: string;     // e.g. "$"
+}
+
+export async function getPartyCurrencyInfo(party_id: string): Promise<CurrencyInfo | null> {
+  return invoke<CurrencyInfo | null>('get_party_currency_info', { party_id });
+}
+
 // ======= UNITS =======
 
 export interface Unit {
@@ -353,6 +364,8 @@ export interface SalesInvoiceItem {
 
 export interface CreateSalesInvoice {
   customer_id: string;
+  currency_id?: string;
+  exchange_rate?: number;
   salesperson_id?: string;
   voucher_date: string;
   reference?: string;

@@ -28,6 +28,8 @@ import {
   closeSalesTab,
   setActiveSectionWithParams,
   setSalesMarginScheme,
+  setSalesCurrency,
+  setSalesExchangeRate,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -64,7 +66,8 @@ import { Product, ProductGroup, ProductUnitConversion, Unit, Employee, GstTaxSla
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
 import { ShipToPopover, ShipToAddress } from '@/components/voucher/ShipToPopover';
-import { useCurrencyLabel, useMoney } from '@/hooks/useMoney';
+import { useCurrencyLabel, useMoney, useForexMoney } from '@/hooks/useMoney';
+import { getPartyCurrencyInfo } from '@/lib/tauri';
 
 
 
@@ -83,6 +86,11 @@ export default function SalesInvoicePage() {
   const user = useSelector((state: RootState) => state.auth.user);
   const money = useMoney();
   const currencyLabel = useCurrencyLabel();
+  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
+  const isExportBusiness = companyProfile.business_type === 'Export Business';
+  const { currency_id, exchange_rate, foreign_currency_code, foreign_currency_symbol } = salesState;
+  const isForeignCurrency = isExportBusiness && !!currency_id;
+  const forexMoney = useForexMoney(foreign_currency_code, foreign_currency_symbol);
   const [products, setProducts] = useState<Product[]>([]);
   const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -610,6 +618,8 @@ export default function SalesInvoicePage() {
             is_margin_scheme_invoice: salesState.form.is_margin_scheme_invoice,
             return_items: buildSalesReturnDraftPayload(),
             ship_to: activeShipTo,
+            currency_id: isForeignCurrency ? currency_id : undefined,
+            exchange_rate: isForeignCurrency ? exchange_rate : undefined,
           },
         });
         toast.success('Sales invoice updated successfully');
@@ -666,6 +676,8 @@ export default function SalesInvoicePage() {
             is_margin_scheme_invoice: salesState.form.is_margin_scheme_invoice,
             return_items: buildSalesReturnDraftPayload(),
             ship_to: activeShipTo,
+            currency_id: isForeignCurrency ? currency_id : undefined,
+            exchange_rate: isForeignCurrency ? exchange_rate : undefined,
           },
         });
         toast.success('Sales invoice created successfully');
@@ -841,6 +853,17 @@ export default function SalesInvoicePage() {
 
       // Set Creator Name
       dispatch(setSalesCreatedByName(invoice.created_by_name));
+
+      if (invoice.currency_id) {
+        dispatch(setSalesCurrency({
+          currency_id: invoice.currency_id,
+          code: invoice.foreign_currency_code || '',
+          symbol: invoice.foreign_currency_symbol || '',
+        }));
+        dispatch(setSalesExchangeRate(invoice.exchange_rate || 1.0));
+      } else {
+        dispatch(setSalesCurrency(null));
+      }
 
       // Parse Ship To Address
       if (invoice.metadata) {
@@ -1444,6 +1467,19 @@ export default function SalesInvoicePage() {
                           .then(bal => setPartyBalance(bal))
                           .catch(console.error);
 
+                        // Auto-detect currency when customer is selected (Export Business only)
+                        if (isExportBusiness) {
+                          getPartyCurrencyInfo(party.id.toString()).then((currencyInfo) => {
+                            if (currencyInfo) {
+                              dispatch(setSalesCurrency({ currency_id: currencyInfo.id, code: currencyInfo.code, symbol: currencyInfo.symbol }));
+                            } else {
+                              dispatch(setSalesCurrency(null)); // domestic customer
+                            }
+                          }).catch(() => dispatch(setSalesCurrency(null)));
+                        } else {
+                          dispatch(setSalesCurrency(null));
+                        }
+
                         // Auto-focus first product after party selection
                         setTimeout(() => {
                           voucherItemsRef.current?.focusFirstProduct();
@@ -1525,6 +1561,24 @@ export default function SalesInvoicePage() {
                 />
               </div>
             </div>
+            {isExportBusiness && isForeignCurrency && (
+              <div className="flex items-center gap-3 p-2 rounded-md bg-blue-50 border border-blue-200 text-sm mt-1">
+                <span className="font-medium text-blue-700">Currency: {foreign_currency_code}</span>
+                <span className="text-muted-foreground">Exchange Rate:</span>
+                <span className="text-muted-foreground">1 {foreign_currency_code} =</span>
+                <span className="text-muted-foreground">{currencyLabel}</span>
+                <Input
+                  type="number"
+                  min="0.0001"
+                  step="0.0001"
+                  className="w-32 h-7 text-sm"
+                  value={exchange_rate}
+                  onChange={(e) => dispatch(setSalesExchangeRate(parseFloat(e.target.value) || 1))}
+                  placeholder="Rate"
+                  disabled={isReadOnly}
+                />
+              </div>
+            )}
           </div>
 
           {/* Items Section */}
@@ -1700,31 +1754,46 @@ export default function SalesInvoicePage() {
                     />
                   </div>
                 </div>
-                <div className="text-right space-y-0.5">
+                <div className="text-right space-y-1">
                   <div className="flex justify-between items-center gap-2 text-xs">
                     <span className="text-muted-foreground">Subtotal:</span>
-                    <span className="font-mono font-medium">{money(salesState.totals.subtotal)}</span>
+                    {isForeignCurrency ? (
+                      <span className="font-mono font-medium">{forexMoney(salesState.totals.subtotal)} <span className="text-[10px] text-muted-foreground">(≈ {money(salesState.totals.subtotal * exchange_rate)})</span></span>
+                    ) : (
+                      <span className="font-mono font-medium">{money(salesState.totals.subtotal)}</span>
+                    )}
                   </div>
                   {salesState.totals.discount > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">
-                      Discount: {money(salesState.totals.discount)}
+                      Discount: {isForeignCurrency ? `${forexMoney(salesState.totals.discount)} (≈ ${money(salesState.totals.discount * exchange_rate)})` : money(salesState.totals.discount)}
                     </div>
                   )}
                   {salesState.totals.tax > 0 && (
-                    <div className="text-xs font-mono text-muted-foreground">Tax: {money(salesState.totals.tax)}</div>
+                    <div className="text-xs font-mono text-muted-foreground">
+                      Tax: {isForeignCurrency ? `${forexMoney(salesState.totals.tax)} (≈ ${money(salesState.totals.tax * exchange_rate)})` : money(salesState.totals.tax)}
+                    </div>
                   )}
                   {linkedReturnTotal > 0 && (
                     <div className="flex justify-between items-center gap-2 text-xs font-mono text-red-600">
                       <span>Less Returns ({linkedReturnCount}):</span>
-                      <span>-{money(linkedReturnTotal)}</span>
+                      <span>-{isForeignCurrency ? forexMoney(linkedReturnTotal) : money(linkedReturnTotal)}</span>
                     </div>
                   )}
                   {linkedReturnTotal > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">
-                      Invoice Total: {money(salesState.totals.grandTotal)}
+                      Invoice Total: {isForeignCurrency ? forexMoney(salesState.totals.grandTotal) : money(salesState.totals.grandTotal)}
                     </div>
                   )}
-                  <div className="text-lg font-mono font-bold">{money(netPayableTotal)}</div>
+                  <div className="text-lg font-mono font-bold">
+                    {isForeignCurrency ? (
+                      <div>
+                        <div>{forexMoney(netPayableTotal)}</div>
+                        <div className="text-xs text-muted-foreground font-normal">≈ {money(netPayableTotal * exchange_rate)}</div>
+                      </div>
+                    ) : (
+                      money(netPayableTotal)
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

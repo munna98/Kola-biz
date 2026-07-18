@@ -34,6 +34,10 @@ interface LedgerEntry {
   debit: number;
   credit: number;
   balance: number;
+  foreign_debit?: number;
+  foreign_credit?: number;
+  currency_code?: string;
+  currency_symbol?: string;
 }
 
 export default function LedgerReportPage() {
@@ -48,6 +52,7 @@ export default function LedgerReportPage() {
     hasGenerated,
   } = useSelector((state: RootState) => state.ledgerReport);
   const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
+  const isExportBusiness = companyProfile?.business_type === 'Export Business';
   const money = useMoney();
 
   const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
@@ -324,6 +329,13 @@ export default function LedgerReportPage() {
                       <th className="p-3 text-left text-sm font-semibold">Voucher No</th>
                       <th className="p-3 text-left text-sm font-semibold">Type</th>
                       <th className="p-3 text-left text-sm font-semibold">Narration</th>
+                      {isExportBusiness && (
+                        <>
+                          <th className="p-3 text-right text-sm font-semibold">Forex Debit</th>
+                          <th className="p-3 text-right text-sm font-semibold">Forex Credit</th>
+                          <th className="p-3 text-left text-sm font-semibold">Cur</th>
+                        </>
+                      )}
                       <th className="p-3 text-right text-sm font-semibold">Debit</th>
                       <th className="p-3 text-right text-sm font-semibold">Credit</th>
                       <th className="p-3 text-right text-sm font-semibold">Balance</th>
@@ -333,7 +345,7 @@ export default function LedgerReportPage() {
                     {/* Opening Balance Row */}
                     {openingBalance !== 0 && (
                       <tr className="bg-muted/20 border-b font-semibold">
-                        <td className="p-3 text-sm" colSpan={4}>Opening Balance</td>
+                        <td className="p-3 text-sm" colSpan={isExportBusiness ? 7 : 4}>Opening Balance</td>
                         <td className="p-3 text-right font-mono text-sm">
                           {openingBalance > 0 ? money(openingBalance) : '-'}
                         </td>
@@ -364,6 +376,19 @@ export default function LedgerReportPage() {
                           </span>
                         </td>
                         <td className="p-3 text-sm text-muted-foreground">{entry.narration || '-'}</td>
+                        {isExportBusiness && (
+                          <>
+                            <td className="p-3 text-right font-mono text-sm text-blue-600">
+                              {entry.foreign_debit && entry.foreign_debit > 0 ? `${entry.currency_symbol || ''}${entry.foreign_debit.toFixed(2)}` : '-'}
+                            </td>
+                            <td className="p-3 text-right font-mono text-sm text-blue-600">
+                              {entry.foreign_credit && entry.foreign_credit > 0 ? `${entry.currency_symbol || ''}${entry.foreign_credit.toFixed(2)}` : '-'}
+                            </td>
+                            <td className="p-3 text-left font-mono text-xs text-muted-foreground">
+                              {entry.currency_code || '-'}
+                            </td>
+                          </>
+                        )}
                         <td className="p-3 text-right font-mono text-sm">
                           {entry.debit > 0 ? money(entry.debit) : '-'}
                         </td>
@@ -378,7 +403,7 @@ export default function LedgerReportPage() {
                   </tbody>
                   <tfoot className="bg-muted/30 border-t-2 border-foreground/20">
                     <tr>
-                      <td colSpan={4} className="p-3 font-bold text-sm">Closing Balance</td>
+                      <td colSpan={isExportBusiness ? 7 : 4} className="p-3 font-bold text-sm">Closing Balance</td>
                       <td className="p-3 text-right font-mono font-bold text-sm">
                         {closingBalance > 0 ? money(closingBalance) : '-'}
                       </td>

@@ -526,6 +526,13 @@ fn default_item_type() -> String {
 
 #[derive(Deserialize)]
 pub struct CreatePurchaseInvoice {
+    /// Foreign currency ID for this invoice. None means base/domestic currency.
+    #[serde(default)]
+    pub currency_id: Option<String>,
+    /// Exchange rate: 1 foreign unit = this many base currency units.
+    /// Only used when currency_id is Some and differs from the company base currency.
+    #[serde(default)]
+    pub exchange_rate: Option<f64>,
     pub supplier_id: String,
     pub party_type: String,
     pub voucher_date: String,
@@ -1520,6 +1527,10 @@ pub struct SalesInvoice {
     pub linked_return_id: Option<String>,
     pub is_margin_scheme_invoice: i64,
     pub metadata: Option<String>,
+    pub currency_id: Option<String>,
+    pub exchange_rate: Option<f64>,
+    pub foreign_currency_code: Option<String>,
+    pub foreign_currency_symbol: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -1586,6 +1597,13 @@ pub struct CreateSalesInvoiceItem {
 
 #[derive(Deserialize)]
 pub struct CreateSalesInvoice {
+    /// Foreign currency ID for this invoice. None means base/domestic currency.
+    #[serde(default)]
+    pub currency_id: Option<String>,
+    /// Exchange rate: 1 foreign unit = this many base currency units.
+    /// Only used when currency_id is Some and differs from the company base currency.
+    #[serde(default)]
+    pub exchange_rate: Option<f64>,
     pub customer_id: String,
     pub salesperson_id: Option<String>,
     pub party_type: String,
@@ -1678,11 +1696,16 @@ pub async fn get_sales_invoice(
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
             v.linked_return_id,
             COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice,
-            v.metadata
+            v.metadata,
+            v.currency_id,
+            v.exchange_rate,
+            cur.code as foreign_currency_code,
+            cur.symbol as foreign_currency_symbol
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         LEFT JOIN users u ON v.created_by = u.id
+        LEFT JOIN currencies cur ON v.currency_id = cur.id
         WHERE v.id = ? AND v.voucher_type = 'sales_invoice' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -1744,11 +1767,16 @@ pub(crate) async fn get_sales_invoice_with_pool(
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
             v.linked_return_id,
             COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice,
-            v.metadata
+            v.metadata,
+            v.currency_id,
+            v.exchange_rate,
+            cur.code as foreign_currency_code,
+            cur.symbol as foreign_currency_symbol
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         LEFT JOIN users u ON v.created_by = u.id
+        LEFT JOIN currencies cur ON v.currency_id = cur.id
         WHERE v.id = ? AND v.voucher_type = 'sales_invoice' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -1896,6 +1924,9 @@ pub async fn create_sales_invoice(
     .unwrap_or(false);
     let gst_disabled = gst_disabled_by_voucher || !gst_enabled_globally;
 
+    let exchange_rate = invoice.exchange_rate.unwrap_or(1.0).max(0.0001);
+    let is_foreign_currency = invoice.currency_id.is_some() && exchange_rate != 1.0;
+
     let mut prepared_lines = Vec::new();
     for item in &invoice.items {
         let item_id = if item.item_type == "service" {
@@ -1951,6 +1982,20 @@ pub async fn create_sales_invoice(
     let total_amount = round2(subtotal - discount_amount);
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let grand_total = round2(total_amount + total_tax);
+    let subtotal_foreign = subtotal;
+    let discount_amount_foreign = discount_amount;
+    let total_tax_foreign = total_tax;
+    let total_amount_foreign = total_amount;
+    let grand_total_foreign = grand_total;
+
+    let subtotal = if is_foreign_currency { round2(subtotal_foreign * exchange_rate) } else { subtotal_foreign };
+    let discount_amount = if is_foreign_currency { round2(discount_amount_foreign * exchange_rate) } else { discount_amount_foreign };
+    let total_tax = if is_foreign_currency { round2(total_tax_foreign * exchange_rate) } else { total_tax_foreign };
+    let total_amount = if is_foreign_currency { round2(total_amount_foreign * exchange_rate) } else { total_amount_foreign };
+    let total_cgst = if is_foreign_currency { round2(total_cgst * exchange_rate) } else { total_cgst };
+    let total_sgst = if is_foreign_currency { round2(total_sgst * exchange_rate) } else { total_sgst };
+    let total_igst = if is_foreign_currency { round2(total_igst * exchange_rate) } else { total_igst };
+    let grand_total = if is_foreign_currency { round2(grand_total_foreign * exchange_rate) } else { grand_total_foreign };
 
     let voucher_id = Uuid::now_v7().to_string();
     
@@ -1958,14 +2003,16 @@ pub async fn create_sales_invoice(
     let metadata_json = metadata_obj.to_string();
 
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, is_margin_scheme_invoice, metadata)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, is_margin_scheme_invoice, metadata, currency_id, exchange_rate, foreign_total)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("sales_invoice").bind(&invoice.voucher_date).bind(&invoice.customer_id)
     .bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(discount_rate)
     .bind(discount_amount).bind(total_tax).bind(total_amount).bind(&invoice.narration)
     .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total)
-    .bind(invoice.is_margin_scheme_invoice as i64).bind(&metadata_json).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    .bind(invoice.is_margin_scheme_invoice as i64).bind(&metadata_json)
+    .bind(&invoice.currency_id).bind(exchange_rate).bind(grand_total_foreign)
+    .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
     for item in &processed_items {
@@ -2105,6 +2152,26 @@ pub async fn create_sales_invoice(
             sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
                 .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(0.0).bind(amt)
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
+    }
+
+    if is_foreign_currency {
+        if let Some(ref cid) = invoice.currency_id {
+            let _ = sqlx::query(
+                "UPDATE journal_entries 
+                 SET foreign_debit = CASE WHEN debit > 0 THEN ROUND(debit / ?, 6) ELSE 0 END,
+                     foreign_credit = CASE WHEN credit > 0 THEN ROUND(credit / ?, 6) ELSE 0 END,
+                     currency_id = ?,
+                     exchange_rate = ?
+                 WHERE voucher_id = ?"
+            )
+            .bind(exchange_rate)
+            .bind(exchange_rate)
+            .bind(cid)
+            .bind(exchange_rate)
+            .bind(&voucher_id)
+            .execute(&mut *tx)
+            .await;
         }
     }
 

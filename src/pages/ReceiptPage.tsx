@@ -47,7 +47,8 @@ import { VoucherLedgerSection } from '@/components/voucher/VoucherLedgerSection'
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import ChartOfAccountDialog from '@/components/dialogs/ChartOfAccountDialog';
 import { AccountGroup, api } from '@/lib/tauri';
-import { useMoney } from '@/hooks/useMoney';
+import { useMoney, useForexMoney } from '@/hooks/useMoney';
+import { getPartyCurrencyInfo } from '@/lib/tauri';
 
 interface AccountData {
     id: number;
@@ -67,6 +68,15 @@ export default function ReceiptPage() {
     const user = useSelector((state: RootState) => state.auth.user);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
     const money = useMoney();
+
+    const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
+    const isExportBusiness = companyProfile.business_type === 'Export Business';
+    const [foreignCurrencyId, setForeignCurrencyId] = useState<string | null>(null);
+    const [foreignCurrencyCode, setForeignCurrencyCode] = useState('');
+    const [foreignCurrencySymbol, setForeignCurrencySymbol] = useState('');
+    const [exchangeRate, setExchangeRate] = useState(1.0);
+    const isForeignCurrency = isExportBusiness && !!foreignCurrencyId;
+    const forexMoney = useForexMoney(foreignCurrencyCode, foreignCurrencySymbol);
 
     const [depositToAccounts, setDepositToAccounts] = useState<AccountData[]>([]);
     const [receivedFromLedgers, setReceivedFromLedgers] = useState<LedgerAccount[]>([]);
@@ -150,6 +160,32 @@ export default function ReceiptPage() {
                 invoke<number>('get_account_balance', { accountId: ledger.id })
                     .then(bal => setRowBalances(prev => ({ ...prev, [index]: bal })))
                     .catch(console.error);
+
+                // Auto-detect currency when customer is selected (Export Business only)
+                if (index === 0 && isExportBusiness) {
+                    getPartyCurrencyInfo(ledger.id.toString()).then((info) => {
+                        if (info) {
+                            setForeignCurrencyId(info.id);
+                            setForeignCurrencyCode(info.code);
+                            setForeignCurrencySymbol(info.symbol);
+                        } else {
+                            setForeignCurrencyId(null);
+                            setForeignCurrencyCode('');
+                            setForeignCurrencySymbol('');
+                            setExchangeRate(1.0);
+                        }
+                    }).catch(() => {
+                        setForeignCurrencyId(null);
+                        setForeignCurrencyCode('');
+                        setForeignCurrencySymbol('');
+                        setExchangeRate(1.0);
+                    });
+                }
+            } else if (index === 0) {
+                setForeignCurrencyId(null);
+                setForeignCurrencyCode('');
+                setForeignCurrencySymbol('');
+                setExchangeRate(1.0);
             }
         }
 
@@ -198,12 +234,23 @@ export default function ReceiptPage() {
         try {
             dispatch(setReceiptLoading(true));
 
+            const payload = {
+                ...receiptState.form,
+                items: receiptState.items,
+                currency_id: isForeignCurrency ? foreignCurrencyId : undefined,
+                exchange_rate: isForeignCurrency ? exchangeRate : undefined,
+            };
+
             if (receiptState.mode === 'editing' && receiptState.currentVoucherId) {
                 await invoke('update_receipt', {
                     id: receiptState.currentVoucherId,
-                    receipt: { ...receiptState.form, items: receiptState.items }
+                    receipt: payload
                 });
-                toast.success('Receipt updated successfully');
+                if (isForeignCurrency) {
+                    toast.success('Receipt updated. Any forex exchange difference has been automatically posted.');
+                } else {
+                    toast.success('Receipt updated successfully');
+                }
                 dispatch(setReceiptLoading(false));
 
                 if (voucherSettings?.autoPrint) {
@@ -211,20 +258,32 @@ export default function ReceiptPage() {
                 }
 
                 dispatch(resetReceiptForm());
+                setForeignCurrencyId(null);
+                setForeignCurrencyCode('');
+                setForeignCurrencySymbol('');
+                setExchangeRate(1.0);
                 handleAddItem();
                 dispatch(setReceiptHasUnsavedChanges(false));
                 dispatch(setReceiptMode('new'));
                 return;
             }
 
-            const newVoucherId = await invoke<string>('create_receipt', { receipt: { ...receiptState.form, items: receiptState.items, user_id: user?.id.toString() } });
-            toast.success('Receipt saved successfully');
+            const newVoucherId = await invoke<string>('create_receipt', { receipt: { ...payload, user_id: user?.id.toString() } });
+            if (isForeignCurrency) {
+                toast.success('Receipt saved. Any forex exchange difference has been automatically posted.');
+            } else {
+                toast.success('Receipt saved successfully');
+            }
 
             if (voucherSettings?.autoPrint) {
                 print({ voucherId: newVoucherId, voucherType: 'receipt' });
             }
 
             dispatch(resetReceiptForm());
+            setForeignCurrencyId(null);
+            setForeignCurrencyCode('');
+            setForeignCurrencySymbol('');
+            setExchangeRate(1.0);
             handleAddItem();
 
             // Focus back to deposit to after save
@@ -264,6 +323,23 @@ export default function ReceiptPage() {
 
             // Set Creator Name
             dispatch(setReceiptCreatedByName(receipt.created_by_name));
+
+            if (receipt.currency_id) {
+                setForeignCurrencyId(receipt.currency_id);
+                setExchangeRate(receipt.exchange_rate || 1.0);
+                invoke<any[]>('get_currencies').then((currencies) => {
+                    const curr = currencies.find(c => c.id === receipt.currency_id);
+                    if (curr) {
+                        setForeignCurrencyCode(curr.code);
+                        setForeignCurrencySymbol(curr.symbol || curr.code);
+                    }
+                }).catch(console.error);
+            } else {
+                setForeignCurrencyId(null);
+                setForeignCurrencyCode('');
+                setForeignCurrencySymbol('');
+                setExchangeRate(1.0);
+            }
 
             // Populate Items
             dispatch(setReceiptItems(items.map(item => ({
@@ -551,6 +627,22 @@ export default function ReceiptPage() {
                                 />
                             </div>
                         </div>
+                        {isExportBusiness && isForeignCurrency && (
+                            <div className="flex items-center gap-3 p-2 rounded-md bg-blue-50 border border-blue-200 text-sm mt-2">
+                                <span className="font-medium text-blue-700">Currency: {foreignCurrencyCode}</span>
+                                <span className="text-muted-foreground">Exchange Rate: 1 {foreignCurrencyCode} =</span>
+                                <Input
+                                    type="number"
+                                    min="0.0001"
+                                    step="0.0001"
+                                    className="w-28 h-7 text-sm"
+                                    value={exchangeRate}
+                                    onChange={(e) => setExchangeRate(parseFloat(e.target.value) || 1)}
+                                    disabled={receiptState.mode === 'viewing'}
+                                />
+                                <span className="text-muted-foreground">{companyProfile.base_currency || 'INR'}</span>
+                            </div>
+                        )}
                     </div>
 
                     {/* Items Section */}
@@ -604,7 +696,14 @@ export default function ReceiptPage() {
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Receipt</div>
                                 <div className="text-lg font-mono font-bold">
-                                    {money(receiptState.totals.grandTotal)}
+                                    {isForeignCurrency ? (
+                                        <div>
+                                            <div>{forexMoney(receiptState.totals.grandTotal)}</div>
+                                            <div className="text-xs text-muted-foreground font-normal">≈ {money(receiptState.totals.grandTotal * exchangeRate)}</div>
+                                        </div>
+                                    ) : (
+                                        money(receiptState.totals.grandTotal)
+                                    )}
                                 </div>
                             </div>
                         </div>

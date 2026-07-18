@@ -886,6 +886,44 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_invoice ON payment_allocations(invoice_voucher_id)").execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_party ON payment_allocations(party_id, party_type)").execute(pool).await?;
 
+    // Migration: Multi-currency — add forex columns to vouchers
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN currency_id TEXT REFERENCES currencies(id)")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN exchange_rate REAL DEFAULT 1.0")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN foreign_total REAL DEFAULT 0")
+        .execute(pool).await;
+
+    // Migration: Multi-currency — add forex columns to journal_entries
+    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN foreign_debit REAL DEFAULT 0")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN foreign_credit REAL DEFAULT 0")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN currency_id TEXT")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN exchange_rate REAL DEFAULT 1.0")
+        .execute(pool).await;
+
+    // Migration: Multi-currency — add forex columns to payment_allocations
+    let _ = sqlx::query("ALTER TABLE payment_allocations ADD COLUMN exchange_rate REAL DEFAULT 1.0")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE payment_allocations ADD COLUMN forex_difference REAL DEFAULT 0")
+        .execute(pool).await;
+
+    // Seed: Forex Exchange Gain (Indirect Income) — for when receipt rate > invoice rate
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO chart_of_accounts 
+         (id, account_code, account_name, account_type, account_group, is_system, is_active)
+         VALUES ('sys_forex_gain', 'FOREX-001', 'Forex Exchange Gain', 'Income', 'Indirect Income', 1, 1)"
+    ).execute(pool).await;
+
+    // Seed: Forex Exchange Loss (Indirect Expenses) — for when receipt rate < invoice rate
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO chart_of_accounts 
+         (id, account_code, account_name, account_type, account_group, is_system, is_active)
+         VALUES ('sys_forex_loss', 'FOREX-002', 'Forex Exchange Loss', 'Expense', 'Indirect Expenses', 1, 1)"
+    ).execute(pool).await;
+
     // ==================== SETTINGS & CONFIG ====================
 
     // Invoice Templates

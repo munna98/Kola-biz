@@ -62,6 +62,10 @@ pub struct LedgerEntry {
     pub debit: f64,
     pub credit: f64,
     pub balance: f64,
+    pub foreign_debit: f64,
+    pub foreign_credit: f64,
+    pub currency_code: String,
+    pub currency_symbol: String,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -131,9 +135,14 @@ pub async fn get_ledger_report(
             je.narration,
             CAST(je.debit AS REAL) as debit,
             CAST(je.credit AS REAL) as credit,
-            0.0 as balance
+            0.0 as balance,
+            COALESCE(je.foreign_debit, 0) as foreign_debit,
+            COALESCE(je.foreign_credit, 0) as foreign_credit,
+            COALESCE(cur.code, '') as currency_code,
+            COALESCE(cur.symbol, '') as currency_symbol
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
+        LEFT JOIN currencies cur ON je.currency_id = cur.id
         WHERE je.account_id = ? AND v.deleted_at IS NULL {}
         ORDER BY v.voucher_date ASC, v.id ASC",
         date_filter

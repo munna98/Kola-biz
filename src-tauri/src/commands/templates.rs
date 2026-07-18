@@ -675,6 +675,23 @@ async fn get_purchase_invoice_data(
     let items =
         crate::commands::invoices::get_purchase_invoice_items_with_pool(pool, &id).await?;
 
+    // Fetch forex info for this voucher (if any)
+    let forex_info: Option<(Option<String>, f64, f64, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT v.currency_id, COALESCE(v.exchange_rate, 1.0), COALESCE(v.foreign_total, 0),
+                cur.code, cur.symbol
+         FROM vouchers v
+         LEFT JOIN currencies cur ON v.currency_id = cur.id
+         WHERE v.id = ?"
+    )
+    .bind(&id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+    
+    let (forex_currency_id, forex_rate, forex_foreign_total, forex_code, forex_symbol) = 
+        forex_info.unwrap_or((None, 1.0, 0.0, None, None));
+    let is_foreign_currency = forex_currency_id.is_some();
+
     let coa_details: Option<(Option<String>, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT party_id, account_name, gstin, address_line_1, state, city, postal_code FROM chart_of_accounts WHERE id = ?"
     )
@@ -943,6 +960,13 @@ async fn get_purchase_invoice_data(
             obj.insert("total_balance".to_string(), json!(total_balance));
             obj.insert("balance_due".to_string(), json!(balance_due));
 
+            // ======= Forex / Multi-Currency Context =======
+            obj.insert("is_foreign_currency".to_string(), json!(is_foreign_currency));
+            obj.insert("currency_code".to_string(), json!(forex_code.as_deref().unwrap_or("")));
+            obj.insert("currency_symbol".to_string(), json!(forex_symbol.as_deref().unwrap_or("")));
+            obj.insert("exchange_rate".to_string(), json!(forex_rate));
+            obj.insert("foreign_total".to_string(), json!(forex_foreign_total));
+
             // ======= GST Context =======
             let inter_state = tax_utils::is_inter_state(
                 Some(&company_state),
@@ -964,6 +988,23 @@ async fn get_sales_invoice_data(
     let invoice = crate::commands::invoices::get_sales_invoice_with_pool(pool, &id).await?;
     let items =
         crate::commands::invoices::get_sales_invoice_items_with_pool(pool, &id).await?;
+
+    // Fetch forex info for this voucher (if any)
+    let forex_info: Option<(Option<String>, f64, f64, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT v.currency_id, COALESCE(v.exchange_rate, 1.0), COALESCE(v.foreign_total, 0),
+                cur.code, cur.symbol
+         FROM vouchers v
+         LEFT JOIN currencies cur ON v.currency_id = cur.id
+         WHERE v.id = ?"
+    )
+    .bind(&id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+    
+    let (forex_currency_id, forex_rate, forex_foreign_total, forex_code, forex_symbol) = 
+        forex_info.unwrap_or((None, 1.0, 0.0, None, None));
+    let is_foreign_currency = forex_currency_id.is_some();
 
     let coa_details: Option<(Option<String>, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT party_id, account_name, gstin, address_line_1, state, city, postal_code FROM chart_of_accounts WHERE id = ?"
@@ -1290,6 +1331,13 @@ async fn get_sales_invoice_data(
             // Total Balance = Old Balance + Bill Amount (Grand Total)
             let total_balance = old_balance + invoice.grand_total;
             obj.insert("total_balance".to_string(), json!(total_balance));
+
+            // ======= Forex / Multi-Currency Context =======
+            obj.insert("is_foreign_currency".to_string(), json!(is_foreign_currency));
+            obj.insert("currency_code".to_string(), json!(forex_code.as_deref().unwrap_or("")));
+            obj.insert("currency_symbol".to_string(), json!(forex_symbol.as_deref().unwrap_or("")));
+            obj.insert("exchange_rate".to_string(), json!(forex_rate));
+            obj.insert("foreign_total".to_string(), json!(forex_foreign_total));
 
             // ======= GST Context =======
             let inter_state = tax_utils::is_inter_state(

@@ -230,6 +230,7 @@ pub fn run() {
             get_expense_report,
             get_expense_report_details,
             commands::parties::get_all_parties,
+            commands::parties::get_party_currency_info,
             // User Management (New)
             commands::auth::get_users,
             commands::auth::create_user,

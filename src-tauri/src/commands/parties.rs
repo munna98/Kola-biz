@@ -5,6 +5,14 @@ use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
 
+#[derive(Serialize, sqlx::FromRow)]
+pub struct PartyCurrencyInfo {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub symbol: String,
+}
+
 async fn get_next_party_code(
     pool: &SqlitePool,
     party_table: &str,
@@ -878,4 +886,38 @@ pub async fn get_all_parties(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec
         .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())
+}
+
+/// Returns the currency details for a party (customer or supplier) account.
+/// Used by the invoice form to auto-fill currency when a foreign party is selected.
+/// Returns None if the party has no currency set or if currency equals the base currency.
+#[tauri::command]
+pub async fn get_party_currency_info(
+    registry: State<'_, Arc<DbRegistry>>,
+    party_id: String,
+) -> Result<Option<PartyCurrencyInfo>, String> {
+    let pool = registry.active_pool().await?;
+
+    // Look up the currency linked to this party via customers/suppliers table,
+    // using the party_id FK stored on chart_of_accounts.
+    let result = sqlx::query_as::<_, PartyCurrencyInfo>(
+        "SELECT cur.id, cur.code, cur.name, COALESCE(cur.symbol, cur.code) as symbol
+         FROM chart_of_accounts coa
+         LEFT JOIN customers c ON coa.party_id = c.id AND coa.party_type = 'customer'
+         LEFT JOIN suppliers s ON coa.party_id = s.id AND coa.party_type = 'supplier'
+         JOIN currencies cur ON cur.id = COALESCE(c.currency, s.currency)
+         WHERE coa.id = ?
+           AND COALESCE(c.currency, s.currency) IS NOT NULL
+           AND COALESCE(c.currency, s.currency) != (
+               SELECT id FROM currencies WHERE code = (
+                   SELECT COALESCE(base_currency, 'INR') FROM company_profile LIMIT 1
+               )
+           )",
+    )
+    .bind(&party_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(result)
 }
