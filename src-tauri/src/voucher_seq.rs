@@ -188,7 +188,8 @@ fn financial_year_from_date(date_str: &str) -> String {
 
 /// Handles the sequence check and unique constraint free for a voucher being deleted.
 /// If the voucher's number matches the last generated one, decrements the sequence.
-/// In all cases, renames the voucher_no to __TEMP_{voucher_id}__ to release the UNIQUE constraint.
+/// Also checks backwards to roll back any previously deleted consecutive vouchers.
+/// In all cases, renames the voucher_no to __DELETED_{voucher_no}__ to release the UNIQUE constraint.
 pub async fn handle_voucher_deletion_in_tx(
     tx: &mut Transaction<'_, Sqlite>,
     voucher_id: &str,
@@ -215,9 +216,19 @@ pub async fn handle_voucher_deletion_in_tx(
         .map_err(|e| format!("Failed to fetch voucher sequence settings: {}", e))?;
 
         if let Some(seq) = seq_opt {
-            if seq.next_number > 1 {
-                // 3. Compute what the last generated voucher number would be (for next_number - 1)
-                let last_val = seq.next_number - 1;
+            // 3. Rename the current deleted voucher first to free its constraint
+            let temp_no = format!("__DELETED__{}__", voucher_no);
+            sqlx::query("UPDATE vouchers SET voucher_no = ? WHERE id = ?")
+                .bind(&temp_no)
+                .bind(voucher_id)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| format!("Failed to rename deleted voucher number: {}", e))?;
+
+            // 4. Check and decrement sequentially
+            let mut current_next = seq.next_number;
+            while current_next > 1 {
+                let last_val = current_next - 1;
                 let number = format!("{:0>width$}", last_val, width = seq.padding as usize);
                 let sep = &seq.separator;
 
@@ -237,28 +248,45 @@ pub async fn handle_voucher_deletion_in_tx(
                     format!("{}{}{}", base, sep, seq.suffix)
                 };
 
-                // 4. Compare with the deleted voucher's number
-                if expected_last_no == voucher_no {
-                    // Decrement next_number in voucher_sequences
-                    sqlx::query(
-                        "UPDATE voucher_sequences SET next_number = next_number - 1 WHERE voucher_type = ?"
-                    )
-                    .bind(&voucher_type)
-                    .execute(&mut **tx)
-                    .await
-                    .map_err(|e| format!("Failed to decrement voucher sequence next_number: {}", e))?;
+                // Check if either the active or deleted voucher exists under this expected number
+                let deleted_exists: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM vouchers WHERE voucher_no = ?)"
+                )
+                .bind(format!("__DELETED__{}__", expected_last_no))
+                .fetch_one(&mut **tx)
+                .await
+                .unwrap_or(false);
+
+                let active_exists: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM vouchers WHERE voucher_no = ?)"
+                )
+                .bind(&expected_last_no)
+                .fetch_one(&mut **tx)
+                .await
+                .unwrap_or(false);
+
+                if deleted_exists {
+                    current_next -= 1;
+                } else if active_exists {
+                    // Stopped by an active voucher, cannot decrement further
+                    break;
+                } else {
+                    // Neither active nor deleted exists (below starting range), stop.
+                    break;
                 }
             }
-        }
 
-        // 5. Rename voucher_no to __TEMP_{voucher_id}__ to free the unique constraint
-        let temp_no = format!("__TEMP_{}__", voucher_id);
-        sqlx::query("UPDATE vouchers SET voucher_no = ? WHERE id = ?")
-            .bind(&temp_no)
-            .bind(voucher_id)
-            .execute(&mut **tx)
-            .await
-            .map_err(|e| format!("Failed to rename deleted voucher number to temp placeholder: {}", e))?;
+            if current_next != seq.next_number {
+                sqlx::query(
+                    "UPDATE voucher_sequences SET next_number = ? WHERE voucher_type = ?"
+                )
+                .bind(current_next)
+                .bind(&voucher_type)
+                .execute(&mut **tx)
+                .await
+                .map_err(|e| format!("Failed to update voucher sequence next_number: {}", e))?;
+            }
+        }
     }
 
     Ok(())
