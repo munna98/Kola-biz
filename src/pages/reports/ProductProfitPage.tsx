@@ -27,6 +27,7 @@ import {
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useMoney } from '@/hooks/useMoney';
 
 
 interface ProductProfitRow {
@@ -83,6 +84,7 @@ export default function ProductProfitPage() {
     const [expandedProducts, setExpandedProducts] = useState<Record<string, boolean>>({});
     const [invoiceBreakdown, setInvoiceBreakdown] = useState<Record<string, ProductProfitInvoiceRow[]>>({});
     const [invoicesLoading, setInvoicesLoading] = useState<Record<string, boolean>>({});
+    const money = useMoney();
 
     useEffect(() => {
         loadProductGroups();
@@ -355,7 +357,7 @@ export default function ProductProfitPage() {
                             <div>
                                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Revenue</p>
                                 <h3 className="text-lg font-bold font-mono mt-0.5">
-                                    ₹{totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(totalRevenue)}
                                 </h3>
                             </div>
                         </CardContent>
@@ -369,7 +371,7 @@ export default function ProductProfitPage() {
                             <div>
                                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total COST</p>
                                 <h3 className="text-lg font-bold font-mono mt-0.5">
-                                    ₹{totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(totalCost)}
                                 </h3>
                             </div>
                         </CardContent>
@@ -383,7 +385,7 @@ export default function ProductProfitPage() {
                             <div>
                                 <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Gross Profit</p>
                                 <h3 className="text-lg font-bold font-mono mt-0.5">
-                                    ₹{grossProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(grossProfit)}
                                 </h3>
                             </div>
                         </CardContent>
@@ -477,13 +479,13 @@ export default function ProductProfitPage() {
                                                         <div className="font-semibold">{row.qty_sold} {row.base_unit_symbol}</div>
                                                     </td>
                                                     <td className="p-3 text-right font-mono text-foreground">
-                                                        ₹{row.total_revenue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                        {money(row.total_revenue)}
                                                     </td>
                                                     <td className="p-3 text-right font-mono text-muted-foreground">
-                                                        ₹{row.total_cost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                        {money(row.total_cost)}
                                                     </td>
                                                     <td className={`p-3 text-right font-mono font-semibold ${row.gross_profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                                        ₹{row.gross_profit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                        {money(row.gross_profit)}
                                                     </td>
                                                     <td className="p-3 text-center">
                                                         <span className={`inline-block px-2 py-0.5 text-xs font-semibold rounded-full border ${getMarginColor(row.margin_percent)}`}>
@@ -491,8 +493,8 @@ export default function ProductProfitPage() {
                                                         </span>
                                                     </td>
                                                     <td className="p-3 text-right text-xs font-mono text-muted-foreground hidden md:table-cell">
-                                                        <div>S: ₹{row.avg_selling_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                                                        <div className="mt-0.5">C: ₹{row.avg_cost_price.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                                                        <div>S: {money(row.avg_selling_price)}</div>
+                                                        <div className="mt-0.5">C: {money(row.avg_cost_price)}</div>
                                                     </td>
                                                 </tr>
 
@@ -540,12 +542,12 @@ export default function ProductProfitPage() {
                                                                                     <td className="p-2 text-muted-foreground">{formatDate(inv.voucher_date)}</td>
                                                                                     <td className="p-2 text-foreground font-medium">{inv.party_name}</td>
                                                                                     <td className="p-2 text-right font-mono">{inv.qty_sold} {inv.unit_symbol}</td>
-                                                                                    <td className="p-2 text-right font-mono">₹{inv.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                                                                    <td className="p-2 text-right font-mono font-semibold">₹{inv.total_revenue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                                                                    <td className="p-2 text-right font-mono text-muted-foreground">₹{inv.cost_rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                                                                    <td className="p-2 text-right font-mono text-muted-foreground">₹{inv.total_cost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                                                                    <td className="p-2 text-right font-mono">{money(inv.rate)}</td>
+                                                                                    <td className="p-2 text-right font-mono font-semibold">{money(inv.total_revenue)}</td>
+                                                                                    <td className="p-2 text-right font-mono text-muted-foreground">{money(inv.cost_rate)}</td>
+                                                                                    <td className="p-2 text-right font-mono text-muted-foreground">{money(inv.total_cost)}</td>
                                                                                     <td className={`p-2 text-right font-mono font-semibold ${inv.gross_profit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                                                                        ₹{inv.gross_profit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                                                        {money(inv.gross_profit)}
                                                                                     </td>
                                                                                     <td className="p-2 text-center font-mono">
                                                                                         <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-semibold border ${getMarginColor(inv.margin_percent)}`}>

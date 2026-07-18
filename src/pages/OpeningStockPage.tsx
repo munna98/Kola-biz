@@ -33,11 +33,13 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { IconX, IconCheck } from '@tabler/icons-react';
 import { Product, Unit, ProductGroup, ProductUnitConversion } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
+import { useMoney } from '@/hooks/useMoney';
 
 export default function OpeningStockPage() {
     const dispatch = useDispatch();
     const openingStockState = useSelector((state: RootState) => state.openingStock);
     const { user } = useSelector((state: RootState) => state.auth);
+    const money = useMoney();
 
     // Local state for dependencies
     const [products, setProducts] = useState<Product[]>([]);
@@ -494,7 +496,7 @@ export default function OpeningStockPage() {
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Value</div>
                                 <div className="text-lg font-mono font-bold">
-                                    ₹ {openingStockState.totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(openingStockState.totalAmount)}
                                 </div>
                             </div>
                         </div>

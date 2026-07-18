@@ -28,6 +28,7 @@ import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { api } from '@/lib/tauri';
 import type { Product } from '@/lib/tauri';
+import { useMoney } from '@/hooks/useMoney';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -63,13 +64,11 @@ function getMonthStart() {
   return d.toISOString().split('T')[0];
 }
 
-function fmt(amount: number) {
-  return `₹${amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
-}
-
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ExpenseReportPage() {
+  const fmt = useMoney();
+
   // Settings
   const [productCostEnabled, setProductCostEnabled] = useState(false);
 

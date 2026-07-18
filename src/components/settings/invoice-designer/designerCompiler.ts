@@ -64,7 +64,7 @@ export function compileDesign(design: TemplateDesign): {
             (el.type === 'table' && el.tableConfig?.columns.some(c => c.key === 'old_balance'))
         );
         if (!hasOldBalance) {
-            bodyHtml += `\n<!-- Account Summary -->\n<div style="border-top:1px dashed #000;margin:10px 0;padding:5px 0;font-size:10pt;color:#000;">\n    <div style="display:flex;justify-content:space-between;"><span>Old Bal:</span><span>{{abs_format_number old_balance 2}}</span></div>\n    <div style="display:flex;justify-content:space-between;"><span>Bill Amt:</span><span>{{format_number grand_total 2}}</span></div>\n    <div style="display:flex;justify-content:space-between;"><span>Paid Amt:</span><span>{{format_number paid_amount 2}}</span></div>\n    <div style="display:flex;justify-content:space-between;font-weight:bold;border-top:1px dotted #000;padding-top:2px;margin-top:2px;font-size:11pt;"><span>Bal Due:</span><span>{{abs_format_number balance_due 2}}</span></div>\n</div>`;
+            bodyHtml += `\n<!-- Account Summary -->\n<div style="border-top:1px dashed #000;margin:10px 0;padding:5px 0;font-size:10pt;color:#000;">\n    <div style="display:flex;justify-content:space-between;"><span>Old Bal:</span><span>{{format_currency old_balance}}</span></div>\n    <div style="display:flex;justify-content:space-between;"><span>Bill Amt:</span><span>{{format_currency grand_total}}</span></div>\n    <div style="display:flex;justify-content:space-between;"><span>Paid Amt:</span><span>{{format_currency paid_amount}}</span></div>\n    <div style="display:flex;justify-content:space-between;font-weight:bold;border-top:1px dotted #000;padding-top:2px;margin-top:2px;font-size:11pt;"><span>Bal Due:</span><span>{{format_currency balance_due}}</span></div>\n</div>`;
         }
     } else {
         headerHtml = renderAbsoluteElements(headerElements);
@@ -194,13 +194,13 @@ function renderThermalTable(el: DesignerElement): string {
             row2LeftText = 'Less: {{format_number less_quantity 2}} {{unit}}';
         }
 
-        // Row 2 Right: [final_quantity] X ₹[rate]
+        // Row 2 Right: [final_quantity] X [rate]
         const calcParts: string[] = [];
         if (visibleCols.some(c => c.key === 'final_quantity')) {
             calcParts.push('{{format_number final_quantity 2}}');
         }
         if (visibleCols.some(c => c.key === 'rate')) {
-            calcParts.push('₹{{format_number rate 2}}');
+            calcParts.push('{{format_currency rate}}');
         }
         const row2RightText = calcParts.join(' X ');
 
@@ -345,18 +345,17 @@ function renderThermalTotals(el: DesignerElement): string {
         if (row.format === 'currency') {
             // Bill-level discount: field may be bill_discount, invoice_discount_amount (legacy), or discount_amount
             if (row.field === 'bill_discount' || row.field === 'invoice_discount_amount' || row.field === 'discount_amount') {
-                valueHtml = `{{#if has_discount}}₹{{format_number bill_discount 2}}{{/if}}`;
+                valueHtml = `{{#if has_discount}}{{format_currency bill_discount}}{{/if}}`;
                 html += `{{#if has_discount}}<div style="display:flex;justify-content:space-between;padding:1px 0;color:#000;${fontFamily}${fontWeight}${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
                 continue;
             } else if (row.field === 'tax_total') {
-                valueHtml = `{{#if tax_total}}₹{{format_number tax_total 2}}{{/if}}`;
+                valueHtml = `{{#if tax_total}}{{format_currency tax_total}}{{/if}}`;
                 html += `{{#if tax_total}}<div style="display:flex;justify-content:space-between;padding:1px 0;color:#000;${fontFamily}${fontWeight}${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
                 continue;
             } else if (row.field === 'old_balance' || row.field === 'balance_due' || row.field === 'total_balance') {
-                // These can be negative — use abs_format_number
-                valueHtml = `₹{{abs_format_number ${row.field} 2}}`;
+                valueHtml = `{{format_currency ${row.field}}}`;
             } else {
-                valueHtml = `₹{{format_number ${row.field} 2}}`;
+                valueHtml = `{{format_currency ${row.field}}}`;
             }
         } else {
             valueHtml = `{{${row.field}}}`;

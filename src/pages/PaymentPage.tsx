@@ -45,6 +45,7 @@ import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialo
 import BillAllocationDialog, { AllocationData } from '@/components/dialogs/BillAllocationDialog';
 import ChartOfAccountDialog from '@/components/dialogs/ChartOfAccountDialog';
 import { AccountGroup, Product, api } from '@/lib/tauri';
+import { useMoney } from '@/hooks/useMoney';
 
 interface AccountData {
     id: number;
@@ -62,6 +63,7 @@ export default function PaymentPage() {
     const paymentState = useSelector((state: RootState) => state.payment);
     const user = useSelector((state: RootState) => state.auth.user);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
+    const money = useMoney();
 
     const [payFromAccounts, setPayFromAccounts] = useState<AccountData[]>([]);
     const [payToLedgers, setPayToLedgers] = useState<LedgerAccount[]>([]);
@@ -576,7 +578,7 @@ export default function PaymentPage() {
                         footerRightContent={
                             focusedRowIndex !== null && rowBalances[focusedRowIndex] !== undefined ? (
                                 <div className={`text-base font-mono font-bold ${rowBalances[focusedRowIndex] >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                    Balance: ₹ {Math.abs(rowBalances[focusedRowIndex]).toLocaleString()} {rowBalances[focusedRowIndex] >= 0 ? 'Dr' : 'Cr'}
+                                    Balance: {money(Math.abs(rowBalances[focusedRowIndex]), { minimumFractionDigits: 0, maximumFractionDigits: 0 })} {rowBalances[focusedRowIndex] >= 0 ? 'Dr' : 'Cr'}
                                 </div>
                             ) : null
                         }
@@ -589,7 +591,7 @@ export default function PaymentPage() {
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Payment</div>
                                 <div className="text-lg font-mono font-bold">
-                                    ₹ {paymentState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(paymentState.totals.grandTotal)}
                                 </div>
                             </div>
                         </div>

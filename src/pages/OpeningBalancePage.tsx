@@ -41,6 +41,7 @@ import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 import { VoucherJournalSection } from '@/components/voucher/VoucherJournalSection';
 import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
+import { useMoney } from '@/hooks/useMoney';
 
 interface LedgerAccount {
     id: number;
@@ -53,6 +54,7 @@ export default function OpeningBalancePage() {
     const dispatch = useDispatch<AppDispatch>();
     const openingBalanceState = useSelector((state: RootState) => state.openingBalance);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
+    const money = useMoney();
     const loadingVoucherIdRef = useRef<string | null>(null);
 
     const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
@@ -448,13 +450,13 @@ export default function OpeningBalancePage() {
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Debit</div>
                                 <div className="text-lg font-mono font-bold">
-                                    ₹ {openingBalanceState.totals.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(openingBalanceState.totals.totalDebit)}
                                 </div>
                             </div>
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Credit</div>
                                 <div className="text-lg font-mono font-bold">
-                                    ₹ {openingBalanceState.totals.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(openingBalanceState.totals.totalCredit)}
                                 </div>
                             </div>
                         </div>

@@ -351,7 +351,7 @@
         {{#if has_discount}}
         <span class="sf-subtotal-ghost">{{format_number bill_discount 2}}</span><br/>
         {{/if}}
-        <strong class="sf-grand-total">&#8377;&nbsp;{{format_number grand_total 2}}</strong>
+        <strong class="sf-grand-total">{{format_currency grand_total}}</strong>
       </td>
     </tr>
     {{#if has_returns}}
@@ -365,7 +365,7 @@
       <td colspan="8" class="right sf-disc-total-label">Less Returns</td>
       {{/if}}
       {{/if}}
-      <td class="right sf-amount-cell">-&#8377;&nbsp;{{format_number return_total 2}}</td>
+      <td class="right sf-amount-cell">-{{format_currency return_total}}</td>
     </tr>
     <tr class="summary-footer-row">
       {{#if is_margin_scheme_invoice}}
@@ -377,7 +377,7 @@
       <td colspan="8" class="right sf-disc-total-label"><strong>Net Payable</strong></td>
       {{/if}}
       {{/if}}
-      <td class="right sf-amount-cell"><strong class="sf-grand-total">&#8377;&nbsp;{{format_number net_payable 2}}</strong></td>
+      <td class="right sf-amount-cell"><strong class="sf-grand-total">{{format_currency net_payable}}</strong></td>
     </tr>
     {{/if}}
   </tbody>

@@ -11,12 +11,14 @@ import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import { cn } from '@/lib/utils';
 import { getDefaultProductUnitId, type ProductUnitDefaultKind } from '@/lib/product-units';
 import type { GstTaxSlab, Product as TauriProduct } from '@/lib/tauri';
+import { useMoney } from '@/hooks/useMoney';
 
 /** Hover card content that lazily fetches stock qty for a product */
 const ProductHoverInfo = ({ productId, fullProducts }: { productId: string; fullProducts: TauriProduct[] }) => {
     const [stockQty, setStockQty] = React.useState<number | null>(null);
     const [loading, setLoading] = React.useState(true);
     const product = fullProducts.find(p => String(p.id) === String(productId));
+    const money = useMoney();
 
     React.useEffect(() => {
         let cancelled = false;
@@ -39,11 +41,11 @@ const ProductHoverInfo = ({ productId, fullProducts }: { productId: string; full
                 </span>
                 <span className="text-muted-foreground">P. Rate</span>
                 <span className="text-right font-mono font-medium">
-                    ₹{product.purchase_rate?.toFixed(2) ?? '0.00'}
+                    {money(product.purchase_rate ?? 0)}
                 </span>
                 <span className="text-muted-foreground">MRP</span>
                 <span className="text-right font-mono font-medium">
-                    ₹{product.mrp?.toFixed(2) ?? '0.00'}
+                    {money(product.mrp ?? 0)}
                 </span>
             </div>
         </div>
@@ -349,6 +351,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     taxInclusive = false,
     isMarginSchemeInvoice = false,
 }, ref) => {
+    const money = useMoney();
     // Ref to the first product combobox
     const firstProductRef = useRef<HTMLButtonElement>(null);
 
@@ -820,7 +823,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             // Show base (ex-tax) amount when tax-inclusive
                             return (
                                 <div key={col.id} className="h-7 text-xs flex items-center justify-start px-3 bg-muted/50 border border-input rounded-md font-medium font-mono">
-                                    ₹{(taxInclusive ? baseAmt : calc.amount).toFixed(2)}
+                                    {money(taxInclusive ? baseAmt : calc.amount)}
                                 </div>
                             );
                         case 'discount_percent':
@@ -871,25 +874,25 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                         case 'cgst':
                             return (
                                 <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-medium font-mono">
-                                    {resolvedGstRate > 0 ? `₹${cgstAmt.toFixed(2)}` : '-'}
+                                    {resolvedGstRate > 0 ? money(cgstAmt) : '-'}
                                 </div>
                             );
                         case 'sgst':
                             return (
                                 <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-medium font-mono">
-                                    {resolvedGstRate > 0 ? `₹${sgstAmt.toFixed(2)}` : '-'}
+                                    {resolvedGstRate > 0 ? money(sgstAmt) : '-'}
                                 </div>
                             );
                         case 'igst':
                             return (
                                 <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-medium font-mono">
-                                    {resolvedGstRate > 0 ? `₹${igstAmt.toFixed(2)}` : '-'}
+                                    {resolvedGstRate > 0 ? money(igstAmt) : '-'}
                                 </div>
                             );
                         case 'total':
                             return (
                                 <div key={col.id} className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-bold font-mono">
-                                    ₹{calc.total.toFixed(2)}
+                                    {money(calc.total)}
                                 </div>
                             );
                         case 'sales_rate': {
@@ -912,7 +915,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     />
                                 ) : (
                                     <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-medium font-mono" title="Current sales rate from product master">
-                                        {value ? `₹${value.toFixed(2)}` : '-'}
+                                        {value ? money(value) : '-'}
                                     </div>
                                 )
                             );
@@ -937,7 +940,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     />
                                 ) : (
                                     <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-medium font-mono" title="Current MRP from product master">
-                                        {value ? `₹${value.toFixed(2)}` : '-'}
+                                        {value ? money(value) : '-'}
                                     </div>
                                 )
                             );

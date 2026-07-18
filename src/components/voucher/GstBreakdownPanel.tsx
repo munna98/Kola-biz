@@ -14,6 +14,7 @@
 import { useMemo } from 'react';
 import { GstTaxSlab, Product } from '@/lib/tauri';
 import { Badge } from '@/components/ui/badge';
+import { useMoney } from '@/hooks/useMoney';
 
 interface LineItem {
   product_id: string | number;
@@ -69,6 +70,7 @@ export function GstBreakdownPanel({
   isInterState = false,
   className = '',
 }: GstBreakdownPanelProps) {
+  const money = useMoney();
   // Build product lookup map
   const productMap = useMemo(() => {
     const m: Record<string, Product> = {};
@@ -156,8 +158,6 @@ export function GstBreakdownPanel({
     total: taxLines.reduce((s, l) => s + l.totalTax, 0),
   }), [taxLines]);
 
-  const fmt = (n: number) => n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
   if (taxLines.length === 0) return null;
 
   return (
@@ -196,17 +196,17 @@ export function GstBreakdownPanel({
               <td className="px-3 py-1.5 font-mono">{line.hsnSacCode || '—'}</td>
               <td className="px-3 py-1.5">{line.slabName}</td>
               <td className="px-3 py-1.5 text-right font-medium">{line.gstRate}%</td>
-              <td className="px-3 py-1.5 text-right font-mono">₹{fmt(line.taxableValue)}</td>
+              <td className="px-3 py-1.5 text-right font-mono">{money(line.taxableValue)}</td>
               {!isInterState && (
                 <>
-                  <td className="px-3 py-1.5 text-right font-mono text-blue-600 dark:text-blue-400">₹{fmt(line.cgst)}</td>
-                  <td className="px-3 py-1.5 text-right font-mono text-purple-600 dark:text-purple-400">₹{fmt(line.sgst)}</td>
+                  <td className="px-3 py-1.5 text-right font-mono text-blue-600 dark:text-blue-400">{money(line.cgst)}</td>
+                  <td className="px-3 py-1.5 text-right font-mono text-purple-600 dark:text-purple-400">{money(line.sgst)}</td>
                 </>
               )}
               {isInterState && (
-                <td className="px-3 py-1.5 text-right font-mono text-amber-600 dark:text-amber-400">₹{fmt(line.igst)}</td>
+                <td className="px-3 py-1.5 text-right font-mono text-amber-600 dark:text-amber-400">{money(line.igst)}</td>
               )}
-              <td className="px-3 py-1.5 text-right font-mono font-semibold">₹{fmt(line.totalTax)}</td>
+              <td className="px-3 py-1.5 text-right font-mono font-semibold">{money(line.totalTax)}</td>
             </tr>
           ))}
         </tbody>
@@ -214,17 +214,17 @@ export function GstBreakdownPanel({
         <tfoot>
           <tr className="bg-muted/30 font-semibold border-t-2">
             <td className="px-3 py-1.5" colSpan={3}>Total</td>
-            <td className="px-3 py-1.5 text-right font-mono">₹{fmt(totals.taxable)}</td>
+            <td className="px-3 py-1.5 text-right font-mono">{money(totals.taxable)}</td>
             {!isInterState && (
               <>
-                <td className="px-3 py-1.5 text-right font-mono text-blue-600 dark:text-blue-400">₹{fmt(totals.cgst)}</td>
-                <td className="px-3 py-1.5 text-right font-mono text-purple-600 dark:text-purple-400">₹{fmt(totals.sgst)}</td>
+                <td className="px-3 py-1.5 text-right font-mono text-blue-600 dark:text-blue-400">{money(totals.cgst)}</td>
+                <td className="px-3 py-1.5 text-right font-mono text-purple-600 dark:text-purple-400">{money(totals.sgst)}</td>
               </>
             )}
             {isInterState && (
-              <td className="px-3 py-1.5 text-right font-mono text-amber-600 dark:text-amber-400">₹{fmt(totals.igst)}</td>
+              <td className="px-3 py-1.5 text-right font-mono text-amber-600 dark:text-amber-400">{money(totals.igst)}</td>
             )}
-            <td className="px-3 py-1.5 text-right font-mono text-green-600 dark:text-green-400">₹{fmt(totals.total)}</td>
+            <td className="px-3 py-1.5 text-right font-mono text-green-600 dark:text-green-400">{money(totals.total)}</td>
           </tr>
         </tfoot>
       </table>

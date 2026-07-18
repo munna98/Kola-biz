@@ -16,6 +16,7 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { useMoney } from '@/hooks/useMoney';
 
 interface Allocation {
     id: number;
@@ -47,6 +48,7 @@ export function AllocationsList({
     const [loading, setLoading] = useState(false);
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [selectedAllocationId, setSelectedAllocationId] = useState<number | null>(null);
+    const money = useMoney();
 
     const loadAllocations = async () => {
         if (!invoiceId) {
@@ -161,7 +163,7 @@ export function AllocationsList({
                                             Amount
                                         </div>
                                         <div className="font-mono font-medium">
-                                            ₹{allocation.allocated_amount.toFixed(2)}
+                                            {money(allocation.allocated_amount)}
                                         </div>
                                     </div>
                                     <div>
@@ -198,7 +200,7 @@ export function AllocationsList({
                     </div>
                     <div className="bg-muted/50 border-t px-3 py-2 flex justify-between text-sm font-medium">
                         <span>Total Allocated:</span>
-                        <span className="font-mono">₹{totalAllocated.toFixed(2)}</span>
+                        <span className="font-mono">{money(totalAllocated)}</span>
                     </div>
                 </>
             )}

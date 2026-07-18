@@ -17,6 +17,7 @@ import {
   setLedgerReportData,
   setActiveSectionWithParams,
 } from '@/store';
+import { useMoney } from '@/hooks/useMoney';
 
 interface LedgerAccount {
   id: number;
@@ -46,6 +47,8 @@ export default function LedgerReportPage() {
     closingBalance,
     hasGenerated,
   } = useSelector((state: RootState) => state.ledgerReport);
+  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
+  const money = useMoney();
 
   const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
   const [loading, setLoading] = useState(false);
@@ -119,6 +122,9 @@ export default function LedgerReportPage() {
         period_to: toDate,
         opening_balance: openingBalance,
         closing_balance: closingBalance,
+        currency_code: companyProfile.base_currency || 'INR',
+        currency_symbol: companyProfile.base_currency_symbol || '',
+        currency_display: companyProfile.currency_display || 'symbol',
         entries: entries.map(e => ({
           date: e.date,
           voucher_no: e.voucher_no,
@@ -305,7 +311,7 @@ export default function LedgerReportPage() {
                     <div className="text-right">
                       <div className="text-xs text-muted-foreground">Opening Balance</div>
                       <div className="text-lg font-bold font-mono">
-                        ₹{Math.abs(openingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {openingBalance >= 0 ? 'Dr' : 'Cr'}
+                        {money(Math.abs(openingBalance))} {openingBalance >= 0 ? 'Dr' : 'Cr'}
                       </div>
                     </div>
                   </div>
@@ -329,13 +335,13 @@ export default function LedgerReportPage() {
                       <tr className="bg-muted/20 border-b font-semibold">
                         <td className="p-3 text-sm" colSpan={4}>Opening Balance</td>
                         <td className="p-3 text-right font-mono text-sm">
-                          {openingBalance > 0 ? `₹${openingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                          {openingBalance > 0 ? money(openingBalance) : '-'}
                         </td>
                         <td className="p-3 text-right font-mono text-sm">
-                          {openingBalance < 0 ? `₹${Math.abs(openingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                          {openingBalance < 0 ? money(Math.abs(openingBalance)) : '-'}
                         </td>
                         <td className="p-3 text-right font-mono text-sm font-bold">
-                          ₹{Math.abs(openingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {openingBalance >= 0 ? 'Dr' : 'Cr'}
+                          {money(Math.abs(openingBalance))} {openingBalance >= 0 ? 'Dr' : 'Cr'}
                         </td>
                       </tr>
                     )}
@@ -359,13 +365,13 @@ export default function LedgerReportPage() {
                         </td>
                         <td className="p-3 text-sm text-muted-foreground">{entry.narration || '-'}</td>
                         <td className="p-3 text-right font-mono text-sm">
-                          {entry.debit > 0 ? `₹${entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                          {entry.debit > 0 ? money(entry.debit) : '-'}
                         </td>
                         <td className="p-3 text-right font-mono text-sm">
-                          {entry.credit > 0 ? `₹${entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                          {entry.credit > 0 ? money(entry.credit) : '-'}
                         </td>
                         <td className="p-3 text-right font-mono text-sm font-semibold">
-                          ₹{Math.abs(entry.balance).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {entry.balance >= 0 ? 'Dr' : 'Cr'}
+                          {money(Math.abs(entry.balance))} {entry.balance >= 0 ? 'Dr' : 'Cr'}
                         </td>
                       </tr>
                     ))}
@@ -374,13 +380,13 @@ export default function LedgerReportPage() {
                     <tr>
                       <td colSpan={4} className="p-3 font-bold text-sm">Closing Balance</td>
                       <td className="p-3 text-right font-mono font-bold text-sm">
-                        {closingBalance > 0 ? `₹${closingBalance.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                        {closingBalance > 0 ? money(closingBalance) : '-'}
                       </td>
                       <td className="p-3 text-right font-mono font-bold text-sm">
-                        {closingBalance < 0 ? `₹${Math.abs(closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                        {closingBalance < 0 ? money(Math.abs(closingBalance)) : '-'}
                       </td>
                       <td className="p-3 text-right font-mono font-bold text-sm">
-                        ₹{Math.abs(closingBalance).toLocaleString('en-IN', { minimumFractionDigits: 2 })} {closingBalance >= 0 ? 'Dr' : 'Cr'}
+                        {money(Math.abs(closingBalance))} {closingBalance >= 0 ? 'Dr' : 'Cr'}
                       </td>
                     </tr>
                   </tfoot>

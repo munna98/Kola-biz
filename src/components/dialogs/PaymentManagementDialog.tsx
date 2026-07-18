@@ -17,6 +17,7 @@ import {
     IconTrash,
     IconCurrencyRupee,
 } from '@tabler/icons-react';
+import { useMoney } from '@/hooks/useMoney';
 
 interface PaymentManagementDialogProps {
     mode: 'payment' | 'receipt';
@@ -73,6 +74,7 @@ export default function PaymentManagementDialog({
     // Data states
     const [allocations, setAllocations] = useState<Allocation[]>([]);
     const [cashBankAccounts, setCashBankAccounts] = useState<CashBankAccount[]>([]);
+    const money = useMoney();
 
     // Loading states
     const [loadingAllocations, setLoadingAllocations] = useState(false);
@@ -408,12 +410,12 @@ export default function PaymentManagementDialog({
                         </DialogTitle>
                         <div className="text-sm space-y-1">
                             <div className="text-muted-foreground">
-                                {partyName} • Invoice Amount: ₹{invoiceAmount.toFixed(2)}
+                                {partyName} • Invoice Amount: {money(invoiceAmount)}
                             </div>
                             {remainingAmount !== invoiceAmount && (
                                 <div className="flex items-center gap-2">
                                     <span className="text-muted-foreground">Remaining Balance:</span>
-                                    <span className="font-semibold text-orange-600">₹{remainingAmount.toFixed(2)}</span>
+                                    <span className="font-semibold text-orange-600">{money(remainingAmount)}</span>
                                 </div>
                             )}
                         </div>
@@ -429,7 +431,7 @@ export default function PaymentManagementDialog({
                                 </h3>
                                 {remainingAmount > 0 && (
                                     <div className="text-xs font-medium">
-                                        Remaining: <span className="text-orange-600">₹{remainingAmount.toFixed(2)}</span>
+                                        Remaining: <span className="text-orange-600">{money(remainingAmount)}</span>
                                     </div>
                                 )}
                             </div>
@@ -550,7 +552,7 @@ export default function PaymentManagementDialog({
                                 <div className="border-t pt-2 mt-2 flex justify-between text-sm font-medium">
                                     <span>Total Payments:</span>
                                     <span className="font-mono">
-                                        ₹{paymentLines.reduce((sum, line) => sum + (line.amount || 0), 0).toFixed(2)}
+                                        {money(paymentLines.reduce((sum, line) => sum + (line.amount || 0), 0))}
                                     </span>
                                 </div>
                             </div>

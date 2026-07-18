@@ -1338,6 +1338,8 @@ export interface CompanyProfileState {
     bank_branch: string;
     terms_and_conditions: string;
     base_currency: string;
+    currency_display: 'symbol' | 'code' | 'none';
+    base_currency_symbol?: string;
   };
   loading: boolean;
 }
@@ -1367,6 +1369,8 @@ const companyProfileInitialState: CompanyProfileState = {
     bank_branch: '',
     terms_and_conditions: '',
     base_currency: 'INR',
+    currency_display: 'symbol',
+    base_currency_symbol: '₹',
   },
   loading: false,
 };

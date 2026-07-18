@@ -61,6 +61,7 @@ import { Product, ProductGroup, ProductUnitConversion, Unit, Employee, GstTaxSla
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
 import { ShipToPopover, ShipToAddress } from '@/components/voucher/ShipToPopover';
+import { useCurrencyLabel, useMoney } from '@/hooks/useMoney';
 
 
 
@@ -77,6 +78,8 @@ export default function SalesQuotationPage() {
   const salesState = useSelector((state: RootState) => state.salesQuotation);
   const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
   const user = useSelector((state: RootState) => state.auth.user);
+  const money = useMoney();
+  const currencyLabel = useCurrencyLabel();
   const [products, setProducts] = useState<Product[]>([]);
   const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -1269,7 +1272,7 @@ export default function SalesQuotationPage() {
             footerRightContent={
               partyBalance !== null && shouldShowPartyBalance ? (
                 <div className={`text-base font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  Balance: ₹ {Math.abs(partyBalance).toLocaleString()} {partyBalance >= 0 ? 'Dr' : 'Cr'}
+                  Balance: {money(Math.abs(partyBalance), { minimumFractionDigits: 0, maximumFractionDigits: 0 })} {partyBalance >= 0 ? 'Dr' : 'Cr'}
                 </div>
               ) : null
             }
@@ -1349,7 +1352,7 @@ export default function SalesQuotationPage() {
                     />
                   </div>
                   <div>
-                    <Label className="text-xs font-medium mb-1 block">Discount ₹</Label>
+                    <Label className="text-xs font-medium mb-1 block">Discount{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
                     <Input
                       type="number"
                       value={salesState.form.discount_amount || ''}
@@ -1375,17 +1378,17 @@ export default function SalesQuotationPage() {
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
                     <span className="text-muted-foreground">Subtotal:</span>
-                    <span className="font-mono font-medium">₹ {salesState.totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-mono font-medium">{money(salesState.totals.subtotal)}</span>
                   </div>
                   {salesState.totals.discount > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">
-                      Discount: ₹ {salesState.totals.discount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      Discount: {money(salesState.totals.discount)}
                     </div>
                   )}
                   {salesState.totals.tax > 0 && (
-                    <div className="text-xs font-mono text-muted-foreground">Tax: ₹ {salesState.totals.tax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                    <div className="text-xs font-mono text-muted-foreground">Tax: {money(salesState.totals.tax)}</div>
                   )}
-                  <div className="text-lg font-mono font-bold">₹ {salesState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                  <div className="text-lg font-mono font-bold">{money(salesState.totals.grandTotal)}</div>
                 </div>
               </div>
             </div>

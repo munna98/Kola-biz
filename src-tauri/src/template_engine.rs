@@ -165,6 +165,25 @@ impl TemplateEngine {
         }
 
         // Add company data
+        let currency_code = company
+            .base_currency
+            .clone()
+            .filter(|code| !code.trim().is_empty())
+            .unwrap_or_else(|| "INR".to_string());
+        let currency_symbol = company
+            .base_currency_symbol
+            .clone()
+            .filter(|symbol| !symbol.trim().is_empty())
+            .unwrap_or_else(|| "\u{20B9}".to_string());
+        let currency_display = company
+            .currency_display
+            .clone()
+            .filter(|display| matches!(display.as_str(), "symbol" | "code" | "none"))
+            .unwrap_or_else(|| "symbol".to_string());
+
+        voucher_data["currency_code"] = json!(currency_code);
+        voucher_data["currency_symbol"] = json!(currency_symbol);
+        voucher_data["currency_display"] = json!(currency_display);
         voucher_data["company"] = json!({
             "name": company.company_name,
             "address": self.format_company_address(company),
@@ -182,6 +201,9 @@ impl TemplateEngine {
             "cin": company.cin,
             "logo": company.logo_data,
             "has_logo": company.logo_data.is_some(),
+            "base_currency": company.base_currency,
+            "base_currency_symbol": company.base_currency_symbol,
+            "currency_display": company.currency_display,
         });
 
         // Add bank details
@@ -276,7 +298,7 @@ use handlebars::{
 fn format_currency_helper(
     h: &Helper,
     _: &HB,
-    _: &Context,
+    ctx: &Context,
     _: &mut RenderContext,
     out: &mut dyn Output,
 ) -> HelperResult {
@@ -285,7 +307,26 @@ fn format_currency_helper(
 
     // Indian number format: 1,23,456.78
     let formatted = format_indian_currency(value);
-    out.write(&format!("₹{}", formatted))?;
+    let data = ctx.data();
+    let display = data
+        .get("currency_display")
+        .and_then(|v| v.as_str())
+        .unwrap_or("symbol");
+    let code = data
+        .get("currency_code")
+        .and_then(|v| v.as_str())
+        .unwrap_or("INR");
+    let symbol = data
+        .get("currency_symbol")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("\u{20B9}");
+
+    match display {
+        "code" => out.write(&format!("{} {}", code, formatted))?,
+        "none" => out.write(&formatted)?,
+        _ => out.write(&format!("{}{}", symbol, formatted))?,
+    }
     Ok(())
 }
 

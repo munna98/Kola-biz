@@ -8,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useMoney } from '@/hooks/useMoney';
 
 interface DayBookEntry {
   voucher_no: string;
@@ -26,6 +27,7 @@ export default function DayBookPage() {
   const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0]);
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
   const [detailed, setDetailed] = useState(false);
+  const money = useMoney();
 
   const loadDayBook = async () => {
     try {
@@ -189,10 +191,10 @@ export default function DayBookPage() {
                           <td className="p-3 text-sm">{entry.account_name}</td>
                           <td className="p-3 text-sm text-muted-foreground">{entry.narration || '-'}</td>
                           <td className="p-3 text-right font-mono text-sm">
-                            {entry.debit > 0 ? `₹${entry.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                            {entry.debit > 0 ? money(entry.debit) : '-'}
                           </td>
                           <td className="p-3 text-right font-mono text-sm">
-                            {entry.credit > 0 ? `₹${entry.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                            {entry.credit > 0 ? money(entry.credit) : '-'}
                           </td>
                         </tr>
                       ))
@@ -202,10 +204,10 @@ export default function DayBookPage() {
                     <tr>
                       <td colSpan={6} className="p-3 font-bold text-sm">TOTAL</td>
                       <td className="p-3 text-right font-mono font-bold text-sm">
-                        ₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {money(totalDebit)}
                       </td>
                       <td className="p-3 text-right font-mono font-bold text-sm">
-                        ₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {money(totalCredit)}
                       </td>
                     </tr>
                   </tfoot>

@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { IconGripVertical, IconRefresh } from '@tabler/icons-react';
+import { useMoney } from '@/hooks/useMoney';
 
 // ── Types ──
 
@@ -490,6 +491,7 @@ interface DesignerElementProps {
 
 function DesignerElement({ element, selected, scale, barcodeFormat, onSelect, onUpdate }: DesignerElementProps) {
     const svgRef = useRef<SVGSVGElement>(null);
+    const money = useMoney();
 
     // Render barcode
     useEffect(() => {
@@ -514,8 +516,8 @@ function DesignerElement({ element, selected, scale, barcodeFormat, onSelect, on
         switch (element.dataField) {
             case 'product.code': return SAMPLE_PRODUCT.code;
             case 'product.name': return SAMPLE_PRODUCT.name;
-            case 'product.salesRate': return `₹ ${SAMPLE_PRODUCT.salesRate.toFixed(2)}`;
-            case 'product.mrp': return `MRP ₹ ${SAMPLE_PRODUCT.mrp.toFixed(2)}`;
+            case 'product.salesRate': return money(SAMPLE_PRODUCT.salesRate);
+            case 'product.mrp': return `MRP ${money(SAMPLE_PRODUCT.mrp)}`;
             default: return element.content || null; // null = show placeholder
         }
     };

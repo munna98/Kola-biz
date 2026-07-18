@@ -8,15 +8,12 @@ import { Separator } from '@/components/ui/separator';
 import { IconDownload, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { api, Gstr3bSummary } from '@/lib/tauri';
+import { useMoney } from '@/hooks/useMoney';
 
 const today = new Date().toISOString().split('T')[0];
 const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   .toISOString()
   .split('T')[0];
-
-function fmt(n: number) {
-  return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 function Row({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
   return (
@@ -29,6 +26,7 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 
 function NetCard({ label, value }: { label: string; value: number }) {
   const isPositive = value > 0;
+  const fmt = useMoney();
   return (
     <div
       className={`p-4 rounded-lg border-2 text-center ${
@@ -39,7 +37,7 @@ function NetCard({ label, value }: { label: string; value: number }) {
     >
       <p className="text-xs text-muted-foreground mb-1">{label}</p>
       <p className={`text-xl font-bold ${isPositive ? 'text-red-600' : 'text-green-600'}`}>
-        ₹{Math.abs(value).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+        {fmt(Math.abs(value))}
       </p>
       {!isPositive && value !== 0 && (
         <p className="text-xs text-green-600 mt-1">Credit Balance</p>
@@ -54,6 +52,7 @@ export default function Gstr3bReportPage() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<Gstr3bSummary | null>(null);
   const [fetched, setFetched] = useState(false);
+  const fmt = useMoney();
 
   const fetchData = async () => {
     try {
@@ -75,7 +74,7 @@ export default function Gstr3bReportPage() {
     }
 
     const rows = [
-      ['Section', 'Description', 'Amount (₹)'],
+      ['Section', 'Description', 'Amount'],
       ['3.1 – Outward', 'Taxable Value', data.outward_taxable],
       ['3.1 – Outward', 'CGST', data.outward_cgst],
       ['3.1 – Outward', 'SGST', data.outward_sgst],

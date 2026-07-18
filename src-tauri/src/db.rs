@@ -1019,6 +1019,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             bank_branch TEXT,
             terms_and_conditions TEXT,
             base_currency TEXT DEFAULT 'INR',
+            currency_display TEXT DEFAULT 'symbol',
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
@@ -1028,6 +1029,9 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
 
     // Migration: Add base_currency if not exists
     let _ = sqlx::query("ALTER TABLE company_profile ADD COLUMN base_currency TEXT DEFAULT 'INR'")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE company_profile ADD COLUMN currency_display TEXT DEFAULT 'symbol'")
         .execute(pool)
         .await;
 

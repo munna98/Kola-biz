@@ -15,6 +15,7 @@ import {
 import { IconDownload, IconPrinter, IconRefresh, IconFilter, IconX } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useMoney } from '@/hooks/useMoney';
 
 interface Transaction {
   id: string; // Changed to string
@@ -47,6 +48,7 @@ export default function TransactionReportPage() {
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
   const [voucherType, setVoucherType] = useState<string>('all');
   const [selectedParty, setSelectedParty] = useState<string>(""); // Changed to string
+  const money = useMoney();
 
   useEffect(() => {
     loadParties();
@@ -235,7 +237,7 @@ export default function TransactionReportPage() {
               <CardContent className="p-4">
                 <p className="text-sm text-muted-foreground">Total Sales</p>
                 <p className="text-2xl font-bold font-mono mt-1 text-green-600">
-                  ₹{salesTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  {money(salesTotal)}
                 </p>
               </CardContent>
             </Card>
@@ -243,7 +245,7 @@ export default function TransactionReportPage() {
               <CardContent className="p-4">
                 <p className="text-sm text-muted-foreground">Total Purchases</p>
                 <p className="text-2xl font-bold font-mono mt-1 text-blue-600">
-                  ₹{purchaseTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  {money(purchaseTotal)}
                 </p>
               </CardContent>
             </Card>
@@ -289,7 +291,7 @@ export default function TransactionReportPage() {
                             {txn.narration || '-'}
                           </td>
                           <td className="p-3 text-right font-mono text-sm font-bold">
-                            ₹{txn.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            {money(txn.amount)}
                           </td>
                         </tr>
                       ))
@@ -300,7 +302,7 @@ export default function TransactionReportPage() {
                       <tr>
                         <td colSpan={5} className="p-3 font-bold text-sm">TOTAL</td>
                         <td className="p-3 text-right font-mono font-bold text-sm">
-                          ₹{totalAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {money(totalAmount)}
                         </td>
                       </tr>
                     </tfoot>

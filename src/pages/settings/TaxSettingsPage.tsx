@@ -15,6 +15,7 @@ import {
 import { IconPlus, IconEdit, IconTrash, IconPercentage, IconSettings, IconListDetails } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { api, GstTaxSlab, GstSettings, ChartOfAccount } from '@/lib/tauri';
+import { useCurrencyLabel, useMoney } from '@/hooks/useMoney';
 
 const DEFAULT_GST_SETTINGS: GstSettings = {
   gst_enabled: false,
@@ -51,6 +52,8 @@ export default function TaxSettingsPage() {
   const [slabDialogOpen, setSlabDialogOpen] = useState(false);
   const [editingSlab, setEditingSlab] = useState<GstTaxSlab | null>(null);
   const [slabForm, setSlabForm] = useState<SlabForm>(EMPTY_FORM);
+  const money = useMoney();
+  const currencyLabel = useCurrencyLabel();
 
   const load = async () => {
     try {
@@ -149,7 +152,7 @@ export default function TaxSettingsPage() {
 
   const slabRateLabel = (slab: GstTaxSlab) =>
     slab.is_dynamic === 1
-      ? `${slab.below_rate}% / ${slab.above_rate}% @₹${slab.threshold}`
+      ? `${slab.below_rate}% / ${slab.above_rate}% @${money(slab.threshold, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
       : `${slab.fixed_rate}%`;
 
   if (loading) return <div className="p-8 text-muted-foreground">Loading...</div>;
@@ -403,7 +406,7 @@ export default function TaxSettingsPage() {
             ) : (
               <>
                 <div className="space-y-1.5">
-                  <Label>Price Threshold (₹)</Label>
+                  <Label>Price Threshold{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
                   <Input
                     type="number" min={0} step={1}
                     value={slabForm.threshold}
@@ -429,7 +432,7 @@ export default function TaxSettingsPage() {
                   </div>
                 </div>
                 <p className="text-xs text-muted-foreground bg-muted/40 p-2 rounded">
-                  Example: below ₹{slabForm.threshold} → {slabForm.below_rate}%, at/above ₹{slabForm.threshold} → {slabForm.above_rate}%
+                  Example: below {money(Number(slabForm.threshold) || 0, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} → {slabForm.below_rate}%, at/above {money(Number(slabForm.threshold) || 0, { minimumFractionDigits: 0, maximumFractionDigits: 0 })} → {slabForm.above_rate}%
                 </p>
               </>
             )}

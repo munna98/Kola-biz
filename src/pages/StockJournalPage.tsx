@@ -38,6 +38,7 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 import { IconArrowDown, IconArrowUp, IconCheck, IconX } from '@tabler/icons-react';
 import { Product, ProductGroup, ProductUnitConversion, Unit } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
+import { useMoney } from '@/hooks/useMoney';
 
 type JournalSection = 'source' | 'destination';
 
@@ -58,6 +59,7 @@ export default function StockJournalPage() {
     const dispatch = useDispatch();
     const stockJournalState = useSelector((state: RootState) => state.stockJournal);
     const { user } = useSelector((state: RootState) => state.auth);
+    const money = useMoney();
 
     const [products, setProducts] = useState<Product[]>([]);
     const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
@@ -546,7 +548,7 @@ export default function StockJournalPage() {
                 <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold">{title}</h2>
                     <div className="text-sm font-mono font-medium">
-                        ₹ {items.reduce((sum, item) => sum + item.amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {money(items.reduce((sum, item) => sum + item.amount, 0))}
                     </div>
                 </div>
 
@@ -672,7 +674,7 @@ export default function StockJournalPage() {
                                     Issue Value
                                 </div>
                                 <div className="text-lg font-mono font-bold">
-                                    ₹ {stockJournalState.totals.sourceAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(stockJournalState.totals.sourceAmount)}
                                 </div>
                             </div>
                             <div className="rounded-md border bg-muted/20 p-3">
@@ -681,13 +683,13 @@ export default function StockJournalPage() {
                                     Receipt Value
                                 </div>
                                 <div className="text-lg font-mono font-bold">
-                                    ₹ {stockJournalState.totals.destinationAmount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(stockJournalState.totals.destinationAmount)}
                                 </div>
                             </div>
                             <div className={`rounded-md border p-3 ${Math.abs(stockJournalState.totals.difference) > 0.01 ? 'border-destructive/50 bg-destructive/5' : 'bg-emerald-50/60 dark:bg-emerald-950/20'}`}>
                                 <div className="text-xs text-muted-foreground mb-1">Difference</div>
                                 <div className="text-lg font-mono font-bold">
-                                    ₹ {stockJournalState.totals.difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(stockJournalState.totals.difference)}
                                 </div>
                             </div>
                         </div>

@@ -10,6 +10,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { api } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { useDialog } from '@/hooks/use-dialog';
+import { useCurrencyLabel, useMoney } from '@/hooks/useMoney';
 
 interface Service {
   id: string;
@@ -54,6 +55,8 @@ export default function ServicesPage() {
   const [editingService, setEditingService] = useState<Service | null>(null);
   const [form, setForm] = useState(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const money = useMoney();
+  const currencyLabel = useCurrencyLabel();
 
   // Enter-key navigation — same hook as ProductDialog
   const { register, handleKeyDown, handleSelectKeyDown, parseNumber, formatNumber } = useDialog(
@@ -223,8 +226,8 @@ export default function ServicesPage() {
                   <td className="p-3 font-medium">{s.name}</td>
                   <td className="p-3 text-sm">{s.hsn_sac_code || '-'}</td>
                   <td className="p-3 text-sm">{s.unit_symbol || '-'}</td>
-                  <td className="p-3 text-sm">₹{s.purchase_rate.toFixed(2)}</td>
-                  <td className="p-3 text-sm">₹{s.sales_rate.toFixed(2)}</td>
+                  <td className="p-3 text-sm">{money(s.purchase_rate)}</td>
+                  <td className="p-3 text-sm">{money(s.sales_rate)}</td>
                   {gstEnabled && (
                     <td className="p-3 text-sm">
                       {gstSlabs.find(sl => sl.id === s.gst_slab_id)?.name || '-'}
@@ -336,7 +339,7 @@ export default function ServicesPage() {
             {/* Row 4: Rates */}
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Purchase Rate (₹)</Label>
+                <Label>Purchase Rate{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
                 <Input
                   ref={register('purchase_rate') as any}
                   type="number"
@@ -349,7 +352,7 @@ export default function ServicesPage() {
                 />
               </div>
               <div className="space-y-1">
-                <Label>Sales Rate (₹)</Label>
+                <Label>Sales Rate{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
                 <Input
                   ref={register('sales_rate') as any}
                   type="number"

@@ -26,17 +26,18 @@ import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
 import ProductImagesDialog from '@/components/dialogs/ProductImagesDialog';
 import { invoke } from '@tauri-apps/api/core';
 import { type ProductTableColumns, DEFAULT_TABLE_COLUMNS } from '@/pages/settings/ProductSettingsPage';
+import { useMoney } from '@/hooks/useMoney';
 
 type ProductFilter = 'all' | 'master' | 'child';
 
-const formatProductSpecs = (p: Product) => {
+const formatProductSpecs = (p: Product, money: (amount: number | null | undefined) => string) => {
   let text = `*${p.name.toUpperCase()}*\n`;
   if (p.code) text += `• *Code:* ${p.code}\n`;
   if (p.sales_rate !== undefined && p.sales_rate !== null) {
-    text += `• *Price:* ₹${p.sales_rate.toLocaleString('en-IN')}\n`;
+    text += `• *Price:* ${money(p.sales_rate)}\n`;
   }
   if (p.mrp !== undefined && p.mrp !== null) {
-    text += `• *MRP:* ₹${p.mrp.toLocaleString('en-IN')}\n`;
+    text += `• *MRP:* ${money(p.mrp)}\n`;
   }
 
   // Vehicle specifications
@@ -92,6 +93,7 @@ export default function ProductsPage() {
   const [isSharingWhatsapp, setIsSharingWhatsapp] = useState(false);
   const [whatsappShareEnabled, setWhatsappShareEnabled] = useState(false);
   const currentUser = useSelector((state: RootState) => state.app.currentUser);
+  const money = useMoney();
 
   const load = async () => {
     try {
@@ -212,7 +214,7 @@ export default function ProductsPage() {
       setSharingProduct(product);
       setIsSharingWhatsapp(true);
 
-      const specsText = formatProductSpecs(product);
+      const specsText = formatProductSpecs(product, money);
       const imgs = await api.products.getImages(product.id);
       const paths = imgs.map(img => img.image_path);
 
@@ -463,10 +465,10 @@ export default function ProductsPage() {
                       {columnSettings.group && <td className="p-3 text-sm">{groups.find(g => g.id === p.group_id)?.name || '-'}</td>}
                       {columnSettings.brand && <td className="p-3 text-sm">{brands.find(b => b.id === p.brand_id)?.name || '-'}</td>}
                       {columnSettings.unit && <td className="p-3">{units.find(u => u.id === p.unit_id)?.symbol || '-'}</td>}
-                      {columnSettings.purchase_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : `₹${p.purchase_rate.toFixed(2)}`}</td>}
-                      {columnSettings.sales_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : `₹${p.sales_rate.toFixed(2)}`}</td>}
-                      {columnSettings.mrp && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : `₹${p.mrp.toFixed(2)}`}</td>}
-                      {columnSettings.cost && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : p.cost !== undefined && p.cost !== null ? `₹${p.cost.toFixed(2)}` : '-'}</td>}
+                      {columnSettings.purchase_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.purchase_rate)}</td>}
+                      {columnSettings.sales_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.sales_rate)}</td>}
+                      {columnSettings.mrp && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.mrp)}</td>}
+                      {columnSettings.cost && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : p.cost !== undefined && p.cost !== null ? money(p.cost) : '-'}</td>}
                       {gstEnabled && columnSettings.tax_slab && (
                         <td className="p-3 text-sm">
                           {gstSlabs.find(s => s.id === p.gst_slab_id)?.name || '-'}
@@ -671,7 +673,7 @@ export default function ProductsPage() {
             </p>
             {sharingProduct && (
               <div className="bg-muted p-3 rounded text-left text-xs font-mono max-h-32 overflow-y-auto border whitespace-pre-wrap">
-                {formatProductSpecs(sharingProduct)}
+                {formatProductSpecs(sharingProduct, money)}
               </div>
             )}
             <div className="text-[11px] text-amber-600 dark:text-amber-400 bg-amber-500/10 p-2 rounded border border-amber-500/20">

@@ -22,6 +22,7 @@ import {
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useMoney } from '@/hooks/useMoney';
 
 interface StockSummary {
     product_id: string;
@@ -63,6 +64,7 @@ export default function StockReportPage() {
     const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
     const [movements, setMovements] = useState<StockMovement[]>([]);
     const [movementsLoading, setMovementsLoading] = useState(false);
+    const money = useMoney();
 
     useEffect(() => {
         loadProductGroups();
@@ -289,10 +291,10 @@ export default function StockReportPage() {
                                                             {item.current_stock.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                                                         </td>
                                                         <td className="p-3 text-right font-mono text-sm">
-                                                            ₹{item.average_rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                            {money(item.average_rate)}
                                                         </td>
                                                         <td className="p-3 text-right font-mono text-sm font-bold">
-                                                            ₹{item.stock_value.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                            {money(item.stock_value)}
                                                         </td>
                                                         <td className="p-3 text-center text-xs text-muted-foreground">
                                                             {item.last_purchase_date ? formatDate(item.last_purchase_date) : '-'}
@@ -352,10 +354,10 @@ export default function StockReportPage() {
                                                                                             {movement.quantity.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                                                                                         </td>
                                                                                         <td className="p-2 text-right text-xs font-mono">
-                                                                                            ₹{movement.rate.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                                                            {money(movement.rate)}
                                                                                         </td>
                                                                                         <td className="p-2 text-right text-xs font-mono">
-                                                                                            ₹{movement.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                                                            {money(movement.amount)}
                                                                                         </td>
                                                                                         <td className="p-2 text-right text-xs font-mono font-bold">
                                                                                             {movement.balance.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
@@ -380,7 +382,7 @@ export default function StockReportPage() {
                                                 {totalProducts} Products
                                             </td>
                                             <td colSpan={2} className="p-3 text-right font-mono font-bold text-sm">
-                                                ₹{totalValue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                                {money(totalValue)}
                                             </td>
                                             <td colSpan={2}></td>
                                         </tr>

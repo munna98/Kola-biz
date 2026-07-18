@@ -43,6 +43,7 @@ import { useVoucherNavigation } from '@/hooks/useVoucherNavigation'; // Borrowin
 // Checking PaymentPage again... it uses `useVoucherNavigation` hook.
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 import { VoucherJournalSection } from '@/components/voucher/VoucherJournalSection';
+import { useMoney } from '@/hooks/useMoney';
 
 interface LedgerAccount {
     id: number;
@@ -56,6 +57,7 @@ export default function JournalEntryPage() {
     const journalState = useSelector((state: RootState) => state.journalEntry);
     const user = useSelector((state: RootState) => state.auth.user);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
+    const money = useMoney();
 
     const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
     const [isInitializing, setIsInitializing] = useState(true);
@@ -455,7 +457,7 @@ export default function JournalEntryPage() {
                                 {!isBalanced && journalState.lines.length > 0 && (
                                     <div className="flex items-center gap-2 text-xs text-destructive">
                                         <IconAlertTriangle size={16} />
-                                        <span>Unbalanced: ₹{journalState.totals.difference.toFixed(2)}</span>
+                                        <span>Unbalanced: {money(journalState.totals.difference)}</span>
                                     </div>
                                 )}
                                 {isBalanced && journalState.lines.length > 0 && (
@@ -490,19 +492,19 @@ export default function JournalEntryPage() {
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Debit</div>
                                 <div className="text-lg font-mono font-bold">
-                                    ₹ {journalState.totals.totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(journalState.totals.totalDebit)}
                                 </div>
                             </div>
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Credit</div>
                                 <div className="text-lg font-mono font-bold">
-                                    ₹ {journalState.totals.totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(journalState.totals.totalCredit)}
                                 </div>
                             </div>
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Difference</div>
                                 <div className={`text-lg font-mono font-bold ${isBalanced ? 'text-green-600 dark:text-green-400' : 'text-destructive'}`}>
-                                    ₹ {journalState.totals.difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                    {money(journalState.totals.difference)}
                                 </div>
                             </div>
                         </div>

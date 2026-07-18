@@ -49,6 +49,7 @@ import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/Vouche
 import { Product, ProductUnitConversion, Unit, GstTaxSlab, api } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
+import { useCurrencyLabel, useMoney } from '@/hooks/useMoney';
 
 interface Party {
     id: number;
@@ -61,6 +62,8 @@ export default function PurchaseReturnPage() {
     const dispatch = useDispatch<AppDispatch>();
     const purchaseReturnState = useSelector((state: RootState) => state.purchaseReturn);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
+    const money = useMoney();
+    const currencyLabel = useCurrencyLabel();
     const [products, setProducts] = useState<Product[]>([]);
     const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
@@ -823,16 +826,16 @@ export default function PurchaseReturnPage() {
                             <div className="space-y-1.5">
                                 <div className="flex justify-between items-center gap-2 text-xs">
                                     <span className="text-muted-foreground">Subtotal:</span>
-                                    <span className="font-medium font-mono">₹ {purchaseReturnState.totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                    <span className="font-medium font-mono">{money(purchaseReturnState.totals.subtotal)}</span>
                                 </div>
                                 {purchaseReturnState.totals.discount > 0 && (
                                     <div className="text-xs font-mono text-muted-foreground">
-                                        Discount: ₹ {purchaseReturnState.totals.discount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        Discount: {money(purchaseReturnState.totals.discount)}
                                     </div>
                                 )}
                                 {purchaseReturnState.totals.tax > 0 && (
                                     <div className="text-xs font-mono text-muted-foreground">
-                                        Tax: ₹ {purchaseReturnState.totals.tax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        Tax: {money(purchaseReturnState.totals.tax)}
                                     </div>
                                 )}
 
@@ -856,7 +859,7 @@ export default function PurchaseReturnPage() {
                                             />
                                         </div>
                                         <div className="flex-1">
-                                            <Label className="text-xs font-medium mb-1 block">Discount ₹</Label>
+                                            <Label className="text-xs font-medium mb-1 block">Discount{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
                                             <Input
                                                 id="voucher-discount-amount"
                                                 type="number"
@@ -882,7 +885,7 @@ export default function PurchaseReturnPage() {
                                 </div>
                                 <div className="border-t pt-1.5 flex justify-between text-sm">
                                     <span className="font-semibold">Grand Total</span>
-                                    <span className="font-bold font-mono text-primary">₹ {purchaseReturnState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                    <span className="font-bold font-mono text-primary">{money(purchaseReturnState.totals.grandTotal)}</span>
                                 </div>
                             </div>
                         </div>

@@ -76,6 +76,20 @@ export default function CompanyProfilePage() {
         dispatch(updateCompanyField({ field, value }));
     };
 
+    const selectedCurrency = currencies.find(c => c.code === profile.base_currency);
+    const currencySymbol = selectedCurrency?.symbol || profile.base_currency_symbol || '₹';
+    const currencyPreview = profile.currency_display === 'code'
+        ? `${profile.base_currency || 'INR'} 1,234.56`
+        : profile.currency_display === 'none'
+            ? '1,234.56'
+            : `${currencySymbol}1,234.56`;
+
+    const handleBaseCurrencyChange = (value: string) => {
+        const currency = currencies.find(c => c.code === value);
+        handleInputChange('base_currency', value);
+        handleInputChange('base_currency_symbol', currency?.symbol || '');
+    };
+
     const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
@@ -260,7 +274,7 @@ export default function CompanyProfilePage() {
                                 </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-4">
+                            <div className="grid grid-cols-3 gap-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="country">Country</Label>
                                     <Combobox
@@ -285,10 +299,29 @@ export default function CompanyProfilePage() {
                                             searchString: `${c.name} ${c.code}`
                                         }))}
                                         value={profile.base_currency}
-                                        onChange={(value) => handleInputChange('base_currency', value as string)}
+                                        onChange={(value) => handleBaseCurrencyChange(value as string)}
                                         placeholder="Select Base Currency"
                                         searchPlaceholder="Search currencies..."
                                     />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="currency_display">Currency Display</Label>
+                                    <Select
+                                        value={profile.currency_display || 'symbol'}
+                                        onValueChange={(value) => handleInputChange('currency_display', value)}
+                                    >
+                                        <SelectTrigger id="currency_display">
+                                            <SelectValue placeholder="Select Currency Display" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            <SelectItem value="symbol">Symbol ({currencySymbol}1,234.56)</SelectItem>
+                                            <SelectItem value="code">Code ({profile.base_currency || 'INR'} 1,234.56)</SelectItem>
+                                            <SelectItem value="none">No Symbol (1,234.56)</SelectItem>
+                                        </SelectContent>
+                                    </Select>
+                                    <p className="text-xs text-muted-foreground">
+                                        Preview: {currencyPreview}
+                                    </p>
                                 </div>
                             </div>
 

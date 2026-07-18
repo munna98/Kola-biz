@@ -24,7 +24,30 @@ pub struct LedgerPdfData {
     pub period_to: String,
     pub opening_balance: f64,
     pub closing_balance: f64,
+    pub currency_code: Option<String>,
+    pub currency_symbol: Option<String>,
+    pub currency_display: Option<String>,
     pub entries: Vec<LedgerPdfEntry>,
+}
+
+fn format_pdf_currency(amount: f64, data: &LedgerPdfData) -> String {
+    let value = format!("{:.2}", amount);
+    match data.currency_display.as_deref().unwrap_or("symbol") {
+        "code" => format!(
+            "{} {}",
+            data.currency_code.as_deref().unwrap_or("INR"),
+            value
+        ),
+        "none" => value,
+        _ => {
+            let symbol = data.currency_symbol.as_deref().unwrap_or("");
+            if symbol.is_empty() {
+                value
+            } else {
+                format!("{} {}", symbol, value)
+            }
+        }
+    }
 }
 
 #[tauri::command]
@@ -117,7 +140,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
             &font_bold,
         );
 
-        let balance_str = format!("₹ {:.2}", data.opening_balance.abs());
+        let balance_str = format_pdf_currency(data.opening_balance.abs(), &data);
         let dr_cr = if data.opening_balance >= 0.0 {
             "Dr"
         } else {
@@ -222,8 +245,8 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
 
         // Balance (right-aligned)
         let balance_str = format!(
-            "₹ {:>10.2} {}",
-            entry.balance.abs(),
+            "{} {}",
+            format_pdf_currency(entry.balance.abs(), &data),
             if entry.balance >= 0.0 { "Dr" } else { "Cr" }
         );
         current_layer.use_text(&balance_str, 7.5, Mm(col_x[6] - 8.0), Mm(y_pos), &font);
@@ -243,7 +266,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         &font_bold,
     );
 
-    let closing_str = format!("₹ {:.2}", data.closing_balance.abs());
+    let closing_str = format_pdf_currency(data.closing_balance.abs(), &data);
     let dr_cr = if data.closing_balance >= 0.0 {
         "Dr"
     } else {

@@ -18,6 +18,7 @@ import {
     DEFAULT_DESIGNER_SETTINGS,
     migrateSettings,
 } from '@/components/barcode/BarcodeLabelDesigner';
+import { useMoney } from '@/hooks/useMoney';
 
 interface Product {
     code: string;
@@ -43,6 +44,7 @@ export default function BarcodeLabelDialog({
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [checkedProducts, setCheckedProducts] = useState<Set<number>>(new Set());
     const printRef = useRef<HTMLDivElement>(null);
+    const money = useMoney();
 
     // Initialize counts and selection when products change
     useEffect(() => {
@@ -118,7 +120,7 @@ export default function BarcodeLabelDialog({
             for (let i = 0; i < count; i++) {
                 let labelHtml = '';
                 elements.filter(el => el.enabled).forEach(el => {
-                    const text = getElementText(el, product);
+                    const text = getElementText(el, product, money);
                     if (el.type === 'barcode') {
                         const tempSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
                         try {
@@ -332,13 +334,13 @@ export default function BarcodeLabelDialog({
 }
 
 // ── Helper: get display text for an element ──
-function getElementText(element: LabelElement, product: Product): string {
+function getElementText(element: LabelElement, product: Product, money: (amount: number | null | undefined) => string): string {
     if (element.type === 'barcode') return '';
     switch (element.dataField) {
         case 'product.code': return product.code;
         case 'product.name': return product.name;
-        case 'product.salesRate': return `₹ ${product.salesRate?.toFixed(2)}`;
-        case 'product.mrp': return `MRP ₹ ${(product.mrp || product.salesRate)?.toFixed(2)}`;
+        case 'product.salesRate': return money(product.salesRate);
+        case 'product.mrp': return `MRP ${money(product.mrp || product.salesRate)}`;
         default: return element.content || '';
     }
 }
@@ -384,6 +386,7 @@ function LabelElementRenderer({
     barcodeFormat: string;
 }) {
     const svgRef = useRef<SVGSVGElement>(null);
+    const money = useMoney();
 
     useEffect(() => {
         if (element.type === 'barcode' && svgRef.current && product.code) {
@@ -402,7 +405,7 @@ function LabelElementRenderer({
         }
     }, [product.code, barcodeFormat, element]);
 
-    const displayText = getElementText(element, product);
+    const displayText = getElementText(element, product, money);
 
     return (
         <div

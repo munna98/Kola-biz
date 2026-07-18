@@ -10,6 +10,7 @@ import TopProductsChart from '@/components/dashboard/TopProductsChart';
 import StockAlerts from '@/components/dashboard/StockAlerts';
 import RecentActivity from '@/components/dashboard/RecentActivity';
 import ProductGroupsChart from '@/components/dashboard/ProductGroupsChart';
+import { useMoney } from '@/hooks/useMoney';
 
 interface DashboardMetrics {
     total_revenue: number;
@@ -78,6 +79,7 @@ const periodDays: Record<Period, number> = {
 export default function DashboardPage() {
     const [period, setPeriod] = useState<Period>('today');
     const [loading, setLoading] = useState(true);
+    const money = useMoney();
 
     const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
     const [revenueTrend, setRevenueTrend] = useState<RevenueTrend[]>([]);
@@ -135,15 +137,6 @@ export default function DashboardPage() {
         loadDashboardData();
     }, [period]);
 
-    const formatCurrency = (value: number) => {
-        return new Intl.NumberFormat('en-IN', {
-            style: 'currency',
-            currency: 'INR',
-            minimumFractionDigits: 0,
-            maximumFractionDigits: 0,
-        }).format(value);
-    };
-
     return (
         <div className="h-full overflow-auto p-6 space-y-6">
             {/* Header */}
@@ -167,13 +160,13 @@ export default function DashboardPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 <MetricCard
                     title="Total Revenue"
-                    value={formatCurrency(metrics?.total_revenue || 0)}
+                    value={money(metrics?.total_revenue || 0, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     change={metrics?.revenue_growth}
                     icon={TrendingUp}
                 />
                 <MetricCard
                     title="Net Profit"
-                    value={formatCurrency(metrics?.net_profit || 0)}
+                    value={money(metrics?.net_profit || 0, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     change={metrics?.profit_growth}
                     icon={DollarSign}
                 />
@@ -184,7 +177,7 @@ export default function DashboardPage() {
                 />
                 <MetricCard
                     title="Stock Value"
-                    value={formatCurrency(metrics?.stock_value || 0)}
+                    value={money(metrics?.stock_value || 0, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     icon={Package}
                 />
             </div>
@@ -194,24 +187,24 @@ export default function DashboardPage() {
                 <MetricCard
                     title="Cash Balance"
                     subtitle="(Cash + Bank)"
-                    value={formatCurrency(metrics?.cash_balance || 0)}
+                    value={money(metrics?.cash_balance || 0, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     icon={Wallet}
                 />
                 <MetricCard
                     title="Receivables"
                     subtitle="(From Customers)"
-                    value={formatCurrency(metrics?.receivables || 0)}
+                    value={money(metrics?.receivables || 0, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     icon={Users}
                 />
                 <MetricCard
                     title="Payables"
                     subtitle="(To Suppliers)"
-                    value={formatCurrency(metrics?.payables || 0)}
+                    value={money(metrics?.payables || 0, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     icon={AlertCircle}
                 />
                 <MetricCard
                     title="Total Expenses"
-                    value={formatCurrency(metrics?.total_expenses || 0)}
+                    value={money(metrics?.total_expenses || 0, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
                     icon={TrendingDown}
                 />
             </div>

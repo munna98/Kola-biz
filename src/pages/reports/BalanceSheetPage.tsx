@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useMoney } from '@/hooks/useMoney';
 
 interface BSAccount {
   account_name: string;
@@ -27,6 +28,7 @@ export default function BalanceSheetPage() {
   const [data, setData] = useState<BalanceSheetData | null>(null);
   const [loading, setLoading] = useState(false);
   const [asOnDate, setAsOnDate] = useState(new Date().toISOString().split('T')[0]);
+  const money = useMoney();
 
   const loadReport = async () => {
     try {
@@ -152,7 +154,7 @@ export default function BalanceSheetPage() {
                                 <div className="text-xs text-muted-foreground">{acc.account_code}</div>
                               </td>
                               <td className="p-3 text-right font-mono text-sm">
-                                ₹{acc.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                {money(acc.amount)}
                               </td>
                             </tr>
                           ))
@@ -162,7 +164,7 @@ export default function BalanceSheetPage() {
                         <tr>
                           <td className="p-3 font-bold text-sm">Total Assets</td>
                           <td className="p-3 text-right font-mono font-bold text-sm">
-                            ₹{data.total_assets.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                            {money(data.total_assets)}
                           </td>
                         </tr>
                       </tfoot>
@@ -200,7 +202,7 @@ export default function BalanceSheetPage() {
                                   <div className="text-xs text-muted-foreground">{acc.account_code}</div>
                                 </td>
                                 <td className="p-3 text-right font-mono text-sm">
-                                  ₹{acc.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                  {money(acc.amount)}
                                 </td>
                               </tr>
                             ))
@@ -210,7 +212,7 @@ export default function BalanceSheetPage() {
                           <tr>
                             <td className="p-3 font-bold text-sm">Total Liabilities</td>
                             <td className="p-3 text-right font-mono font-bold text-sm">
-                              ₹{data.total_liabilities.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              {money(data.total_liabilities)}
                             </td>
                           </tr>
                         </tfoot>
@@ -246,7 +248,7 @@ export default function BalanceSheetPage() {
                                   <div className="text-xs text-muted-foreground">{acc.account_code}</div>
                                 </td>
                                 <td className="p-3 text-right font-mono text-sm">
-                                  ₹{acc.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                  {money(acc.amount)}
                                 </td>
                               </tr>
                             ))
@@ -256,7 +258,7 @@ export default function BalanceSheetPage() {
                           <tr>
                             <td className="p-3 font-bold text-sm">Total Equity</td>
                             <td className="p-3 text-right font-mono font-bold text-sm">
-                              ₹{data.total_equity.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              {money(data.total_equity)}
                             </td>
                           </tr>
                         </tfoot>
@@ -277,7 +279,7 @@ export default function BalanceSheetPage() {
                       </p>
                     </div>
                     <div className="text-3xl font-bold font-mono">
-                      ₹{totalLiabilitiesAndEquity.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {money(totalLiabilitiesAndEquity)}
                     </div>
                   </div>
                   <div className="mt-4 flex items-center gap-3 p-3 rounded-lg border bg-background">
@@ -291,7 +293,7 @@ export default function BalanceSheetPage() {
                         <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
                         <span className="font-semibold text-sm">Balance Sheet is NOT Balanced</span>
                         <span className="text-xs text-muted-foreground ml-2">
-                          (Difference: ₹{Math.abs(data.total_assets - totalLiabilitiesAndEquity).toLocaleString('en-IN', { minimumFractionDigits: 2 })})
+                          (Difference: {money(Math.abs(data.total_assets - totalLiabilitiesAndEquity))})
                         </span>
                       </div>
                     )}

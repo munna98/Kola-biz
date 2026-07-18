@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useMoney } from '@/hooks/useMoney';
 
 interface PLAccount {
   account_name: string;
@@ -32,6 +33,7 @@ export default function ProfitLossPage() {
     return date.toISOString().split('T')[0];
   });
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+  const money = useMoney();
 
   const loadReport = async () => {
     try {
@@ -163,7 +165,7 @@ export default function ProfitLossPage() {
                               <div className="text-xs text-muted-foreground">{acc.account_code}</div>
                             </td>
                             <td className="p-3 text-right font-mono text-sm">
-                              ₹{acc.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              {money(acc.amount)}
                             </td>
                           </tr>
                         ))
@@ -173,7 +175,7 @@ export default function ProfitLossPage() {
                       <tr>
                         <td className="p-3 font-bold text-sm">Total Income</td>
                         <td className="p-3 text-right font-mono font-bold text-sm">
-                          ₹{data.total_income.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {money(data.total_income)}
                         </td>
                       </tr>
                     </tfoot>
@@ -209,7 +211,7 @@ export default function ProfitLossPage() {
                               <div className="text-xs text-muted-foreground">{acc.account_code}</div>
                             </td>
                             <td className="p-3 text-right font-mono text-sm">
-                              ₹{acc.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              {money(acc.amount)}
                             </td>
                           </tr>
                         ))
@@ -219,7 +221,7 @@ export default function ProfitLossPage() {
                       <tr>
                         <td className="p-3 font-bold text-sm">Total Expenses</td>
                         <td className="p-3 text-right font-mono font-bold text-sm">
-                          ₹{data.total_expenses.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {money(data.total_expenses)}
                         </td>
                       </tr>
                     </tfoot>
@@ -235,11 +237,11 @@ export default function ProfitLossPage() {
                       {data.net_profit >= 0 ? 'Net Profit' : 'Net Loss'}
                     </h2>
                     <div className={`text-3xl font-bold font-mono`}>
-                      ₹{Math.abs(data.net_profit).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {money(Math.abs(data.net_profit))}
                     </div>
                   </div>
                   <div className="mt-4 text-sm text-muted-foreground">
-                    Calculation: Total Income (₹{data.total_income.toLocaleString('en-IN', { minimumFractionDigits: 2 })}) - Total Expenses (₹{data.total_expenses.toLocaleString('en-IN', { minimumFractionDigits: 2 })})
+                    Calculation: Total Income ({money(data.total_income)}) - Total Expenses ({money(data.total_expenses)})
                   </div>
                 </CardContent>
               </Card>

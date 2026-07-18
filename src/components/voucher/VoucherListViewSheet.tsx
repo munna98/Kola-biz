@@ -12,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { IconSearch, IconList } from '@tabler/icons-react';
 import { formatDate } from '@/lib/utils';
+import { useMoney } from '@/hooks/useMoney';
 
 interface VoucherSummary {
     id: string;
@@ -44,6 +45,7 @@ export function VoucherListViewSheet({
     const [vouchers, setVouchers] = useState<VoucherSummary[]>([]);
     const [searchQuery, setSearchQuery] = useState('');
     const [loading, setLoading] = useState(false);
+    const money = useMoney();
 
     useEffect(() => {
         if (open) {
@@ -118,15 +120,15 @@ export function VoucherListViewSheet({
                                         {voucher.voucher_type === 'opening_balance' || voucher.voucher_type === 'journal' ? (
                                             <div className="flex items-center gap-3">
                                                 <span className="text-sm font-bold">
-                                                    Dr: ₹{(voucher.total_debit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    Dr: {money(voucher.total_debit || 0)}
                                                 </span>
                                                 <span className="text-sm font-bold">
-                                                    Cr: ₹{(voucher.total_credit || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                    Cr: {money(voucher.total_credit || 0)}
                                                 </span>
                                             </div>
                                         ) : (
                                             <span className="font-bold text-sm">
-                                                ₹{voucher.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                                {money(voucher.total_amount)}
                                             </span>
                                         )}
                                     </div>

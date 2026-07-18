@@ -64,6 +64,7 @@ import { Product, ProductGroup, ProductUnitConversion, Unit, Employee, GstTaxSla
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
 import { ShipToPopover, ShipToAddress } from '@/components/voucher/ShipToPopover';
+import { useCurrencyLabel, useMoney } from '@/hooks/useMoney';
 
 
 
@@ -80,6 +81,8 @@ export default function SalesInvoicePage() {
   const salesState = useSelector((state: RootState) => state.salesInvoice);
   const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
   const user = useSelector((state: RootState) => state.auth.user);
+  const money = useMoney();
+  const currencyLabel = useCurrencyLabel();
   const [products, setProducts] = useState<Product[]>([]);
   const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -1557,7 +1560,7 @@ export default function SalesInvoicePage() {
             footerRightContent={
               partyBalance !== null && shouldShowPartyBalance ? (
                 <div className={`text-base font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  Balance: ₹ {Math.abs(partyBalance).toLocaleString()} {partyBalance >= 0 ? 'Dr' : 'Cr'}
+                  Balance: {money(Math.abs(partyBalance), { minimumFractionDigits: 0, maximumFractionDigits: 0 })} {partyBalance >= 0 ? 'Dr' : 'Cr'}
                 </div>
               ) : null
             }
@@ -1674,7 +1677,7 @@ export default function SalesInvoicePage() {
                     />
                   </div>
                   <div>
-                    <Label className="text-xs font-medium mb-1 block">Discount ₹</Label>
+                    <Label className="text-xs font-medium mb-1 block">Discount{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
                     <Input
                       type="number"
                       value={salesState.form.discount_amount || ''}
@@ -1700,28 +1703,28 @@ export default function SalesInvoicePage() {
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
                     <span className="text-muted-foreground">Subtotal:</span>
-                    <span className="font-mono font-medium">₹ {salesState.totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                    <span className="font-mono font-medium">{money(salesState.totals.subtotal)}</span>
                   </div>
                   {salesState.totals.discount > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">
-                      Discount: ₹ {salesState.totals.discount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      Discount: {money(salesState.totals.discount)}
                     </div>
                   )}
                   {salesState.totals.tax > 0 && (
-                    <div className="text-xs font-mono text-muted-foreground">Tax: ₹ {salesState.totals.tax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                    <div className="text-xs font-mono text-muted-foreground">Tax: {money(salesState.totals.tax)}</div>
                   )}
                   {linkedReturnTotal > 0 && (
                     <div className="flex justify-between items-center gap-2 text-xs font-mono text-red-600">
                       <span>Less Returns ({linkedReturnCount}):</span>
-                      <span>- ₹ {linkedReturnTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                      <span>-{money(linkedReturnTotal)}</span>
                     </div>
                   )}
                   {linkedReturnTotal > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">
-                      Invoice Total: ₹ {salesState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      Invoice Total: {money(salesState.totals.grandTotal)}
                     </div>
                   )}
-                  <div className="text-lg font-mono font-bold">₹ {netPayableTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                  <div className="text-lg font-mono font-bold">{money(netPayableTotal)}</div>
                 </div>
               </div>
             </div>
@@ -1736,14 +1739,14 @@ export default function SalesInvoicePage() {
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-muted-foreground">Cost:</span>
                     <span className="font-mono font-medium text-orange-500">
-                      ₹ {profitStats.totalCost.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {money(profitStats.totalCost)}
                     </span>
                   </div>
                   <div className="w-px h-4 bg-border" />
                   <div className="flex items-center gap-2 text-xs">
                     <span className="text-muted-foreground">Profit:</span>
                     <span className={`font-mono font-semibold ${profitStats.grossProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                      ₹ {profitStats.grossProfit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {money(profitStats.grossProfit)}
                       <span className="ml-1 text-[10px] opacity-70">({profitStats.profitPercent.toFixed(1)}%)</span>
                     </span>
                   </div>

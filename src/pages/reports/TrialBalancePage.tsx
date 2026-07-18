@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useMoney } from '@/hooks/useMoney';
 
 interface TrialBalanceRow {
   account_code: string;
@@ -20,6 +21,7 @@ export default function TrialBalancePage() {
   const [loading, setLoading] = useState(true);
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+  const money = useMoney();
 
   const loadTrialBalance = async () => {
     try {
@@ -153,10 +155,10 @@ export default function TrialBalancePage() {
                           <td className="p-3 font-mono text-sm">{row.account_code}</td>
                           <td className="p-3 text-sm">{row.account_name}</td>
                           <td className="p-3 text-right font-mono text-sm">
-                            {row.debit > 0 ? `₹${row.debit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                            {row.debit > 0 ? money(row.debit) : '-'}
                           </td>
                           <td className="p-3 text-right font-mono text-sm">
-                            {row.credit > 0 ? `₹${row.credit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}` : '-'}
+                            {row.credit > 0 ? money(row.credit) : '-'}
                           </td>
                         </tr>
                       ))
@@ -166,16 +168,16 @@ export default function TrialBalancePage() {
                     <tr>
                       <td colSpan={2} className="p-3 font-bold text-sm">TOTAL</td>
                       <td className="p-3 text-right font-mono font-bold text-sm">
-                        ₹{totalDebit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {money(totalDebit)}
                       </td>
                       <td className="p-3 text-right font-mono font-bold text-sm">
-                        ₹{totalCredit.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                        {money(totalCredit)}
                       </td>
                     </tr>
                     {!isBalanced && (
                       <tr className="bg-muted/50">
                         <td colSpan={4} className="p-3 text-center text-xs text-destructive">
-                          ⚠️ UNBALANCED: Difference of ₹{difference.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          ⚠️ UNBALANCED: Difference of {money(difference)}
                         </td>
                       </tr>
                     )}

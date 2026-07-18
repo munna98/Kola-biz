@@ -7,15 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { IconDownload, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { api, GstSummaryRow } from '@/lib/tauri';
+import { useMoney } from '@/hooks/useMoney';
 
 const today = new Date().toISOString().split('T')[0];
 const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
   .toISOString()
   .split('T')[0];
-
-function fmt(n: number) {
-  return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 function fmtDate(d: string) {
   if (!d) return '';
@@ -30,6 +27,7 @@ export default function Gstr1ReportPage() {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<GstSummaryRow[]>([]);
   const [fetched, setFetched] = useState(false);
+  const fmt = useMoney();
 
   const fetchData = async () => {
     try {

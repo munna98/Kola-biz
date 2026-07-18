@@ -2,6 +2,7 @@ import React, { useRef, useCallback } from 'react';
 import { Rnd } from 'react-rnd';
 import { DesignerElement as DesignerElementType } from './types';
 import { getFieldByKey } from './DataFieldCatalog';
+import { useMoney } from '@/hooks/useMoney';
 
 interface DesignerCanvasProps {
     elements: DesignerElementType[];
@@ -33,7 +34,11 @@ function pxToMm(px: number): number {
 
 // ============= ELEMENT CONTENT RENDERER =============
 
-function renderElementContent(element: DesignerElementType, globalStyles: DesignerCanvasProps['globalStyles']) {
+function renderElementContent(
+    element: DesignerElementType,
+    globalStyles: DesignerCanvasProps['globalStyles'],
+    previewMoney: (amount: number) => string
+) {
     const effectiveStyles: React.CSSProperties = {
         fontFamily: element.styles.fontFamily || globalStyles.fontFamily,
         fontSize: `${element.styles.fontSize || globalStyles.fontSize}pt`,
@@ -135,13 +140,13 @@ function renderElementContent(element: DesignerElementType, globalStyles: Design
                                         row2LeftText = 'Less: 18.00 Nos';
                                     }
 
-                                    // Row 2 Right: [final_quantity] X ₹[rate]
+                                    // Row 2 Right: [final_quantity] X [rate]
                                     const calcParts: string[] = [];
                                     if (visibleColumns.some(c => c.key === 'final_quantity')) {
                                         calcParts.push('1482.00');
                                     }
                                     if (visibleColumns.some(c => c.key === 'rate')) {
-                                        calcParts.push('₹25.00');
+                                        calcParts.push(previewMoney(25));
                                     }
                                     const row2RightText = calcParts.join(' X ');
 
@@ -388,6 +393,7 @@ export default function DesignerCanvas({
     onDeleteSelected,
 }: DesignerCanvasProps) {
     const canvasRef = useRef<HTMLDivElement>(null);
+    const previewMoney = useMoney();
 
     const widthPx = mmToPx(pageWidth);
     const heightPx = mmToPx(pageHeight);
@@ -532,7 +538,7 @@ export default function DesignerCanvas({
                                     }}
                                     className={`${isSelected ? 'ring-1 ring-blue-400/30' : 'hover:outline hover:outline-1 hover:outline-gray-300'}`}
                                 >
-                                    {renderElementContent(element, globalStyles)}
+                                    {renderElementContent(element, globalStyles, previewMoney)}
                                 </Rnd>
                             );
                         })}

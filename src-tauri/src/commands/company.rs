@@ -65,6 +65,8 @@ pub struct CompanyProfile {
     pub bank_branch: Option<String>,
     pub terms_and_conditions: Option<String>,
     pub base_currency: Option<String>,
+    pub currency_display: Option<String>,
+    pub base_currency_symbol: Option<String>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -93,6 +95,7 @@ pub struct UpdateCompanyProfile {
     pub bank_branch: Option<String>,
     pub terms_and_conditions: Option<String>,
     pub base_currency: Option<String>,
+    pub currency_display: Option<String>,
 }
 
 #[tauri::command]
@@ -107,7 +110,12 @@ pub async fn get_company_profile(
 pub(crate) async fn get_company_profile_with_pool(
     pool: &SqlitePool,
 ) -> Result<CompanyProfile, String> {
-    let profile = sqlx::query_as::<_, CompanyProfile>("SELECT * FROM company_profile LIMIT 1")
+    let profile = sqlx::query_as::<_, CompanyProfile>(
+        "SELECT cp.*,
+            (SELECT c.symbol FROM currencies c WHERE c.code = cp.base_currency LIMIT 1) AS base_currency_symbol
+         FROM company_profile cp
+         LIMIT 1",
+    )
         .fetch_optional(pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -121,7 +129,12 @@ pub(crate) async fn get_company_profile_with_pool(
                 .await
                 .map_err(|e| e.to_string())?;
 
-            sqlx::query_as::<_, CompanyProfile>("SELECT * FROM company_profile LIMIT 1")
+            sqlx::query_as::<_, CompanyProfile>(
+                "SELECT cp.*,
+                    (SELECT c.symbol FROM currencies c WHERE c.code = cp.base_currency LIMIT 1) AS base_currency_symbol
+                 FROM company_profile cp
+                 LIMIT 1",
+            )
                 .fetch_one(pool)
                 .await
                 .map_err(|e| e.to_string())
@@ -159,6 +172,7 @@ pub async fn update_company_profile(
             bank_branch = ?,
             terms_and_conditions = ?,
             base_currency = ?,
+            currency_display = ?,
             updated_at = CURRENT_TIMESTAMP
         WHERE id = 1",
     )
@@ -184,6 +198,7 @@ pub async fn update_company_profile(
     .bind(&profile.bank_branch)
     .bind(&profile.terms_and_conditions)
     .bind(&profile.base_currency)
+    .bind(profile.currency_display.as_deref().unwrap_or("symbol"))
     .execute(&pool)
     .await
     .map_err(|e| e.to_string())?;

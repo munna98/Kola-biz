@@ -9,13 +9,10 @@ import { Separator } from '@/components/ui/separator';
 import { IconDownload, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { api, GstSummaryRow, Gstr3bSummary } from '@/lib/tauri';
+import { useMoney } from '@/hooks/useMoney';
 
 const today = new Date().toISOString().split('T')[0];
 const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
-
-function fmt(n: number) {
-  return '₹' + n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
 
 export default function GSTReportPage() {
   const [fromDate, setFromDate] = useState(firstOfMonth);
@@ -24,6 +21,7 @@ export default function GSTReportPage() {
   const [gstr1, setGstr1] = useState<GstSummaryRow[]>([]);
   const [gstr3b, setGstr3b] = useState<Gstr3bSummary | null>(null);
   const [activeTab, setActiveTab] = useState('gstr1');
+  const fmt = useMoney();
 
   const fetchGstr1 = async () => {
     try {
@@ -94,7 +92,7 @@ export default function GSTReportPage() {
         return;
       }
       const rows = [
-        ['Section', 'Description', 'Amount (₹)'],
+        ['Section', 'Description', 'Amount'],
         ['3.1 – Outward', 'Taxable Value', gstr3b.outward_taxable],
         ['3.1 – Outward', 'CGST', gstr3b.outward_cgst],
         ['3.1 – Outward', 'SGST', gstr3b.outward_sgst],
@@ -284,11 +282,12 @@ function Row({ label, value, bold }: { label: string; value: string; bold?: bool
 
 function NetCard({ label, value }: { label: string; value: number }) {
   const isPositive = value > 0;
+  const fmt = useMoney();
   return (
     <div className={`p-4 rounded-lg border-2 text-center ${isPositive ? 'border-red-200 bg-red-50 dark:bg-red-950/20' : 'border-green-200 bg-green-50 dark:bg-green-950/20'}`}>
       <p className="text-xs text-muted-foreground mb-1">{label}</p>
       <p className={`text-xl font-bold ${isPositive ? 'text-red-600' : 'text-green-600'}`}>
-        ₹{Math.abs(value).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+        {fmt(Math.abs(value))}
       </p>
       {!isPositive && value !== 0 && <p className="text-xs text-green-600 mt-1">Credit Balance</p>}
     </div>

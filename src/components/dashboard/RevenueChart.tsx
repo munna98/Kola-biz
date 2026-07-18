@@ -1,5 +1,6 @@
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card } from '@/components/ui/card';
+import { useMoney } from '@/hooks/useMoney';
 
 interface RevenueTrend {
     date: string;
@@ -13,6 +14,8 @@ interface RevenueChartProps {
 }
 
 export default function RevenueChart({ data, loading }: RevenueChartProps) {
+    const money = useMoney();
+
     if (loading) {
         return (
             <Card className="p-6">
@@ -24,11 +27,7 @@ export default function RevenueChart({ data, loading }: RevenueChartProps) {
     }
 
     const formatCurrency = (value: number) => {
-        return new Intl.NumberFormat('en-IN', {
-            style: 'currency',
-            currency: 'INR',
-            minimumFractionDigits: 0,
-        }).format(value);
+        return money(value, { minimumFractionDigits: 0, maximumFractionDigits: 0 });
     };
 
     const formatDate = (dateStr: string) => {
@@ -64,7 +63,7 @@ export default function RevenueChart({ data, loading }: RevenueChartProps) {
                             className="text-xs"
                         />
                         <YAxis
-                            tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`}
+                            tickFormatter={(value) => `${money(value / 1000, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}k`}
                             className="text-xs"
                         />
                         <Tooltip

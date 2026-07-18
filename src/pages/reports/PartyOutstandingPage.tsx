@@ -8,6 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IconDownload, IconPrinter, IconRefresh, IconUserDown, IconUserUp } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useMoney } from '@/hooks/useMoney';
 
 interface PartyOutstanding {
   party_id: number;
@@ -37,6 +38,7 @@ export default function PartyOutstandingPage() {
   const [selectedParty, setSelectedParty] = useState<{ id: number; name: string; type: 'customer' | 'supplier' } | null>(null);
   const [invoiceDetails, setInvoiceDetails] = useState<InvoiceDetail[]>([]);
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const money = useMoney();
 
   const loadReport = async () => {
     try {
@@ -131,14 +133,14 @@ export default function PartyOutstandingPage() {
                 </span>
               </td>
               <td className="p-3 text-right font-mono text-sm">
-                ₹{party.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                {money(party.total_amount)}
               </td>
               <td className="p-3 text-right font-mono text-sm">
-                ₹{party.paid_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                {money(party.paid_amount)}
               </td>
               <td className="p-3 text-right font-mono text-sm font-bold">
                 <span className={party.outstanding_amount < 0 ? 'text-blue-600' : ''}>
-                  ₹{Math.abs(party.outstanding_amount).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  {money(Math.abs(party.outstanding_amount))}
                   {party.outstanding_amount < 0 ? (type === 'customer' ? ' Cr' : ' Dr') : ''}
                 </span>
               </td>
@@ -162,7 +164,7 @@ export default function PartyOutstandingPage() {
         <tr>
           <td colSpan={4} className="p-3 font-bold text-sm">TOTAL</td>
           <td className="p-3 text-right font-mono font-bold text-sm">
-            ₹{data.reduce((sum, p) => sum + p.outstanding_amount, 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+            {money(data.reduce((sum, p) => sum + p.outstanding_amount, 0))}
           </td>
           <td></td>
         </tr>
@@ -236,7 +238,7 @@ export default function PartyOutstandingPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-2xl font-bold font-mono">
-                      ₹{totalReceivables.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {money(totalReceivables)}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">{customers.length} parties</p>
                   </div>
@@ -253,7 +255,7 @@ export default function PartyOutstandingPage() {
                   </div>
                   <div className="text-right">
                     <p className="text-2xl font-bold font-mono">
-                      ₹{totalPayables.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {money(totalPayables)}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">{suppliers.length} parties</p>
                   </div>
@@ -337,13 +339,13 @@ export default function PartyOutstandingPage() {
                             <td className="p-2 text-xs font-mono">{inv.voucher_no}</td>
                             <td className="p-2 text-xs">{formatDate(inv.voucher_date)}</td>
                             <td className="p-2 text-right text-xs font-mono">
-                              ₹{inv.total_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              {money(inv.total_amount)}
                             </td>
                             <td className="p-2 text-right text-xs font-mono">
-                              ₹{inv.paid_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              {money(inv.paid_amount)}
                             </td>
                             <td className="p-2 text-right text-xs font-mono font-bold">
-                              ₹{inv.outstanding_amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              {money(inv.outstanding_amount)}
                             </td>
                             <td className="p-2 text-center text-xs font-bold text-muted-foreground">{inv.days_outstanding}d</td>
                           </tr>

@@ -106,11 +106,11 @@
             <td class="col-code">{{product_code}}</td>
             <td class="col-description">{{product_name}}</td>
             <td class="col-qty">{{format_number final_quantity 0}}</td>
-            <td class="col-price">₹{{format_number rate 0}}</td>
+            <td class="col-price">{{format_currency rate}}</td>
             {{#if @root.show_discount_column}}
-            <td class="col-discount">₹{{format_number discount_amount 0}}</td>
+            <td class="col-discount">{{format_currency discount_amount}}</td>
             {{/if}}
-            <td class="col-total">₹{{format_number total 0}}</td>
+            <td class="col-total">{{format_currency total}}</td>
         </tr>
         {{/each}}
     </tbody>
@@ -120,35 +120,35 @@
     <div class="totals-rows">
         <div class="total-row">
             <span class="total-label">subtotal:</span>
-            <span class="total-value">₹{{format_number subtotal 0}}</span>
+            <span class="total-value">{{format_currency subtotal}}</span>
         </div>
 
         {{#if has_discount}}
         <div class="total-row">
             <span class="total-label">discount:</span>
-            <span class="total-value">₹{{format_number bill_discount 0}}</span>
+            <span class="total-value">{{format_currency bill_discount}}</span>
         </div>
         {{/if}}
 
         {{#if tax_total}}
         <div class="total-row">
             <span class="total-label">taxes:</span>
-            <span class="total-value">₹{{format_number tax_total 0}}</span>
+            <span class="total-value">{{format_currency tax_total}}</span>
         </div>
         {{/if}}
 
         <div class="total-row grand-total">
             <span class="total-label">Grand Total</span>
-            <span class="total-value">₹{{format_number grand_total 2}}</span>
+            <span class="total-value">{{format_currency grand_total}}</span>
         </div>
         {{#if has_returns}}
         <div class="total-row">
             <span class="total-label">less returns:</span>
-            <span class="total-value">-₹{{format_number return_total 2}}</span>
+            <span class="total-value">-{{format_currency return_total}}</span>
         </div>
         <div class="total-row grand-total">
             <span class="total-label">Net Payable</span>
-            <span class="total-value">₹{{format_number net_payable 2}}</span>
+            <span class="total-value">{{format_currency net_payable}}</span>
         </div>
         {{/if}}
     </div>
@@ -161,19 +161,19 @@
     <div style="display: flex; justify-content: space-between; font-size: 9pt;">
         <div>
             <span style="display: block; color: #666; font-size: 8pt;">Old Balance</span>
-            <span style="font-weight: bold;">₹{{abs_format_number old_balance 2}}</span>
+            <span style="font-weight: bold;">{{format_currency old_balance}}</span>
         </div>
         <div>
             <span style="display: block; color: #666; font-size: 8pt;">Bill Amount</span>
-            <span style="font-weight: bold;">₹{{format_number grand_total 2}}</span>
+            <span style="font-weight: bold;">{{format_currency grand_total}}</span>
         </div>
         <div>
             <span style="display: block; color: #666; font-size: 8pt;">Paid Amount</span>
-            <span style="font-weight: bold;">₹{{format_number paid_amount 2}}</span>
+            <span style="font-weight: bold;">{{format_currency paid_amount}}</span>
         </div>
         <div>
             <span style="display: block; color: #666; font-size: 8pt;">Balance Due</span>
-            <span style="font-weight: bold;">₹{{abs_format_number balance_due 2}}</span>
+            <span style="font-weight: bold;">{{format_currency balance_due}}</span>
         </div>
     </div>
 </div>

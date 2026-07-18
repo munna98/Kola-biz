@@ -7,6 +7,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useMoney } from '@/hooks/useMoney';
 
 interface CashFlowItem {
   description: string;
@@ -35,6 +36,7 @@ export default function CashFlowPage() {
     return date.toISOString().split('T')[0];
   });
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
+  const money = useMoney();
 
   const loadReport = async () => {
     try {
@@ -159,7 +161,7 @@ export default function CashFlowPage() {
                           <tr key={idx} className="border-b hover:bg-muted/30">
                             <td className="p-3 text-sm">{item.description}</td>
                             <td className={`p-3 text-right font-mono text-sm ${item.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {item.amount >= 0 ? '+' : ''}₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              {item.amount >= 0 ? '+' : ''}{money(item.amount)}
                             </td>
                           </tr>
                         ))
@@ -169,7 +171,7 @@ export default function CashFlowPage() {
                       <tr>
                         <td className="p-3 font-bold text-sm">Net Cash from Operating Activities</td>
                         <td className={`p-3 text-right font-mono font-bold text-sm`}>
-                          {data.net_operating >= 0 ? '+' : ''}₹{data.net_operating.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {data.net_operating >= 0 ? '+' : ''}{money(data.net_operating)}
                         </td>
                       </tr>
                     </tfoot>
@@ -198,7 +200,7 @@ export default function CashFlowPage() {
                           <tr key={idx} className="border-b hover:bg-muted/30">
                             <td className="p-3 text-sm">{item.description}</td>
                             <td className={`p-3 text-right font-mono text-sm ${item.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {item.amount >= 0 ? '+' : ''}₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              {item.amount >= 0 ? '+' : ''}{money(item.amount)}
                             </td>
                           </tr>
                         ))
@@ -208,7 +210,7 @@ export default function CashFlowPage() {
                       <tr>
                         <td className="p-3 font-bold text-sm">Net Cash from Investing Activities</td>
                         <td className={`p-3 text-right font-mono font-bold text-sm`}>
-                          {data.net_investing >= 0 ? '+' : ''}₹{data.net_investing.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {data.net_investing >= 0 ? '+' : ''}{money(data.net_investing)}
                         </td>
                       </tr>
                     </tfoot>
@@ -237,7 +239,7 @@ export default function CashFlowPage() {
                           <tr key={idx} className="border-b hover:bg-muted/30">
                             <td className="p-3 text-sm">{item.description}</td>
                             <td className={`p-3 text-right font-mono text-sm ${item.amount >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {item.amount >= 0 ? '+' : ''}₹{item.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                              {item.amount >= 0 ? '+' : ''}{money(item.amount)}
                             </td>
                           </tr>
                         ))
@@ -247,7 +249,7 @@ export default function CashFlowPage() {
                       <tr>
                         <td className="p-3 font-bold text-sm">Net Cash from Financing Activities</td>
                         <td className={`p-3 text-right font-mono font-bold text-sm`}>
-                          {data.net_financing >= 0 ? '+' : ''}₹{data.net_financing.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                          {data.net_financing >= 0 ? '+' : ''}{money(data.net_financing)}
                         </td>
                       </tr>
                     </tfoot>
@@ -261,19 +263,19 @@ export default function CashFlowPage() {
                   <div className="flex justify-between items-center">
                     <span className="text-sm font-semibold">Opening Cash & Cash Equivalents</span>
                     <span className="font-mono font-bold">
-                      ₹{data.opening_cash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {money(data.opening_cash)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center border-t pt-4">
                     <span className="text-sm font-semibold">Net Change in Cash</span>
                     <span className={`font-mono font-bold`}>
-                      {data.net_change >= 0 ? '+' : ''}₹{data.net_change.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {data.net_change >= 0 ? '+' : ''}{money(data.net_change)}
                     </span>
                   </div>
                   <div className="flex justify-between items-center border-t pt-4">
                     <span className="text-lg font-bold">Closing Cash & Cash Equivalents</span>
                     <span className="text-2xl font-mono font-bold text-primary">
-                      ₹{data.closing_cash.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                      {money(data.closing_cash)}
                     </span>
                   </div>
                 </CardContent>

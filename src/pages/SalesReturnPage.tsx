@@ -51,6 +51,7 @@ import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/Vouche
 import { Product, ProductUnitConversion, Unit, GstTaxSlab, api } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
+import { useCurrencyLabel, useMoney } from '@/hooks/useMoney';
 
 interface Party {
     id: number;
@@ -63,6 +64,8 @@ export default function SalesReturnPage() {
     const dispatch = useDispatch<AppDispatch>();
     const salesReturnState = useSelector((state: RootState) => state.salesReturn);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
+    const money = useMoney();
+    const currencyLabel = useCurrencyLabel();
     const [products, setProducts] = useState<Product[]>([]);
     const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
@@ -897,16 +900,16 @@ export default function SalesReturnPage() {
                             <div className="space-y-1.5">
                                 <div className="flex justify-between items-center gap-2 text-xs">
                                     <span className="text-muted-foreground">Subtotal:</span>
-                                    <span className="font-medium font-mono">₹ {salesReturnState.totals.subtotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                    <span className="font-medium font-mono">{money(salesReturnState.totals.subtotal)}</span>
                                 </div>
                                 {salesReturnState.totals.discount > 0 && (
                                     <div className="text-xs font-mono text-muted-foreground">
-                                        Discount: ₹ {salesReturnState.totals.discount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        Discount: {money(salesReturnState.totals.discount)}
                                     </div>
                                 )}
                                 {salesReturnState.totals.tax > 0 && (
                                     <div className="text-xs font-mono text-muted-foreground">
-                                        Tax: ₹ {salesReturnState.totals.tax.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                                        Tax: {money(salesReturnState.totals.tax)}
                                     </div>
                                 )}
 
@@ -930,7 +933,7 @@ export default function SalesReturnPage() {
                                             />
                                         </div>
                                         <div className="flex-1">
-                                            <Label className="text-xs font-medium mb-1 block">Discount ₹</Label>
+                                            <Label className="text-xs font-medium mb-1 block">Discount{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
                                             <Input
                                                 id="voucher-discount-amount"
                                                 type="number"
@@ -956,7 +959,7 @@ export default function SalesReturnPage() {
                                 </div>
                                 <div className="border-t pt-1.5 flex justify-between text-sm">
                                     <span className="font-semibold">Grand Total</span>
-                                    <span className="font-bold font-mono text-primary">₹ {salesReturnState.totals.grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</span>
+                                    <span className="font-bold font-mono text-primary">{money(salesReturnState.totals.grandTotal)}</span>
                                 </div>
                             </div>
                         </div>

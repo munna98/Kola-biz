@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useMoney } from '@/hooks/useMoney';
 
 interface PendingInvoice {
     id: string;
@@ -39,6 +40,7 @@ export default function BillAllocationDialog({
     const [invoices, setInvoices] = useState<PendingInvoice[]>([]);
     const [loading, setLoading] = useState(false);
     const [allocations, setAllocations] = useState<AllocationData[]>(initialAllocations);
+    const money = useMoney();
 
     // Map for easy lookup [invoiceId]: allocatedAmount
     const allocationMap = useMemo(() => {
@@ -117,19 +119,19 @@ export default function BillAllocationDialog({
                 <DialogHeader>
                     <DialogTitle>Billwise Allocation</DialogTitle>
                     <DialogDescription>
-                        Allocate voucher amount (₹ {amountToAllocate.toLocaleString()}) against pending invoices.
+                        Allocate voucher amount ({money(amountToAllocate)}) against pending invoices.
                     </DialogDescription>
                 </DialogHeader>
 
                 <div className="flex justify-between items-center py-2 px-1 bg-muted/50 rounded-md text-sm mb-2">
                     <div>
                         <span className="text-muted-foreground mr-2">Allocated:</span>
-                        <span className="font-semibold text-blue-600">₹ {totalAllocated.toLocaleString()}</span>
+                        <span className="font-semibold text-blue-600">{money(totalAllocated)}</span>
                     </div>
                     <div>
                         <span className="text-muted-foreground mr-2">Unallocated:</span>
                         <span className={`font-semibold ${remainingToAllocate < 0 ? 'text-red-600' : 'text-green-600'}`}>
-                            ₹ {remainingToAllocate.toLocaleString()}
+                            {money(remainingToAllocate)}
                         </span>
                     </div>
                 </div>
@@ -167,7 +169,7 @@ export default function BillAllocationDialog({
                                             </td>
                                             <td className="p-2 text-muted-foreground">{new Date(inv.voucher_date).toLocaleDateString()}</td>
                                             <td className="p-2 font-medium">{inv.voucher_no} {inv.voucher_type === 'sales_invoice' ? '(SI)' : '(PI)'}</td>
-                                            <td className="p-2 text-muted-foreground">₹ {inv.pending_amount.toLocaleString()}</td>
+                                            <td className="p-2 text-muted-foreground">{money(inv.pending_amount)}</td>
                                             <td className="p-2 text-right">
                                                 <Input
                                                     type="number"

@@ -1,5 +1,6 @@
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Card } from '@/components/ui/card';
+import { useMoney } from '@/hooks/useMoney';
 
 interface CashFlow {
     date: string;
@@ -13,6 +14,8 @@ interface CashFlowChartProps {
 }
 
 export default function CashFlowChart({ data, loading }: CashFlowChartProps) {
+    const money = useMoney();
+
     if (loading) {
         return (
             <Card className="border-t-4 border-t-muted">
@@ -24,7 +27,7 @@ export default function CashFlowChart({ data, loading }: CashFlowChartProps) {
     }
 
     const formatCurrency = (value: number) => {
-        return `₹${(value / 1000).toFixed(0)}k`;
+        return `${money(value / 1000, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}k`;
     };
 
     const formatDate = (dateStr: string) => {
@@ -59,7 +62,7 @@ export default function CashFlowChart({ data, loading }: CashFlowChartProps) {
                                 border: '1px solid hsl(var(--border))',
                                 borderRadius: '8px',
                             }}
-                            formatter={(value: number | undefined) => value !== undefined ? `₹${value.toLocaleString('en-IN')}` : ''}
+                            formatter={(value: number | undefined) => value !== undefined ? money(value, { minimumFractionDigits: 0, maximumFractionDigits: 0 }) : ''}
                             labelFormatter={formatDate}
                         />
                         <Legend />

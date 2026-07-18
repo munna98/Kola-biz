@@ -104,32 +104,32 @@
 <div class="totals">
     <div class="row">
         <span>Subtotal:</span>
-        <span>₹{{format_number subtotal 2}}</span>
+        <span>{{format_currency subtotal}}</span>
     </div>
     {{#if has_discount}}
     <div class="row">
         <span>Disc:</span>
-        <span>₹{{format_number bill_discount 2}}</span>
+        <span>{{format_currency bill_discount}}</span>
     </div>
     {{/if}}
     {{#if tax_total}}
     <div class="row">
         <span>Tax:</span>
-        <span>₹{{format_number tax_total 2}}</span>
+        <span>{{format_currency tax_total}}</span>
     </div>
     {{/if}}
     <div class="row total">
         <span>TOTAL:</span>
-        <span>₹{{format_number grand_total 2}}</span>
+        <span>{{format_currency grand_total}}</span>
     </div>
     {{#if has_returns}}
     <div class="row">
         <span>Less Returns:</span>
-        <span>-₹{{format_number return_total 2}}</span>
+        <span>-{{format_currency return_total}}</span>
     </div>
     <div class="row total">
         <span>NET:</span>
-        <span>₹{{format_number net_payable 2}}</span>
+        <span>{{format_currency net_payable}}</span>
     </div>
     {{/if}}
 </div>
@@ -139,20 +139,20 @@
 <div style="border-top: 1px dashed #000; margin: 10px 0; padding: 5px 0; font-size: {{balance_font_size}}pt;{{#if balance_bold}} font-weight: bold;{{/if}}">
     <div style="display: flex; justify-content: space-between;">
         <span>Old Bal:</span>
-        <span>{{abs_format_number old_balance 2}}</span>
+        <span>{{format_currency old_balance}}</span>
     </div>
     <div style="display: flex; justify-content: space-between;">
         <span>Bill Amt:</span>
-        <span>{{format_number grand_total 2}}</span>
+        <span>{{format_currency grand_total}}</span>
     </div>
     <div style="display: flex; justify-content: space-between;">
         <span>Paid Amt:</span>
-        <span>{{format_number paid_amount 2}}</span>
+        <span>{{format_currency paid_amount}}</span>
     </div>
     <div
         style="display: flex; justify-content: space-between; font-weight: bold; border-top: 1px dotted #000; padding-top: 2px; margin-top: 2px; font-size: {{balance_font_size}}pt;">
         <span>Bal Due:</span>
-        <span>{{abs_format_number balance_due 2}}</span>
+        <span>{{format_currency balance_due}}</span>
     </div>
 </div>
 {{/unless}}

@@ -8,6 +8,7 @@ import { api, ChartOfAccount, AccountGroup } from '@/lib/tauri';
 import { toast } from 'sonner';
 import AccountGroupsDialog from '@/components/dialogs/AccountGroupsDialog';
 import ChartOfAccountDialog from '@/components/dialogs/ChartOfAccountDialog';
+import { useMoney } from '@/hooks/useMoney';
 
 export default function ChartOfAccountsPage() {
   const [accounts, setAccounts] = useState<ChartOfAccount[]>([]);
@@ -18,6 +19,7 @@ export default function ChartOfAccountsPage() {
   const [accountToEdit, setAccountToEdit] = useState<ChartOfAccount | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const money = useMoney();
 
   const load = async () => {
     try {
@@ -190,7 +192,7 @@ export default function ChartOfAccountsPage() {
                     </td>
                     <td className="p-3 text-sm">{account.account_group}</td>
                     <td className="p-3 text-sm text-muted-foreground">{account.description || '-'}</td>
-                    <td className="p-3 text-right">₹{account.opening_balance.toFixed(2)} <span className="text-xs font-medium text-primary">{account.opening_balance_type}</span></td>
+                    <td className="p-3 text-right">{money(account.opening_balance)} <span className="text-xs font-medium text-primary">{account.opening_balance_type}</span></td>
                     <td className="p-3">{account.is_active ? '✓' : '✗'}</td>
                     <td className="p-3 flex gap-2">
                       {!showDeleted ? (

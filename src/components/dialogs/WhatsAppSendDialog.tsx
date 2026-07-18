@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog';
 import { IconBrandWhatsapp, IconX } from '@tabler/icons-react';
 import { formatDate } from '@/lib/utils';
+import { useMoney } from '@/hooks/useMoney';
 
 interface WhatsAppSendDialogProps {
   open: boolean;
@@ -57,11 +58,12 @@ function buildDefaultMessage(params: {
   invoiceDate?: string;
   grandTotal?: number;
   companyName?: string;
+  formatAmount: (amount: number) => string;
 }): string {
-  const { partyName, invoiceNo, invoiceDate, grandTotal, companyName } = params;
+  const { partyName, invoiceNo, invoiceDate, grandTotal, companyName, formatAmount } = params;
   const formattedDate = invoiceDate ? formatDate(invoiceDate) : '';
   const formattedAmount = grandTotal
-    ? `₹${grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+    ? formatAmount(grandTotal)
     : '';
 
   const lines: string[] = [];
@@ -95,16 +97,17 @@ export default function WhatsAppSendDialog({
   const [phone, setPhone] = useState('');
   const [message, setMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const money = useMoney();
 
   // Re-initialise fields whenever dialog opens or inputs change
   useEffect(() => {
     if (open) {
       setPhone(partyPhone || '');
       setMessage(
-        buildDefaultMessage({ partyName, invoiceNo, invoiceDate, grandTotal, companyName })
+        buildDefaultMessage({ partyName, invoiceNo, invoiceDate, grandTotal, companyName, formatAmount: money })
       );
     }
-  }, [open, partyPhone, partyName, invoiceNo, invoiceDate, grandTotal, companyName]);
+  }, [open, partyPhone, partyName, invoiceNo, invoiceDate, grandTotal, companyName, money]);
 
   const handleSend = async () => {
     const normalised = normalisePhone(phone);
@@ -155,7 +158,7 @@ export default function WhatsAppSendDialog({
               <>
                 <span>•</span>
                 <span className="font-mono font-semibold text-foreground">
-                  ₹{grandTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                  {money(grandTotal)}
                 </span>
               </>
             )}
