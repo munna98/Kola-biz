@@ -1,10 +1,25 @@
 <!-- [HEADER] -->
+<style>
+@media print {
+    @page {
+        size: A4 portrait;
+        margin-top: {{#if use_letterhead}}{{letterhead_margin_top}}{{else}}9{{/if}}mm;
+        margin-bottom: {{#if use_letterhead}}{{letterhead_margin_bottom}}{{else}}12{{/if}}mm;
+        margin-left: 10mm;
+        margin-right: 10mm;
+    }
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+}
+</style>
+
 {{#if use_letterhead}}
 <style>
 @media print, screen {
     body {
-        padding-top: {{letterhead_margin_top}}mm !important;
-        padding-bottom: {{letterhead_margin_bottom}}mm !important;
         background: transparent !important;
     }
     .dn-footer {
@@ -32,6 +47,12 @@
         height: 100%;
         image-rendering: -webkit-optimize-contrast !important;
         image-rendering: crisp-edges !important;
+    }
+}
+@media screen {
+    body {
+        padding-top: {{letterhead_margin_top}}mm !important;
+        padding-bottom: {{letterhead_margin_bottom}}mm !important;
     }
 }
 </style>
@@ -189,5 +210,55 @@
     <div class="dn-website">{{company.website}}</div>
     {{/if}}
 </div>
+
+<script>
+(function () {
+    function pushFooterToPageBottom() {
+        var footer = document.getElementById('dn-footer');
+        if (!footer) return;
+
+        // Reset margin
+        footer.style.marginTop = '0px';
+
+        // A4 height in CSS pixels at 96 dpi
+        var PX_PER_MM = 96 / 25.4;
+        var PAGE_H_PX = 297 * PX_PER_MM; // 1122.5 px
+
+        // Get page margins from Handlebars parameters
+        var marginTopMM = {{#if use_letterhead}}{{letterhead_margin_top}}{{else}}9{{/if}};
+        var marginBottomMM = {{#if use_letterhead}}{{letterhead_margin_bottom}}{{else}}12{{/if}};
+
+        var marginTopPx = marginTopMM * PX_PER_MM;
+        var marginBottomPx = marginBottomMM * PX_PER_MM;
+
+        var usablePageHeight = PAGE_H_PX - marginTopPx - marginBottomPx;
+
+        // offsetTop is relative to parent offsetParent. Since body is body and has padding/margin removed in print,
+        // offsetTop is exactly the content height from the start of page area.
+        var footerTop = footer.offsetTop;
+        var footerHeight = footer.offsetHeight;
+
+        // Calculate page index on which the footer starts
+        var pageIndex = Math.floor(footerTop / usablePageHeight);
+        
+        // Calculate the bottom coordinate of that page area
+        var targetBottom = (pageIndex + 1) * usablePageHeight;
+        
+        // Calculate the remaining space on that page
+        var remainingSpace = targetBottom - (footerTop + footerHeight);
+
+        if (remainingSpace > 5) {
+            footer.style.marginTop = Math.floor(remainingSpace - 2) + 'px';
+        }
+    }
+
+    // Sized offscreen iframe is active now, so measurements are accurate on load
+    if (document.readyState === 'complete') {
+        pushFooterToPageBottom();
+    } else {
+        window.addEventListener('load', pushFooterToPageBottom);
+    }
+})();
+</script>
 
 

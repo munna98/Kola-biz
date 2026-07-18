@@ -61,12 +61,11 @@ export function usePrint() {
             if (!iframeRef.current) {
                 const iframe = document.createElement('iframe');
                 iframe.style.position = 'fixed';
-                iframe.style.right = '0';
-                iframe.style.bottom = '0';
-                iframe.style.width = '0';
-                iframe.style.height = '0';
+                iframe.style.left = '-9999px';
+                iframe.style.top = '-9999px';
+                iframe.style.width = '210mm';
+                iframe.style.height = '297mm';
                 iframe.style.border = 'none';
-                iframe.style.visibility = 'hidden';
                 document.body.appendChild(iframe);
                 iframeRef.current = iframe;
             }
