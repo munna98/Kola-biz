@@ -15,7 +15,6 @@ import {
     IconCash
 } from '@tabler/icons-react';
 import { Badge } from '@/components/ui/badge';
-import { formatDate } from '@/lib/utils';
 
 interface VoucherPageHeaderProps {
     title: string;
@@ -53,8 +52,6 @@ export function VoucherPageHeader({
     mode = 'new',
     voucherNo,
     nextVoucherNo,
-    voucherDate,
-    createdBy,
     isUnsaved,
     hasPrevious,
     hasNext,

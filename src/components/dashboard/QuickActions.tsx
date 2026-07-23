@@ -1,11 +1,9 @@
-import { useDispatch } from 'react-redux';
 import { useAppNavigation } from '@/hooks/useAppNavigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ShoppingBag, Truck, CreditCard, Wallet } from 'lucide-react';
 
 export default function QuickActions() {
-    const dispatch = useDispatch();
     const { navigateTo } = useAppNavigation();
 
     const actions = [
