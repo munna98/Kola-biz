@@ -1027,6 +1027,9 @@ export default function SalesInvoicePage() {
     handleEdit,
     handleCancel,
     handleDelete,
+    nextVoucherNo,
+    hasLastVoucher,
+    handleNavigateToLast,
   } = useVoucherNavigation({
     voucherType: 'sales_invoice',
     sliceState: salesState,
@@ -1364,7 +1367,9 @@ export default function SalesInvoicePage() {
         voucherDate={salesState.form.voucher_date}
         createdBy={salesState.created_by_name}
         isUnsaved={salesState.hasUnsavedChanges}
-        hasPrevious={salesState.navigationData.hasPrevious}
+        nextVoucherNo={nextVoucherNo}
+        hasPrevious={salesState.mode === 'new' ? hasLastVoucher : salesState.navigationData.hasPrevious}
+        onNavigateToLast={handleNavigateToLast}
         hasNext={salesState.navigationData.hasNext}
         onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
         onNavigatePrevious={handleNavigatePrevious}

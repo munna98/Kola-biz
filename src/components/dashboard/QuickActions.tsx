@@ -1,11 +1,12 @@
 import { useDispatch } from 'react-redux';
-import { setActiveSection } from '@/store';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { ShoppingBag, Truck, CreditCard, Wallet } from 'lucide-react';
 
 export default function QuickActions() {
     const dispatch = useDispatch();
+    const { navigateTo } = useAppNavigation();
 
     const actions = [
         { id: 'sales', label: 'New Sale', icon: ShoppingBag },
@@ -27,7 +28,7 @@ export default function QuickActions() {
                     {actions.map(({ id, label, icon: Icon }) => (
                         <Button
                             key={id}
-                            onClick={() => dispatch(setActiveSection(id))}
+                            onClick={() => navigateTo(id)}
                             variant="outline"
                             className="h-auto py-3 flex-col gap-2"
                         >

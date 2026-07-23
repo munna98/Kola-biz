@@ -153,7 +153,10 @@ export default function JournalEntryPage() {
         handleNavigateNext,
         handleNew,
         handleCancel,
-        handleDelete
+        handleDelete,
+        nextVoucherNo,
+        hasLastVoucher,
+        handleNavigateToLast,
     } = useVoucherNavigation({
         voucherType: 'journal',
         sliceState: journalState,
@@ -163,9 +166,9 @@ export default function JournalEntryPage() {
             setCurrentVoucherNo: setJournalCurrentVoucherNo,
             setNavigationData: setJournalNavigationData,
             setHasUnsavedChanges: setJournalHasUnsavedChanges,
-            resetForm: resetJournalForm,
+            resetForm: resetJournalForm
         },
-        onLoadVoucher: loadVoucher,
+        onLoadVoucher: loadVoucher
     });
 
     useEffect(() => {
@@ -370,13 +373,15 @@ export default function JournalEntryPage() {
                 description="Create manual journal entries for adjustments and corrections"
                 mode={journalState.mode}
                 voucherNo={journalState.currentVoucherNo}
+                nextVoucherNo={nextVoucherNo}
                 voucherDate={journalState.form.voucher_date}
                 createdBy={journalState.created_by_name}
                 isUnsaved={journalState.hasUnsavedChanges}
-                hasPrevious={journalState.navigationData.hasPrevious}
+                hasPrevious={journalState.mode === 'new' ? hasLastVoucher : journalState.navigationData.hasPrevious}
                 hasNext={journalState.navigationData.hasNext}
                 onNavigatePrevious={handleNavigatePrevious}
                 onNavigateNext={handleNavigateNext}
+                onNavigateToLast={handleNavigateToLast}
                 onNew={handleNew}
                 onEdit={() => dispatch(setJournalMode('editing'))}
                 onCancel={handleCancel}

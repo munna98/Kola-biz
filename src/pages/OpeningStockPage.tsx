@@ -326,7 +326,9 @@ export default function OpeningStockPage() {
                 voucherDate={openingStockState.form.voucher_date}
                 createdBy={openingStockState.created_by_name}
                 isUnsaved={openingStockState.hasUnsavedChanges}
-                hasPrevious={openingStockState.navigationData.hasPrevious}
+                nextVoucherNo={nav.nextVoucherNo}
+                hasPrevious={openingStockState.mode === 'new' ? nav.hasLastVoucher : openingStockState.navigationData.hasPrevious}
+                onNavigateToLast={nav.handleNavigateToLast}
                 hasNext={openingStockState.navigationData.hasNext}
                 onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
                 onNavigatePrevious={nav.handleNavigatePrevious}

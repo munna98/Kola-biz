@@ -1,7 +1,8 @@
-import { IconMoon, IconSun, IconSettings, IconBuilding } from '@tabler/icons-react';
+import { IconMoon, IconSun, IconSettings, IconBuilding, IconArrowLeft, IconArrowRight } from '@tabler/icons-react';
 import { useTheme } from '../theme-provider';
 import { useDispatch, useSelector } from 'react-redux';
-import { setActiveSection, RootState, logout } from '../../store';
+import { RootState, logout } from '../../store';
+import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { CompanySwitcherModal } from '../dialogs/CompanySwitcherModal';
@@ -34,7 +35,8 @@ function ThemeToggle() {
 export default function Topbar() {
     const dispatch = useDispatch();
     const { user } = useSelector((state: RootState) => state.auth);
-    const handleNavigation = (section: string) => dispatch(setActiveSection(section));
+    const { navigateTo, goBack, goForward, canGoBack, canGoForward } = useAppNavigation();
+    const handleNavigation = (section: string) => navigateTo(section);
 
     // Display user's full name if available, otherwise username
     const displayName = user?.full_name || user?.username || 'User';
@@ -67,7 +69,37 @@ export default function Topbar() {
     };
 
     return (
-        <header className="bg-card border-b h-14 flex items-center px-6 gap-4 relative z-50">
+        <header className="bg-card border-b h-14 flex items-center px-4 gap-2 relative z-50">
+            {/* Back / Forward navigation buttons */}
+            <div className="flex items-center gap-0.5 mr-1">
+                <button
+                    id="nav-go-back"
+                    onClick={goBack}
+                    disabled={!canGoBack}
+                    title="Go back (Ctrl+Left)"
+                    className={`p-1.5 rounded-md transition-colors ${
+                        canGoBack
+                            ? 'hover:bg-accent text-foreground cursor-pointer'
+                            : 'text-muted-foreground/40 cursor-not-allowed'
+                    }`}
+                >
+                    <IconArrowLeft size={18} />
+                </button>
+                <button
+                    id="nav-go-forward"
+                    onClick={goForward}
+                    disabled={!canGoForward}
+                    title="Go forward (Ctrl+Right)"
+                    className={`p-1.5 rounded-md transition-colors ${
+                        canGoForward
+                            ? 'hover:bg-accent text-foreground cursor-pointer'
+                            : 'text-muted-foreground/40 cursor-not-allowed'
+                    }`}
+                >
+                    <IconArrowRight size={18} />
+                </button>
+            </div>
+            <div className="w-px h-5 bg-border mr-1" />
             <Menubar className="border-none bg-transparent shadow-none">
                 {/* Inventory */}
                 <MenubarMenu>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Provider, useSelector, useDispatch } from 'react-redux';
 import { store, RootState } from './store';
-import { setAuthLoading, setNeedsCompanySetup, loginSuccess, setIsFirstRun, setCompanyProfile } from './store';
+import { setAuthLoading, setNeedsCompanySetup, loginSuccess, setIsFirstRun, setCompanyProfile, goBack } from './store';
 import { invoke } from '@tauri-apps/api/core';
 import ProductsPage from './pages/ProductsPage';
 import ServicesPage from './pages/ServicesPage';
@@ -218,7 +218,7 @@ function AppContent() {
       case 'db_settings': return <DbSettingsPage />;
       case 'sidebar_settings': return <SidebarSettingsPage />;
       case 'product_settings': return <ProductSettingsPage />;
-      case 'invoice_designer': return <InvoiceDesigner templateId={activeSectionParams?.templateId} voucherType={activeSectionParams?.voucherType} onBack={() => dispatch({ type: 'app/setActiveSection', payload: 'invoice_settings' })} />;
+      case 'invoice_designer': return <InvoiceDesigner templateId={activeSectionParams?.templateId} voucherType={activeSectionParams?.voucherType} onBack={() => dispatch(goBack())} />;
 
       case 'tax_settings': return <TaxSettingsPage />;
       case 'gstr1': return <Gstr1ReportPage />;

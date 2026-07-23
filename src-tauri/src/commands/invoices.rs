@@ -2820,6 +2820,25 @@ pub async fn list_vouchers(
     q.fetch_all(&pool).await.map_err(|e| e.to_string())
 }
 
+/// Returns the ID of the most recently created voucher for a given type.
+/// Used in new-mode to enable the "go to last voucher" Previous button.
+#[tauri::command]
+pub async fn get_last_voucher_id(
+    registry: State<'_, Arc<DbRegistry>>,
+    voucher_type: String,
+) -> Result<Option<String>, String> {
+    let pool = registry.active_pool().await?;
+    sqlx::query_scalar::<_, String>(
+        "SELECT id FROM vouchers \
+         WHERE voucher_type = ? AND deleted_at IS NULL \
+         ORDER BY voucher_no DESC, id DESC LIMIT 1",
+    )
+    .bind(voucher_type)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub async fn get_previous_voucher_id(
     registry: State<'_, Arc<DbRegistry>>,

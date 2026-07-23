@@ -1,11 +1,18 @@
 import { configureStore, createSlice, PayloadAction } from '@reduxjs/toolkit';
 
+interface NavHistoryEntry {
+  section: string;
+  params?: Record<string, any>;
+}
+
 interface AppState {
   sidebarCollapsed: boolean;
   activeSection: string;
   activeSectionParams?: Record<string, any>;
   currentUser: string;
   sidebarItems: string[];
+  navHistory: NavHistoryEntry[];
+  navIndex: number;
 }
 
 export interface VoucherNavigationState {
@@ -64,12 +71,16 @@ const getInitialSidebarItems = () => {
 
 const savedSidebarItems = getInitialSidebarItems();
 
+const _initialSection = savedSidebarItems.includes('dashboard') ? 'dashboard' : 'products';
+
 const initialState: AppState = {
   sidebarCollapsed: false,
-  activeSection: savedSidebarItems.includes('dashboard') ? 'dashboard' : 'products',
+  activeSection: _initialSection,
   activeSectionParams: undefined,
   currentUser: 'Admin',
   sidebarItems: savedSidebarItems,
+  navHistory: [{ section: _initialSection }],
+  navIndex: 0,
 };
 
 // ========== AUTH SLICE ==========
@@ -155,6 +166,8 @@ export const {
 } = authSlice.actions;
 
 
+const NAV_HISTORY_LIMIT = 20;
+
 const appSlice = createSlice({
   name: 'app',
   initialState,
@@ -177,6 +190,42 @@ const appSlice = createSlice({
       // Fallback to products if dashboard is disabled while it was active
       if (state.activeSection === 'dashboard' && !action.payload.includes('dashboard')) {
         state.activeSection = 'products';
+      }
+    },
+    // ---- Page-level history navigation ----
+    navigateTo: (state, action: PayloadAction<{ section: string; params?: Record<string, any> }>) => {
+      const { section, params } = action.payload;
+      // If navigating to the same section with no params change, skip
+      const current = state.navHistory[state.navIndex];
+      if (current && current.section === section && JSON.stringify(current.params) === JSON.stringify(params)) {
+        return;
+      }
+      // Truncate forward stack
+      const trimmed = state.navHistory.slice(0, state.navIndex + 1);
+      trimmed.push({ section, params });
+      // Cap at limit
+      const capped = trimmed.length > NAV_HISTORY_LIMIT
+        ? trimmed.slice(trimmed.length - NAV_HISTORY_LIMIT)
+        : trimmed;
+      state.navHistory = capped;
+      state.navIndex = capped.length - 1;
+      state.activeSection = section;
+      state.activeSectionParams = params;
+    },
+    goBack: (state) => {
+      if (state.navIndex > 0) {
+        state.navIndex -= 1;
+        const entry = state.navHistory[state.navIndex];
+        state.activeSection = entry.section;
+        state.activeSectionParams = entry.params;
+      }
+    },
+    goForward: (state) => {
+      if (state.navIndex < state.navHistory.length - 1) {
+        state.navIndex += 1;
+        const entry = state.navHistory[state.navIndex];
+        state.activeSection = entry.section;
+        state.activeSectionParams = entry.params;
       }
     },
   },
@@ -339,6 +388,7 @@ const purchaseInvoiceSlice = createSlice({
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+      state.hasUnsavedChanges = false;
     },
     setSavedInvoices: (state, action: PayloadAction<any[]>) => {
       state.savedInvoices = action.payload;
@@ -510,6 +560,7 @@ const paymentSlice = createSlice({
       };
       state.items = [];
       state.totals = { subtotal: 0, tax: 0, grandTotal: 0 };
+      state.hasUnsavedChanges = false;
     },
     setSavedPayments: (state, action: PayloadAction<any[]>) => {
       state.savedPayments = action.payload;
@@ -654,6 +705,7 @@ const receiptSlice = createSlice({
       };
       state.items = [];
       state.totals = { subtotal: 0, tax: 0, grandTotal: 0 };
+      state.hasUnsavedChanges = false;
     },
     setSavedReceipts: (state, action: PayloadAction<any[]>) => {
       state.savedReceipts = action.payload;
@@ -710,7 +762,7 @@ export const {
   setReceiptLoading,
 } = receiptSlice.actions;
 
-export const { toggleSidebar, setActiveSection, setActiveSectionWithParams, setSidebarItems } = appSlice.actions;
+export const { toggleSidebar, setActiveSection, setActiveSectionWithParams, setSidebarItems, navigateTo, goBack, goForward } = appSlice.actions;
 
 // ========== JOURNAL ENTRY SLICE ==========
 export interface JournalEntryLine {
@@ -820,6 +872,7 @@ const journalEntrySlice = createSlice({
       };
       state.lines = [];
       state.totals = { totalDebit: 0, totalCredit: 0, difference: 0 };
+      state.hasUnsavedChanges = false;
     },
     setSavedJournalEntries: (state, action: PayloadAction<any[]>) => {
       state.savedEntries = action.payload;
@@ -950,6 +1003,7 @@ const openingBalanceSlice = createSlice({
       };
       state.lines = [];
       state.totals = { totalDebit: 0, totalCredit: 0, difference: 0 };
+      state.hasUnsavedChanges = false;
     },
     setSavedOpeningBalances: (state, action: PayloadAction<any[]>) => {
       state.savedEntries = action.payload;
@@ -1188,6 +1242,7 @@ const salesInvoiceSlice = createSlice({
       state.foreign_currency_code = '';
       state.foreign_currency_symbol = '';
       state.foreign_grand_total = 0;
+      state.hasUnsavedChanges = false;
     },
     setSalesMarginScheme: (state, action: PayloadAction<boolean>) => {
       state.form.is_margin_scheme_invoice = action.payload;
@@ -1587,6 +1642,7 @@ const purchaseReturnSlice = createSlice({
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+      state.hasUnsavedChanges = false;
     },
     setSavedPurchaseReturns: (state, action: PayloadAction<any[]>) => {
       state.savedReturns = action.payload;
@@ -1769,6 +1825,7 @@ const salesReturnSlice = createSlice({
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+      state.hasUnsavedChanges = false;
     },
     setSalesReturnMarginScheme: (state, action: PayloadAction<boolean>) => {
       state.form.is_margin_scheme_invoice = action.payload;
@@ -1900,6 +1957,7 @@ const openingStockSlice = createSlice({
       };
       state.items = [];
       state.totalAmount = 0;
+      state.hasUnsavedChanges = false;
     },
     setSavedOpeningStocks: (state, action: PayloadAction<any[]>) => {
       state.savedStocks = action.payload;
@@ -2101,6 +2159,7 @@ const salesQuotationSlice = createSlice({
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+      state.hasUnsavedChanges = false;
     },
     setSavedQuotations: (state, action: PayloadAction<any[]>) => {
       state.savedQuotations = action.payload;
@@ -2381,6 +2440,7 @@ const stockJournalSlice = createSlice({
         destinationAmount: 0,
         difference: 0,
       };
+      state.hasUnsavedChanges = false;
     },
     setStockJournalLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
@@ -2607,6 +2667,7 @@ const deliveryNoteSlice = createSlice({
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+      state.hasUnsavedChanges = false;
     },
     setSavedDeliveryNotes: (state, action: PayloadAction<any[]>) => {
       state.savedNotes = action.payload;

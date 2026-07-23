@@ -538,6 +538,9 @@ export default function PurchaseReturnPage() {
         handleEdit,
         handleCancel,
         handleDelete,
+        nextVoucherNo,
+        hasLastVoucher,
+        handleNavigateToLast,
     } = useVoucherNavigation({
         voucherType: 'purchase_return',
         sliceState: purchaseReturnState,
@@ -655,13 +658,15 @@ export default function PurchaseReturnPage() {
                 description="Record supplier returns"
                 mode={purchaseReturnState.mode}
                 voucherNo={purchaseReturnState.currentVoucherNo}
+                nextVoucherNo={nextVoucherNo}
                 voucherDate={purchaseReturnState.form.voucher_date}
                 isUnsaved={purchaseReturnState.hasUnsavedChanges}
-                hasPrevious={purchaseReturnState.navigationData.hasPrevious}
+                hasPrevious={purchaseReturnState.mode === 'new' ? hasLastVoucher : purchaseReturnState.navigationData.hasPrevious}
                 hasNext={purchaseReturnState.navigationData.hasNext}
                 onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
                 onNavigatePrevious={handleNavigatePrevious}
                 onNavigateNext={handleNavigateNext}
+                onNavigateToLast={handleNavigateToLast}
                 onEdit={handleEdit}
                 onSave={() => formRef.current?.requestSubmit()}
                 onCancel={handleCancel}

@@ -247,6 +247,7 @@ pub fn run() {
             get_product_groups_distribution,
             // Voucher Navigation
             list_vouchers,
+            get_last_voucher_id,
             get_previous_voucher_id,
             get_next_voucher_id,
             get_voucher_by_id,
@@ -317,6 +318,7 @@ pub fn run() {
             list_voucher_sequences,
             update_voucher_sequence,
             preview_voucher_number,
+            get_next_voucher_number_preview,
             reassign_voucher_numbers,
             // Opening Stock
             commands::opening_stock::get_opening_stocks,

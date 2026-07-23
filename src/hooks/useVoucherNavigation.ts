@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { ActionCreatorWithPayload, ActionCreatorWithoutPayload } from '@reduxjs/toolkit';
@@ -29,6 +29,27 @@ export function useVoucherNavigation({
     const dispatch = useDispatch();
     const confirm = useConfirm();
     const { mode, currentVoucherId, hasUnsavedChanges, navigationData } = sliceState;
+
+    // ---- New-mode: preview number + last voucher ID ----
+    const [nextVoucherNo, setNextVoucherNo] = useState<string | undefined>(undefined);
+    const [lastVoucherId, setLastVoucherId] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (mode === 'new' && !currentVoucherId) {
+            invoke<string>('get_next_voucher_number_preview', { voucherType })
+                .then(setNextVoucherNo)
+                .catch(() => setNextVoucherNo(undefined));
+            invoke<string | null>('get_last_voucher_id', { voucherType })
+                .then(setLastVoucherId)
+                .catch(() => setLastVoucherId(null));
+        } else {
+            // Clear once we leave new mode
+            setNextVoucherNo(undefined);
+            setLastVoucherId(null);
+        }
+    }, [mode, currentVoucherId, voucherType]);
+
+    const hasLastVoucher = lastVoucherId !== null;
 
     // Check for previous/next IDs when current ID changes
     useEffect(() => {
@@ -110,6 +131,7 @@ export function useVoucherNavigation({
         dispatch(actions.resetForm());
         dispatch(actions.setMode('new'));
         dispatch(actions.setCurrentVoucherId(null));
+        dispatch(actions.setHasUnsavedChanges(false));
         if (actions.setCurrentVoucherNo) {
             dispatch(actions.setCurrentVoucherNo(undefined));
         }
@@ -186,5 +208,18 @@ export function useVoucherNavigation({
         handleCancel,
         handleSaveSuccess,
         handleDelete,
+        // New-mode extras
+        nextVoucherNo,
+        hasLastVoucher,
+        handleNavigateToLast: async () => {
+            if (!lastVoucherId) return;
+            if (mode === 'editing' && hasUnsavedChanges) {
+                if (!await confirmDiscardChanges()) return;
+            }
+            dispatch(actions.setHasUnsavedChanges(false));
+            dispatch(actions.setMode('viewing'));
+            dispatch(actions.setCurrentVoucherId(lastVoucherId));
+            await onLoadVoucher(lastVoucherId);
+        },
     };
 }

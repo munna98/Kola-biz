@@ -594,7 +594,9 @@ export default function StockJournalPage() {
                 voucherDate={stockJournalState.form.voucher_date}
                 createdBy={stockJournalState.created_by_name}
                 isUnsaved={stockJournalState.hasUnsavedChanges}
-                hasPrevious={stockJournalState.navigationData.hasPrevious}
+                nextVoucherNo={nav.nextVoucherNo}
+                hasPrevious={stockJournalState.mode === 'new' ? nav.hasLastVoucher : stockJournalState.navigationData.hasPrevious}
+                onNavigateToLast={nav.handleNavigateToLast}
                 hasNext={stockJournalState.navigationData.hasNext}
                 onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
                 onNavigatePrevious={nav.handleNavigatePrevious}

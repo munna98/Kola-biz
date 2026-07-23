@@ -621,6 +621,9 @@ export default function SalesReturnPage() {
         handleEdit,
         handleCancel,
         handleDelete,
+        nextVoucherNo,
+        hasLastVoucher,
+        handleNavigateToLast,
     } = useVoucherNavigation({
         voucherType: 'sales_return',
         sliceState: salesReturnState,
@@ -643,9 +646,8 @@ export default function SalesReturnPage() {
                 await invoke('delete_sales_return', { id: salesReturnState.currentVoucherId });
                 toast.success('Voucher and all associated entries deleted');
                 handleNew();
-            } catch (e) {
-                toast.error('Failed to delete voucher');
-                console.error(e);
+            } catch (error: any) {
+                toast.error('Failed to delete voucher: ' + error.toString());
             } finally {
                 dispatch(setSalesReturnLoading(false));
             }
@@ -728,13 +730,15 @@ export default function SalesReturnPage() {
                 description="Record customer returns"
                 mode={salesReturnState.mode}
                 voucherNo={salesReturnState.currentVoucherNo}
+                nextVoucherNo={nextVoucherNo}
                 voucherDate={salesReturnState.form.voucher_date}
                 isUnsaved={salesReturnState.hasUnsavedChanges}
-                hasPrevious={salesReturnState.navigationData.hasPrevious}
+                hasPrevious={salesReturnState.mode === 'new' ? hasLastVoucher : salesReturnState.navigationData.hasPrevious}
                 hasNext={salesReturnState.navigationData.hasNext}
                 onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
                 onNavigatePrevious={handleNavigatePrevious}
                 onNavigateNext={handleNavigateNext}
+                onNavigateToLast={handleNavigateToLast}
                 onEdit={handleEdit}
                 onSave={() => formRef.current?.requestSubmit()}
                 onCancel={handleCancel}

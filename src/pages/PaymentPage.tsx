@@ -355,6 +355,9 @@ export default function PaymentPage() {
         handleEdit,
         handleCancel,
         handleDelete,
+        nextVoucherNo,
+        hasLastVoucher,
+        handleNavigateToLast,
     } = useVoucherNavigation({
         voucherType: 'payment',
         sliceState: paymentState,
@@ -480,7 +483,9 @@ export default function PaymentPage() {
                 voucherDate={paymentState.form.voucher_date}
                 createdBy={paymentState.created_by_name}
                 isUnsaved={paymentState.hasUnsavedChanges}
-                hasPrevious={paymentState.navigationData.hasPrevious}
+                nextVoucherNo={nextVoucherNo}
+                hasPrevious={paymentState.mode === 'new' ? hasLastVoucher : paymentState.navigationData.hasPrevious}
+                onNavigateToLast={handleNavigateToLast}
                 hasNext={paymentState.navigationData.hasNext}
                 onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
                 onNavigatePrevious={handleNavigatePrevious}

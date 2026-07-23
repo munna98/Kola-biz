@@ -1067,14 +1067,16 @@ export default function PurchaseInvoicePage() {
         description="Record and manage purchase invoices"
         mode={purchaseState.mode}
         voucherNo={purchaseState.currentVoucherNo}
+        nextVoucherNo={nav.nextVoucherNo}
         voucherDate={purchaseState.form.voucher_date}
         createdBy={purchaseState.created_by_name}
         isUnsaved={purchaseState.hasUnsavedChanges}
-        hasPrevious={purchaseState.navigationData.hasPrevious}
+        hasPrevious={purchaseState.mode === 'new' ? nav.hasLastVoucher : purchaseState.navigationData.hasPrevious}
         hasNext={purchaseState.navigationData.hasNext}
         onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
         onNavigatePrevious={nav.handleNavigatePrevious}
         onNavigateNext={nav.handleNavigateNext}
+        onNavigateToLast={nav.handleNavigateToLast}
         onNew={nav.handleNew}
         onEdit={nav.handleEdit}
         onCancel={nav.handleCancel}

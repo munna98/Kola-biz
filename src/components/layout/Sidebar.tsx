@@ -1,10 +1,12 @@
 import { useDispatch, useSelector } from 'react-redux';
-import { RootState, toggleSidebar, setActiveSection } from '../../store';
+import { RootState, toggleSidebar } from '../../store';
+import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { IconLayoutSidebar, IconLayoutSidebarLeftCollapse } from '@tabler/icons-react';
 import { ALL_MENU_ITEMS } from '../../lib/menu-items';
 
 export default function Sidebar() {
     const dispatch = useDispatch();
+    const { navigateTo } = useAppNavigation();
     const { sidebarCollapsed, activeSection, sidebarItems } = useSelector((state: RootState) => state.app);
     
     // Create the final list of items based on enabled IDs and ensure we preserve the master order
@@ -31,7 +33,7 @@ export default function Sidebar() {
                 {visibleMenuItems.map(item => (
                     <button
                         key={item.id}
-                        onClick={() => dispatch(setActiveSection(item.id))}
+                        onClick={() => navigateTo(item.id)}
                         className={`w-full flex items-center gap-3 px-3 py-2 rounded-md mb-1 transition-colors ${activeSection === item.id
                             ? 'bg-primary text-primary-foreground'
                             : 'hover:bg-accent'

@@ -139,10 +139,14 @@ export default function OpeningBalancePage() {
 
     // Hook for navigation
     const {
+        handleNavigatePrevious,
         handleNavigateNext,
         handleNew,
         handleCancel,
-        handleDelete
+        handleDelete,
+        nextVoucherNo,
+        hasLastVoucher,
+        handleNavigateToLast,
     } = useVoucherNavigation({
         voucherType: 'opening_balance',
         sliceState: openingBalanceState,
@@ -350,9 +354,13 @@ export default function OpeningBalancePage() {
                 description="Record account opening balances"
                 mode={openingBalanceState.mode}
                 voucherNo={openingBalanceState.currentVoucherNo}
+                nextVoucherNo={nextVoucherNo}
                 isUnsaved={openingBalanceState.hasUnsavedChanges}
-                hasPrevious={openingBalanceState.navigationData.hasPrevious}
+                hasPrevious={openingBalanceState.mode === 'new' ? hasLastVoucher : openingBalanceState.navigationData.hasPrevious}
+                hasNext={openingBalanceState.navigationData.hasNext}
+                onNavigatePrevious={handleNavigatePrevious}
                 onNavigateNext={handleNavigateNext}
+                onNavigateToLast={handleNavigateToLast}
                 onNew={handleNew}
                 onEdit={() => dispatch(setOpeningBalanceMode('editing'))}
                 onCancel={handleCancel}

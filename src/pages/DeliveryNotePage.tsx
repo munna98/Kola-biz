@@ -545,6 +545,9 @@ export default function DeliveryNotePage() {
     handleEdit,
     handleCancel,
     handleDelete,
+    nextVoucherNo,
+    hasLastVoucher,
+    handleNavigateToLast,
   } = useVoucherNavigation({
     voucherType: 'delivery_note',
     sliceState: noteState,
@@ -748,7 +751,9 @@ export default function DeliveryNotePage() {
         voucherDate={noteState.form.voucher_date}
         createdBy={noteState.created_by_name}
         isUnsaved={noteState.hasUnsavedChanges}
-        hasPrevious={noteState.navigationData.hasPrevious}
+        nextVoucherNo={nextVoucherNo}
+        hasPrevious={noteState.mode === 'new' ? hasLastVoucher : noteState.navigationData.hasPrevious}
+        onNavigateToLast={handleNavigateToLast}
         hasNext={noteState.navigationData.hasNext}
         onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
         onNavigatePrevious={handleNavigatePrevious}

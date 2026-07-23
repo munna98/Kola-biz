@@ -630,6 +630,17 @@ pub async fn preview_voucher_number(
     Ok(result)
 }
 
+/// Returns the next voucher number preview for a given voucher type without
+/// incrementing the sequence counter. Used by the new-mode header badge.
+#[tauri::command]
+pub async fn get_next_voucher_number_preview(
+    registry: State<'_, Arc<DbRegistry>>,
+    voucher_type: String,
+) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
+    crate::voucher_seq::preview_voucher_number_for(&pool, &voucher_type).await
+}
+
 // ============= VOUCHER NUMBER REASSIGNMENT =============
 
 /// Derive the Indian financial year string from a "YYYY-MM-DD" date string.

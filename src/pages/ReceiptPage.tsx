@@ -379,6 +379,9 @@ export default function ReceiptPage() {
         handleEdit,
         handleCancel,
         handleDelete,
+        nextVoucherNo,
+        hasLastVoucher,
+        handleNavigateToLast,
     } = useVoucherNavigation({
         voucherType: 'receipt',
         sliceState: receiptState,
@@ -503,7 +506,9 @@ export default function ReceiptPage() {
                 voucherDate={receiptState.form.voucher_date}
                 createdBy={receiptState.created_by_name}
                 isUnsaved={receiptState.hasUnsavedChanges}
-                hasPrevious={receiptState.navigationData.hasPrevious}
+                nextVoucherNo={nextVoucherNo}
+                hasPrevious={receiptState.mode === 'new' ? hasLastVoucher : receiptState.navigationData.hasPrevious}
+                onNavigateToLast={handleNavigateToLast}
                 hasNext={receiptState.navigationData.hasNext}
                 onToggleShortcuts={() => setShowShortcuts(!showShortcuts)}
                 onNavigatePrevious={handleNavigatePrevious}
