@@ -27,6 +27,11 @@ pub struct PaymentVoucher {
     pub deleted_at: Option<String>,
     pub created_from_invoice_id: Option<String>,
     pub created_by_name: Option<String>,
+    pub currency_id: Option<String>,
+    pub exchange_rate: Option<f64>,
+    pub foreign_total: Option<f64>,
+    pub currency_code: Option<String>,
+    pub currency_symbol: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -57,6 +62,9 @@ pub struct PendingInvoice {
     pub total_amount: f64,
     pub pending_amount: f64,
     pub narration: Option<String>,
+    pub exchange_rate: Option<f64>,
+    pub foreign_total: Option<f64>,
+    pub foreign_pending_amount: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -72,6 +80,8 @@ pub struct CreatePaymentItem {
 
 #[derive(Deserialize)]
 pub struct CreatePayment {
+    pub currency_id: Option<String>,
+    pub exchange_rate: Option<f64>,
     pub account_id: String,
     pub voucher_date: String,
     pub payment_method: String,
@@ -104,10 +114,17 @@ pub async fn create_payment(
     let grand_total = total_amount + total_tax;
     let voucher_id = Uuid::now_v7().to_string();
 
+    let exchange_rate = payment.exchange_rate.unwrap_or(1.0).max(0.0001);
+    let is_foreign_currency = payment.currency_id.is_some() && exchange_rate != 1.0;
+
+    let foreign_total = grand_total;
+    let total_amount = if is_foreign_currency { total_amount * exchange_rate } else { total_amount };
+    let grand_total = if is_foreign_currency { grand_total * exchange_rate } else { grand_total };
+
     // Create voucher
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, grand_total, metadata, narration, status, account_id, created_by)
-         VALUES (?, ?, 'payment', ?, ?, 'account', ?, ?, ?, ?, ?, 'posted', ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, total_amount, grand_total, metadata, narration, status, account_id, created_by, currency_id, exchange_rate, foreign_total)
+         VALUES (?, ?, 'payment', ?, ?, 'account', ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -120,6 +137,9 @@ pub async fn create_payment(
     .bind(&payment.narration)
     .bind(&payment.account_id)
     .bind(&payment.user_id)
+    .bind(&payment.currency_id)
+    .bind(exchange_rate)
+    .bind(foreign_total)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -177,19 +197,115 @@ pub async fn create_payment(
         // Insert Allocations
         if let Some(allocations) = &item.allocations {
             for alloc in allocations {
+                let alloc_amount_inr = if is_foreign_currency { alloc.amount * exchange_rate } else { alloc.amount };
                 let allocation_id = Uuid::now_v7().to_string();
                 sqlx::query(
-                "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks)
-                 VALUES (?, ?, ?, ?, ?, '')"
-            )
-            .bind(&allocation_id)
-            .bind(&voucher_id)
-            .bind(&alloc.invoice_id)
-            .bind(alloc.amount)
-            .bind(&payment.voucher_date)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+                    "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks)
+                     VALUES (?, ?, ?, ?, ?, '')"
+                )
+                .bind(&allocation_id)
+                .bind(&voucher_id)
+                .bind(&alloc.invoice_id)
+                .bind(alloc_amount_inr)
+                .bind(&payment.voucher_date)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let invoice_rate: f64 = sqlx::query_scalar(
+                    "SELECT COALESCE(exchange_rate, 1.0) FROM vouchers WHERE id = ?"
+                )
+                .bind(&alloc.invoice_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?
+                .unwrap_or(1.0);
+
+                let payment_rate = payment.exchange_rate.unwrap_or(1.0);
+                if (payment_rate - invoice_rate).abs() > 0.0001 && payment.currency_id.is_some() {
+                    let rate_diff = payment_rate - invoice_rate;
+                    let forex_diff_inr = alloc.amount * rate_diff;
+                    sqlx::query(
+                        "UPDATE payment_allocations SET exchange_rate = ?, forex_difference = ? WHERE payment_voucher_id = ? AND invoice_voucher_id = ?"
+                    )
+                    .bind(payment_rate)
+                    .bind(forex_diff_inr)
+                    .bind(&voucher_id)
+                    .bind(&alloc.invoice_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                    let party_acc_id = if let Some(acc_id) = &item.account_id {
+                        Some(acc_id.clone())
+                    } else {
+                        sqlx::query_scalar(
+                            "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
+                        )
+                        .bind(&item.description)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .ok()
+                        .flatten()
+                    };
+
+                    let forex_je_id1 = Uuid::now_v7().to_string();
+                    let forex_je_id2 = Uuid::now_v7().to_string();
+
+                    if rate_diff > 0.0 {
+                        // Payment Rate > Invoice Rate = Forex Loss (We paid more INR)
+                        sqlx::query(
+                            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                             VALUES (?, ?, 'sys_forex_loss', ?, 0, 'Forex Exchange Loss')"
+                        )
+                        .bind(&forex_je_id1)
+                        .bind(&voucher_id)
+                        .bind(forex_diff_inr.abs())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                        if let Some(ref party_id) = party_acc_id {
+                            sqlx::query(
+                                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                                 VALUES (?, ?, ?, 0, ?, 'Forex Loss Adjustment')"
+                            )
+                            .bind(&forex_je_id2)
+                            .bind(&voucher_id)
+                            .bind(party_id)
+                            .bind(forex_diff_inr.abs())
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        }
+                    } else {
+                        // Payment Rate < Invoice Rate = Forex Gain (We paid less INR)
+                        sqlx::query(
+                            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                             VALUES (?, ?, 'sys_forex_gain', 0, ?, 'Forex Exchange Gain')"
+                        )
+                        .bind(&forex_je_id1)
+                        .bind(&voucher_id)
+                        .bind(forex_diff_inr.abs())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                        if let Some(ref party_id) = party_acc_id {
+                            sqlx::query(
+                                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                                 VALUES (?, ?, ?, ?, 0, 'Forex Gain Adjustment')"
+                            )
+                            .bind(&forex_je_id2)
+                            .bind(&voucher_id)
+                            .bind(party_id)
+                            .bind(forex_diff_inr.abs())
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        }
+                    }
+                }
 
                 // Update invoice status
                 let total_allocated: f64 = sqlx::query_scalar(
@@ -262,6 +378,7 @@ pub async fn create_payment(
         };
 
         if let Some(payee_acc) = payee_account {
+            let item_amount_inr = if is_foreign_currency { item.amount * exchange_rate } else { item.amount };
             let je_id_2 = Uuid::now_v7().to_string();
             sqlx::query(
                 "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, is_manual, narration)
@@ -270,7 +387,7 @@ pub async fn create_payment(
             .bind(&je_id_2)
             .bind(&voucher_id)
             .bind(payee_acc)
-            .bind(item.amount)
+            .bind(item_amount_inr)
             .bind(format!("Payment to {}", item.description))
             .execute(&mut *tx)
             .await
@@ -299,6 +416,30 @@ pub async fn create_payment(
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
+        }
+    }
+
+    // For foreign currency payments, stamp foreign_debit/foreign_credit/currency_id/exchange_rate
+    // on all journal entries of this voucher.
+    if is_foreign_currency {
+        if let Some(ref cid) = payment.currency_id {
+            let _ = sqlx::query(
+                "UPDATE journal_entries
+                 SET foreign_debit  = CASE WHEN debit  > 0 THEN ROUND(debit  / ?, 6) ELSE 0 END,
+                     foreign_credit = CASE WHEN credit > 0 THEN ROUND(credit / ?, 6) ELSE 0 END,
+                     currency_id    = ?,
+                     exchange_rate  = ?
+                 WHERE voucher_id = ?
+                   AND account_id NOT IN ('sys_forex_gain', 'sys_forex_loss')
+                   AND COALESCE(narration, '') NOT LIKE 'Forex %'"
+            )
+            .bind(exchange_rate)
+            .bind(exchange_rate)
+            .bind(cid)
+            .bind(exchange_rate)
+            .bind(&voucher_id)
+            .execute(&mut *tx)
+            .await;
         }
     }
 
@@ -392,7 +533,12 @@ pub async fn get_payment(
             v.created_at,
             v.deleted_at,
             v.created_from_invoice_id,
-            u.full_name as created_by_name
+            u.full_name as created_by_name,
+            v.currency_id,
+            v.exchange_rate,
+            v.foreign_total,
+            cur.code as currency_code,
+            COALESCE(cur.symbol, cur.code) as currency_symbol
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
@@ -409,6 +555,7 @@ pub async fn get_payment(
         ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         LEFT JOIN users u ON v.created_by = u.id
+        LEFT JOIN currencies cur ON v.currency_id = cur.id
         WHERE v.id = ? AND v.voucher_type = 'payment' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -590,6 +737,11 @@ pub async fn update_payment(
         total_tax += item.amount * (item.tax_rate / 100.0);
     }
     let grand_total = total_amount + total_tax;
+    let exchange_rate = payment.exchange_rate.unwrap_or(1.0).max(0.0001);
+    let is_foreign_currency = payment.currency_id.is_some() && exchange_rate != 1.0;
+    let foreign_total = grand_total;
+    let total_amount = if is_foreign_currency { total_amount * exchange_rate } else { total_amount };
+    let grand_total = if is_foreign_currency { grand_total * exchange_rate } else { grand_total };
 
     // 2. Update Voucher Master
     sqlx::query(
@@ -601,7 +753,10 @@ pub async fn update_payment(
             grand_total = ?,
             metadata = ?, 
             narration = ?,
-            account_id = ?
+            account_id = ?,
+            currency_id = ?,
+            exchange_rate = ?,
+            foreign_total = ?
          WHERE id = ? AND voucher_type = 'payment'",
     )
     .bind(&payment.voucher_date)
@@ -612,6 +767,9 @@ pub async fn update_payment(
     .bind(&payment.payment_method)
     .bind(&payment.narration)
     .bind(&payment.account_id)
+    .bind(&payment.currency_id)
+    .bind(exchange_rate)
+    .bind(foreign_total)
     .bind(&id)
     .execute(&mut *tx)
     .await
@@ -761,19 +919,113 @@ pub async fn update_payment(
         // Insert Allocations
         if let Some(allocations) = &item.allocations {
             for alloc in allocations {
+                let alloc_amount_inr = if is_foreign_currency { alloc.amount * exchange_rate } else { alloc.amount };
                 let allocation_id = Uuid::now_v7().to_string();
                 sqlx::query(
                     "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks)
                      VALUES (?, ?, ?, ?, ?, '')"
-            )
-            .bind(&allocation_id)
-            .bind(&id)
-            .bind(&alloc.invoice_id)
-            .bind(alloc.amount)
-            .bind(&payment.voucher_date)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+                )
+                .bind(&allocation_id)
+                .bind(&id)
+                .bind(&alloc.invoice_id)
+                .bind(alloc_amount_inr)
+                .bind(&payment.voucher_date)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let invoice_rate: f64 = sqlx::query_scalar(
+                    "SELECT COALESCE(exchange_rate, 1.0) FROM vouchers WHERE id = ?"
+                )
+                .bind(&alloc.invoice_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?
+                .unwrap_or(1.0);
+
+                let payment_rate = payment.exchange_rate.unwrap_or(1.0);
+                if (payment_rate - invoice_rate).abs() > 0.0001 && payment.currency_id.is_some() {
+                    let rate_diff = payment_rate - invoice_rate;
+                    let forex_diff_inr = alloc.amount * rate_diff;
+                    sqlx::query(
+                        "UPDATE payment_allocations SET exchange_rate = ?, forex_difference = ? WHERE payment_voucher_id = ? AND invoice_voucher_id = ?"
+                    )
+                    .bind(payment_rate)
+                    .bind(forex_diff_inr)
+                    .bind(&id)
+                    .bind(&alloc.invoice_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                    let party_acc_id = if let Some(acc_id) = &item.account_id {
+                        Some(acc_id.clone())
+                    } else {
+                        sqlx::query_scalar(
+                            "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
+                        )
+                        .bind(&item.description)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .ok()
+                        .flatten()
+                    };
+
+                    let forex_je_id1 = Uuid::now_v7().to_string();
+                    let forex_je_id2 = Uuid::now_v7().to_string();
+
+                    if rate_diff > 0.0 {
+                        sqlx::query(
+                            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                             VALUES (?, ?, 'sys_forex_loss', ?, 0, 'Forex Exchange Loss')"
+                        )
+                        .bind(&forex_je_id1)
+                        .bind(&id)
+                        .bind(forex_diff_inr.abs())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                        if let Some(ref party_id) = party_acc_id {
+                            sqlx::query(
+                                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                                 VALUES (?, ?, ?, 0, ?, 'Forex Loss Adjustment')"
+                            )
+                            .bind(&forex_je_id2)
+                            .bind(&id)
+                            .bind(party_id)
+                            .bind(forex_diff_inr.abs())
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        }
+                    } else {
+                        sqlx::query(
+                            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                             VALUES (?, ?, 'sys_forex_gain', 0, ?, 'Forex Exchange Gain')"
+                        )
+                        .bind(&forex_je_id1)
+                        .bind(&id)
+                        .bind(forex_diff_inr.abs())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                        if let Some(ref party_id) = party_acc_id {
+                            sqlx::query(
+                                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                                 VALUES (?, ?, ?, ?, 0, 'Forex Gain Adjustment')"
+                            )
+                            .bind(&forex_je_id2)
+                            .bind(&id)
+                            .bind(party_id)
+                            .bind(forex_diff_inr.abs())
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        }
+                    }
+                }
 
                 // Update invoice status
                 let total_allocated: f64 = sqlx::query_scalar(
@@ -844,6 +1096,7 @@ pub async fn update_payment(
         };
 
         if let Some(payee_acc) = payee_account {
+            let item_amount_inr = if is_foreign_currency { item.amount * exchange_rate } else { item.amount };
             let je_id_2 = Uuid::now_v7().to_string();
             sqlx::query(
                 "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, is_manual, narration)
@@ -852,7 +1105,7 @@ pub async fn update_payment(
             .bind(&je_id_2)
             .bind(&id)
             .bind(payee_acc)
-            .bind(item.amount)
+            .bind(item_amount_inr)
             .bind(format!("Payment to {}", item.description))
             .execute(&mut *tx)
             .await
@@ -883,6 +1136,29 @@ pub async fn update_payment(
             .map_err(|e| e.to_string())?;
         }
     }
+    // For foreign currency payments, stamp foreign_debit/foreign_credit/currency_id/exchange_rate
+    // on all journal entries of this voucher.
+    if is_foreign_currency {
+        if let Some(ref cid) = payment.currency_id {
+            let _ = sqlx::query(
+                "UPDATE journal_entries
+                 SET foreign_debit  = CASE WHEN debit  > 0 THEN ROUND(debit  / ?, 6) ELSE 0 END,
+                     foreign_credit = CASE WHEN credit > 0 THEN ROUND(credit / ?, 6) ELSE 0 END,
+                     currency_id    = ?,
+                     exchange_rate  = ?
+                 WHERE voucher_id = ?
+                   AND account_id NOT IN ('sys_forex_gain', 'sys_forex_loss')
+                   AND COALESCE(narration, '') NOT LIKE 'Forex %'"
+            )
+            .bind(exchange_rate)
+            .bind(exchange_rate)
+            .bind(cid)
+            .bind(exchange_rate)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await;
+        }
+    }
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
@@ -909,6 +1185,11 @@ pub struct ReceiptVoucher {
     pub deleted_at: Option<String>,
     pub created_from_invoice_id: Option<String>,
     pub created_by_name: Option<String>,
+    pub currency_id: Option<String>,
+    pub exchange_rate: Option<f64>,
+    pub foreign_total: Option<f64>,
+    pub currency_code: Option<String>,
+    pub currency_symbol: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -1026,6 +1307,7 @@ pub async fn create_receipt(
         // Insert Allocations
         if let Some(allocations) = &item.allocations {
             for alloc in allocations {
+                let alloc_amount_inr = if is_foreign_currency { alloc.amount * exchange_rate } else { alloc.amount };
                 let allocation_id = Uuid::now_v7().to_string();
                 sqlx::query(
                     "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks)
@@ -1034,7 +1316,7 @@ pub async fn create_receipt(
                 .bind(&allocation_id)
                 .bind(&voucher_id)
                 .bind(&alloc.invoice_id)
-                .bind(alloc.amount)
+                .bind(alloc_amount_inr)
                 .bind(&receipt.voucher_date)
                 .execute(&mut *tx)
                 .await
@@ -1051,7 +1333,8 @@ pub async fn create_receipt(
 
                 let receipt_rate = receipt.exchange_rate.unwrap_or(1.0);
                 if (receipt_rate - invoice_rate).abs() > 0.0001 && receipt.currency_id.is_some() {
-                    let forex_diff_inr = alloc.amount * (receipt_rate - invoice_rate);
+                    let rate_diff = receipt_rate - invoice_rate;
+                    let forex_diff_inr = alloc.amount * rate_diff;
                     sqlx::query(
                         "UPDATE payment_allocations SET exchange_rate = ?, forex_difference = ? WHERE payment_voucher_id = ? AND invoice_voucher_id = ?"
                     )
@@ -1063,29 +1346,74 @@ pub async fn create_receipt(
                     .await
                     .map_err(|e| e.to_string())?;
 
-                    let forex_je_id = Uuid::now_v7().to_string();
-                    if forex_diff_inr > 0.0 {
+                    let party_acc_id = if let Some(acc_id) = &item.account_id {
+                        Some(acc_id.clone())
+                    } else {
+                        sqlx::query_scalar(
+                            "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
+                        )
+                        .bind(&item.description)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .ok()
+                        .flatten()
+                    };
+
+                    let forex_je_id1 = Uuid::now_v7().to_string();
+                    let forex_je_id2 = Uuid::now_v7().to_string();
+
+                    if rate_diff > 0.0 {
+                        // Receipt Rate > Invoice Rate = Forex Gain (We received more INR)
                         sqlx::query(
                             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
                              VALUES (?, ?, 'sys_forex_gain', 0, ?, 'Forex Exchange Gain')"
                         )
-                        .bind(&forex_je_id)
+                        .bind(&forex_je_id1)
                         .bind(&voucher_id)
                         .bind(forex_diff_inr.abs())
                         .execute(&mut *tx)
                         .await
                         .map_err(|e| e.to_string())?;
+
+                        if let Some(ref party_id) = party_acc_id {
+                            sqlx::query(
+                                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                                 VALUES (?, ?, ?, ?, 0, 'Forex Gain Adjustment')"
+                            )
+                            .bind(&forex_je_id2)
+                            .bind(&voucher_id)
+                            .bind(party_id)
+                            .bind(forex_diff_inr.abs())
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        }
                     } else {
+                        // Receipt Rate < Invoice Rate = Forex Loss (We received less INR)
                         sqlx::query(
                             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
                              VALUES (?, ?, 'sys_forex_loss', ?, 0, 'Forex Exchange Loss')"
                         )
-                        .bind(&forex_je_id)
+                        .bind(&forex_je_id1)
                         .bind(&voucher_id)
                         .bind(forex_diff_inr.abs())
                         .execute(&mut *tx)
                         .await
                         .map_err(|e| e.to_string())?;
+
+                        if let Some(ref party_id) = party_acc_id {
+                            sqlx::query(
+                                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                                 VALUES (?, ?, ?, 0, ?, 'Forex Loss Adjustment')"
+                            )
+                            .bind(&forex_je_id2)
+                            .bind(&voucher_id)
+                            .bind(party_id)
+                            .bind(forex_diff_inr.abs())
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        }
                     }
                 }
 
@@ -1160,6 +1488,7 @@ pub async fn create_receipt(
         };
 
         if let Some(payer_acc) = payer_account {
+            let item_amount_inr = if is_foreign_currency { item.amount * exchange_rate } else { item.amount };
             let je_id_2 = Uuid::now_v7().to_string();
             sqlx::query(
                 "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
@@ -1168,7 +1497,7 @@ pub async fn create_receipt(
             .bind(&je_id_2)
             .bind(&voucher_id)
             .bind(payer_acc)
-            .bind(item.amount)
+            .bind(item_amount_inr)
             .bind(format!("Receipt from {}", item.description))
             .execute(&mut *tx)
             .await
@@ -1200,7 +1529,32 @@ pub async fn create_receipt(
         }
     }
 
+    // For foreign currency receipts, stamp foreign_debit/foreign_credit/currency_id/exchange_rate
+    // on all journal entries of this voucher (same pattern as create_sales_invoice).
+    if is_foreign_currency {
+        if let Some(ref cid) = receipt.currency_id {
+            let _ = sqlx::query(
+                "UPDATE journal_entries
+                 SET foreign_debit  = CASE WHEN debit  > 0 THEN ROUND(debit  / ?, 6) ELSE 0 END,
+                     foreign_credit = CASE WHEN credit > 0 THEN ROUND(credit / ?, 6) ELSE 0 END,
+                     currency_id    = ?,
+                     exchange_rate  = ?
+                 WHERE voucher_id = ?
+                   AND account_id NOT IN ('sys_forex_gain', 'sys_forex_loss')
+                   AND COALESCE(narration, '') NOT LIKE 'Forex %'"
+            )
+            .bind(exchange_rate)
+            .bind(exchange_rate)
+            .bind(cid)
+            .bind(exchange_rate)
+            .bind(&voucher_id)
+            .execute(&mut *tx)
+            .await;
+        }
+    }
+
     tx.commit().await.map_err(|e| e.to_string())?;
+
 
     Ok(voucher_id)
 }
@@ -1290,7 +1644,12 @@ pub async fn get_receipt(
             v.created_at,
             v.deleted_at,
             v.created_from_invoice_id,
-            u.full_name as created_by_name
+            u.full_name as created_by_name,
+            v.currency_id,
+            v.exchange_rate,
+            v.foreign_total,
+            cur.code as currency_code,
+            COALESCE(cur.symbol, cur.code) as currency_symbol
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
@@ -1307,6 +1666,7 @@ pub async fn get_receipt(
         ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         LEFT JOIN users u ON v.created_by = u.id
+        LEFT JOIN currencies cur ON v.currency_id = cur.id
         WHERE v.id = ? AND v.voucher_type = 'receipt' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -1453,6 +1813,11 @@ pub async fn update_receipt(
         total_tax += item.amount * (item.tax_rate / 100.0);
     }
     let grand_total = total_amount + total_tax;
+    let exchange_rate = receipt.exchange_rate.unwrap_or(1.0).max(0.0001);
+    let is_foreign_currency = receipt.currency_id.is_some() && exchange_rate != 1.0;
+    let foreign_total = grand_total;
+    let total_amount = if is_foreign_currency { total_amount * exchange_rate } else { total_amount };
+    let grand_total = if is_foreign_currency { grand_total * exchange_rate } else { grand_total };
 
     // 2. Update Voucher Master
     sqlx::query(
@@ -1464,7 +1829,10 @@ pub async fn update_receipt(
             grand_total = ?,
             metadata = ?, 
             narration = ?,
-            account_id = ?
+            account_id = ?,
+            currency_id = ?,
+            exchange_rate = ?,
+            foreign_total = ?
          WHERE id = ? AND voucher_type = 'receipt'",
     )
     .bind(&receipt.voucher_date)
@@ -1475,6 +1843,9 @@ pub async fn update_receipt(
     .bind(&receipt.receipt_method)
     .bind(&receipt.narration)
     .bind(&receipt.account_id)
+    .bind(&receipt.currency_id)
+    .bind(exchange_rate)
+    .bind(foreign_total)
     .bind(&id)
     .execute(&mut *tx)
     .await
@@ -1573,19 +1944,113 @@ pub async fn update_receipt(
         // Insert Allocations
         if let Some(allocations) = &item.allocations {
             for alloc in allocations {
+                let alloc_amount_inr = if is_foreign_currency { alloc.amount * exchange_rate } else { alloc.amount };
                 let allocation_id = Uuid::now_v7().to_string();
                 sqlx::query(
-                "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks)
-                 VALUES (?, ?, ?, ?, ?, '')"
-            )
-            .bind(&allocation_id)
-            .bind(&id)
-            .bind(&alloc.invoice_id)
-            .bind(alloc.amount)
-            .bind(&receipt.voucher_date)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| e.to_string())?;
+                    "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, remarks)
+                     VALUES (?, ?, ?, ?, ?, '')"
+                )
+                .bind(&allocation_id)
+                .bind(&id)
+                .bind(&alloc.invoice_id)
+                .bind(alloc_amount_inr)
+                .bind(&receipt.voucher_date)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+                let invoice_rate: f64 = sqlx::query_scalar(
+                    "SELECT COALESCE(exchange_rate, 1.0) FROM vouchers WHERE id = ?"
+                )
+                .bind(&alloc.invoice_id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?
+                .unwrap_or(1.0);
+
+                let receipt_rate = receipt.exchange_rate.unwrap_or(1.0);
+                if (receipt_rate - invoice_rate).abs() > 0.0001 && receipt.currency_id.is_some() {
+                    let rate_diff = receipt_rate - invoice_rate;
+                    let forex_diff_inr = alloc.amount * rate_diff;
+                    sqlx::query(
+                        "UPDATE payment_allocations SET exchange_rate = ?, forex_difference = ? WHERE payment_voucher_id = ? AND invoice_voucher_id = ?"
+                    )
+                    .bind(receipt_rate)
+                    .bind(forex_diff_inr)
+                    .bind(&id)
+                    .bind(&alloc.invoice_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                    let party_acc_id = if let Some(acc_id) = &item.account_id {
+                        Some(acc_id.clone())
+                    } else {
+                        sqlx::query_scalar(
+                            "SELECT id FROM chart_of_accounts WHERE account_name = ? AND is_active = 1",
+                        )
+                        .bind(&item.description)
+                        .fetch_optional(&mut *tx)
+                        .await
+                        .ok()
+                        .flatten()
+                    };
+
+                    let forex_je_id1 = Uuid::now_v7().to_string();
+                    let forex_je_id2 = Uuid::now_v7().to_string();
+
+                    if rate_diff > 0.0 {
+                        sqlx::query(
+                            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                             VALUES (?, ?, 'sys_forex_gain', 0, ?, 'Forex Exchange Gain')"
+                        )
+                        .bind(&forex_je_id1)
+                        .bind(&id)
+                        .bind(forex_diff_inr.abs())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                        if let Some(ref party_id) = party_acc_id {
+                            sqlx::query(
+                                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                                 VALUES (?, ?, ?, ?, 0, 'Forex Gain Adjustment')"
+                            )
+                            .bind(&forex_je_id2)
+                            .bind(&id)
+                            .bind(party_id)
+                            .bind(forex_diff_inr.abs())
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        }
+                    } else {
+                        sqlx::query(
+                            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                             VALUES (?, ?, 'sys_forex_loss', ?, 0, 'Forex Exchange Loss')"
+                        )
+                        .bind(&forex_je_id1)
+                        .bind(&id)
+                        .bind(forex_diff_inr.abs())
+                        .execute(&mut *tx)
+                        .await
+                        .map_err(|e| e.to_string())?;
+
+                        if let Some(ref party_id) = party_acc_id {
+                            sqlx::query(
+                                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                                 VALUES (?, ?, ?, 0, ?, 'Forex Loss Adjustment')"
+                            )
+                            .bind(&forex_je_id2)
+                            .bind(&id)
+                            .bind(party_id)
+                            .bind(forex_diff_inr.abs())
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        }
+                    }
+                }
 
                 // Update invoice status
                 let total_allocated: f64 = sqlx::query_scalar(
@@ -1656,6 +2121,7 @@ pub async fn update_receipt(
         };
 
         if let Some(payer_acc) = payer_account {
+            let item_amount_inr = if is_foreign_currency { item.amount * exchange_rate } else { item.amount };
             let je_id_2 = Uuid::now_v7().to_string();
             sqlx::query(
                 "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
@@ -1664,7 +2130,7 @@ pub async fn update_receipt(
             .bind(&je_id_2)
             .bind(&id)
             .bind(payer_acc)
-            .bind(item.amount)
+            .bind(item_amount_inr)
             .bind(format!("Receipt from {}", item.description))
             .execute(&mut *tx)
             .await
@@ -1693,6 +2159,30 @@ pub async fn update_receipt(
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
+        }
+    }
+
+    // For foreign currency receipts, stamp foreign_debit/foreign_credit/currency_id/exchange_rate
+    // on all journal entries of this voucher.
+    if is_foreign_currency {
+        if let Some(ref cid) = receipt.currency_id {
+            let _ = sqlx::query(
+                "UPDATE journal_entries
+                 SET foreign_debit  = CASE WHEN debit  > 0 THEN ROUND(debit  / ?, 6) ELSE 0 END,
+                     foreign_credit = CASE WHEN credit > 0 THEN ROUND(credit / ?, 6) ELSE 0 END,
+                     currency_id    = ?,
+                     exchange_rate  = ?
+                 WHERE voucher_id = ?
+                   AND account_id NOT IN ('sys_forex_gain', 'sys_forex_loss')
+                   AND COALESCE(narration, '') NOT LIKE 'Forex %'"
+            )
+            .bind(exchange_rate)
+            .bind(exchange_rate)
+            .bind(cid)
+            .bind(exchange_rate)
+            .bind(&id)
+            .execute(&mut *tx)
+            .await;
         }
     }
 
@@ -2084,6 +2574,67 @@ pub async fn delete_opening_balance(
     Ok(())
 }
 
+#[derive(Serialize)]
+pub struct AccountBalanceInfo {
+    pub base_balance: f64,
+    pub foreign_balance: f64,
+    pub foreign_currency_code: Option<String>,
+    pub foreign_currency_symbol: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_account_balance_info(
+    registry: State<'_, Arc<DbRegistry>>,
+    account_id: String,
+) -> Result<AccountBalanceInfo, String> {
+    let pool = registry.active_pool().await?;
+
+    let base_bal: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(je.debit - je.credit), 0.0)
+         FROM journal_entries je
+         JOIN vouchers v ON je.voucher_id = v.id
+         WHERE je.account_id = ? AND v.deleted_at IS NULL"
+    )
+    .bind(&account_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0.0);
+
+    let foreign_bal: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(je.foreign_debit - je.foreign_credit), 0.0)
+         FROM journal_entries je
+         JOIN vouchers v ON je.voucher_id = v.id
+         WHERE je.account_id = ? AND v.deleted_at IS NULL AND (je.foreign_debit > 0 OR je.foreign_credit > 0)"
+    )
+    .bind(&account_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0.0);
+
+    let cur_info: Option<(String, String)> = sqlx::query_as(
+        "SELECT cur.code, cur.symbol
+         FROM chart_of_accounts coa
+         JOIN currencies cur ON coa.currency_id = cur.id
+         WHERE coa.id = ?"
+    )
+    .bind(&account_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
+    let (code, symbol) = match cur_info {
+        Some((c, s)) => (Some(c), Some(s)),
+        None => (None, None),
+    };
+
+    Ok(AccountBalanceInfo {
+        base_balance: base_bal,
+        foreign_balance: foreign_bal,
+        foreign_currency_code: code,
+        foreign_currency_symbol: symbol,
+    })
+}
+
 #[tauri::command]
 pub async fn get_account_balance(
     registry: State<'_, Arc<DbRegistry>>,
@@ -2103,10 +2654,6 @@ pub async fn get_account_balance(
     .await
     .map_err(|e| e.to_string())?;
 
-    // Net balance: Dr - Cr.
-    // Assets/Expenses usually Dr > Cr (Positive).
-    // Liabilities/Income usually Cr > Dr (Negative).
-    // UI can display Dr/Cr based on sign.
     let balance = result.0 - result.1;
     Ok(balance)
 }
@@ -2128,7 +2675,16 @@ pub async fn get_pending_invoices(
             (ROUND(COALESCE(v.subtotal, v.total_amount, 0.0) - COALESCE(v.discount_amount, 0.0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0.0), 0.0), 2) - COALESCE(
                 (SELECT SUM(allocated_amount) FROM payment_allocations WHERE invoice_voucher_id = v.id), 0.0
             )) as pending_amount,
-            v.narration
+            v.narration,
+            v.exchange_rate,
+            v.foreign_total,
+            CASE 
+                WHEN v.foreign_total IS NOT NULL AND v.foreign_total > 0 AND v.exchange_rate IS NOT NULL AND v.exchange_rate > 0 THEN
+                    ROUND(v.foreign_total - COALESCE(
+                        (SELECT SUM(allocated_amount / v.exchange_rate) FROM payment_allocations WHERE invoice_voucher_id = v.id), 0.0
+                    ), 2)
+                ELSE NULL
+            END as foreign_pending_amount
          FROM vouchers v
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
          WHERE v.party_id = ? 

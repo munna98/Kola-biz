@@ -64,6 +64,7 @@ pub struct LedgerEntry {
     pub balance: f64,
     pub foreign_debit: f64,
     pub foreign_credit: f64,
+    pub foreign_balance: f64,
     pub currency_code: String,
     pub currency_symbol: String,
 }
@@ -73,6 +74,10 @@ pub struct LedgerReport {
     pub entries: Vec<LedgerEntry>,
     pub opening_balance: f64,
     pub closing_balance: f64,
+    pub foreign_opening_balance: f64,
+    pub foreign_closing_balance: f64,
+    pub foreign_currency_code: String,
+    pub foreign_currency_symbol: String,
 }
 
 #[tauri::command]
@@ -126,6 +131,36 @@ pub async fn get_ledger_report(
         format!("AND v.voucher_date <= '{}'", to_date)
     };
 
+    // --- Foreign currency opening balance (sum of foreign amounts before from_date) ---
+    let (foreign_opening_balance, foreign_opening_code, foreign_opening_symbol) =
+        if let Some(ref from) = from_date {
+            let row: Option<(f64, f64, String, String)> = sqlx::query_as(
+                "SELECT 
+                    CAST(COALESCE(SUM(je.foreign_debit), 0) AS REAL),
+                    CAST(COALESCE(SUM(je.foreign_credit), 0) AS REAL),
+                    COALESCE(MAX(cur.code), ''),
+                    COALESCE(MAX(cur.symbol), '')
+                 FROM journal_entries je
+                 JOIN vouchers v ON je.voucher_id = v.id
+                 LEFT JOIN currencies cur ON je.currency_id = cur.id
+                 WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL
+                   AND (je.foreign_debit > 0 OR je.foreign_credit > 0)",
+            )
+            .bind(&account_id)
+            .bind(from)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            if let Some((fd, fc, code, sym)) = row {
+                (fd - fc, code, sym)
+            } else {
+                (0.0, String::new(), String::new())
+            }
+        } else {
+            (0.0, String::new(), String::new())
+        };
+
     let query = format!(
         "SELECT 
             v.id,
@@ -138,6 +173,7 @@ pub async fn get_ledger_report(
             0.0 as balance,
             COALESCE(je.foreign_debit, 0) as foreign_debit,
             COALESCE(je.foreign_credit, 0) as foreign_credit,
+            0.0 as foreign_balance,
             COALESCE(cur.code, '') as currency_code,
             COALESCE(cur.symbol, '') as currency_symbol
         FROM journal_entries je
@@ -149,14 +185,18 @@ pub async fn get_ledger_report(
     );
 
     let mut entries: Vec<LedgerEntry> = sqlx::query_as(&query)
-        .bind(account_id)
+        .bind(&account_id)
         .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
+    // Compute running INR balance and foreign running balance
+    let mut foreign_running = foreign_opening_balance;
     for entry in &mut entries {
         running_balance += entry.debit - entry.credit;
         entry.balance = running_balance;
+        foreign_running += entry.foreign_debit - entry.foreign_credit;
+        entry.foreign_balance = foreign_running;
     }
 
     let report_opening_balance = if from_date.is_some() {
@@ -165,10 +205,45 @@ pub async fn get_ledger_report(
         opening_balance
     };
 
+    let linked_currency: Option<(String, String)> = sqlx::query_as(
+        "SELECT cur.code, COALESCE(cur.symbol, cur.code) as symbol
+         FROM chart_of_accounts coa
+         LEFT JOIN customers c ON coa.party_id = c.id AND coa.party_type = 'customer'
+         LEFT JOIN suppliers s ON coa.party_id = s.id AND coa.party_type = 'supplier'
+         JOIN currencies cur ON cur.id = COALESCE(c.currency, s.currency)
+         WHERE coa.id = ?"
+    )
+    .bind(&account_id)
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
+    let (default_code, default_symbol) = match linked_currency {
+        Some((code, sym)) => (code, sym),
+        None => (String::new(), String::new()),
+    };
+
+    // Detect dominant foreign currency (first non-empty found in entries or pre-period query, fallback to linked default)
+    let (dominant_currency_code, dominant_currency_symbol) = entries
+        .iter()
+        .find(|e| !e.currency_code.is_empty())
+        .map(|e| (e.currency_code.clone(), e.currency_symbol.clone()))
+        .unwrap_or_else(|| {
+            if !foreign_opening_code.is_empty() {
+                (foreign_opening_code, foreign_opening_symbol)
+            } else {
+                (default_code, default_symbol)
+            }
+        });
+
     Ok(LedgerReport {
         entries,
         opening_balance: report_opening_balance,
         closing_balance: running_balance,
+        foreign_opening_balance,
+        foreign_closing_balance: foreign_running,
+        foreign_currency_code: dominant_currency_code,
+        foreign_currency_symbol: dominant_currency_symbol,
     })
 }
 

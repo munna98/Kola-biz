@@ -36,6 +36,7 @@ interface LedgerEntry {
   balance: number;
   foreign_debit?: number;
   foreign_credit?: number;
+  foreign_balance?: number;
   currency_code?: string;
   currency_symbol?: string;
 }
@@ -49,18 +50,29 @@ export default function LedgerReportPage() {
     toDate,
     openingBalance,
     closingBalance,
+    foreignOpeningBalance,
+    foreignClosingBalance,
+    foreignCurrencyCode,
+    foreignCurrencySymbol,
     hasGenerated,
   } = useSelector((state: RootState) => state.ledgerReport);
   const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
-  const isExportBusiness = companyProfile?.business_type === 'Export Business';
+  const isExportBusiness = true;
   const money = useMoney();
 
   const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
   const [loading, setLoading] = useState(false);
+  // 'base' = INR view, anything else (e.g. 'USD') = foreign currency view
+  const [viewCurrency, setViewCurrency] = useState<'base' | string>('base');
 
   useEffect(() => {
     loadAccounts();
   }, []);
+
+  // Reset to base currency view when account changes or new report is generated
+  useEffect(() => {
+    setViewCurrency('base');
+  }, [selectedAccount, hasGenerated]);
 
   const loadAccounts = async () => {
     try {
@@ -84,6 +96,10 @@ export default function LedgerReportPage() {
         entries: LedgerEntry[];
         opening_balance: number;
         closing_balance: number;
+        foreign_opening_balance: number;
+        foreign_closing_balance: number;
+        foreign_currency_code: string;
+        foreign_currency_symbol: string;
       }>('get_ledger_report', {
         accountId: selectedAccount,
         fromDate: fromDate || null,
@@ -94,6 +110,10 @@ export default function LedgerReportPage() {
         entries: result.entries,
         openingBalance: result.opening_balance,
         closingBalance: result.closing_balance,
+        foreignOpeningBalance: result.foreign_opening_balance,
+        foreignClosingBalance: result.foreign_closing_balance,
+        foreignCurrencyCode: result.foreign_currency_code,
+        foreignCurrencySymbol: result.foreign_currency_symbol,
       }));
     } catch (error) {
       toast.error('Failed to load ledger');
@@ -103,10 +123,24 @@ export default function LedgerReportPage() {
     }
   };
 
+  // Foreign currency view helpers
+  const hasForeignCurrency = isExportBusiness && !!foreignCurrencyCode;
+  const isViewingForeign = viewCurrency !== 'base';
+
+  // Filter out Forex Gain/Loss Adjustments in foreign currency view
+  const displayedEntries = isViewingForeign
+    ? entries.filter(e => e.narration !== 'Forex Gain Adjustment' && e.narration !== 'Forex Loss Adjustment')
+    : entries;
+
+  const formatForeign = (amount: number | undefined | null) => {
+    if (amount === undefined || amount === null || amount === 0) return '-';
+    return `${foreignCurrencySymbol}${Math.abs(amount).toFixed(2)}`;
+  };
+
   const selectedAccountData = accounts.find(a => a.id === selectedAccount);
 
   const handlePrint = async () => {
-    if (!selectedAccountData || entries.length === 0) {
+    if (!selectedAccountData || displayedEntries.length === 0) {
       toast.error('No data to print');
       return;
     }
@@ -115,33 +149,30 @@ export default function LedgerReportPage() {
       const timestamp = new Date().toISOString().split('T')[0];
       const fileName = `Ledger-${selectedAccountData.account_code}-${timestamp}.pdf`;
       
-      // Default path to Downloads folder or home folder
       const downloadsPath = await invoke<string>('get_downloads_path');
       const filePath = `${downloadsPath}/${fileName}`;
 
-      // Prepare data for PDF generation
       const pdfData = {
         account_code: selectedAccountData.account_code,
         account_name: selectedAccountData.account_name,
         period_from: fromDate || 'Beginning',
         period_to: toDate,
-        opening_balance: openingBalance,
-        closing_balance: closingBalance,
-        currency_code: companyProfile.base_currency || 'INR',
-        currency_symbol: companyProfile.base_currency_symbol || '',
+        opening_balance: isViewingForeign ? foreignOpeningBalance : openingBalance,
+        closing_balance: isViewingForeign ? foreignClosingBalance : closingBalance,
+        currency_code: isViewingForeign ? foreignCurrencyCode : (companyProfile.base_currency || 'INR'),
+        currency_symbol: isViewingForeign ? foreignCurrencySymbol : (companyProfile.base_currency_symbol || ''),
         currency_display: companyProfile.currency_display || 'symbol',
-        entries: entries.map(e => ({
+        entries: displayedEntries.map(e => ({
           date: e.date,
           voucher_no: e.voucher_no,
           voucher_type: e.voucher_type,
           narration: e.narration || '-',
-          debit: e.debit,
-          credit: e.credit,
-          balance: e.balance,
+          debit: isViewingForeign ? (e.foreign_debit ?? 0) : e.debit,
+          credit: isViewingForeign ? (e.foreign_credit ?? 0) : e.credit,
+          balance: isViewingForeign ? (e.foreign_balance ?? 0) : e.balance,
         })),
       };
 
-      // Generate PDF
       await invoke('generate_ledger_pdf', {
         data: pdfData,
         filePath,
@@ -199,6 +230,10 @@ export default function LedgerReportPage() {
     );
   };
 
+  // Opening/closing balance values based on view mode
+  const displayOpeningBalance = isViewingForeign ? foreignOpeningBalance : openingBalance;
+  const displayClosingBalance = isViewingForeign ? foreignClosingBalance : closingBalance;
+
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
@@ -227,8 +262,8 @@ export default function LedgerReportPage() {
         </div>
 
         {/* Filters */}
-        <div className="mt-4 flex gap-4 items-end">
-          <div className="flex-1 max-w-sm">
+        <div className="mt-4 flex gap-4 items-end flex-wrap">
+          <div className="flex-1 min-w-[200px] max-w-sm">
             <Label className="text-xs mb-1 block">Select Account *</Label>
             <Combobox
               options={accounts.map(a => ({
@@ -262,6 +297,37 @@ export default function LedgerReportPage() {
           <Button onClick={loadLedger} size="sm" disabled={!selectedAccount}>
             Generate Report
           </Button>
+
+          {/* Currency Toggle â€” visible only for export businesses that have foreign currency data */}
+          {hasForeignCurrency && hasGenerated && (
+            <div>
+              <Label className="text-xs mb-1 block">View In</Label>
+              <div className="flex rounded-md border overflow-hidden h-9">
+                <button
+                  type="button"
+                  onClick={() => setViewCurrency('base')}
+                  className={`px-3 text-xs font-medium transition-colors ${
+                    !isViewingForeign
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-background text-muted-foreground hover:bg-muted'
+                  }`}
+                >
+                  {companyProfile.base_currency || 'INR'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewCurrency(foreignCurrencyCode)}
+                  className={`px-3 text-xs font-medium border-l transition-colors ${
+                    isViewingForeign
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-background text-muted-foreground hover:bg-muted'
+                  }`}
+                >
+                  {foreignCurrencyCode}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -269,7 +335,7 @@ export default function LedgerReportPage() {
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-6xl mx-auto">
           {/* Print Header */}
-          {selectedAccountData && entries.length > 0 && (
+          {selectedAccountData && displayedEntries.length > 0 && (
             <div className="hidden print:block mb-6">
               <div className="text-center">
                 <h1 className="text-2xl font-bold">Ledger Report</h1>
@@ -295,7 +361,7 @@ export default function LedgerReportPage() {
             <div className="flex items-center justify-center h-64">
               <p className="text-muted-foreground">Click 'Generate Report' to view ledger</p>
             </div>
-          ) : entries.length === 0 ? (
+          ) : displayedEntries.length === 0 ? (
             <div className="flex items-center justify-center h-64">
               <p className="text-muted-foreground">No transactions found for this account</p>
             </div>
@@ -306,18 +372,36 @@ export default function LedgerReportPage() {
                 <div className="bg-muted/50 border-b p-4 print:hidden">
                   <div className="flex items-center justify-between">
                     <div>
-                      <h2 className="font-semibold text-lg">
-                        {selectedAccountData?.account_code} - {selectedAccountData?.account_name}
-                      </h2>
+                      <div className="flex items-center gap-2">
+                        <h2 className="font-semibold text-lg">
+                          {selectedAccountData?.account_code} - {selectedAccountData?.account_name}
+                        </h2>
+                        {isViewingForeign && (
+                          <span className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded font-medium">
+                            {foreignCurrencyCode} View
+                          </span>
+                        )}
+                      </div>
                       <p className="text-sm text-muted-foreground">
                         Period: {fromDate ? formatDate(fromDate) : 'Beginning'} to {formatDate(toDate)}
                       </p>
                     </div>
                     <div className="text-right">
                       <div className="text-xs text-muted-foreground">Opening Balance</div>
-                      <div className="text-lg font-bold font-mono">
-                        {money(Math.abs(openingBalance))} {openingBalance >= 0 ? 'Dr' : 'Cr'}
-                      </div>
+                      {isViewingForeign ? (
+                        <>
+                          <div className="text-lg font-bold font-mono">
+                            {foreignCurrencySymbol}{Math.abs(displayOpeningBalance).toFixed(2)} {displayOpeningBalance >= 0 ? 'Dr' : 'Cr'}
+                          </div>
+                          <div className="text-xs text-muted-foreground font-mono">
+                            {money(Math.abs(openingBalance))} {openingBalance >= 0 ? 'Dr' : 'Cr'}
+                          </div>
+                        </>
+                      ) : (
+                        <div className="text-lg font-bold font-mono">
+                          {money(Math.abs(openingBalance))} {openingBalance >= 0 ? 'Dr' : 'Cr'}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -329,89 +413,122 @@ export default function LedgerReportPage() {
                       <th className="p-3 text-left text-sm font-semibold">Voucher No</th>
                       <th className="p-3 text-left text-sm font-semibold">Type</th>
                       <th className="p-3 text-left text-sm font-semibold">Narration</th>
-                      {isExportBusiness && (
-                        <>
-                          <th className="p-3 text-right text-sm font-semibold">Forex Debit</th>
-                          <th className="p-3 text-right text-sm font-semibold">Forex Credit</th>
-                          <th className="p-3 text-left text-sm font-semibold">Cur</th>
-                        </>
-                      )}
-                      <th className="p-3 text-right text-sm font-semibold">Debit</th>
-                      <th className="p-3 text-right text-sm font-semibold">Credit</th>
+                      <th className="p-3 text-right text-sm font-semibold">
+                        {isViewingForeign ? `Debit (${foreignCurrencyCode})` : 'Debit'}
+                      </th>
+                      <th className="p-3 text-right text-sm font-semibold">
+                        {isViewingForeign ? `Credit (${foreignCurrencyCode})` : 'Credit'}
+                      </th>
                       <th className="p-3 text-right text-sm font-semibold">Balance</th>
                     </tr>
                   </thead>
                   <tbody>
                     {/* Opening Balance Row */}
-                    {openingBalance !== 0 && (
+                    {displayOpeningBalance !== 0 && (
                       <tr className="bg-muted/20 border-b font-semibold">
-                        <td className="p-3 text-sm" colSpan={isExportBusiness ? 7 : 4}>Opening Balance</td>
+                        <td className="p-3 text-sm" colSpan={4}>Opening Balance</td>
                         <td className="p-3 text-right font-mono text-sm">
-                          {openingBalance > 0 ? money(openingBalance) : '-'}
+                          {isViewingForeign
+                            ? (displayOpeningBalance > 0 ? `${foreignCurrencySymbol}${displayOpeningBalance.toFixed(2)}` : '-')
+                            : (openingBalance > 0 ? money(openingBalance) : '-')}
                         </td>
                         <td className="p-3 text-right font-mono text-sm">
-                          {openingBalance < 0 ? money(Math.abs(openingBalance)) : '-'}
+                          {isViewingForeign
+                            ? (displayOpeningBalance < 0 ? `${foreignCurrencySymbol}${Math.abs(displayOpeningBalance).toFixed(2)}` : '-')
+                            : (openingBalance < 0 ? money(Math.abs(openingBalance)) : '-')}
                         </td>
                         <td className="p-3 text-right font-mono text-sm font-bold">
-                          {money(Math.abs(openingBalance))} {openingBalance >= 0 ? 'Dr' : 'Cr'}
+                          {isViewingForeign
+                            ? `${foreignCurrencySymbol}${Math.abs(displayOpeningBalance).toFixed(2)} ${displayOpeningBalance >= 0 ? 'Dr' : 'Cr'}`
+                            : `${money(Math.abs(openingBalance))} ${openingBalance >= 0 ? 'Dr' : 'Cr'}`}
                         </td>
                       </tr>
                     )}
 
-                    {entries.map((entry, idx) => (
-                      <tr key={idx} className="border-b hover:bg-muted/30">
-                        <td className="p-3 text-sm">{formatDate(entry.date)}</td>
-                        <td className="p-3 text-sm">
-                          <button
-                            type="button"
-                            onClick={() => handleVoucherClick(entry.id, entry.voucher_type)}
-                            className="text-primary hover:underline font-mono font-medium text-left cursor-pointer focus:outline-none"
-                          >
-                            {entry.voucher_no}
-                          </button>
-                        </td>
-                        <td className="p-3 text-sm">
-                          <span className="px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
-                            {entry.voucher_type ? entry.voucher_type.replace(/_/g, ' ').toUpperCase() : '-'}
-                          </span>
-                        </td>
-                        <td className="p-3 text-sm text-muted-foreground">{entry.narration || '-'}</td>
-                        {isExportBusiness && (
-                          <>
-                            <td className="p-3 text-right font-mono text-sm text-blue-600">
-                              {entry.foreign_debit && entry.foreign_debit > 0 ? `${entry.currency_symbol || ''}${entry.foreign_debit.toFixed(2)}` : '-'}
-                            </td>
-                            <td className="p-3 text-right font-mono text-sm text-blue-600">
-                              {entry.foreign_credit && entry.foreign_credit > 0 ? `${entry.currency_symbol || ''}${entry.foreign_credit.toFixed(2)}` : '-'}
-                            </td>
-                            <td className="p-3 text-left font-mono text-xs text-muted-foreground">
-                              {entry.currency_code || '-'}
-                            </td>
-                          </>
-                        )}
-                        <td className="p-3 text-right font-mono text-sm">
-                          {entry.debit > 0 ? money(entry.debit) : '-'}
-                        </td>
-                        <td className="p-3 text-right font-mono text-sm">
-                          {entry.credit > 0 ? money(entry.credit) : '-'}
-                        </td>
-                        <td className="p-3 text-right font-mono text-sm font-semibold">
-                          {money(Math.abs(entry.balance))} {entry.balance >= 0 ? 'Dr' : 'Cr'}
-                        </td>
-                      </tr>
-                    ))}
+                    {displayedEntries.map((entry, idx) => {
+                      const entryMatchesForeignCurrency = !!entry.currency_code && entry.currency_code === foreignCurrencyCode;
+                      return (
+                        <tr key={idx} className="border-b hover:bg-muted/30">
+                          <td className="p-3 text-sm">{formatDate(entry.date)}</td>
+                          <td className="p-3 text-sm">
+                            <button
+                              type="button"
+                              onClick={() => handleVoucherClick(entry.id, entry.voucher_type)}
+                              className="text-primary hover:underline font-mono font-medium text-left cursor-pointer focus:outline-none"
+                            >
+                              {entry.voucher_no}
+                            </button>
+                          </td>
+                          <td className="p-3 text-sm">
+                            <span className="px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
+                              {entry.voucher_type ? entry.voucher_type.replace(/_/g, ' ').toUpperCase() : '-'}
+                            </span>
+                          </td>
+                          <td className="p-3 text-sm text-muted-foreground">{entry.narration || '-'}</td>
+
+                          {/* Debit column */}
+                          <td className="p-3 text-right font-mono text-sm">
+                            {isViewingForeign
+                              ? (entryMatchesForeignCurrency && (entry.foreign_debit ?? 0) > 0
+                                  ? `${foreignCurrencySymbol}${(entry.foreign_debit ?? 0).toFixed(2)}`
+                                  : '-')
+                              : (entry.debit > 0 ? money(entry.debit) : '-')}
+                          </td>
+
+                          {/* Credit column */}
+                          <td className="p-3 text-right font-mono text-sm">
+                            {isViewingForeign
+                              ? (entryMatchesForeignCurrency && (entry.foreign_credit ?? 0) > 0
+                                  ? `${foreignCurrencySymbol}${(entry.foreign_credit ?? 0).toFixed(2)}`
+                                  : '-')
+                              : (entry.credit > 0 ? money(entry.credit) : '-')}
+                          </td>
+
+                          {/* Balance column â€” in foreign view, show both */}
+                          <td className="p-3 text-right font-mono text-sm font-semibold">
+                            {isViewingForeign ? (
+                              <div>
+                                <div>
+                                  {foreignCurrencySymbol}{Math.abs(entry.foreign_balance ?? 0).toFixed(2)} {(entry.foreign_balance ?? 0) >= 0 ? 'Dr' : 'Cr'}
+                                </div>
+                                <div className="text-xs text-muted-foreground font-normal">
+                                  {money(Math.abs(entry.balance))} {entry.balance >= 0 ? 'Dr' : 'Cr'}
+                                </div>
+                              </div>
+                            ) : (
+                              `${money(Math.abs(entry.balance))} ${entry.balance >= 0 ? 'Dr' : 'Cr'}`
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                   <tfoot className="bg-muted/30 border-t-2 border-foreground/20">
                     <tr>
-                      <td colSpan={isExportBusiness ? 7 : 4} className="p-3 font-bold text-sm">Closing Balance</td>
+                      <td colSpan={4} className="p-3 font-bold text-sm">Closing Balance</td>
                       <td className="p-3 text-right font-mono font-bold text-sm">
-                        {closingBalance > 0 ? money(closingBalance) : '-'}
+                        {isViewingForeign
+                          ? (displayClosingBalance > 0 ? `${foreignCurrencySymbol}${displayClosingBalance.toFixed(2)}` : '-')
+                          : (closingBalance > 0 ? money(closingBalance) : '-')}
                       </td>
                       <td className="p-3 text-right font-mono font-bold text-sm">
-                        {closingBalance < 0 ? money(Math.abs(closingBalance)) : '-'}
+                        {isViewingForeign
+                          ? (displayClosingBalance < 0 ? `${foreignCurrencySymbol}${Math.abs(displayClosingBalance).toFixed(2)}` : '-')
+                          : (closingBalance < 0 ? money(Math.abs(closingBalance)) : '-')}
                       </td>
                       <td className="p-3 text-right font-mono font-bold text-sm">
-                        {money(Math.abs(closingBalance))} {closingBalance >= 0 ? 'Dr' : 'Cr'}
+                        {isViewingForeign ? (
+                          <div>
+                            <div>
+                              {foreignCurrencySymbol}{Math.abs(displayClosingBalance).toFixed(2)} {displayClosingBalance >= 0 ? 'Dr' : 'Cr'}
+                            </div>
+                            <div className="text-xs text-muted-foreground font-normal">
+                              {money(Math.abs(closingBalance))} {closingBalance >= 0 ? 'Dr' : 'Cr'}
+                            </div>
+                          </div>
+                        ) : (
+                          `${money(Math.abs(closingBalance))} ${closingBalance >= 0 ? 'Dr' : 'Cr'}`
+                        )}
                       </td>
                     </tr>
                   </tfoot>
@@ -423,4 +540,4 @@ export default function LedgerReportPage() {
       </div>
     </div>
   );
-}
+}

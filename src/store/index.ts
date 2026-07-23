@@ -2796,6 +2796,7 @@ export interface LedgerEntry {
   balance: number;
   foreign_debit?: number;
   foreign_credit?: number;
+  foreign_balance?: number;
   currency_code?: string;
   currency_symbol?: string;
 }
@@ -2807,6 +2808,10 @@ export interface LedgerReportState {
   toDate: string;
   openingBalance: number;
   closingBalance: number;
+  foreignOpeningBalance: number;
+  foreignClosingBalance: number;
+  foreignCurrencyCode: string;
+  foreignCurrencySymbol: string;
   hasGenerated: boolean;
 }
 
@@ -2828,6 +2833,10 @@ const ledgerReportInitialState: LedgerReportState = {
   toDate: getInitialToDate(),
   openingBalance: 0,
   closingBalance: 0,
+  foreignOpeningBalance: 0,
+  foreignClosingBalance: 0,
+  foreignCurrencyCode: '',
+  foreignCurrencySymbol: '',
   hasGenerated: false,
 };
 
@@ -2840,6 +2849,10 @@ const ledgerReportSlice = createSlice({
       state.entries = [];
       state.openingBalance = 0;
       state.closingBalance = 0;
+      state.foreignOpeningBalance = 0;
+      state.foreignClosingBalance = 0;
+      state.foreignCurrencyCode = '';
+      state.foreignCurrencySymbol = '';
       state.hasGenerated = false;
     },
     setLedgerReportFromDate: (state, action: PayloadAction<string>) => {
@@ -2852,10 +2865,18 @@ const ledgerReportSlice = createSlice({
       entries: LedgerEntry[];
       openingBalance: number;
       closingBalance: number;
+      foreignOpeningBalance: number;
+      foreignClosingBalance: number;
+      foreignCurrencyCode: string;
+      foreignCurrencySymbol: string;
     }>) => {
       state.entries = action.payload.entries;
       state.openingBalance = action.payload.openingBalance;
       state.closingBalance = action.payload.closingBalance;
+      state.foreignOpeningBalance = action.payload.foreignOpeningBalance;
+      state.foreignClosingBalance = action.payload.foreignClosingBalance;
+      state.foreignCurrencyCode = action.payload.foreignCurrencyCode;
+      state.foreignCurrencySymbol = action.payload.foreignCurrencySymbol;
       state.hasGenerated = true;
     },
     clearLedgerReport: (state) => {
@@ -2865,6 +2886,10 @@ const ledgerReportSlice = createSlice({
       state.toDate = getInitialToDate();
       state.openingBalance = 0;
       state.closingBalance = 0;
+      state.foreignOpeningBalance = 0;
+      state.foreignClosingBalance = 0;
+      state.foreignCurrencyCode = '';
+      state.foreignCurrencySymbol = '';
       state.hasGenerated = false;
     },
   },

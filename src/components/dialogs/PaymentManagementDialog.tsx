@@ -17,7 +17,7 @@ import {
     IconTrash,
     IconCurrencyRupee,
 } from '@tabler/icons-react';
-import { useMoney } from '@/hooks/useMoney';
+import { useMoney, useForexMoney } from '@/hooks/useMoney';
 
 interface PaymentManagementDialogProps {
     mode: 'payment' | 'receipt';
@@ -31,6 +31,8 @@ interface PaymentManagementDialogProps {
     partyName?: string;
     readOnly?: boolean;
     isCashBankParty?: boolean;
+    currencySymbol?: string;
+    currencyCode?: string;
 }
 
 interface Allocation {
@@ -70,11 +72,15 @@ export default function PaymentManagementDialog({
     partyName = '',
     readOnly = false,
     isCashBankParty = false,
+    currencySymbol,
+    currencyCode,
 }: PaymentManagementDialogProps) {
     // Data states
     const [allocations, setAllocations] = useState<Allocation[]>([]);
     const [cashBankAccounts, setCashBankAccounts] = useState<CashBankAccount[]>([]);
-    const money = useMoney();
+    const defaultMoney = useMoney();
+    const forexMoney = useForexMoney(currencyCode || '', currencySymbol || '');
+    const money = (currencySymbol || currencyCode) ? forexMoney : defaultMoney;
 
     // Loading states
     const [loadingAllocations, setLoadingAllocations] = useState(false);

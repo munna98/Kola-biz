@@ -86,7 +86,7 @@ export default function SalesInvoicePage() {
   const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
   const user = useSelector((state: RootState) => state.auth.user);
   const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
-  const isExportBusiness = companyProfile?.business_type === 'Export Business';
+  const isExportBusiness = true;
   const money = useMoney();
   const currencyLabel = useCurrencyLabel();
   const forexMoney = useForexMoney(salesState.foreign_currency_code, salesState.foreign_currency_symbol);
@@ -114,6 +114,7 @@ export default function SalesInvoicePage() {
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost', showShipTo?: boolean } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
+  const [partyForeignBalance, setPartyForeignBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [gstDisabled, setGstDisabled] = useState(false);
   const [services, setServices] = useState<any[]>([]);
@@ -125,11 +126,15 @@ export default function SalesInvoicePage() {
   const effectiveSettings = useMemo(() => {
     if (!voucherSettings || !voucherSettings.columns) return voucherSettings;
     if (isExportBusiness && salesState.currency_id) {
+      const sym = salesState.foreign_currency_symbol || '$';
       return {
         ...voucherSettings,
-        columns: voucherSettings.columns.map(c =>
-          c.id === 'rate' ? { ...c, label: `Rate (${salesState.foreign_currency_symbol})` } : c
-        )
+        columns: voucherSettings.columns.map(c => {
+          if (c.id === 'rate') return { ...c, label: `Rate (${sym})` };
+          if (c.id === 'amount') return { ...c, label: `Amount (${sym})` };
+          if (c.id === 'total') return { ...c, label: `Total (${sym})` };
+          return c;
+        })
       };
     }
     return voucherSettings;
@@ -164,13 +169,16 @@ export default function SalesInvoicePage() {
       totalCost += finalQty * unitCost;
     });
     // subtotal = taxable base after item discounts and invoice discounts (excl. tax)
-    const revenueBase = salesState.totals.subtotal;
+    // When forex is active, subtotal is in foreign currency (e.g. USD). Convert to base currency (INR) for profit calculation.
+    const revenueBase = (isExportBusiness && salesState.currency_id)
+      ? salesState.totals.subtotal * salesState.exchange_rate
+      : salesState.totals.subtotal;
     const grossProfit = revenueBase - totalCost;
     const profitPercent = revenueBase > 0
       ? (grossProfit / revenueBase) * 100
       : 0;
     return { totalCost, grossProfit, profitPercent };
-  }, [voucherSettings?.showInvoiceProfit, voucherSettings?.profitCostSource, salesState.items, salesState.totals.subtotal, products]);
+  }, [voucherSettings?.showInvoiceProfit, voucherSettings?.profitCostSource, salesState.items, salesState.totals.subtotal, salesState.currency_id, salesState.exchange_rate, isExportBusiness, products]);
 
   // Create Customer Shortcut State
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
@@ -259,20 +267,47 @@ export default function SalesInvoicePage() {
     }
   }, [salesState.currentVoucherId]);
 
-  // Sync partyBalance when active tab changes (tab switch / new tab).
-  // partyBalance is local React state — it is NOT stored in the Redux tab snapshot,
-  // so we must reset it and re-fetch whenever the tab's party changes.
+  // Sync partyBalance and forex info when customer_id changes (combobox select, tab switch, default selection, load saved)
   useEffect(() => {
-    if (salesState.form.customer_id && salesState.form.customer_id !== 0) {
-      setPartyBalance(null); // clear stale value immediately
-      invoke<number>('get_account_balance', { accountId: salesState.form.customer_id })
-        .then(bal => setPartyBalance(bal))
-        .catch(console.error);
-    } else {
-      setPartyBalance(null);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [salesState.activeTabId]);
+    const fetchPartyData = async () => {
+      if (salesState.form.customer_id && salesState.form.customer_id !== 0) {
+        setPartyBalance(null);
+        setPartyForeignBalance(null);
+        // 1. Fetch balance
+        try {
+          const info = await invoke<{ base_balance: number; foreign_balance: number }>('get_account_balance_info', { accountId: salesState.form.customer_id });
+          setPartyBalance(info.base_balance);
+          setPartyForeignBalance(info.foreign_balance);
+        } catch (err) {
+          console.error("Failed to fetch customer balance:", err);
+          setPartyBalance(null);
+          setPartyForeignBalance(null);
+        }
+
+        // 2. Fetch currency info
+        try {
+          const currencyInfo = await invoke<{ id: string; code: string; name: string; symbol: string } | null>(
+            'get_party_currency_info',
+            { partyId: salesState.form.customer_id }
+          );
+          if (currencyInfo) {
+            dispatch(setSalesForexInfo({ currency_id: currencyInfo.id, code: currencyInfo.code, symbol: currencyInfo.symbol }));
+          } else {
+            dispatch(clearSalesForex());
+          }
+        } catch (err) {
+          console.error("Failed to fetch party currency info:", err);
+          dispatch(clearSalesForex());
+        }
+      } else {
+        setPartyBalance(null);
+        setPartyForeignBalance(null);
+        dispatch(clearSalesForex());
+      }
+    };
+
+    fetchPartyData();
+  }, [salesState.form.customer_id, dispatch]);
 
   // Default Party Selection Effect
   useEffect(() => {
@@ -287,9 +322,6 @@ export default function SalesInvoicePage() {
           name: defaultParty.name,
           type: defaultParty.type
         }));
-        invoke<number>('get_account_balance', { accountId: defaultParty.id })
-          .then(bal => setPartyBalance(bal))
-          .catch(console.error);
       }
     }
   }, [salesState.mode, salesState.form.customer_id, parties, dispatch]);
@@ -1474,32 +1506,7 @@ export default function SalesInvoicePage() {
                       const party = parties.find((p) => p.id === value);
                       if (party) {
                         dispatch(setSalesCustomer({ id: party.id, name: party.name, type: party.type }));
-                        invoke<number>('get_account_balance', { accountId: party.id })
-                          .then(bal => setPartyBalance(bal))
-                          .catch(console.error);
-
-                        console.log("Customer select - isExportBusiness:", isExportBusiness);
-                        if (isExportBusiness) {
-                          try {
-                            const currencyInfo = await invoke<{ id: string; code: string; name: string; symbol: string } | null>(
-                              'get_party_currency_info',
-                              { partyId: party.id }
-                            );
-                            console.log("Customer Currency Info response:", currencyInfo);
-                            if (currencyInfo) {
-                              dispatch(setSalesForexInfo({ currency_id: currencyInfo.id, code: currencyInfo.code, symbol: currencyInfo.symbol }));
-                            } else {
-                              console.log("No foreign currency info found for customer. Clearing forex state.");
-                              dispatch(clearSalesForex());
-                            }
-                          } catch (err) {
-                            console.error("Failed to fetch party currency info:", err);
-                            dispatch(clearSalesForex());
-                          }
-                        } else {
-                          console.log("Not an Export Business. Clearing forex state.");
-                          dispatch(clearSalesForex());
-                        }
+                        markUnsaved();
 
                         // Auto-focus first product after party selection
                         setTimeout(() => {
@@ -1638,6 +1645,7 @@ export default function SalesInvoicePage() {
             addItemLabel="Add Item (Ctrl+N)"
             disableAdd={isReadOnly}
             settings={effectiveSettings}
+            moneyFormatter={isExportBusiness && salesState.currency_id ? forexMoney : undefined}
             isMarginSchemeInvoice={salesState.form.is_margin_scheme_invoice}
             onProductCreate={handleProductCreate}
             services={services}
@@ -1655,7 +1663,9 @@ export default function SalesInvoicePage() {
             footerRightContent={
               partyBalance !== null && shouldShowPartyBalance ? (
                 <div className={`text-base font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  Balance: {money(Math.abs(partyBalance), { minimumFractionDigits: 0, maximumFractionDigits: 0 })} {partyBalance >= 0 ? 'Dr' : 'Cr'}
+                  Balance: {isExportBusiness && salesState.currency_id && partyForeignBalance !== null && partyForeignBalance !== 0
+                    ? forexMoney(Math.abs(partyForeignBalance), { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+                    : money(Math.abs(partyBalance), { minimumFractionDigits: 0, maximumFractionDigits: 0 })} {partyBalance >= 0 ? 'Dr' : 'Cr'}
                 </div>
               ) : null
             }
@@ -1772,7 +1782,9 @@ export default function SalesInvoicePage() {
                     />
                   </div>
                   <div>
-                    <Label className="text-xs font-medium mb-1 block">Discount{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
+                    <Label className="text-xs font-medium mb-1 block">
+                      Discount ({isExportBusiness && salesState.currency_id ? (salesState.foreign_currency_code || salesState.foreign_currency_symbol || '$') : (currencyLabel || 'INR')})
+                    </Label>
                     <Input
                       type="number"
                       value={salesState.form.discount_amount || ''}
@@ -1798,31 +1810,43 @@ export default function SalesInvoicePage() {
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
                     <span className="text-muted-foreground">Subtotal:</span>
-                    <span className="font-mono font-medium">{money(salesState.totals.subtotal)}</span>
+                    <span className="font-mono font-medium">
+                      {isExportBusiness && salesState.currency_id
+                        ? forexMoney(salesState.totals.subtotal)
+                        : money(salesState.totals.subtotal)}
+                    </span>
                   </div>
                   {salesState.totals.discount > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">
-                      Discount: {money(salesState.totals.discount)}
+                      Discount: {isExportBusiness && salesState.currency_id
+                        ? forexMoney(salesState.totals.discount)
+                        : money(salesState.totals.discount)}
                     </div>
                   )}
                   {salesState.totals.tax > 0 && (
-                    <div className="text-xs font-mono text-muted-foreground">Tax: {money(salesState.totals.tax)}</div>
+                    <div className="text-xs font-mono text-muted-foreground">
+                      Tax: {isExportBusiness && salesState.currency_id
+                        ? forexMoney(salesState.totals.tax)
+                        : money(salesState.totals.tax)}
+                    </div>
                   )}
                   {linkedReturnTotal > 0 && (
                     <div className="flex justify-between items-center gap-2 text-xs font-mono text-red-600">
                       <span>Less Returns ({linkedReturnCount}):</span>
-                      <span>-{money(linkedReturnTotal)}</span>
+                      <span>-{isExportBusiness && salesState.currency_id ? forexMoney(linkedReturnTotal) : money(linkedReturnTotal)}</span>
                     </div>
                   )}
                   {linkedReturnTotal > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">
-                      Invoice Total: {money(salesState.totals.grandTotal)}
+                      Invoice Total: {isExportBusiness && salesState.currency_id
+                        ? forexMoney(salesState.totals.grandTotal)
+                        : money(salesState.totals.grandTotal)}
                     </div>
                   )}
                   {isExportBusiness && salesState.currency_id ? (
                     <div>
-                      <div className="font-bold text-lg">{forexMoney(netPayableTotal / salesState.exchange_rate)}</div>
-                      <div className="text-xs text-muted-foreground">{money(netPayableTotal)}</div>
+                      <div className="font-bold text-lg">{forexMoney(netPayableTotal)}</div>
+                      <div className="text-xs text-muted-foreground">{money(netPayableTotal * salesState.exchange_rate)}</div>
                     </div>
                   ) : (
                     <div className="text-lg font-mono font-bold">{money(netPayableTotal)}</div>

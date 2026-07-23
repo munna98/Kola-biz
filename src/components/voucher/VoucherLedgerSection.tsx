@@ -33,6 +33,8 @@ export interface VoucherLedgerSectionProps {
     showProductSelect?: boolean;
     /** Active products list for the product combobox */
     products?: Product[];
+    /** Optional custom header label for Amount column (e.g., "Amount ($)") */
+    amountHeaderLabel?: string;
 }
 
 export function VoucherLedgerSection({
@@ -52,6 +54,7 @@ export function VoucherLedgerSection({
     onSectionExit,
     showProductSelect = false,
     products = [],
+    amountHeaderLabel,
 }: VoucherLedgerSectionProps) {
 
     // Internal row navigation handling
@@ -76,7 +79,7 @@ export function VoucherLedgerSection({
                 <span>Account/Ledger</span>
             </div>
             {showProductSelect && <div className="px-1">Product</div>}
-            <div className="text-right px-1">Amount</div>
+            <div className="text-right px-1">{amountHeaderLabel || 'Amount'}</div>
             <div className="px-1">Remarks</div>
             <div className="w-8"></div>
         </div>

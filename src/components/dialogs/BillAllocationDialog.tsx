@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useMoney } from '@/hooks/useMoney';
+import { toast } from 'sonner';
 
 interface PendingInvoice {
     id: string;
@@ -13,6 +14,9 @@ interface PendingInvoice {
     total_amount: number;
     pending_amount: number;
     narration: string | null;
+    exchange_rate?: number | null;
+    foreign_total?: number | null;
+    foreign_pending_amount?: number | null;
 }
 
 export interface AllocationData {
@@ -27,6 +31,7 @@ interface BillAllocationDialogProps {
     amountToAllocate: number; // The amount entered in the payment line
     allocations: AllocationData[];
     onConfirm: (allocations: AllocationData[]) => void;
+    moneyFormatter?: (amount: number | null | undefined) => string;
 }
 
 export default function BillAllocationDialog({
@@ -36,11 +41,19 @@ export default function BillAllocationDialog({
     amountToAllocate,
     allocations: initialAllocations,
     onConfirm,
+    moneyFormatter,
 }: BillAllocationDialogProps) {
     const [invoices, setInvoices] = useState<PendingInvoice[]>([]);
+    const [allocations, setAllocations] = useState<AllocationData[]>([]);
     const [loading, setLoading] = useState(false);
-    const [allocations, setAllocations] = useState<AllocationData[]>(initialAllocations);
-    const money = useMoney();
+    const defaultMoney = useMoney();
+    const money = moneyFormatter || defaultMoney;
+
+    const getEffectivePending = (inv: PendingInvoice) => {
+        return (moneyFormatter && inv.foreign_pending_amount != null && inv.foreign_pending_amount > 0)
+            ? inv.foreign_pending_amount
+            : inv.pending_amount;
+    };
 
     // Map for easy lookup [invoiceId]: allocatedAmount
     const allocationMap = useMemo(() => {
@@ -51,27 +64,28 @@ export default function BillAllocationDialog({
 
     useEffect(() => {
         if (open && partyId) {
-            loadPendingInvoices();
-            // Reset allocations to initial when opening
+            fetchPendingInvoices();
             setAllocations(initialAllocations);
         }
     }, [open, partyId]);
 
-    const loadPendingInvoices = async () => {
-        setLoading(true);
+    const fetchPendingInvoices = async () => {
         try {
+            setLoading(true);
             const data = await invoke<PendingInvoice[]>('get_pending_invoices', { accountId: partyId });
             setInvoices(data);
         } catch (error) {
-            console.error(error);
+            console.error('Failed to fetch pending invoices:', error);
+            toast.error('Failed to load pending invoices');
         } finally {
             setLoading(false);
         }
     };
 
     const handleAllocationChange = (invoice: PendingInvoice, newAmount: number) => {
+        const pending = getEffectivePending(invoice);
         // Clamp amount between 0 and pending amount
-        const clampedAmount = Math.max(0, Math.min(newAmount, invoice.pending_amount));
+        const clampedAmount = Math.max(0, Math.min(newAmount, pending));
 
         setAllocations(prev => {
             const others = prev.filter(a => a.invoice_id !== invoice.id);
@@ -81,23 +95,15 @@ export default function BillAllocationDialog({
     };
 
     const handleToggleInvoice = (invoice: PendingInvoice, checked: boolean) => {
+        const pending = getEffectivePending(invoice);
         if (checked) {
-            // Auto-fill: Try to allocate full pending amount, 
-            // but limited by remaining voucher amount?
-
             // Calculate remaining unallocated from voucher amount
             const currentAllocatedTotal = allocations.reduce((sum, a) => sum + a.amount, 0);
             const remainingVoucherAmount = Math.max(0, amountToAllocate - currentAllocatedTotal);
 
-            // Auto allocate logic
-            // Use Math.min to not exceed pending amount or remaining voucher amount
-            // If remainingVoucherAmount is 0, we still allow allocating up to pending amount
-            // (user might re-adjust other allocations later, or increase voucher amount)
-            // But typically "Auto" should fill what's available.
-
             const fillAmount = remainingVoucherAmount > 0
-                ? Math.min(invoice.pending_amount, remainingVoucherAmount)
-                : invoice.pending_amount; // If no remaining budget, just fill full pending (user can edit)
+                ? Math.min(pending, remainingVoucherAmount)
+                : pending; // If no remaining budget, just fill full pending (user can edit)
 
             handleAllocationChange(invoice, fillAmount);
         } else {
@@ -169,7 +175,7 @@ export default function BillAllocationDialog({
                                             </td>
                                             <td className="p-2 text-muted-foreground">{new Date(inv.voucher_date).toLocaleDateString()}</td>
                                             <td className="p-2 font-medium">{inv.voucher_no} {inv.voucher_type === 'sales_invoice' ? '(SI)' : '(PI)'}</td>
-                                            <td className="p-2 text-muted-foreground">{money(inv.pending_amount)}</td>
+                                            <td className="p-2 text-muted-foreground">{money(getEffectivePending(inv))}</td>
                                             <td className="p-2 text-right">
                                                 <Input
                                                     type="number"

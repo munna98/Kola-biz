@@ -1926,7 +1926,8 @@ async fn get_sales_return_data(
             v.status,
             v.created_at,
             v.deleted_at,
-            COALESCE(v.tax_inclusive, 0) as tax_inclusive
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -2239,7 +2240,14 @@ async fn get_payment_data(
             v.narration,
             v.status,
             v.created_at,
-            v.deleted_at
+            v.deleted_at,
+            v.created_from_invoice_id,
+            u.full_name as created_by_name,
+            v.currency_id,
+            v.exchange_rate,
+            v.foreign_total,
+            cur.code as currency_code,
+            COALESCE(cur.symbol, cur.code) as currency_symbol
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
@@ -2255,6 +2263,8 @@ async fn get_payment_data(
             WHERE credit > 0
         ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+        LEFT JOIN users u ON v.created_by = u.id
+        LEFT JOIN currencies cur ON v.currency_id = cur.id
         WHERE v.id = ? AND v.voucher_type = 'payment' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -2265,12 +2275,66 @@ async fn get_payment_data(
 
     let items = crate::commands::entries::get_payment_items_with_pool(pool, &id).await?;
 
-    let mut val = serde_json::to_value(voucher).map_err(|e| e.to_string())?;
+    let mut party_account_id = items.iter().find_map(|i| i.ledger_id.clone());
+    if party_account_id.is_none() {
+        party_account_id = sqlx::query_scalar(
+            "SELECT account_id FROM journal_entries WHERE voucher_id = ? AND debit > 0 AND account_id != 'sys_forex_loss' LIMIT 1"
+        )
+        .bind(&id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    }
+
+    let (party_name, party_acc_id) = if let Some(ref acc_id) = party_account_id {
+        let name: String = sqlx::query_scalar("SELECT account_name FROM chart_of_accounts WHERE id = ?")
+            .bind(acc_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        (name, acc_id.clone())
+    } else {
+        (String::new(), voucher.account_id.clone())
+    };
+
+    let is_cash = party_name.trim().eq_ignore_ascii_case("cash") || party_acc_id == "sys_cash";
+
+    let balance_res: (f64, f64) = sqlx::query_as(
+        "SELECT 
+            COALESCE(SUM(je.debit), 0.0) as total_debit, 
+            COALESCE(SUM(je.credit), 0.0) as total_credit
+            FROM journal_entries je
+            JOIN vouchers v ON je.voucher_id = v.id
+            WHERE je.account_id = ? 
+            AND (v.voucher_date < ? OR (v.voucher_date = ? AND v.id < ?))
+            AND v.deleted_at IS NULL",
+    )
+    .bind(&party_acc_id)
+    .bind(&voucher.voucher_date)
+    .bind(&voucher.voucher_date)
+    .bind(&id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or((0.0, 0.0));
+
+    let old_balance = balance_res.0 - balance_res.1;
+    let balance_due = old_balance + voucher.grand_total;
+    let total_balance = balance_due;
+
+    let mut val = serde_json::to_value(&voucher).map_err(|e| e.to_string())?;
     if let Some(obj) = val.as_object_mut() {
         obj.insert(
             "items".to_string(),
             serde_json::to_value(items).unwrap_or(json!([])),
         );
+        obj.insert("old_balance".to_string(), json!(old_balance));
+        obj.insert("balance_due".to_string(), json!(balance_due));
+        obj.insert("total_balance".to_string(), json!(total_balance));
+        obj.insert("paid_amount".to_string(), json!(voucher.grand_total));
+        obj.insert("is_cash".to_string(), json!(is_cash));
     }
     Ok(val)
 }
@@ -2303,7 +2367,12 @@ async fn get_receipt_data(
             v.created_at,
             v.deleted_at,
             v.created_from_invoice_id,
-            u.full_name as created_by_name
+            u.full_name as created_by_name,
+            v.currency_id,
+            v.exchange_rate,
+            v.foreign_total,
+            cur.code as currency_code,
+            COALESCE(cur.symbol, cur.code) as currency_symbol
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN chart_of_accounts coa_payment ON coa_payment.id = (
@@ -2320,6 +2389,7 @@ async fn get_receipt_data(
         ) je ON v.id = je.voucher_id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         LEFT JOIN users u ON v.created_by = u.id
+        LEFT JOIN currencies cur ON v.currency_id = cur.id
         WHERE v.id = ? AND v.voucher_type = 'receipt' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -2337,13 +2407,67 @@ async fn get_receipt_data(
         .collect::<Vec<String>>()
         .join(", ");
 
-    let mut val = serde_json::to_value(voucher).map_err(|e| e.to_string())?;
+    let mut party_account_id = items.iter().find_map(|i| i.ledger_id.clone());
+    if party_account_id.is_none() {
+        party_account_id = sqlx::query_scalar(
+            "SELECT account_id FROM journal_entries WHERE voucher_id = ? AND credit > 0 AND account_id != 'sys_forex_gain' LIMIT 1"
+        )
+        .bind(&id)
+        .fetch_optional(pool)
+        .await
+        .ok()
+        .flatten();
+    }
+
+    let (party_name, party_acc_id) = if let Some(ref acc_id) = party_account_id {
+        let name: String = sqlx::query_scalar("SELECT account_name FROM chart_of_accounts WHERE id = ?")
+            .bind(acc_id)
+            .fetch_optional(pool)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_else(|| received_from.clone());
+        (name, acc_id.clone())
+    } else {
+        (received_from.clone(), voucher.account_id.clone())
+    };
+
+    let is_cash = party_name.trim().eq_ignore_ascii_case("cash") || party_acc_id == "sys_cash";
+
+    let balance_res: (f64, f64) = sqlx::query_as(
+        "SELECT 
+            COALESCE(SUM(je.debit), 0.0) as total_debit, 
+            COALESCE(SUM(je.credit), 0.0) as total_credit
+            FROM journal_entries je
+            JOIN vouchers v ON je.voucher_id = v.id
+            WHERE je.account_id = ? 
+            AND (v.voucher_date < ? OR (v.voucher_date = ? AND v.id < ?))
+            AND v.deleted_at IS NULL",
+    )
+    .bind(&party_acc_id)
+    .bind(&voucher.voucher_date)
+    .bind(&voucher.voucher_date)
+    .bind(&id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or((0.0, 0.0));
+
+    let old_balance = balance_res.0 - balance_res.1;
+    let balance_due = old_balance - voucher.grand_total;
+    let total_balance = balance_due;
+
+    let mut val = serde_json::to_value(&voucher).map_err(|e| e.to_string())?;
     if let Some(obj) = val.as_object_mut() {
         obj.insert(
             "items".to_string(),
             serde_json::to_value(items).unwrap_or(json!([])),
         );
         obj.insert("received_from".to_string(), serde_json::json!(received_from));
+        obj.insert("old_balance".to_string(), json!(old_balance));
+        obj.insert("balance_due".to_string(), json!(balance_due));
+        obj.insert("total_balance".to_string(), json!(total_balance));
+        obj.insert("paid_amount".to_string(), json!(voucher.grand_total));
+        obj.insert("is_cash".to_string(), json!(is_cash));
         if let Some(c) = company {
             obj.insert("company".to_string(), serde_json::to_value(c).unwrap_or(json!({})));
         }

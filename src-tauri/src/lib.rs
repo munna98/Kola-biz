@@ -277,6 +277,7 @@ pub fn run() {
             adjust_cash_invoice_splits,
             // Allocations
             commands::entries::get_account_balance,
+            commands::entries::get_account_balance_info,
             commands::entries::get_pending_invoices,
             // PDF Export
             generate_ledger_pdf,

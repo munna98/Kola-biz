@@ -68,7 +68,7 @@ export default function ReceiptPage() {
     const user = useSelector((state: RootState) => state.auth.user);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
     const companyProfile = useSelector((state: any) => state.companyProfile?.profile);
-    const isExportBusiness = companyProfile?.business_type === 'Export Business';
+    const isExportBusiness = true;
     const money = useMoney();
 
     const [forexCurrencyId, setForexCurrencyId] = useState<string | null>(null);
@@ -76,7 +76,7 @@ export default function ReceiptPage() {
     const [forexCurrencySymbol, setForexCurrencySymbol] = useState<string>('');
     const [forexExchangeRate, setForexExchangeRate] = useState<number>(1.0);
     const _forexMoney = useForexMoney(forexCurrencyCode, forexCurrencySymbol);
-    void _forexMoney; // available for future use in BillAllocationDialog
+    const displayMoney = isExportBusiness && forexCurrencyId ? _forexMoney : money;
 
     const [depositToAccounts, setDepositToAccounts] = useState<AccountData[]>([]);
     const [receivedFromLedgers, setReceivedFromLedgers] = useState<LedgerAccount[]>([]);
@@ -97,6 +97,7 @@ export default function ReceiptPage() {
     const [allocatingRowIndex, setAllocatingRowIndex] = useState<number | null>(null);
     const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
     const [rowBalances, setRowBalances] = useState<Record<number, number>>({});
+    const [rowForeignBalances, setRowForeignBalances] = useState<Record<number, number>>({});
 
     const formRef = useRef<HTMLFormElement>(null);
     const depositToRef = useRef<HTMLDivElement>(null);
@@ -157,8 +158,11 @@ export default function ReceiptPage() {
                 dispatch(updateReceiptItem({ index, data: { account_id: ledger.id } }));
 
                 // Fetch Balance
-                invoke<number>('get_account_balance', { accountId: ledger.id })
-                    .then(bal => setRowBalances(prev => ({ ...prev, [index]: bal })))
+                invoke<{ base_balance: number; foreign_balance: number }>('get_account_balance_info', { accountId: ledger.id })
+                    .then(info => {
+                        setRowBalances(prev => ({ ...prev, [index]: info.base_balance }));
+                        setRowForeignBalances(prev => ({ ...prev, [index]: info.foreign_balance }));
+                    })
                     .catch(console.error);
 
                 if (isExportBusiness) {
@@ -314,6 +318,18 @@ export default function ReceiptPage() {
             const receipt = await invoke<any>('get_receipt', { id });
             const items = await invoke<any[]>('get_receipt_items', { voucherId: id });
 
+            if (receipt.currency_id) {
+                setForexCurrencyId(receipt.currency_id);
+                setForexCurrencyCode(receipt.currency_code || '');
+                setForexCurrencySymbol(receipt.currency_symbol || '');
+                setForexExchangeRate(receipt.exchange_rate || 1.0);
+            } else {
+                setForexCurrencyId(null);
+                setForexCurrencyCode('');
+                setForexCurrencySymbol('');
+                setForexExchangeRate(1.0);
+            }
+
             // Populate Form
             dispatch(setReceiptCurrentVoucherNo(receipt.voucher_no));
             dispatch(setReceiptAccount({ id: receipt.account_id, name: receipt.account_name }));
@@ -337,10 +353,11 @@ export default function ReceiptPage() {
             }))));
 
             // Use totals from backend
+            const useForex = !!receipt.currency_id;
             dispatch(setReceiptTotals({
-                subtotal: receipt.subtotal || 0,
+                subtotal: useForex ? (receipt.foreign_total || 0) : (receipt.subtotal || 0),
                 tax: receipt.tax_amount || 0,
-                grandTotal: receipt.total_amount || 0
+                grandTotal: useForex ? (receipt.foreign_total || 0) : (receipt.total_amount || 0)
             }));
 
             dispatch(setReceiptMode('viewing'));
@@ -533,6 +550,7 @@ export default function ReceiptPage() {
                     amountToAllocate={receiptState.items[allocatingRowIndex].amount || 0}
                     allocations={receiptState.items[allocatingRowIndex].allocations || []}
                     onConfirm={handleAllocationConfirm}
+                    moneyFormatter={isExportBusiness && forexCurrencyId ? _forexMoney : undefined}
                 />
             )}
 
@@ -663,6 +681,7 @@ export default function ReceiptPage() {
                         addItemLabel="Add Item (Ctrl+N)"
                         disableAdd={receiptState.mode === 'viewing'}
                         rowBalances={rowBalances}
+                        amountHeaderLabel={isExportBusiness && forexCurrencyId ? `Amount (${forexCurrencySymbol || forexCurrencyCode})` : 'Amount'}
                         onCreateLedger={(name, index) => {
                             setNewAccountName(name);
                             setCreatingForIndex(index);
@@ -674,20 +693,12 @@ export default function ReceiptPage() {
                             }, 50);
                         }}
                         onFocusRow={setFocusedRowIndex}
-                        header={
-                            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-xs font-medium text-muted-foreground items-center">
-                                <div className="col-span-5 flex justify-between items-center">
-                                    <span>Received From (Account/Ledger)</span>
-                                </div>
-                                <div className="col-span-2 text-right">Amount</div>
-                                <div className="col-span-4">Remarks</div>
-                                <div className="col-span-1"></div>
-                            </div>
-                        }
                         footerRightContent={
                             focusedRowIndex !== null && rowBalances[focusedRowIndex] !== undefined ? (
                                 <div className={`text-base font-mono font-bold ${rowBalances[focusedRowIndex] >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                    Balance: {money(Math.abs(rowBalances[focusedRowIndex]), { minimumFractionDigits: 0, maximumFractionDigits: 0 })} {rowBalances[focusedRowIndex] >= 0 ? 'Dr' : 'Cr'}
+                                    Balance: {isExportBusiness && forexCurrencyId && rowForeignBalances[focusedRowIndex] !== undefined && rowForeignBalances[focusedRowIndex] !== 0
+                                        ? _forexMoney(Math.abs(rowForeignBalances[focusedRowIndex]), { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+                                        : money(Math.abs(rowBalances[focusedRowIndex]), { minimumFractionDigits: 0, maximumFractionDigits: 0 })} {rowBalances[focusedRowIndex] >= 0 ? 'Dr' : 'Cr'}
                                 </div>
                             ) : null
                         }
@@ -697,13 +708,34 @@ export default function ReceiptPage() {
                     <div className="bg-card border rounded-lg p-3 shrink-0">
                         <div className="flex justify-between items-end">
                             <div>
-                                {/* Optional: Add more details here if needed */}
+                                {isExportBusiness && forexCurrencyId && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-semibold">{forexCurrencyCode}</span>
+                                        <span className="text-xs text-muted-foreground">Exchange Rate: 1 {forexCurrencyCode} =</span>
+                                        <Input
+                                            type="number"
+                                            min="0.0001"
+                                            step="0.0001"
+                                            value={forexExchangeRate}
+                                            onChange={(e) => setForexExchangeRate(parseFloat(e.target.value) || 1.0)}
+                                            className="w-24 h-6 text-xs px-1"
+                                        />
+                                        <span className="text-xs text-muted-foreground">{money(1)?.replace('1.00','').trim() || 'INR'}</span>
+                                    </div>
+                                )}
                             </div>
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Receipt</div>
-                                <div className="text-lg font-mono font-bold">
-                                    {money(receiptState.totals.grandTotal)}
-                                </div>
+                                {isExportBusiness && forexCurrencyId ? (
+                                    <div>
+                                        <div className="text-lg font-mono font-bold">{_forexMoney(receiptState.totals.grandTotal)}</div>
+                                        <div className="text-xs text-muted-foreground">{money(receiptState.totals.grandTotal * forexExchangeRate)}</div>
+                                    </div>
+                                ) : (
+                                    <div className="text-lg font-mono font-bold">
+                                        {money(receiptState.totals.grandTotal)}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

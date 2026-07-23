@@ -2362,6 +2362,24 @@ pub async fn update_sales_invoice(
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let grand_total = round2(total_amount + total_tax);
 
+    let exchange_rate = invoice.exchange_rate.unwrap_or(1.0).max(0.0001);
+    let is_foreign_currency = invoice.currency_id.is_some() && exchange_rate != 1.0;
+
+    let subtotal_foreign = subtotal;
+    let discount_amount_foreign = discount_amount;
+    let total_tax_foreign = total_tax;
+    let total_amount_foreign = total_amount;
+    let grand_total_foreign = grand_total;
+
+    let subtotal = if is_foreign_currency { round2(subtotal_foreign * exchange_rate) } else { subtotal_foreign };
+    let discount_amount = if is_foreign_currency { round2(discount_amount_foreign * exchange_rate) } else { discount_amount_foreign };
+    let total_tax = if is_foreign_currency { round2(total_tax_foreign * exchange_rate) } else { total_tax_foreign };
+    let total_amount = if is_foreign_currency { round2(total_amount_foreign * exchange_rate) } else { total_amount_foreign };
+    let total_cgst = if is_foreign_currency { round2(total_cgst * exchange_rate) } else { total_cgst };
+    let total_sgst = if is_foreign_currency { round2(total_sgst * exchange_rate) } else { total_sgst };
+    let total_igst = if is_foreign_currency { round2(total_igst * exchange_rate) } else { total_igst };
+    let grand_total = if is_foreign_currency { round2(grand_total_foreign * exchange_rate) } else { grand_total_foreign };
+
     let voucher_id = id;
     let (voucher_no, old_party_id): (String, Option<String>) = sqlx::query_as(
         "SELECT voucher_no, party_id FROM vouchers WHERE id = ? AND voucher_type = 'sales_invoice'",
@@ -2377,14 +2395,17 @@ pub async fn update_sales_invoice(
         "UPDATE vouchers 
          SET voucher_date = ?, party_id = ?, salesperson_id = ?, party_type = ?, reference = ?, subtotal = ?, 
              discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?,
-             tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, metadata = ?
+             tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, metadata = ?,
+             currency_id = ?, exchange_rate = ?, foreign_total = ?
          WHERE id = ?"
     )
     .bind(&invoice.voucher_date).bind(&invoice.customer_id).bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference)
     .bind(subtotal).bind(discount_rate).bind(discount_amount)
     .bind(total_tax).bind(total_amount).bind(&invoice.narration)
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
-    .bind(grand_total).bind(&metadata_json).bind(&voucher_id)
+    .bind(grand_total).bind(&metadata_json)
+    .bind(&invoice.currency_id).bind(exchange_rate).bind(grand_total_foreign)
+    .bind(&voucher_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     if let Some(old_id) = &old_party_id {
@@ -2663,6 +2684,26 @@ pub async fn update_sales_invoice(
             sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
                 .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(0.0).bind(amt)
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
+    }
+
+    if is_foreign_currency {
+        if let Some(ref cid) = invoice.currency_id {
+            let _ = sqlx::query(
+                "UPDATE journal_entries 
+                 SET foreign_debit = CASE WHEN debit > 0 THEN ROUND(debit / ?, 6) ELSE 0 END,
+                     foreign_credit = CASE WHEN credit > 0 THEN ROUND(credit / ?, 6) ELSE 0 END,
+                     currency_id = ?,
+                     exchange_rate = ?
+                 WHERE voucher_id = ?"
+            )
+            .bind(exchange_rate)
+            .bind(exchange_rate)
+            .bind(cid)
+            .bind(exchange_rate)
+            .bind(&voucher_id)
+            .execute(&mut *tx)
+            .await;
         }
     }
 

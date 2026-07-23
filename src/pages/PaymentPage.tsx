@@ -45,7 +45,7 @@ import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialo
 import BillAllocationDialog, { AllocationData } from '@/components/dialogs/BillAllocationDialog';
 import ChartOfAccountDialog from '@/components/dialogs/ChartOfAccountDialog';
 import { AccountGroup, Product, api } from '@/lib/tauri';
-import { useMoney } from '@/hooks/useMoney';
+import { useMoney, useForexMoney } from '@/hooks/useMoney';
 
 interface AccountData {
     id: number;
@@ -63,7 +63,16 @@ export default function PaymentPage() {
     const paymentState = useSelector((state: RootState) => state.payment);
     const user = useSelector((state: RootState) => state.auth.user);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
+    const companyProfile = useSelector((state: any) => state.companyProfile?.profile);
+    const isExportBusiness = true;
     const money = useMoney();
+
+    const [forexCurrencyId, setForexCurrencyId] = useState<string | null>(null);
+    const [forexCurrencyCode, setForexCurrencyCode] = useState<string>('');
+    const [forexCurrencySymbol, setForexCurrencySymbol] = useState<string>('');
+    const [forexExchangeRate, setForexExchangeRate] = useState<number>(1.0);
+    const forexMoney = useForexMoney(forexCurrencyCode, forexCurrencySymbol);
+    const displayMoney = isExportBusiness && forexCurrencyId ? forexMoney : money;
 
     const [payFromAccounts, setPayFromAccounts] = useState<AccountData[]>([]);
     const [payToLedgers, setPayToLedgers] = useState<LedgerAccount[]>([]);
@@ -85,6 +94,7 @@ export default function PaymentPage() {
     const [allocatingRowIndex, setAllocatingRowIndex] = useState<number | null>(null);
     const [focusedRowIndex, setFocusedRowIndex] = useState<number | null>(null);
     const [rowBalances, setRowBalances] = useState<Record<number, number>>({});
+    const [rowForeignBalances, setRowForeignBalances] = useState<Record<number, number>>({});
 
     const formRef = useRef<HTMLFormElement>(null);
     const payFromRef = useRef<HTMLDivElement>(null);
@@ -150,9 +160,31 @@ export default function PaymentPage() {
                 dispatch(updatePaymentItem({ index, data: { account_id: ledger.id } }));
 
                 // Fetch Balance
-                invoke<number>('get_account_balance', { accountId: ledger.id })
-                    .then(bal => setRowBalances(prev => ({ ...prev, [index]: bal })))
+                invoke<{ base_balance: number; foreign_balance: number }>('get_account_balance_info', { accountId: ledger.id })
+                    .then(info => {
+                        setRowBalances(prev => ({ ...prev, [index]: info.base_balance }));
+                        setRowForeignBalances(prev => ({ ...prev, [index]: info.foreign_balance }));
+                    })
                     .catch(console.error);
+
+                if (isExportBusiness) {
+                    invoke<{ id: string; code: string; name: string; symbol: string } | null>(
+                        'get_party_currency_info',
+                        { partyId: ledger.id }
+                    ).then(currencyInfo => {
+                        if (currencyInfo) {
+                            setForexCurrencyId(currencyInfo.id);
+                            setForexCurrencyCode(currencyInfo.code);
+                            setForexCurrencySymbol(currencyInfo.symbol);
+                        } else {
+                            setForexCurrencyId(null);
+                            setForexCurrencyCode('');
+                            setForexCurrencySymbol('');
+                        }
+                    }).catch(() => {
+                        setForexCurrencyId(null);
+                    });
+                }
             }
         }
 
@@ -221,7 +253,15 @@ export default function PaymentPage() {
                 return;
             }
 
-            await invoke('create_payment', { payment: { ...paymentState.form, items: paymentState.items, user_id: user?.id.toString() } });
+            await invoke('create_payment', {
+                payment: {
+                    ...paymentState.form,
+                    items: paymentState.items,
+                    user_id: user?.id.toString(),
+                    currency_id: isExportBusiness && forexCurrencyId ? forexCurrencyId : null,
+                    exchange_rate: isExportBusiness && forexCurrencyId ? forexExchangeRate : 1.0,
+                }
+            });
             toast.success('Payment saved successfully');
             dispatch(resetPaymentForm());
             handleAddItem();
@@ -253,6 +293,18 @@ export default function PaymentPage() {
             const payment = await invoke<any>('get_payment', { id });
             const items = await invoke<any[]>('get_payment_items', { voucherId: id });
 
+            if (payment.currency_id) {
+                setForexCurrencyId(payment.currency_id);
+                setForexCurrencyCode(payment.currency_code || '');
+                setForexCurrencySymbol(payment.currency_symbol || '');
+                setForexExchangeRate(payment.exchange_rate || 1.0);
+            } else {
+                setForexCurrencyId(null);
+                setForexCurrencyCode('');
+                setForexCurrencySymbol('');
+                setForexExchangeRate(1.0);
+            }
+
             // Populate Form
             dispatch(setPaymentCurrentVoucherNo(payment.voucher_no));
             dispatch(setPaymentAccount({ id: payment.account_id, name: payment.account_name }));
@@ -277,10 +329,11 @@ export default function PaymentPage() {
             }))));
 
             // Use totals from backend
+            const useForex = !!payment.currency_id;
             dispatch(setPaymentTotals({
-                subtotal: payment.subtotal || 0,
+                subtotal: useForex ? (payment.foreign_total || 0) : (payment.subtotal || 0),
                 tax: payment.tax_amount || 0,
-                grandTotal: payment.total_amount || 0
+                grandTotal: useForex ? (payment.foreign_total || 0) : (payment.total_amount || 0)
             }));
 
             dispatch(setPaymentMode('viewing'));
@@ -473,6 +526,7 @@ export default function PaymentPage() {
                     amountToAllocate={paymentState.items[allocatingRowIndex].amount || 0}
                     allocations={paymentState.items[allocatingRowIndex].allocations || []}
                     onConfirm={handleAllocationConfirm}
+                    moneyFormatter={isExportBusiness && forexCurrencyId ? forexMoney : undefined}
                 />
             )}
 
@@ -562,6 +616,7 @@ export default function PaymentPage() {
                         addItemLabel="Add Item (Ctrl+N)"
                         disableAdd={paymentState.mode === 'viewing'}
                         rowBalances={rowBalances}
+                        amountHeaderLabel={isExportBusiness && forexCurrencyId ? `Amount (${forexCurrencySymbol || forexCurrencyCode})` : 'Amount'}
                         onCreateLedger={(name, index) => {
                             setNewAccountName(name);
                             setCreatingForIndex(index);
@@ -578,7 +633,9 @@ export default function PaymentPage() {
                         footerRightContent={
                             focusedRowIndex !== null && rowBalances[focusedRowIndex] !== undefined ? (
                                 <div className={`text-base font-mono font-bold ${rowBalances[focusedRowIndex] >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                    Balance: {money(Math.abs(rowBalances[focusedRowIndex]), { minimumFractionDigits: 0, maximumFractionDigits: 0 })} {rowBalances[focusedRowIndex] >= 0 ? 'Dr' : 'Cr'}
+                                    Balance: {isExportBusiness && forexCurrencyId && rowForeignBalances[focusedRowIndex] !== undefined && rowForeignBalances[focusedRowIndex] !== 0
+                                        ? forexMoney(Math.abs(rowForeignBalances[focusedRowIndex]), { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+                                        : money(Math.abs(rowBalances[focusedRowIndex]), { minimumFractionDigits: 0, maximumFractionDigits: 0 })} {rowBalances[focusedRowIndex] >= 0 ? 'Dr' : 'Cr'}
                                 </div>
                             ) : null
                         }
@@ -587,12 +644,35 @@ export default function PaymentPage() {
                     {/* Totals */}
                     <div className="bg-card border rounded-lg p-3 shrink-0">
                         <div className="flex justify-between items-end">
-                            <div></div>
+                            <div>
+                                {isExportBusiness && forexCurrencyId && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-semibold">{forexCurrencyCode}</span>
+                                        <span className="text-xs text-muted-foreground">Exchange Rate: 1 {forexCurrencyCode} =</span>
+                                        <Input
+                                            type="number"
+                                            min="0.0001"
+                                            step="0.0001"
+                                            value={forexExchangeRate}
+                                            onChange={(e) => setForexExchangeRate(parseFloat(e.target.value) || 1.0)}
+                                            className="w-24 h-6 text-xs px-1"
+                                        />
+                                        <span className="text-xs text-muted-foreground">{money(1)?.replace('1.00','').trim() || 'INR'}</span>
+                                    </div>
+                                )}
+                            </div>
                             <div className="text-right">
                                 <div className="text-xs text-muted-foreground mb-1">Total Payment</div>
-                                <div className="text-lg font-mono font-bold">
-                                    {money(paymentState.totals.grandTotal)}
-                                </div>
+                                {isExportBusiness && forexCurrencyId ? (
+                                    <div>
+                                        <div className="text-lg font-mono font-bold">{forexMoney(paymentState.totals.grandTotal)}</div>
+                                        <div className="text-xs text-muted-foreground">{money(paymentState.totals.grandTotal * forexExchangeRate)}</div>
+                                    </div>
+                                ) : (
+                                    <div className="text-lg font-mono font-bold">
+                                        {money(paymentState.totals.grandTotal)}
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>

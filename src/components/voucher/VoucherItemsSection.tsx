@@ -350,8 +350,10 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     fullProducts = [],
     taxInclusive = false,
     isMarginSchemeInvoice = false,
+    moneyFormatter,
 }, ref) => {
-    const money = useMoney();
+    const defaultMoney = useMoney();
+    const money = moneyFormatter || defaultMoney;
     // Ref to the first product combobox
     const firstProductRef = useRef<HTMLButtonElement>(null);
 

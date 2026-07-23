@@ -60,10 +60,22 @@
         <span>{{reference_number}}</span>
     </div>
     {{/if}}
+    {{#unless is_cash}}
+    <div class="row">
+        <span>Old Balance:</span>
+        <span>{{format_currency old_balance}}</span>
+    </div>
+    {{/unless}}
     <div class="row total">
         <span>AMOUNT RECEIVED:</span>
         <span>{{format_currency grand_total}}</span>
     </div>
+    {{#unless is_cash}}
+    <div class="row" style="font-size: 11pt; font-weight: bold; margin-top: 2px; border: none !important;">
+        <span>Bal. Due:</span>
+        <span>{{format_currency balance_due}}</span>
+    </div>
+    {{/unless}}
 </div>
 
 <!-- [FOOTER] -->
