@@ -305,6 +305,7 @@ export interface VoucherItemsSectionProps {
     fullProducts?: TauriProduct[];
     taxInclusive?: boolean;
     isMarginSchemeInvoice?: boolean;
+    moneyFormatter?: (amount: number | null | undefined, options?: any) => string;
 }
 export interface VoucherItemsSectionRef {
     focusFirstProduct: () => void;

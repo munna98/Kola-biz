@@ -68,7 +68,7 @@ export default function ReceiptPage() {
     const user = useSelector((state: RootState) => state.auth.user);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
     const companyProfile = useSelector((state: any) => state.companyProfile?.profile);
-    const isExportBusiness = true;
+    const isExportBusiness = companyProfile?.business_type === 'Export Business';
     const money = useMoney();
 
     const [forexCurrencyId, setForexCurrencyId] = useState<string | null>(null);
@@ -76,7 +76,6 @@ export default function ReceiptPage() {
     const [forexCurrencySymbol, setForexCurrencySymbol] = useState<string>('');
     const [forexExchangeRate, setForexExchangeRate] = useState<number>(1.0);
     const _forexMoney = useForexMoney(forexCurrencyCode, forexCurrencySymbol);
-    const displayMoney = isExportBusiness && forexCurrencyId ? _forexMoney : money;
 
     const [depositToAccounts, setDepositToAccounts] = useState<AccountData[]>([]);
     const [receivedFromLedgers, setReceivedFromLedgers] = useState<LedgerAccount[]>([]);

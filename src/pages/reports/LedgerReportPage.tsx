@@ -132,11 +132,6 @@ export default function LedgerReportPage() {
     ? entries.filter(e => e.narration !== 'Forex Gain Adjustment' && e.narration !== 'Forex Loss Adjustment')
     : entries;
 
-  const formatForeign = (amount: number | undefined | null) => {
-    if (amount === undefined || amount === null || amount === 0) return '-';
-    return `${foreignCurrencySymbol}${Math.abs(amount).toFixed(2)}`;
-  };
-
   const selectedAccountData = accounts.find(a => a.id === selectedAccount);
 
   const handlePrint = async () => {

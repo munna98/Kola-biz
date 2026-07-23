@@ -64,7 +64,7 @@ export default function PaymentPage() {
     const user = useSelector((state: RootState) => state.auth.user);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
     const companyProfile = useSelector((state: any) => state.companyProfile?.profile);
-    const isExportBusiness = true;
+    const isExportBusiness = companyProfile?.business_type === 'Export Business';
     const money = useMoney();
 
     const [forexCurrencyId, setForexCurrencyId] = useState<string | null>(null);
@@ -72,7 +72,6 @@ export default function PaymentPage() {
     const [forexCurrencySymbol, setForexCurrencySymbol] = useState<string>('');
     const [forexExchangeRate, setForexExchangeRate] = useState<number>(1.0);
     const forexMoney = useForexMoney(forexCurrencyCode, forexCurrencySymbol);
-    const displayMoney = isExportBusiness && forexCurrencyId ? forexMoney : money;
 
     const [payFromAccounts, setPayFromAccounts] = useState<AccountData[]>([]);
     const [payToLedgers, setPayToLedgers] = useState<LedgerAccount[]>([]);

@@ -86,7 +86,7 @@ export default function SalesInvoicePage() {
   const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
   const user = useSelector((state: RootState) => state.auth.user);
   const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
-  const isExportBusiness = true;
+  const isExportBusiness = companyProfile.business_type === 'Export Business';
   const money = useMoney();
   const currencyLabel = useCurrencyLabel();
   const forexMoney = useForexMoney(salesState.foreign_currency_code, salesState.foreign_currency_symbol);
@@ -1506,7 +1506,7 @@ export default function SalesInvoicePage() {
                       const party = parties.find((p) => p.id === value);
                       if (party) {
                         dispatch(setSalesCustomer({ id: party.id, name: party.name, type: party.type }));
-                        markUnsaved();
+                        dispatch(setSalesHasUnsavedChanges(true));
 
                         // Auto-focus first product after party selection
                         setTimeout(() => {
