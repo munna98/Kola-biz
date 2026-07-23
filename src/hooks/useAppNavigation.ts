@@ -65,8 +65,7 @@ export function useAppNavigation() {
 
   const goForward = () => guardedAction(() => dispatch(goForwardAction()));
 
-  // Ctrl+Left = Go Back, Ctrl+Right = Go Forward
-  // (uses Ctrl to avoid conflict with Alt+Left/Right used for within-voucher record navigation)
+  // Ctrl+Left = Go Back, Ctrl+Right = Go Forward, Esc = Go Back (if no overlay is open)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.code === 'ArrowLeft') {
@@ -76,6 +75,19 @@ export function useAppNavigation() {
       if (e.ctrlKey && e.code === 'ArrowRight') {
         e.preventDefault();
         if (canGoForward) goForward();
+      }
+      if (e.code === 'Escape' || e.key === 'Escape') {
+        if (e.defaultPrevented) return;
+        // Don't go back if an open modal, sheet, dialog, menu, or listbox is present
+        const openOverlay = document.querySelector(
+          '[role="dialog"], [data-state="open"], [role="menu"], [role="listbox"]'
+        );
+        if (openOverlay) return;
+
+        if (canGoBack) {
+          e.preventDefault();
+          goBack();
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);

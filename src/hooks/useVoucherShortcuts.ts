@@ -97,6 +97,8 @@ export function useVoucherShortcuts({
 
             // Escape: Close shortcuts panel
             if (e.code === 'Escape' && handlers.showShortcuts) {
+                e.preventDefault();
+                e.stopPropagation();
                 handlers.onCloseShortcuts();
             }
 
