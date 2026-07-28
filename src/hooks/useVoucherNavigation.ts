@@ -34,14 +34,22 @@ export function useVoucherNavigation({
     const [nextVoucherNo, setNextVoucherNo] = useState<string | undefined>(undefined);
     const [lastVoucherId, setLastVoucherId] = useState<string | null>(null);
 
+    const fetchNewModeData = async () => {
+        try {
+            const [previewNo, lastId] = await Promise.all([
+                invoke<string>('get_next_voucher_number_preview', { voucherType }),
+                invoke<string | null>('get_last_voucher_id', { voucherType })
+            ]);
+            setNextVoucherNo(previewNo);
+            setLastVoucherId(lastId);
+        } catch (err) {
+            console.error('Failed to fetch new mode data:', err);
+        }
+    };
+
     useEffect(() => {
         if (mode === 'new' && !currentVoucherId) {
-            invoke<string>('get_next_voucher_number_preview', { voucherType })
-                .then(setNextVoucherNo)
-                .catch(() => setNextVoucherNo(undefined));
-            invoke<string | null>('get_last_voucher_id', { voucherType })
-                .then(setLastVoucherId)
-                .catch(() => setLastVoucherId(null));
+            fetchNewModeData();
         } else {
             // Clear once we leave new mode
             setNextVoucherNo(undefined);
@@ -141,6 +149,7 @@ export function useVoucherNavigation({
             previousId: null,
             nextId: null
         }));
+        fetchNewModeData();
     };
 
     const handleEdit = () => {
@@ -211,6 +220,7 @@ export function useVoucherNavigation({
         // New-mode extras
         nextVoucherNo,
         hasLastVoucher,
+        refreshNewModeData: fetchNewModeData,
         handleNavigateToLast: async () => {
             if (!lastVoucherId) return;
             if (mode === 'editing' && hasUnsavedChanges) {
