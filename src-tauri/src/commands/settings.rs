@@ -189,7 +189,11 @@ pub async fn get_default_printer() -> Result<Option<String>, String> {
     }
 }
 
-/// Print HTML content silently to the default printer (Windows)
+/// Print HTML content silently to the default printer (Windows).
+/// Strategy:
+///   1. Try headless Microsoft Edge (or Chrome) with --print-to-default-printer
+///      (and optionally --printer-name=<name>). No window, no dialog.
+///   2. Fallback: PowerShell Out-Printer (renders raw text, but avoids any pop-up).
 #[tauri::command]
 pub async fn print_silently(
     app_handle: tauri::AppHandle,
@@ -199,60 +203,87 @@ pub async fn print_silently(
     use std::io::Write;
     use std::process::Command;
 
-    // Get temp directory
+    // Write invoice HTML to a temp file
     let temp_dir = app_handle
         .path()
         .temp_dir()
         .map_err(|e| format!("Failed to get temp dir: {}", e))?;
 
-    // Create temp HTML file
     let temp_file = temp_dir.join("print_temp.html");
-    let mut file = std::fs::File::create(&temp_file)
-        .map_err(|e| format!("Failed to create temp file: {}", e))?;
-    file.write_all(html_content.as_bytes())
-        .map_err(|e| format!("Failed to write temp file: {}", e))?;
+    {
+        let mut file = std::fs::File::create(&temp_file)
+            .map_err(|e| format!("Failed to create temp file: {}", e))?;
+        file.write_all(html_content.as_bytes())
+            .map_err(|e| format!("Failed to write temp file: {}", e))?;
+    }
 
     #[cfg(target_os = "windows")]
     {
-        // Use PowerShell to print the HTML file
-        // This uses the default browser's print functionality
-        let printer = printer_name.unwrap_or_else(|| "".to_string());
+        let printer = printer_name.unwrap_or_default();
+        let temp_path = temp_file.to_str().unwrap().to_string();
+        let file_url = format!("file:///{}", temp_path.replace('\\', "/"));
 
-        // If no specific printer, use system default - print via rundll32
-        if printer.is_empty() {
-            // Open print dialog (not truly silent, but uses system default)
-            let result = Command::new("rundll32")
-                .creation_flags(CREATE_NO_WINDOW)
-                .args(["mshtml.dll,PrintHTML", temp_file.to_str().unwrap()])
-                .spawn();
+        // --- Attempt 1: Headless Edge or Chrome ---
+        let browser_candidates = [
+            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+            r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+            r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+        ];
 
-            match result {
-                Ok(_) => Ok(()),
-                Err(e) => Err(format!("Print failed: {}", e)),
+        let browser = browser_candidates
+            .iter()
+            .find(|p| std::path::Path::new(p).exists())
+            .copied();
+
+        if let Some(browser_path) = browser {
+            let mut args: Vec<String> = vec![
+                "--headless=new".to_string(),
+                "--disable-gpu".to_string(),
+                "--run-all-compositor-stages-before-draw".to_string(),
+                "--disable-extensions".to_string(),
+                "--no-first-run".to_string(),
+                "--no-default-browser-check".to_string(),
+                "--print-to-default-printer".to_string(),
+            ];
+
+            if !printer.is_empty() {
+                args.push(format!("--printer-name={}", printer));
             }
+
+            args.push(file_url.clone());
+
+            match Command::new(browser_path)
+                .creation_flags(CREATE_NO_WINDOW)
+                .args(&args)
+                .spawn()
+            {
+                Ok(_) => return Ok(()),
+                Err(e) => {
+                    eprintln!("Headless browser print failed, falling back to PowerShell: {}", e);
+                }
+            }
+        }
+
+        // --- Fallback: PowerShell Out-Printer ---
+        let escaped_path = temp_path.replace('\'', "''");
+        let ps_script = if printer.is_empty() {
+            format!("Get-Content -Raw '{}' | Out-Printer", escaped_path)
         } else {
-            // Print to specific printer using PowerShell
-            let ps_script = format!(
-                r#"
-                $ie = New-Object -ComObject InternetExplorer.Application
-                $ie.Navigate('{}')
-                while ($ie.Busy) {{ Start-Sleep -Milliseconds 100 }}
-                $ie.ExecWB(6, 2)
-                Start-Sleep -Seconds 2
-                $ie.Quit()
-                "#,
-                temp_file.to_str().unwrap().replace("\\", "/")
-            );
+            let escaped_printer = printer.replace('\'', "''");
+            format!(
+                "Get-Content -Raw '{}' | Out-Printer -Name '{}'",
+                escaped_path, escaped_printer
+            )
+        };
 
-            let result = Command::new("powershell")
-                .creation_flags(CREATE_NO_WINDOW)
-                .args(["-Command", &ps_script])
-                .spawn();
-
-            match result {
-                Ok(_) => Ok(()),
-                Err(e) => Err(format!("Print failed: {}", e)),
-            }
+        match Command::new("powershell")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+            .spawn()
+        {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Print failed: {}", e)),
         }
     }
 
@@ -261,6 +292,7 @@ pub async fn print_silently(
         Err("Silent printing is only supported on Windows".to_string())
     }
 }
+
 
 /// Get voucher settings for a specific voucher type
 #[tauri::command]

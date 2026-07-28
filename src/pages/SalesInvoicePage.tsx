@@ -681,7 +681,7 @@ export default function SalesInvoicePage() {
         const isCashBankParty = customer?.group === 'Cash' || customer?.group === 'Bank Account';
         setSavedIsCashBankParty(isCashBankParty);
 
-        // Always show payment dialog (for Cash parties: allows split; for regular: normal payment)
+        // Always show payment dialog on edit (for Cash parties: allows split; for regular: normal payment)
         if (voucherSettings?.autoPrint) {
           autoPrintPending.current = true;
         }
@@ -742,26 +742,18 @@ export default function SalesInvoicePage() {
         const isCashBankParty = customer?.group === 'Cash' || customer?.group === 'Bank Account';
         setSavedIsCashBankParty(isCashBankParty);
 
-        if (isCashBankParty) {
-          // Cash/Bank party: always show payment modal for split opportunity
+        // Respect showPaymentModal setting for ALL party types including Cash/Bank
+        const shouldShowPaymentModal = voucherSettings?.showPaymentModal !== false;
+
+        if (shouldShowPaymentModal) {
           if (voucherSettings?.autoPrint) {
             autoPrintPending.current = true;
           }
           setShowQuickPayment(true);
         } else {
-          // Regular party: check payment modal setting
-          const shouldShowPaymentModal = voucherSettings?.showPaymentModal !== false;
-
-          if (shouldShowPaymentModal) {
-            if (voucherSettings?.autoPrint) {
-              autoPrintPending.current = true;
-            }
-            setShowQuickPayment(true);
-          } else {
-            // Payment modal disabled for non-cash parties: invoice remains unpaid
-            if (voucherSettings?.autoPrint) {
-              setTimeout(() => printVoucher({ voucherId: newInvoiceId, voucherType: 'sales_invoice', filename: newInvoice.voucher_no }), 100);
-            }
+          // Payment modal disabled: invoice remains unpaid (auto-paid for Cash parties by backend or stays unpaid)
+          if (voucherSettings?.autoPrint) {
+            setTimeout(() => printVoucher({ voucherId: newInvoiceId, voucherType: 'sales_invoice', filename: newInvoice.voucher_no }), 100);
           }
         }
       }
