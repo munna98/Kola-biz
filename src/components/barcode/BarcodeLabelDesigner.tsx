@@ -6,7 +6,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { IconGripVertical, IconRefresh } from '@tabler/icons-react';
+import {
+    IconGripVertical, IconRefresh,
+    IconBold, IconItalic,
+    IconAlignLeft, IconAlignCenter, IconAlignRight,
+} from '@tabler/icons-react';
 import { useMoney } from '@/hooks/useMoney';
 
 // ── Types ──
@@ -23,7 +27,10 @@ export interface LabelElement {
     fontFamily: string;
     fontSize: number;
     fontWeight: 'normal' | 'bold';
+    fontStyle?: 'normal' | 'italic';
     textAlign: 'left' | 'center' | 'right';
+    color?: string;
+    letterSpacing?: number;
     barcodeLineWidth?: number;
     barcodeHeight?: number;
     showBarcodeText?: boolean;
@@ -39,9 +46,9 @@ export interface BarcodeDesignerSettings {
     barcodePrinter?: string;
     elements: LabelElement[];
     // ── Multi-column roll layout ──
-    columnsPerRow: number;      // how many labels fit across the roll (1 = single column)
-    horizontalGap: number;      // mm gap between labels in the same row
-    verticalGap: number;        // mm gap between rows
+    columnsPerRow: number;
+    horizontalGap: number;
+    verticalGap: number;
 }
 
 // ── Defaults ──
@@ -53,49 +60,57 @@ export function buildDefaultElements(companyName?: string, customText?: string):
         {
             id: 'companyName', label: 'Company Name', type: 'text', enabled: true,
             x: 2, y: 1, width: 46, height: 4,
-            fontFamily: 'Arial', fontSize: 7, fontWeight: 'bold', textAlign: 'center',
+            fontFamily: 'Arial', fontSize: 7, fontWeight: 'bold', fontStyle: 'normal',
+            textAlign: 'center', color: '#000000', letterSpacing: 0,
             content: companyName || '', dataField: undefined,
         },
         {
             id: 'barcode', label: 'Barcode', type: 'barcode', enabled: true,
             x: 5, y: 5, width: 40, height: 10,
-            fontFamily: 'Arial', fontSize: 7, fontWeight: 'normal', textAlign: 'center',
+            fontFamily: 'Arial', fontSize: 7, fontWeight: 'normal', fontStyle: 'normal',
+            textAlign: 'center', color: '#000000', letterSpacing: 0,
             barcodeLineWidth: 1.5, barcodeHeight: 30, showBarcodeText: false,
         },
         {
             id: 'productCode', label: 'Product Code', type: 'text', enabled: true,
             x: 2, y: 15.5, width: 46, height: 3,
-            fontFamily: 'Arial', fontSize: 8, fontWeight: 'bold', textAlign: 'center',
+            fontFamily: 'Arial', fontSize: 8, fontWeight: 'bold', fontStyle: 'normal',
+            textAlign: 'center', color: '#000000', letterSpacing: 0,
             dataField: 'product.code',
         },
         {
             id: 'productName', label: 'Product Name', type: 'text', enabled: true,
             x: 2, y: 18.5, width: 46, height: 3,
-            fontFamily: 'Arial', fontSize: 6, fontWeight: 'normal', textAlign: 'center',
+            fontFamily: 'Arial', fontSize: 6, fontWeight: 'normal', fontStyle: 'normal',
+            textAlign: 'center', color: '#000000', letterSpacing: 0,
             dataField: 'product.name',
         },
         {
             id: 'salesRate', label: 'Sales Rate', type: 'text', enabled: true,
             x: 2, y: 21, width: 46, height: 3,
-            fontFamily: 'Arial', fontSize: 7, fontWeight: 'bold', textAlign: 'center',
+            fontFamily: 'Arial', fontSize: 7, fontWeight: 'bold', fontStyle: 'normal',
+            textAlign: 'center', color: '#000000', letterSpacing: 0,
             dataField: 'product.salesRate',
         },
         {
             id: 'mrp', label: 'MRP', type: 'text', enabled: false,
             x: 2, y: 21, width: 46, height: 3,
-            fontFamily: 'Arial', fontSize: 7, fontWeight: 'bold', textAlign: 'center',
+            fontFamily: 'Arial', fontSize: 7, fontWeight: 'bold', fontStyle: 'normal',
+            textAlign: 'center', color: '#000000', letterSpacing: 0,
             dataField: 'product.mrp',
         },
         {
             id: 'customText1', label: 'Custom Text 1', type: 'text', enabled: false,
             x: 2, y: 23, width: 46, height: 2.5,
-            fontFamily: 'Arial', fontSize: 5, fontWeight: 'normal', textAlign: 'center',
+            fontFamily: 'Arial', fontSize: 5, fontWeight: 'normal', fontStyle: 'normal',
+            textAlign: 'center', color: '#000000', letterSpacing: 0,
             content: customText || '',
         },
         {
             id: 'customText2', label: 'Custom Text 2', type: 'text', enabled: false,
             x: 2, y: 23, width: 46, height: 2.5,
-            fontFamily: 'Arial', fontSize: 5, fontWeight: 'normal', textAlign: 'center',
+            fontFamily: 'Arial', fontSize: 5, fontWeight: 'normal', fontStyle: 'normal',
+            textAlign: 'center', color: '#000000', letterSpacing: 0,
             content: '',
         },
     ];
@@ -175,6 +190,175 @@ const SAMPLE_PRODUCT = {
     mrp: 1099.00,
 };
 
+// ── Formatting Toolbar ──
+
+interface FormattingToolbarProps {
+    element: LabelElement | null;
+    onUpdate: (updates: Partial<LabelElement>) => void;
+    onReset: () => void;
+}
+
+function FormattingToolbar({ element, onUpdate, onReset }: FormattingToolbarProps) {
+    const noSelection = !element;
+    const isBarcode = element?.type === 'barcode';
+    // Text-only controls are disabled for barcode elements
+    const textOnly = noSelection || isBarcode;
+
+    return (
+        <div
+            className={`flex items-center gap-1 flex-wrap p-2 rounded-lg border transition-all duration-200 ${
+                noSelection
+                    ? 'bg-muted/20 border-dashed border-muted-foreground/25'
+                    : 'bg-muted/40 border-border shadow-sm'
+            }`}
+        >
+            {/* "Aa" badge */}
+            <span
+                className={`text-sm font-bold select-none px-1.5 rounded transition-colors ${
+                    noSelection ? 'text-muted-foreground/40' : 'text-foreground'
+                }`}
+                style={{ fontFamily: 'serif', letterSpacing: '-0.5px' }}
+            >
+                Aa
+            </span>
+
+            {/* Idle hint */}
+            {noSelection ? (
+                <span className="text-xs text-muted-foreground/60 italic ml-1">
+                    Click any element on the canvas to style it
+                </span>
+            ) : (
+                <>
+                    {/* ── Font Family ── */}
+                    <Select
+                        value={element?.fontFamily || 'Arial'}
+                        onValueChange={v => onUpdate({ fontFamily: v })}
+                        disabled={noSelection}
+                    >
+                        <SelectTrigger className="h-7 text-xs w-[130px]">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                            {FONTS.map(f => (
+                                <SelectItem key={f} value={f} className="text-xs" style={{ fontFamily: f }}>
+                                    {f}
+                                </SelectItem>
+                            ))}
+                        </SelectContent>
+                    </Select>
+
+                    {/* ── Font Size ── */}
+                    <Input
+                        type="number" min={4} max={36} step={0.5}
+                        value={element?.fontSize ?? 7}
+                        onChange={e => onUpdate({ fontSize: Number(e.target.value) || 7 })}
+                        className="h-7 text-xs w-16"
+                        title="Font size (pt)"
+                        disabled={noSelection}
+                    />
+
+                    <Divider />
+
+                    {/* ── Bold ── */}
+                    <Button
+                        variant={element?.fontWeight === 'bold' ? 'default' : 'ghost'}
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => onUpdate({ fontWeight: element?.fontWeight === 'bold' ? 'normal' : 'bold' })}
+                        disabled={textOnly}
+                        title="Bold"
+                    >
+                        <IconBold size={14} />
+                    </Button>
+
+                    {/* ── Italic ── */}
+                    <Button
+                        variant={element?.fontStyle === 'italic' ? 'default' : 'ghost'}
+                        size="sm"
+                        className="h-7 w-7 p-0"
+                        onClick={() => onUpdate({ fontStyle: element?.fontStyle === 'italic' ? 'normal' : 'italic' })}
+                        disabled={textOnly}
+                        title="Italic"
+                    >
+                        <IconItalic size={14} />
+                    </Button>
+
+                    <Divider />
+
+                    {/* ── Alignment ── */}
+                    {(['left', 'center', 'right'] as const).map(align => (
+                        <Button
+                            key={align}
+                            variant={element?.textAlign === align ? 'default' : 'ghost'}
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={() => onUpdate({ textAlign: align })}
+                            disabled={textOnly}
+                            title={`Align ${align}`}
+                        >
+                            {align === 'left'   ? <IconAlignLeft   size={14} /> :
+                             align === 'center' ? <IconAlignCenter size={14} /> :
+                                                  <IconAlignRight  size={14} />}
+                        </Button>
+                    ))}
+
+                    <Divider />
+
+                    {/* ── Text Color ── */}
+                    <div
+                        className={`flex items-center gap-1.5 ${textOnly ? 'opacity-40 pointer-events-none' : ''}`}
+                        title="Text color"
+                    >
+                        <span className="text-xs text-muted-foreground">Color</span>
+                        <div className="relative">
+                            <input
+                                type="color"
+                                value={element?.color || '#000000'}
+                                onChange={e => onUpdate({ color: e.target.value })}
+                                disabled={textOnly}
+                                className="h-7 w-10 rounded border border-input cursor-pointer p-0.5 bg-background"
+                                title="Text color"
+                            />
+                        </div>
+                    </div>
+
+                    <Divider />
+
+                    {/* ── Letter Spacing ── */}
+                    <div
+                        className={`flex items-center gap-1.5 ${textOnly ? 'opacity-40 pointer-events-none' : ''}`}
+                    >
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">Spacing</span>
+                        <Input
+                            type="number" min={-2} max={10} step={0.5}
+                            value={element?.letterSpacing ?? 0}
+                            onChange={e => onUpdate({ letterSpacing: Number(e.target.value) })}
+                            className="h-7 text-xs w-14"
+                            disabled={textOnly}
+                            title="Letter spacing (px)"
+                        />
+                    </div>
+                </>
+            )}
+
+            {/* ── Reset ── */}
+            <Button
+                variant="ghost" size="sm"
+                className={`h-7 w-7 p-0 ml-auto transition-opacity ${noSelection ? 'opacity-30' : ''}`}
+                onClick={onReset}
+                title="Reset all elements to defaults"
+            >
+                <IconRefresh size={14} />
+            </Button>
+        </div>
+    );
+}
+
+/** Thin vertical divider for the toolbar */
+function Divider() {
+    return <div className="w-px h-5 bg-border mx-0.5 shrink-0" />;
+}
+
 // ── Component ──
 
 interface BarcodeLabelDesignerProps {
@@ -196,6 +380,10 @@ export default function BarcodeLabelDesigner({ settings, onChange }: BarcodeLabe
             ),
         });
     }, [settings, onChange]);
+
+    const updateSelectedElement = useCallback((updates: Partial<LabelElement>) => {
+        if (selectedId) updateElement(selectedId, updates);
+    }, [selectedId, updateElement]);
 
     // ── Arrow key handler for fine positioning ──
     useEffect(() => {
@@ -244,234 +432,202 @@ export default function BarcodeLabelDesigner({ settings, onChange }: BarcodeLabe
     const canvasH = settings.labelHeight * SCALE;
 
     return (
-        <div className="flex gap-4 h-full min-h-0">
-            {/* ── Left: Canvas ── */}
-            <div className="flex-1 flex flex-col items-center gap-3 min-w-0">
-                <div className="text-xs text-muted-foreground">
-                    Canvas ({settings.labelWidth}mm × {settings.labelHeight}mm) — click an element to select, drag to reposition
-                </div>
-                <div
-                    ref={canvasRef}
-                    className="relative bg-white border-2 border-dashed border-gray-300 shadow-md rounded"
-                    style={{ width: canvasW, height: canvasH, minWidth: canvasW, minHeight: canvasH }}
-                    onClick={(e) => { if (e.target === e.currentTarget) setSelectedId(null); }}
-                >
-                    {settings.elements.filter(el => el.enabled).map(el => (
-                        <DesignerElement
-                            key={el.id}
-                            element={el}
-                            selected={el.id === selectedId}
-                            scale={SCALE}
-                            barcodeFormat={settings.barcodeFormat}
-                            onSelect={() => setSelectedId(el.id)}
-                            onUpdate={(updates) => updateElement(el.id, updates)}
-                        />
-                    ))}
-                </div>
+        <div className="flex flex-col gap-3 h-full min-h-0">
 
-                {/* Label dimensions */}
-                <div className="flex items-center gap-3 text-sm">
-                    <Label className="text-xs">W:</Label>
-                    <Input
-                        type="number" min={20} max={120} step={1}
-                        value={settings.labelWidth}
-                        onChange={e => onChange({ ...settings, labelWidth: Number(e.target.value) || 50 })}
-                        className="w-16 h-7 text-xs"
-                    />
-                    <span className="text-xs text-muted-foreground">mm</span>
-                    <Label className="text-xs">H:</Label>
-                    <Input
-                        type="number" min={10} max={80} step={1}
-                        value={settings.labelHeight}
-                        onChange={e => onChange({ ...settings, labelHeight: Number(e.target.value) || 25 })}
-                        className="w-16 h-7 text-xs"
-                    />
-                    <span className="text-xs text-muted-foreground">mm</span>
-                    <Label className="text-xs">Pad:</Label>
-                    <Input
-                        type="number" min={0} max={5} step={0.5}
-                        value={settings.labelPadding}
-                        onChange={e => onChange({ ...settings, labelPadding: Number(e.target.value) || 0 })}
-                        className="w-14 h-7 text-xs"
-                    />
-                    <span className="text-xs text-muted-foreground">mm</span>
-                </div>
-            </div>
+            {/* ── Formatting Toolbar — always visible ── */}
+            <FormattingToolbar
+                element={selectedElement}
+                onUpdate={updateSelectedElement}
+                onReset={handleReset}
+            />
 
-            {/* ── Right: Properties + Element List ── */}
-            <div className="w-64 shrink-0 flex flex-col gap-3 overflow-y-auto">
-                {/* Properties panel */}
-                {selectedElement ? (
-                    <div className="bg-card border rounded-lg p-3 space-y-3">
-                        <div className="flex items-center justify-between">
-                            <h4 className="text-sm font-semibold">{selectedElement.label}</h4>
-                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={handleReset} title="Reset all">
-                                <IconRefresh size={14} />
-                            </Button>
-                        </div>
+            {/* ── Canvas + Right Panel ── */}
+            <div className="flex gap-4 h-full min-h-0">
 
-                        {/* Content (for static text) */}
-                        {selectedElement.type === 'text' && !selectedElement.dataField && (
-                            <div className="space-y-1">
-                                <Label className="text-xs">Content</Label>
-                                <Input
-                                    value={selectedElement.content || ''}
-                                    onChange={e => updateElement(selectedElement.id, { content: e.target.value })}
-                                    className="h-7 text-xs"
-                                    placeholder="Enter text..."
-                                />
-                            </div>
-                        )}
-
-                        {/* Font family */}
-                        <div className="space-y-1">
-                            <Label className="text-xs">Font</Label>
-                            <Select value={selectedElement.fontFamily} onValueChange={v => updateElement(selectedElement.id, { fontFamily: v })}>
-                                <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                                <SelectContent>
-                                    {FONTS.map(f => <SelectItem key={f} value={f} className="text-xs">{f}</SelectItem>)}
-                                </SelectContent>
-                            </Select>
-                        </div>
-
-                        {/* Font size + weight */}
-                        <div className="flex gap-2">
-                            <div className="flex-1 space-y-1">
-                                <Label className="text-xs">Size (pt)</Label>
-                                <Input type="number" min={4} max={24} step={0.5}
-                                    value={selectedElement.fontSize}
-                                    onChange={e => updateElement(selectedElement.id, { fontSize: Number(e.target.value) || 7 })}
-                                    className="h-7 text-xs"
-                                />
-                            </div>
-                            <div className="flex-1 space-y-1">
-                                <Label className="text-xs">Weight</Label>
-                                <Select value={selectedElement.fontWeight} onValueChange={v => updateElement(selectedElement.id, { fontWeight: v as 'normal' | 'bold' })}>
-                                    <SelectTrigger className="h-7 text-xs"><SelectValue /></SelectTrigger>
-                                    <SelectContent>
-                                        <SelectItem value="normal" className="text-xs">Normal</SelectItem>
-                                        <SelectItem value="bold" className="text-xs">Bold</SelectItem>
-                                    </SelectContent>
-                                </Select>
-                            </div>
-                        </div>
-
-                        {/* Text align */}
-                        <div className="space-y-1">
-                            <Label className="text-xs">Align</Label>
-                            <div className="flex gap-1">
-                                {(['left', 'center', 'right'] as const).map(a => (
-                                    <Button key={a} variant={selectedElement.textAlign === a ? 'default' : 'outline'}
-                                        size="sm" className="h-7 flex-1 text-xs px-0"
-                                        onClick={() => updateElement(selectedElement.id, { textAlign: a })}
-                                    >
-                                        {a === 'left' ? 'L' : a === 'center' ? 'C' : 'R'}
-                                    </Button>
-                                ))}
-                            </div>
-                        </div>
-
-                        {/* Position X/Y */}
-                        <div className="flex gap-2">
-                            <div className="flex-1 space-y-1">
-                                <Label className="text-xs">X (mm)</Label>
-                                <Input type="number" min={0} step={0.5}
-                                    value={selectedElement.x}
-                                    onChange={e => updateElement(selectedElement.id, { x: Number(e.target.value) || 0 })}
-                                    className="h-7 text-xs"
-                                />
-                            </div>
-                            <div className="flex-1 space-y-1">
-                                <Label className="text-xs">Y (mm)</Label>
-                                <Input type="number" min={0} step={0.5}
-                                    value={selectedElement.y}
-                                    onChange={e => updateElement(selectedElement.id, { y: Number(e.target.value) || 0 })}
-                                    className="h-7 text-xs"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Size W/H */}
-                        <div className="flex gap-2">
-                            <div className="flex-1 space-y-1">
-                                <Label className="text-xs">W (mm)</Label>
-                                <Input type="number" min={3} step={0.5}
-                                    value={selectedElement.width}
-                                    onChange={e => updateElement(selectedElement.id, { width: Number(e.target.value) || 10 })}
-                                    className="h-7 text-xs"
-                                />
-                            </div>
-                            <div className="flex-1 space-y-1">
-                                <Label className="text-xs">H (mm)</Label>
-                                <Input type="number" min={2} step={0.5}
-                                    value={selectedElement.height}
-                                    onChange={e => updateElement(selectedElement.id, { height: Number(e.target.value) || 4 })}
-                                    className="h-7 text-xs"
-                                />
-                            </div>
-                        </div>
-
-                        {/* Barcode-specific */}
-                        {selectedElement.type === 'barcode' && (
-                            <>
-                                <div className="flex gap-2">
-                                    <div className="flex-1 space-y-1">
-                                        <Label className="text-xs">Line Width</Label>
-                                        <Input type="number" min={0.5} max={4} step={0.25}
-                                            value={selectedElement.barcodeLineWidth || 1.5}
-                                            onChange={e => updateElement(selectedElement.id, { barcodeLineWidth: Number(e.target.value) || 1.5 })}
-                                            className="h-7 text-xs"
-                                        />
-                                    </div>
-                                    <div className="flex-1 space-y-1">
-                                        <Label className="text-xs">Bar Height</Label>
-                                        <Input type="number" min={10} max={80} step={5}
-                                            value={selectedElement.barcodeHeight || 30}
-                                            onChange={e => updateElement(selectedElement.id, { barcodeHeight: Number(e.target.value) || 30 })}
-                                            className="h-7 text-xs"
-                                        />
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <Checkbox
-                                        id="showBarcodeText"
-                                        checked={selectedElement.showBarcodeText || false}
-                                        onCheckedChange={v => updateElement(selectedElement.id, { showBarcodeText: v as boolean })}
-                                    />
-                                    <label htmlFor="showBarcodeText" className="text-xs">Show text under barcode</label>
-                                </div>
-                            </>
-                        )}
+                {/* ── Left: Canvas ── */}
+                <div className="flex-1 flex flex-col items-center gap-3 min-w-0">
+                    <div className="text-xs text-muted-foreground">
+                        Canvas ({settings.labelWidth}mm × {settings.labelHeight}mm) — click to select &amp; style, drag to reposition
                     </div>
-                ) : (
-                    <div className="bg-card border rounded-lg p-3 text-xs text-muted-foreground text-center">
-                        Click an element on the canvas to edit its properties
-                    </div>
-                )}
-
-                {/* Element list */}
-                <div className="bg-card border rounded-lg p-3 space-y-1.5">
-                    <h4 className="text-sm font-semibold mb-2">Elements</h4>
-                    {settings.elements.map(el => (
-                        <div
-                            key={el.id}
-                            className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-xs transition-colors ${
-                                el.id === selectedId
-                                    ? 'bg-primary/10 border border-primary/30'
-                                    : 'hover:bg-muted/50'
-                            }`}
-                            onClick={() => setSelectedId(el.id)}
-                        >
-                            <Checkbox
-                                checked={el.enabled}
-                                onCheckedChange={v => updateElement(el.id, { enabled: v as boolean })}
-                                onClick={e => e.stopPropagation()}
-                                className="h-3.5 w-3.5"
+                    <div
+                        ref={canvasRef}
+                        className="relative bg-white border-2 border-dashed border-gray-300 shadow-md rounded"
+                        style={{ width: canvasW, height: canvasH, minWidth: canvasW, minHeight: canvasH }}
+                        onClick={(e) => { if (e.target === e.currentTarget) setSelectedId(null); }}
+                    >
+                        {settings.elements.filter(el => el.enabled).map(el => (
+                            <DesignerElement
+                                key={el.id}
+                                element={el}
+                                selected={el.id === selectedId}
+                                scale={SCALE}
+                                barcodeFormat={settings.barcodeFormat}
+                                onSelect={() => setSelectedId(el.id)}
+                                onUpdate={(updates) => updateElement(el.id, updates)}
                             />
-                            <IconGripVertical size={12} className="text-muted-foreground/50" />
-                            <span className={el.enabled ? '' : 'text-muted-foreground line-through'}>{el.label}</span>
+                        ))}
+                    </div>
+
+                    {/* Label dimensions */}
+                    <div className="flex items-center gap-3 text-sm">
+                        <Label className="text-xs">W:</Label>
+                        <Input
+                            type="number" min={20} max={120} step={1}
+                            value={settings.labelWidth}
+                            onChange={e => onChange({ ...settings, labelWidth: Number(e.target.value) || 50 })}
+                            className="w-16 h-7 text-xs"
+                        />
+                        <span className="text-xs text-muted-foreground">mm</span>
+                        <Label className="text-xs">H:</Label>
+                        <Input
+                            type="number" min={10} max={80} step={1}
+                            value={settings.labelHeight}
+                            onChange={e => onChange({ ...settings, labelHeight: Number(e.target.value) || 25 })}
+                            className="w-16 h-7 text-xs"
+                        />
+                        <span className="text-xs text-muted-foreground">mm</span>
+                        <Label className="text-xs">Pad:</Label>
+                        <Input
+                            type="number" min={0} max={5} step={0.5}
+                            value={settings.labelPadding}
+                            onChange={e => onChange({ ...settings, labelPadding: Number(e.target.value) || 0 })}
+                            className="w-14 h-7 text-xs"
+                        />
+                        <span className="text-xs text-muted-foreground">mm</span>
+                    </div>
+                </div>
+
+                {/* ── Right: Properties + Element List ── */}
+                <div className="w-64 shrink-0 flex flex-col gap-3 overflow-y-auto">
+
+                    {/* Properties panel */}
+                    {selectedElement ? (
+                        <div className="bg-card border rounded-lg p-3 space-y-3">
+                            <h4 className="text-sm font-semibold">{selectedElement.label}</h4>
+
+                            {/* Content (for static text elements) */}
+                            {selectedElement.type === 'text' && !selectedElement.dataField && (
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Content</Label>
+                                    <Input
+                                        value={selectedElement.content || ''}
+                                        onChange={e => updateElement(selectedElement.id, { content: e.target.value })}
+                                        className="h-7 text-xs"
+                                        placeholder="Enter text..."
+                                    />
+                                </div>
+                            )}
+
+                            {/* Position X/Y */}
+                            <div className="flex gap-2">
+                                <div className="flex-1 space-y-1">
+                                    <Label className="text-xs">X (mm)</Label>
+                                    <Input type="number" min={0} step={0.5}
+                                        value={selectedElement.x}
+                                        onChange={e => updateElement(selectedElement.id, { x: Number(e.target.value) || 0 })}
+                                        className="h-7 text-xs"
+                                    />
+                                </div>
+                                <div className="flex-1 space-y-1">
+                                    <Label className="text-xs">Y (mm)</Label>
+                                    <Input type="number" min={0} step={0.5}
+                                        value={selectedElement.y}
+                                        onChange={e => updateElement(selectedElement.id, { y: Number(e.target.value) || 0 })}
+                                        className="h-7 text-xs"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Size W/H */}
+                            <div className="flex gap-2">
+                                <div className="flex-1 space-y-1">
+                                    <Label className="text-xs">W (mm)</Label>
+                                    <Input type="number" min={3} step={0.5}
+                                        value={selectedElement.width}
+                                        onChange={e => updateElement(selectedElement.id, { width: Number(e.target.value) || 10 })}
+                                        className="h-7 text-xs"
+                                    />
+                                </div>
+                                <div className="flex-1 space-y-1">
+                                    <Label className="text-xs">H (mm)</Label>
+                                    <Input type="number" min={2} step={0.5}
+                                        value={selectedElement.height}
+                                        onChange={e => updateElement(selectedElement.id, { height: Number(e.target.value) || 4 })}
+                                        className="h-7 text-xs"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Barcode-specific */}
+                            {selectedElement.type === 'barcode' && (
+                                <>
+                                    <div className="flex gap-2">
+                                        <div className="flex-1 space-y-1">
+                                            <Label className="text-xs">Line Width</Label>
+                                            <Input type="number" min={0.5} max={4} step={0.25}
+                                                value={selectedElement.barcodeLineWidth || 1.5}
+                                                onChange={e => updateElement(selectedElement.id, { barcodeLineWidth: Number(e.target.value) || 1.5 })}
+                                                className="h-7 text-xs"
+                                            />
+                                        </div>
+                                        <div className="flex-1 space-y-1">
+                                            <Label className="text-xs">Bar Height</Label>
+                                            <Input type="number" min={10} max={80} step={5}
+                                                value={selectedElement.barcodeHeight || 30}
+                                                onChange={e => updateElement(selectedElement.id, { barcodeHeight: Number(e.target.value) || 30 })}
+                                                className="h-7 text-xs"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Checkbox
+                                            id="showBarcodeText"
+                                            checked={selectedElement.showBarcodeText || false}
+                                            onCheckedChange={v => updateElement(selectedElement.id, { showBarcodeText: v as boolean })}
+                                        />
+                                        <label htmlFor="showBarcodeText" className="text-xs">Show text under barcode</label>
+                                    </div>
+                                </>
+                            )}
                         </div>
-                    ))}
+                    ) : (
+                        <div className="bg-card border border-dashed rounded-lg p-4 flex flex-col items-center gap-2 text-center">
+                            <span
+                                className="text-2xl font-bold text-muted-foreground/30 select-none"
+                                style={{ fontFamily: 'serif' }}
+                            >
+                                Aa
+                            </span>
+                            <p className="text-xs text-muted-foreground">
+                                Click any element on the canvas to select and edit its position, size, and style
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Element list */}
+                    <div className="bg-card border rounded-lg p-3 space-y-1.5">
+                        <h4 className="text-sm font-semibold mb-2">Elements</h4>
+                        {settings.elements.map(el => (
+                            <div
+                                key={el.id}
+                                className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-xs transition-colors ${
+                                    el.id === selectedId
+                                        ? 'bg-primary/10 border border-primary/30'
+                                        : 'hover:bg-muted/50'
+                                }`}
+                                onClick={() => setSelectedId(el.id)}
+                            >
+                                <Checkbox
+                                    checked={el.enabled}
+                                    onCheckedChange={v => updateElement(el.id, { enabled: v as boolean })}
+                                    onClick={e => e.stopPropagation()}
+                                    className="h-3.5 w-3.5"
+                                />
+                                <IconGripVertical size={12} className="text-muted-foreground/50" />
+                                <span className={el.enabled ? '' : 'text-muted-foreground line-through'}>{el.label}</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             </div>
         </div>
@@ -558,8 +714,10 @@ function DesignerElement({ element, selected, scale, barcodeFormat, onSelect, on
                     fontFamily: element.fontFamily,
                     fontSize: `${element.fontSize * 1.3}px`,
                     fontWeight: element.fontWeight,
+                    fontStyle: element.fontStyle || 'normal',
                     textAlign: element.textAlign,
-                    color: '#000',
+                    color: element.color || '#000000',
+                    letterSpacing: element.letterSpacing ? `${element.letterSpacing}px` : undefined,
                     lineHeight: 1.1,
                 }}
             >
