@@ -620,6 +620,8 @@ export default function PurchaseInvoicePage() {
 
     try {
       dispatch(setLoading(true));
+      // This will be populated by whichever branch runs, for use in barcode capture below.
+      let savedVoucherIdForBarcode: string | null = null;
       if (purchaseState.mode === 'editing' && purchaseState.currentVoucherId) {
         await invoke('update_purchase_invoice', {
           id: purchaseState.currentVoucherId,
@@ -673,6 +675,9 @@ export default function PurchaseInvoicePage() {
             await invoke('update_multiple_product_rates', { rates: ratesToUpdate }).catch(console.error);
           }
         }
+
+        // Capture the voucher ID for barcode product fetch after the branch
+        savedVoucherIdForBarcode = purchaseState.currentVoucherId;
 
         // Prepare state for Payment Dialog & Print (persist before reset)
         setSavedInvoiceId(purchaseState.currentVoucherId);
@@ -746,6 +751,9 @@ export default function PurchaseInvoicePage() {
           },
         });
         toast.success('Purchase invoice created successfully');
+
+        // Capture the new voucher ID for barcode product fetch after the branch
+        savedVoucherIdForBarcode = newInvoiceId;
 
         // Auto-prompt for payment after creating invoice
         setSavedInvoiceAmount(purchaseState.totals.grandTotal);
@@ -837,20 +845,48 @@ export default function PurchaseInvoicePage() {
         }
       }
 
-      // Capture products for barcode dialog before form resets
+      // Capture products for barcode dialog before form resets.
+      // Fetch fresh items from the backend so that master-product child codes
+      // (generated during save) are reflected immediately instead of reading
+      // stale codes from the local products state.
       if (voucherSettings?.enableBarcodePrinting) {
-        const barcodeItems = purchaseState.items
-          .filter(item => item.product_id)
-          .map(item => {
-            const product = products.find(p => String(p.id) === String(item.product_id));
-            return {
-              code: product?.code || '',
-              name: product?.name || item.product_name || '',
-              salesRate: item.sales_rate !== undefined ? item.sales_rate : (product?.sales_rate || item.rate || 0),
-              quantity: item.initial_quantity - item.count * item.deduction_per_unit,
-            };
-          });
-        setBarcodeProducts(barcodeItems);
+        const savedVoucherId = savedVoucherIdForBarcode;
+        try {
+          const freshItems = savedVoucherId
+            ? await invoke<any[]>('get_purchase_invoice_items', { voucherId: savedVoucherId })
+            : [];
+          const barcodeItems = freshItems
+            .filter((fi: any) => fi.product_id)
+            .map((fi: any) => {
+              // fi.product_code comes from the backend JOIN — reflects newly created child codes
+              const localItem = purchaseState.items.find(
+                it => String(it.product_id) === String(fi.product_id)
+              );
+              return {
+                code: fi.product_code || '',
+                name: fi.product_name || localItem?.product_name || '',
+                salesRate: localItem?.sales_rate !== undefined
+                  ? localItem.sales_rate
+                  : (fi.rate || 0),
+                quantity: fi.final_quantity ?? (fi.initial_quantity - (fi.count || 0) * (fi.deduction_per_unit || 0)),
+              };
+            });
+          setBarcodeProducts(barcodeItems);
+        } catch {
+          // Fallback to local state if fetch fails
+          const barcodeItems = purchaseState.items
+            .filter(item => item.product_id)
+            .map(item => {
+              const product = products.find(p => String(p.id) === String(item.product_id));
+              return {
+                code: product?.code || '',
+                name: product?.name || item.product_name || '',
+                salesRate: item.sales_rate !== undefined ? item.sales_rate : (product?.sales_rate || item.rate || 0),
+                quantity: item.initial_quantity - item.count * item.deduction_per_unit,
+              };
+            });
+          setBarcodeProducts(barcodeItems);
+        }
       }
 
       dispatch(setPurchaseHasUnsavedChanges(false));

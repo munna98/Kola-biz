@@ -216,8 +216,11 @@ pub async fn handle_voucher_deletion_in_tx(
         .map_err(|e| format!("Failed to fetch voucher sequence settings: {}", e))?;
 
         if let Some(seq) = seq_opt {
-            // 3. Rename the current deleted voucher first to free its constraint
-            let temp_no = format!("__DELETED__{}__", voucher_no);
+            // 3. Rename the current deleted voucher first to free its constraint.
+            // Include the voucher ID to guarantee uniqueness — the same voucher_no
+            // (e.g. PI100) may be deleted more than once (delete → recreate → delete again),
+            // so a plain "__DELETED__PI100__" would collide on the second deletion.
+            let temp_no = format!("__DELETED__{}__{}__", voucher_no, voucher_id);
             sqlx::query("UPDATE vouchers SET voucher_no = ? WHERE id = ?")
                 .bind(&temp_no)
                 .bind(voucher_id)
