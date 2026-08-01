@@ -39,6 +39,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Combobox } from '@/components/ui/combobox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
   IconCheck,
   IconX,
@@ -111,7 +112,7 @@ export default function SalesInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost', showShipTo?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost', showShipTo?: boolean, enablePriceCategory?: boolean, priceCategoryFallback?: 'default_sales_rate' | 'show_zero' } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [partyForeignBalance, setPartyForeignBalance] = useState<number | null>(null);
@@ -122,6 +123,10 @@ export default function SalesInvoicePage() {
   const [linkedReturnSummary, setLinkedReturnSummary] = useState<{ id: string; total: number; count: number } | null>(null);
   /** Whether Margin Scheme is enabled globally in Tax Settings (controls visibility of the toggle) */
   const [marginSchemeEnabled, setMarginSchemeEnabled] = useState(false);
+
+  // Price Category
+  const [priceCategories, setPriceCategories] = useState<{ id: string; name: string }[]>([]);
+  const [activePriceCategoryId, setActivePriceCategoryId] = useState<string | null>(null);
 
   const effectiveSettings = useMemo(() => {
     if (!voucherSettings || !voucherSettings.columns) return voucherSettings;
@@ -252,6 +257,15 @@ export default function SalesInvoicePage() {
     loadData();
   }, [dispatch]);
 
+  // Load price categories once (only if feature enabled)
+  useEffect(() => {
+    if (voucherSettings?.enablePriceCategory) {
+      invoke<{ id: string; name: string }[]>('list_price_categories')
+        .then(setPriceCategories)
+        .catch(console.error);
+    }
+  }, [voucherSettings?.enablePriceCategory]);
+
   useEffect(() => {
     if (salesState.mode === 'new' && !salesState.currentVoucherId) {
       setIsTaxInclusive(!!voucherSettings?.taxInclusive);
@@ -308,6 +322,95 @@ export default function SalesInvoicePage() {
 
     fetchPartyData();
   }, [salesState.form.customer_id, dispatch]);
+
+  // When customer changes, fetch their default price category (if feature enabled)
+  useEffect(() => {
+    if (!voucherSettings?.enablePriceCategory) return;
+    if (!salesState.form.customer_id || String(salesState.form.customer_id) === '0') {
+      setActivePriceCategoryId(null);
+      return;
+    }
+    invoke<string | null>('get_account_price_category', { accountId: String(salesState.form.customer_id) })
+      .then(catId => setActivePriceCategoryId(catId || null))
+      .catch(console.error);
+  }, [salesState.form.customer_id, voucherSettings?.enablePriceCategory]);
+
+  // Helper to resolve rate for a product & unit considering active price category
+  const resolveProductRate = async (productId: string, unitId: string | null | undefined, priceCatId: string | null): Promise<number> => {
+    const product = products.find((p) => String(p.id) === String(productId));
+    if (!product) return 0;
+
+    const productConversions = productUnitsByProduct[String(product.id)];
+    const defaultUnitId = unitId || getDefaultProductUnitId(
+      productConversions,
+      'sale',
+      product.unit_id
+    );
+    const fallbackRate = getProductUnitRate(
+      productConversions,
+      defaultUnitId,
+      'sale',
+      product.sales_rate || 0
+    );
+
+    if (priceCatId && voucherSettings?.enablePriceCategory) {
+      try {
+        const catRate = await invoke<number | null>('get_price_for_product_unit', {
+          priceCategoryId: priceCatId,
+          productId: String(product.id),
+          unitId: defaultUnitId || String(product.unit_id),
+        });
+        if (catRate !== null) {
+          return catRate;
+        } else if (voucherSettings.priceCategoryFallback === 'show_zero') {
+          return 0;
+        }
+      } catch (err) {
+        console.error('[PriceCategory] lookup error:', err);
+      }
+    }
+
+    return fallbackRate;
+  };
+
+  // Sync existing invoice items' rates whenever activePriceCategoryId changes
+  useEffect(() => {
+    if (!voucherSettings?.enablePriceCategory) return;
+    if (salesState.items.length === 0) return;
+
+    let isMounted = true;
+    const syncItemRates = async () => {
+      let changed = false;
+      const updatedItems = await Promise.all(
+        salesState.items.map(async (item) => {
+          if (item.item_type !== 'product' || !item.product_id) return item;
+          const newRate = await resolveProductRate(
+            String(item.product_id),
+            item.unit_id,
+            activePriceCategoryId
+          );
+          if (newRate !== item.rate) {
+            changed = true;
+            return { ...item, rate: newRate };
+          }
+          return item;
+        })
+      );
+
+      if (isMounted && changed) {
+        updatedItems.forEach((item, index) => {
+          if (item.rate !== salesState.items[index]?.rate) {
+            dispatch(updateSalesItem({ index, data: { rate: item.rate } }));
+          }
+        });
+        updateTotalsWithItems(updatedItems);
+      }
+    };
+
+    syncItemRates();
+
+    return () => { isMounted = false; };
+  }, [activePriceCategoryId, voucherSettings?.enablePriceCategory, products, productUnitsByProduct]);
 
   // Default Party Selection Effect
   useEffect(() => {
@@ -404,36 +507,62 @@ export default function SalesInvoicePage() {
           dispatch(setSalesMarginScheme(true));
         }
 
-        const updatedItems = [...salesState.items];
-        updatedItems[index] = {
-          ...updatedItems[index],
-          item_type: 'product',
-          product_id: value,
-          service_id: null,
-          product_name: product.name,
-          unit_id: defaultUnitId,
-          rate,
-          // Auto-fill purchase_cost from WAC when margin scheme is active
-          ...(willBeMarginInvoice ? { purchase_cost: product.purchase_rate || 0 } : {}),
-          ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
+        // If a price category is active, look up the category rate asynchronously
+        const resolveRate = async () => {
+          let resolvedRate = rate;
+          if (activePriceCategoryId && voucherSettings?.enablePriceCategory) {
+            try {
+              const lookupArgs = {
+                priceCategoryId: activePriceCategoryId,
+                productId: String(product.id),
+                unitId: defaultUnitId || String(product.unit_id),
+              };
+              console.log('[PriceCategory] lookup args:', lookupArgs);
+              const catRate = await invoke<number | null>('get_price_for_product_unit', lookupArgs);
+              console.log('[PriceCategory] result:', catRate);
+              if (catRate !== null) {
+                resolvedRate = catRate;
+              } else if (voucherSettings.priceCategoryFallback === 'show_zero') {
+                resolvedRate = 0;
+              }
+              // else: fallback = default_sales_rate => keep resolvedRate = rate
+            } catch (err) {
+              console.error('[PriceCategory] lookup error:', err);
+              // silent fail — use product default
+            }
+          }
+
+          const updatedItems = [...salesState.items];
+          updatedItems[index] = {
+            ...updatedItems[index],
+            item_type: 'product',
+            product_id: value,
+            service_id: null,
+            product_name: product.name,
+            unit_id: defaultUnitId,
+            rate: resolvedRate,
+            ...(willBeMarginInvoice ? { purchase_cost: product.purchase_rate || 0 } : {}),
+            ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
+          };
+          dispatch(
+            updateSalesItem({
+              index,
+              data: {
+                item_type: 'product',
+                product_id: value,
+                service_id: null,
+                product_name: product.name,
+                unit_id: defaultUnitId,
+                rate: resolvedRate,
+                ...(willBeMarginInvoice ? { purchase_cost: product.purchase_rate || 0 } : {}),
+                ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
+              },
+            })
+          );
+          updateTotalsWithItems(updatedItems);
+          dispatch(setSalesHasUnsavedChanges(true));
         };
-        dispatch(
-          updateSalesItem({
-            index,
-            data: {
-              item_type: 'product',
-              product_id: value,
-              service_id: null,
-              product_name: product.name,
-              unit_id: defaultUnitId,
-              rate,
-              ...(willBeMarginInvoice ? { purchase_cost: product.purchase_rate || 0 } : {}),
-              ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
-            },
-          })
-        );
-        updateTotalsWithItems(updatedItems);
-        dispatch(setSalesHasUnsavedChanges(true));
+        resolveRate();
         return;
       }
     }
@@ -475,23 +604,23 @@ export default function SalesInvoicePage() {
       const currentItem = salesState.items[index];
       const productId = String(currentItem.product_id);
       const product = products.find((p) => String(p.id) === productId);
-      const rate = getProductUnitRate(
-        productUnitsByProduct[productId],
-        value,
-        'sale',
-        product?.sales_rate || currentItem.rate || 0
-      );
-      finalValue = value;
-      const updatedItems = [...salesState.items];
-      updatedItems[index] = {
-        ...updatedItems[index],
-        unit_id: value,
-        rate
-      };
-      dispatch(updateSalesItem({ index, data: { unit_id: value, rate } }));
-      updateTotalsWithItems(updatedItems);
-      dispatch(setSalesHasUnsavedChanges(true));
-      return;
+      if (product) {
+        finalValue = value;
+        const resolveUnitRate = async () => {
+          const rate = await resolveProductRate(productId, value, activePriceCategoryId);
+          const updatedItems = [...salesState.items];
+          updatedItems[index] = {
+            ...updatedItems[index],
+            unit_id: value,
+            rate
+          };
+          dispatch(updateSalesItem({ index, data: { unit_id: value, rate } }));
+          updateTotalsWithItems(updatedItems);
+          dispatch(setSalesHasUnsavedChanges(true));
+        };
+        resolveUnitRate();
+        return;
+      }
     }
 
     const updatedItems = [...salesState.items];
@@ -1486,10 +1615,10 @@ export default function SalesInvoicePage() {
       <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
         <form ref={formRef} onSubmit={handleSubmit} className="flex-1 min-h-0 p-5 max-w-7xl mx-auto flex flex-col gap-4">
           {/* Master Section */}
-          <div className="bg-card border rounded-lg p-3 space-y-3 shrink-0">
-            <div className="grid grid-cols-6 gap-3">
+          <div className="bg-card border rounded-lg p-3 shrink-0">
+            <div className="flex flex-wrap lg:flex-nowrap items-end gap-3 w-full">
               {/* Customer */}
-              <div ref={customerRef} className="col-span-2 flex gap-2 items-end">
+              <div ref={customerRef} className="flex-[3] min-w-[320px] flex gap-2 items-end">
                 <div className="flex-1">
                   <Label className="text-xs font-medium mb-1 block">Party *</Label>
                   <Combobox
@@ -1575,8 +1704,30 @@ export default function SalesInvoicePage() {
                 )}
               </div>
 
+              {/* Price Category dropdown — only when feature is enabled */}
+              {voucherSettings?.enablePriceCategory && priceCategories.length > 0 && (
+                <div className="w-44 shrink-0">
+                  <Label className="text-xs font-medium mb-1 block">Price Category</Label>
+                  <Select
+                    value={activePriceCategoryId || '__none__'}
+                    onValueChange={v => setActivePriceCategoryId(v === '__none__' ? null : v)}
+                    disabled={isReadOnly}
+                  >
+                    <SelectTrigger className="h-8 text-sm w-full">
+                      <SelectValue placeholder="Default" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none__">Default</SelectItem>
+                      {priceCategories.map(cat => (
+                        <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
               {/* Invoice Date */}
-              <div>
+              <div className="w-36 shrink-0">
                 <Label className="text-xs font-medium mb-1 block">Invoice Date *</Label>
                 <Input
                   type="date"
@@ -1591,7 +1742,7 @@ export default function SalesInvoicePage() {
               </div>
 
               {/* Sales Rep (Salesperson) */}
-              <div>
+              <div className="w-40 shrink-0">
                 <Label className="text-xs font-medium mb-1 block">Sales Rep</Label>
                 <Combobox
                   options={employees.map(e => ({
@@ -1610,7 +1761,7 @@ export default function SalesInvoicePage() {
               </div>
 
               {/* Reference */}
-              <div className="col-span-2">
+              <div className="flex-1 min-w-[140px]">
                 <Label className="text-xs font-medium mb-1 block">Reference No</Label>
                 <Input
                   value={salesState.form.reference}

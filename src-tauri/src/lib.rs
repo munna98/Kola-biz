@@ -342,6 +342,18 @@ pub fn run() {
             save_gst_settings,
             get_gstr1_summary,
             get_gstr3b_summary,
+            // Price Categories
+            list_price_categories,
+            create_price_category,
+            update_price_category,
+            delete_price_category,
+            get_product_price_list,
+            upsert_product_price_list,
+            get_price_for_product_unit,
+            get_product_all_category_prices,
+            // Customer Price Category
+            set_customer_price_category,
+            get_account_price_category,
         ])
         .plugin(tauri_plugin_opener::init())
         .build(tauri::generate_context!())

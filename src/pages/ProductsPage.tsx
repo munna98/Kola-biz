@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload, IconTag, IconPhoto, IconCloudUpload, IconLink, IconDotsVertical, IconBrandWhatsapp } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload, IconTag, IconPhoto, IconCloudUpload, IconLink, IconDotsVertical, IconBrandWhatsapp, IconReceiptTax } from '@tabler/icons-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   DropdownMenu,
@@ -24,6 +24,8 @@ import ProductBrandsDialog from '@/components/dialogs/ProductBrandsDialog';
 import BarcodeLabelDialog from '@/components/dialogs/BarcodeLabelDialog';
 import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
 import ProductImagesDialog from '@/components/dialogs/ProductImagesDialog';
+import PriceCategoriesDialog from '@/components/dialogs/PriceCategoriesDialog';
+import PriceCategoryQuickEditDialog from '@/components/dialogs/PriceCategoryQuickEditDialog';
 import { invoke } from '@tauri-apps/api/core';
 import { type ProductTableColumns, DEFAULT_TABLE_COLUMNS } from '@/pages/settings/ProductSettingsPage';
 import { useMoney } from '@/hooks/useMoney';
@@ -78,6 +80,9 @@ export default function ProductsPage() {
   const [unitsOpen, setUnitsOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [brandsOpen, setBrandsOpen] = useState(false);
+  const [priceCategoriesOpen, setPriceCategoriesOpen] = useState(false);
+  const [priceCatQuickEditOpen, setPriceCatQuickEditOpen] = useState(false);
+  const [selectedPriceCatProduct, setSelectedPriceCatProduct] = useState<Product | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | undefined>(undefined);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -325,6 +330,14 @@ export default function ProductsPage() {
                   </TooltipTrigger>
                   <TooltipContent>Manage Units</TooltipContent>
                 </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => setPriceCategoriesOpen(true)}>
+                      <IconReceiptTax size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Manage Price Categories</TooltipContent>
+                </Tooltip>
                 {r2Enabled && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -503,6 +516,9 @@ export default function ProductsPage() {
                                 <DropdownMenuItem onClick={() => handleEdit(p)}>
                                   <IconEdit size={14} className="mr-2" /> Edit
                                 </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => { setSelectedPriceCatProduct(p); setPriceCatQuickEditOpen(true); }}>
+                                  <IconReceiptTax size={14} className="mr-2" /> Price Category Rates
+                                </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => { setBarcodeProduct(p); setBarcodeDialogOpen(true); }}>
                                   <IconBarcode size={14} className="mr-2" /> Print Barcode
                                 </DropdownMenuItem>
@@ -587,6 +603,21 @@ export default function ProductsPage() {
         open={brandsOpen}
         onOpenChange={setBrandsOpen}
         onBrandsChange={handleBrandsChange}
+      />
+
+      {/* Price Categories Management Dialog Component */}
+      <PriceCategoriesDialog
+        open={priceCategoriesOpen}
+        onOpenChange={setPriceCategoriesOpen}
+      />
+
+      {/* Price Category Quick Edit Dialog */}
+      <PriceCategoryQuickEditDialog
+        open={priceCatQuickEditOpen}
+        onOpenChange={setPriceCatQuickEditOpen}
+        productId={selectedPriceCatProduct?.id || ''}
+        productName={selectedPriceCatProduct?.name || ''}
+        currentUnitId={selectedPriceCatProduct?.unit_id || ''}
       />
 
       {/* Product Images Dialog */}

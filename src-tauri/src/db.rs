@@ -1524,6 +1524,69 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
          VALUES ('sys_forex_loss', 'FOREX-002', 'Forex Exchange Loss', 'Expense', 'Indirect Expenses', 1, 1)"
     ).execute(pool).await;
 
+    // ==================== PRICE CATEGORY MODULE ====================
+
+    // Price category master table
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS price_categories (
+            id          TEXT PRIMARY KEY,
+            name        TEXT UNIQUE NOT NULL,
+            description TEXT,
+            is_default  INTEGER DEFAULT 0,
+            is_active   INTEGER DEFAULT 1,
+            sort_order  INTEGER DEFAULT 0,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    // Per-product, per-unit, per-category price list
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS product_price_list (
+            id                TEXT PRIMARY KEY,
+            price_category_id TEXT NOT NULL,
+            product_id        TEXT NOT NULL,
+            unit_id           TEXT NOT NULL,
+            sales_rate        REAL NOT NULL DEFAULT 0,
+            is_active         INTEGER DEFAULT 1,
+            updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (price_category_id, product_id, unit_id),
+            FOREIGN KEY (price_category_id) REFERENCES price_categories(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+            FOREIGN KEY (unit_id) REFERENCES units(id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    let _ = sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_ppl_category ON product_price_list(price_category_id)",
+    )
+    .execute(pool)
+    .await;
+
+    let _ = sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_ppl_product ON product_price_list(product_id)",
+    )
+    .execute(pool)
+    .await;
+
+    // Migration: Add price_category_id to chart_of_accounts (customer default price category)
+    let _ = sqlx::query(
+        "ALTER TABLE chart_of_accounts ADD COLUMN price_category_id TEXT REFERENCES price_categories(id)",
+    )
+    .execute(pool)
+    .await;
+
+    // Migration: Add price_category_id to vouchers (which category was active on this invoice)
+    let _ = sqlx::query(
+        "ALTER TABLE vouchers ADD COLUMN price_category_id TEXT REFERENCES price_categories(id)",
+    )
+    .execute(pool)
+    .await;
+
     crate::seeds::seed_initial_data(pool).await?;
     crate::seeds::seed_handlebars_templates(pool).await?;
 

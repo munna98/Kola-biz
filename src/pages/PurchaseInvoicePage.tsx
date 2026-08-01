@@ -52,6 +52,7 @@ import { usePrint } from '@/hooks/usePrint';
 import SupplierDialog from '@/components/dialogs/SupplierDialog';
 import ProductDialog from '@/components/dialogs/ProductDialog';
 import BarcodeLabelDialog from '@/components/dialogs/BarcodeLabelDialog';
+import PriceCategoryQuickEditDialog from '@/components/dialogs/PriceCategoryQuickEditDialog';
 import { Product, ProductGroup, ProductUnitConversion, Unit, GstTaxSlab, api } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
@@ -108,6 +109,12 @@ export default function PurchaseInvoicePage() {
   // Barcode dialog state
   const [showBarcodeDialog, setShowBarcodeDialog] = useState(false);
   const [barcodeProducts, setBarcodeProducts] = useState<{ code: string; name: string; salesRate: number; quantity: number }[]>([]);
+
+  // Price Category Quick-Edit dialog state
+  const [showPriceCatDialog, setShowPriceCatDialog] = useState(false);
+  const [priceCatTargetProductId, setPriceCatTargetProductId] = useState('');
+  const [priceCatTargetProductName, setPriceCatTargetProductName] = useState('');
+  const [priceCatTargetUnitId, setPriceCatTargetUnitId] = useState('');
   const productUnitsByProduct = useMemo(
     () => buildProductUnitMap(productUnitConversions),
     [productUnitConversions]
@@ -1344,6 +1351,12 @@ export default function PurchaseInvoicePage() {
             gstSlabs={gstDisabled ? [] : gstSlabs}
             fullProducts={products as any}
             taxInclusive={voucherSettings?.taxInclusive}
+            onSalesRateSpaceKey={(productId, productName, unitId) => {
+              setPriceCatTargetProductId(productId);
+              setPriceCatTargetProductName(productName);
+              setPriceCatTargetUnitId(unitId);
+              setShowPriceCatDialog(true);
+            }}
             footerRightContent={
               partyBalance !== null && shouldShowPartyBalance ? (
                 <div className={`text-base font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
@@ -1388,6 +1401,15 @@ export default function PurchaseInvoicePage() {
                 </Popover>
               ) : null
             }
+          />
+
+          {/* Price Category Quick-Edit Dialog — triggered by Space on Sales Rate cell */}
+          <PriceCategoryQuickEditDialog
+            open={showPriceCatDialog}
+            onOpenChange={setShowPriceCatDialog}
+            productId={priceCatTargetProductId}
+            productName={priceCatTargetProductName}
+            currentUnitId={priceCatTargetUnitId}
           />
 
           {/* Totals and Notes */}

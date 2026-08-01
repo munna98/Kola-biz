@@ -24,6 +24,7 @@ pub mod stock_journal;
 pub mod tax;
 #[allow(dead_code)]
 pub mod tax_utils;
+pub mod price_categories;
 pub mod templates;
 pub mod voucher_units;
 
@@ -51,5 +52,6 @@ pub use services::*;
 pub use settings::*;
 pub use stock_journal::*;
 pub use tax::*;
+pub use price_categories::*;
 pub use templates::*;
 pub use voucher_units::*;
