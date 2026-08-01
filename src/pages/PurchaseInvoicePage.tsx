@@ -620,8 +620,18 @@ export default function PurchaseInvoicePage() {
 
     try {
       dispatch(setLoading(true));
-      // This will be populated by whichever branch runs, for use in barcode capture below.
+      // Snapshot items NOW before any async ops or state resets, indexed by submission order.
+      // Used in barcode capture below to get sales_rate even for master-product rows
+      // (where the backend replaces master product_id with a new child product_id).
+      const submittedItemsSnapshot = purchaseState.items.map(it => ({
+        product_id: String(it.product_id || ''),
+        sales_rate: it.sales_rate,
+        product_name: it.product_name,
+        quantity: it.initial_quantity - it.count * it.deduction_per_unit,
+      }));
+      // Will be set by whichever save branch runs, for use in barcode capture & products refresh.
       let savedVoucherIdForBarcode: string | null = null;
+      let hasMasterProductItems = false;
       if (purchaseState.mode === 'editing' && purchaseState.currentVoucherId) {
         await invoke('update_purchase_invoice', {
           id: purchaseState.currentVoucherId,
@@ -678,6 +688,9 @@ export default function PurchaseInvoicePage() {
 
         // Capture the voucher ID for barcode product fetch after the branch
         savedVoucherIdForBarcode = purchaseState.currentVoucherId;
+        hasMasterProductItems = masterProductsEnabled && purchaseState.items.some(
+          it => it.item_type !== 'service' && products.find(p => String(p.id) === String(it.product_id))?.is_master === 1
+        );
 
         // Prepare state for Payment Dialog & Print (persist before reset)
         setSavedInvoiceId(purchaseState.currentVoucherId);
@@ -754,6 +767,9 @@ export default function PurchaseInvoicePage() {
 
         // Capture the new voucher ID for barcode product fetch after the branch
         savedVoucherIdForBarcode = newInvoiceId;
+        hasMasterProductItems = masterProductsEnabled && purchaseState.items.some(
+          it => it.item_type !== 'service' && products.find(p => String(p.id) === String(it.product_id))?.is_master === 1
+        );
 
         // Auto-prompt for payment after creating invoice
         setSavedInvoiceAmount(purchaseState.totals.grandTotal);
@@ -855,37 +871,57 @@ export default function PurchaseInvoicePage() {
           const freshItems = savedVoucherId
             ? await invoke<any[]>('get_purchase_invoice_items', { voucherId: savedVoucherId })
             : [];
-          const barcodeItems = freshItems
-            .filter((fi: any) => fi.product_id)
-            .map((fi: any) => {
-              // fi.product_code comes from the backend JOIN — reflects newly created child codes
-              const localItem = purchaseState.items.find(
-                it => String(it.product_id) === String(fi.product_id)
-              );
-              return {
-                code: fi.product_code || '',
-                name: fi.product_name || localItem?.product_name || '',
-                salesRate: localItem?.sales_rate !== undefined
-                  ? localItem.sales_rate
-                  : (fi.rate || 0),
-                quantity: fi.final_quantity ?? (fi.initial_quantity - (fi.count || 0) * (fi.deduction_per_unit || 0)),
-              };
-            });
+          // Filter to only product lines (not services), maintaining submission order
+          const productFreshItems = freshItems.filter((fi: any) => fi.product_id && fi.item_type !== 'service');
+          const productSnapshotItems = submittedItemsSnapshot.filter(it => it.product_id && it.product_id !== '0');
+          const barcodeItems = productFreshItems.map((fi: any, idx: number) => {
+            // Match by submission index — the backend preserves item order.
+            // This is critical for master products: fi.product_id is the new child UUID
+            // while the snapshot item still holds the master UUID, so id-matching fails.
+            const snapshotItem = productSnapshotItems[idx];
+            const salesRate = snapshotItem?.sales_rate !== undefined && snapshotItem.sales_rate !== null
+              ? snapshotItem.sales_rate
+              : (fi.rate || 0); // fi.rate is purchase rate — only used as last resort
+            return {
+              code: fi.product_code || '',
+              name: fi.product_name || snapshotItem?.product_name || '',
+              salesRate,
+              quantity: fi.final_quantity ?? snapshotItem?.quantity ?? 0,
+            };
+          });
           setBarcodeProducts(barcodeItems);
         } catch {
-          // Fallback to local state if fetch fails
-          const barcodeItems = purchaseState.items
-            .filter(item => item.product_id)
-            .map(item => {
-              const product = products.find(p => String(p.id) === String(item.product_id));
+          // Fallback to snapshot if fetch fails
+          const barcodeItems = submittedItemsSnapshot
+            .filter(it => it.product_id && it.product_id !== '0')
+            .map(it => {
+              const product = products.find(p => String(p.id) === it.product_id);
               return {
                 code: product?.code || '',
-                name: product?.name || item.product_name || '',
-                salesRate: item.sales_rate !== undefined ? item.sales_rate : (product?.sales_rate || item.rate || 0),
-                quantity: item.initial_quantity - item.count * item.deduction_per_unit,
+                name: product?.name || it.product_name || '',
+                salesRate: it.sales_rate !== undefined && it.sales_rate !== null
+                  ? it.sales_rate
+                  : (product?.sales_rate || 0),
+                quantity: it.quantity,
               };
             });
           setBarcodeProducts(barcodeItems);
+        }
+      }
+
+      // Bug fix: if master products were involved, new child products were created in the DB.
+      // Refresh the local products list so that when the user navigates back to the saved
+      // voucher, the child product names/codes are available and don't show as empty.
+      if (hasMasterProductItems) {
+        try {
+          const [freshProducts, freshConversions] = await Promise.all([
+            invoke<Product[]>('get_products'),
+            invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
+          ]);
+          setProducts(freshProducts);
+          setProductUnitConversions(freshConversions);
+        } catch {
+          // Non-critical — products will load on next navigation
         }
       }
 
