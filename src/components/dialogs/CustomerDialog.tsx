@@ -24,6 +24,7 @@ const INDIAN_STATES = [
 
 interface Country { id: string; name: string; code: string; }
 interface Currency { id: string; code: string; name: string; symbol?: string; country?: string; }
+interface PriceCategory { id: string; name: string; }
 
 const EMPTY_FORM: CreateCustomer = {
   code: '', name: '', email: '', phone: '',
@@ -43,6 +44,8 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
     const [form, setForm] = useState<CreateCustomer>(EMPTY_FORM);
     const [countries, setCountries] = useState<Country[]>([]);
     const [currencies, setCurrencies] = useState<Currency[]>([]);
+    const [priceCategories, setPriceCategories] = useState<PriceCategory[]>([]);
+    const [selectedPriceCategoryId, setSelectedPriceCategoryId] = useState<string>('');
 
     const profile = useSelector((state: RootState) => state.companyProfile.profile);
     const isExportBusiness = profile.business_type === 'Export Business';
@@ -52,11 +55,12 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
         : ['code', 'name', 'email', 'phone', 'gstin', 'addr1', 'addr2', 'addr3', 'city', 'state', 'postal'];
     const { register, handleKeyDown, handleSelectKeyDown } = useDialog(open, onOpenChange, orderedFields);
 
-    // Fetch countries & currencies once when dialog opens
+    // Fetch countries, currencies & price categories when dialog opens
     useEffect(() => {
         if (!open) return;
         invoke<Country[]>('get_countries').then(setCountries).catch(console.error);
         invoke<Currency[]>('get_currencies').then(setCurrencies).catch(console.error);
+        invoke<PriceCategory[]>('list_price_categories').then(setPriceCategories).catch(console.error);
     }, [open]);
 
     // Populate form when editing or creating
@@ -78,8 +82,10 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
                 gstin: customerToEdit.gstin || '',
                 currency: customerToEdit.currency || '',
             });
+            setSelectedPriceCategoryId((customerToEdit as any).price_category_id || '');
         } else {
             setForm({ ...EMPTY_FORM, name: initialName });
+            setSelectedPriceCategoryId('');
             api.customers.getNextCode().then(code => setForm(prev => ({ ...prev, code }))).catch(console.error);
         }
     }, [customerToEdit, open, initialName]);
@@ -107,12 +113,24 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
             let result: Customer | undefined;
             if (customerToEdit) {
                 await api.customers.update(customerToEdit.id, form);
+                // Also persist price_category_id on the COA record
+                await invoke('set_customer_price_category', {
+                    customerId: customerToEdit.id,
+                    priceCategoryId: selectedPriceCategoryId || null,
+                }).catch(console.error);
                 toast.success('Customer updated successfully');
                 onOpenChange(false);
             } else {
                 result = await api.customers.create(form);
+                if (result && selectedPriceCategoryId) {
+                    await invoke('set_customer_price_category', {
+                        customerId: result.id,
+                        priceCategoryId: selectedPriceCategoryId,
+                    }).catch(console.error);
+                }
                 toast.success('Customer created successfully');
                 setForm(EMPTY_FORM);
+                setSelectedPriceCategoryId('');
             }
             onSave(result);
         } catch (error) {
@@ -213,6 +231,27 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
                                     onKeyDown={e => handleKeyDown(e, 'currency')}
                                 />
                             </div>
+                        </div>
+                    )}
+
+                    {/* Default Price Category */}
+                    {priceCategories.length > 0 && (
+                        <div>
+                            <Label className="text-xs font-medium">Default Price Category</Label>
+                            <Select
+                                value={selectedPriceCategoryId || '__none__'}
+                                onValueChange={v => setSelectedPriceCategoryId(v === '__none__' ? '' : v)}
+                            >
+                                <SelectTrigger className="h-8 text-sm mt-1">
+                                    <SelectValue placeholder="None (use manual rate)" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem value="__none__">None (manual rate)</SelectItem>
+                                    {priceCategories.map(cat => (
+                                        <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                         </div>
                     )}
 

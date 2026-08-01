@@ -124,7 +124,9 @@ export default function LedgerReportPage() {
   };
 
   // Foreign currency view helpers
-  const hasForeignCurrency = isExportBusiness && !!foreignCurrencyCode;
+  const hasForeignCurrency = isExportBusiness && 
+    !!foreignCurrencyCode && 
+    foreignCurrencyCode !== (companyProfile.base_currency || 'INR');
   const isViewingForeign = viewCurrency !== 'base';
 
   // Filter out Forex Gain/Loss Adjustments in foreign currency view

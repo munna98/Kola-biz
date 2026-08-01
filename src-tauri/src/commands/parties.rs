@@ -921,3 +921,42 @@ pub async fn get_party_currency_info(
 
     Ok(result)
 }
+
+/// Sets or clears the default price_category_id on the customer's chart_of_accounts record.
+/// This drives the auto-select behaviour on Sales Invoice when the customer is chosen.
+#[tauri::command]
+pub async fn set_customer_price_category(
+    registry: State<'_, Arc<DbRegistry>>,
+    customer_id: String,
+    price_category_id: Option<String>,
+) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
+    sqlx::query(
+        "UPDATE chart_of_accounts
+         SET price_category_id = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE party_id = ? AND party_type = 'customer'",
+    )
+    .bind(&price_category_id)
+    .bind(&customer_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Gets the price_category_id for a given chart_of_accounts ID (used during Sales Invoice load).
+#[tauri::command]
+pub async fn get_account_price_category(
+    registry: State<'_, Arc<DbRegistry>>,
+    account_id: String,
+) -> Result<Option<String>, String> {
+    let pool = registry.active_pool().await?;
+    let cat_id: Option<String> =
+        sqlx::query_scalar("SELECT price_category_id FROM chart_of_accounts WHERE id = ?")
+            .bind(&account_id)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| e.to_string())?
+            .flatten();
+    Ok(cat_id)
+}

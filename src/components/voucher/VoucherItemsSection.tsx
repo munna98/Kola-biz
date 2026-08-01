@@ -306,6 +306,8 @@ export interface VoucherItemsSectionProps {
     taxInclusive?: boolean;
     isMarginSchemeInvoice?: boolean;
     moneyFormatter?: (amount: number | null | undefined, options?: any) => string;
+    /** Called when Space is pressed on the Sales Rate cell. Args: productId, productName, unitId */
+    onSalesRateSpaceKey?: (productId: string, productName: string, unitId: string) => void;
 }
 export interface VoucherItemsSectionRef {
     focusFirstProduct: () => void;
@@ -352,6 +354,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     taxInclusive = false,
     isMarginSchemeInvoice = false,
     moneyFormatter,
+    onSalesRateSpaceKey,
 }, ref) => {
     const defaultMoney = useMoney();
     const money = moneyFormatter || defaultMoney;
@@ -915,6 +918,15 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                         className="h-7 text-xs text-right font-mono"
                                         placeholder="0.00"
                                         step="0.01"
+                                        onKeyDown={(e) => {
+                                            if (e.key === ' ' && onSalesRateSpaceKey && item.product_id) {
+                                                e.preventDefault();
+                                                e.stopPropagation();
+                                                const prodName = product?.name || item.product_name || '';
+                                                const unitId = item.unit_id || product?.unit_id || '';
+                                                onSalesRateSpaceKey(String(item.product_id), prodName, String(unitId));
+                                            }
+                                        }}
                                     />
                                 ) : (
                                     <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/50 border border-input rounded-md font-medium font-mono" title="Current sales rate from product master">
