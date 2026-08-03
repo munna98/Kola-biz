@@ -337,6 +337,12 @@ export default function PurchaseReturnPage() {
         }));
     };
 
+    useEffect(() => {
+        if (!isInitializing && purchaseReturnState.items.length > 0) {
+            updateTotalsWithItems(purchaseReturnState.items);
+        }
+    }, [gstDisabled]);
+
     const handleSubmit = async (e?: React.FormEvent) => {
         e?.preventDefault();
 
@@ -613,24 +619,26 @@ export default function PurchaseReturnPage() {
     }
 
     const getItemAmount = (item: typeof purchaseReturnState.items[0]) => {
-        let gstRate = item.tax_rate || 0;
-        if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
-            gstRate = item.resolved_gst_rate;
-        } else if (item.gst_slab_id) {
-            const savedSlab = gstSlabs.find(s => s.id === item.gst_slab_id);
-            if (savedSlab) {
-                gstRate = savedSlab.is_dynamic === 1
-                    ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
-                    : savedSlab.fixed_rate;
-            }
-        } else {
-            const product = products.find(p => String(p.id) === String(item.product_id));
-            if (product?.gst_slab_id) {
-                const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
-                if (slab) {
-                    gstRate = slab.is_dynamic === 1
-                        ? (item.rate <= slab.threshold ? slab.below_rate : slab.above_rate)
-                        : slab.fixed_rate;
+        let gstRate = gstDisabled ? 0 : (item.tax_rate || 0);
+        if (!gstDisabled) {
+            if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
+                gstRate = item.resolved_gst_rate;
+            } else if (item.gst_slab_id) {
+                const savedSlab = gstSlabs.find(s => s.id === item.gst_slab_id);
+                if (savedSlab) {
+                    gstRate = savedSlab.is_dynamic === 1
+                        ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
+                        : savedSlab.fixed_rate;
+                }
+            } else {
+                const product = products.find(p => String(p.id) === String(item.product_id));
+                if (product?.gst_slab_id) {
+                    const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
+                    if (slab) {
+                        gstRate = slab.is_dynamic === 1
+                            ? (item.rate <= slab.threshold ? slab.below_rate : slab.above_rate)
+                            : slab.fixed_rate;
+                    }
                 }
             }
         }
