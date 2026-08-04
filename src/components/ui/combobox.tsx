@@ -120,6 +120,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   const skipOpen = React.useRef(false)
   const itemSelected = React.useRef(false)
   const isPointerDown = React.useRef(false)
+  const autoSelectTimer = React.useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleFocus = React.useCallback(() => {
     if (skipOpen.current || isPointerDown.current) {
@@ -138,6 +139,49 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
       setInputValue("");
     }
   }, [open]);
+
+  // Auto-select when the typed/scanned value is an exact keyword match for exactly one option.
+  // This handles barcode scanning: "101" should immediately pick "101 - AMPLIFIER WIRING KIT"
+  // even if "1010 - T SHIRT" also appears in the list.
+  React.useEffect(() => {
+    if (autoSelectTimer.current) {
+      clearTimeout(autoSelectTimer.current);
+      autoSelectTimer.current = null;
+    }
+
+    if (!open || !inputValue.trim()) return;
+
+    const searchTrim = inputValue.trim().toLowerCase();
+    const activeFilter = filter || defaultComboboxFilter;
+
+    // Find all options that score as an "exact" match (≥ 900 = exact keyword or exact token)
+    const exactMatches = options.filter((opt) => {
+      const searchStr = opt.searchString || String(opt.label);
+      const score = activeFilter(searchStr, searchTrim, opt.keywords);
+      return score >= 900;
+    });
+
+    if (exactMatches.length === 1) {
+      // Delay slightly so the user can see what was matched (feels less jarring than instant)
+      autoSelectTimer.current = setTimeout(() => {
+        if (itemSelected.current) return; // already selected by click
+        itemSelected.current = true;
+        onChange(exactMatches[0].value);
+        setOpen(false);
+        skipOpen.current = true;
+        setTimeout(() => { skipOpen.current = false; }, 80);
+        onAfterSelect?.();
+      }, 120);
+    }
+
+    return () => {
+      if (autoSelectTimer.current) {
+        clearTimeout(autoSelectTimer.current);
+        autoSelectTimer.current = null;
+      }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inputValue, open]);
 
   const selectedOption = options.find((opt) => opt.value === value)
 
