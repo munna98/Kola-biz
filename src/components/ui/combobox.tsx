@@ -218,7 +218,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
                       skipOpen.current = true;
                       setTimeout(() => {
                         skipOpen.current = false;
-                      }, 300);
+                      }, 80);
                     }}
                   >
                     <Plus className="mr-2 h-4 w-4" />
@@ -258,7 +258,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
                     skipOpen.current = true
                     setTimeout(() => {
                       skipOpen.current = false
-                    }, 300)
+                    }, 80)
                   }}
                 >
                   <Check

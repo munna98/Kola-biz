@@ -388,6 +388,44 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
         }
     };
 
+    /**
+     * Reliably focus and open the product Combobox for the given row index.
+     * Retries if the target row has not finished mounting in the DOM yet.
+     */
+    const focusAndOpenProductCombobox = (targetIdx: number) => {
+        let attempts = 0;
+        const maxAttempts = 15;
+
+        const tryFocus = () => {
+            const targetRow = document.querySelector(`[data-row-index="${targetIdx}"]`);
+            if (targetRow) {
+                const firstInput = targetRow.querySelector(
+                    'button[role="combobox"], input:not([disabled]), button:not([disabled])'
+                ) as HTMLElement | null;
+
+                if (firstInput) {
+                    firstInput.focus();
+                    if (firstInput instanceof HTMLInputElement) {
+                        firstInput.select();
+                    } else if (firstInput instanceof HTMLButtonElement) {
+                        const isExpanded = firstInput.getAttribute('aria-expanded') === 'true';
+                        if (!isExpanded) {
+                            firstInput.click();
+                        }
+                    }
+                    return;
+                }
+            }
+
+            attempts++;
+            if (attempts < maxAttempts) {
+                setTimeout(tryFocus, 30);
+            }
+        };
+
+        setTimeout(tryFocus, 100);
+    };
+
     // Expose methods to parent component
     useImperativeHandle(ref, () => ({
         focusFirstProduct: () => {
@@ -614,29 +652,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                                     if (settings?.skipToNextRowAfterProduct) {
                                                         // When both Skip to Next Row After Product & Increment Qty on Duplicate are enabled,
                                                         // focus moves to the product input, not quantity.
+                                                        const targetIndex = idx;
                                                         if (items[idx].product_id) {
                                                             onRemoveItem(idx);
                                                         }
-                                                        setTimeout(() => {
-                                                            const targetRow = document.querySelector(`[data-row-index="${idx}"]`);
-                                                            if (targetRow) {
-                                                                const firstInput = targetRow.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
-                                                                if (firstInput) {
-                                                                    firstInput.focus();
-                                                                    if (firstInput instanceof HTMLButtonElement) firstInput.click();
-                                                                }
-                                                            } else {
-                                                                onAddItem();
-                                                                setTimeout(() => {
-                                                                    const lastRow = document.querySelector('[data-row-index]:last-child');
-                                                                    const firstInput = lastRow?.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
-                                                                    if (firstInput) {
-                                                                        firstInput.focus();
-                                                                        if (firstInput instanceof HTMLButtonElement) firstInput.click();
-                                                                    }
-                                                                }, 50);
-                                                            }
-                                                        }, 100);
+                                                        focusAndOpenProductCombobox(targetIndex);
                                                         return;
                                                     } else {
                                                         // Remove current (new/empty) row if it has no product yet
@@ -658,30 +678,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                             // --- Skip to Next Row After Product ---
                                             if (settings?.skipToNextRowAfterProduct) {
                                                 onUpdateItem(idx, 'product_id', prodId, { initialQuantity: 1 });
-                                                // Jump to next row (add new if needed)
-                                                setTimeout(() => {
-                                                    const currentRow = document.querySelector(`[data-row-index="${idx}"]`);
-                                                    if (currentRow) {
-                                                        const nextRow = currentRow.nextElementSibling;
-                                                        if (nextRow) {
-                                                            const firstInput = nextRow.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
-                                                            if (firstInput) {
-                                                                firstInput.focus();
-                                                                if (firstInput instanceof HTMLButtonElement) firstInput.click();
-                                                            }
-                                                        } else {
-                                                            onAddItem();
-                                                            setTimeout(() => {
-                                                                const newRow = currentRow.parentElement?.lastElementChild;
-                                                                const firstInput = newRow?.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
-                                                                if (firstInput) {
-                                                                    firstInput.focus();
-                                                                    if (firstInput instanceof HTMLButtonElement) firstInput.click();
-                                                                }
-                                                            }, 50);
-                                                        }
-                                                    }
-                                                }, 100);
+                                                const targetIdx = idx + 1;
+                                                if (targetIdx >= items.length) {
+                                                    onAddItem();
+                                                }
+                                                focusAndOpenProductCombobox(targetIdx);
                                             } else {
                                                 onUpdateItem(idx, 'product_id', prodId);
                                                 setTimeout(() => focusFirstEditableAfterProduct(idx), 100);
