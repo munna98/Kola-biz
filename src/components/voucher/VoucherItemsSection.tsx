@@ -610,18 +610,48 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                                 if (existingIdx !== -1) {
                                                     const existingQty = items[existingIdx].initial_quantity || 0;
                                                     onUpdateItem(existingIdx, 'initial_quantity', existingQty + 1);
-                                                    // Remove current (new/empty) row if it has no product yet
-                                                    if (!items[idx].product_id) {
-                                                        onRemoveItem(idx);
+
+                                                    if (settings?.skipToNextRowAfterProduct) {
+                                                        // When both Skip to Next Row After Product & Increment Qty on Duplicate are enabled,
+                                                        // focus moves to the product input, not quantity.
+                                                        if (items[idx].product_id) {
+                                                            onRemoveItem(idx);
+                                                        }
+                                                        setTimeout(() => {
+                                                            const targetRow = document.querySelector(`[data-row-index="${idx}"]`);
+                                                            if (targetRow) {
+                                                                const firstInput = targetRow.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
+                                                                if (firstInput) {
+                                                                    firstInput.focus();
+                                                                    if (firstInput instanceof HTMLButtonElement) firstInput.click();
+                                                                }
+                                                            } else {
+                                                                onAddItem();
+                                                                setTimeout(() => {
+                                                                    const lastRow = document.querySelector('[data-row-index]:last-child');
+                                                                    const firstInput = lastRow?.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
+                                                                    if (firstInput) {
+                                                                        firstInput.focus();
+                                                                        if (firstInput instanceof HTMLButtonElement) firstInput.click();
+                                                                    }
+                                                                }, 50);
+                                                            }
+                                                        }, 100);
+                                                        return;
+                                                    } else {
+                                                        // Remove current (new/empty) row if it has no product yet
+                                                        if (!items[idx].product_id) {
+                                                            onRemoveItem(idx);
+                                                        }
+                                                        // Focus the incremented row's quantity field
+                                                        setTimeout(() => {
+                                                            const targetRow = document.querySelector(`[data-row-index="${existingIdx}"]`);
+                                                            const qtyInput = targetRow?.querySelector('[data-field="quantity"]') as HTMLElement | null;
+                                                            qtyInput?.focus();
+                                                            if (qtyInput instanceof HTMLInputElement) qtyInput.select();
+                                                        }, 50);
+                                                        return;
                                                     }
-                                                    // Focus the incremented row's quantity field
-                                                    setTimeout(() => {
-                                                        const targetRow = document.querySelector(`[data-row-index="${existingIdx}"]`);
-                                                        const qtyInput = targetRow?.querySelector('[data-field="quantity"]') as HTMLElement | null;
-                                                        qtyInput?.focus();
-                                                        if (qtyInput instanceof HTMLInputElement) qtyInput.select();
-                                                    }, 50);
-                                                    return;
                                                 }
                                             }
 
