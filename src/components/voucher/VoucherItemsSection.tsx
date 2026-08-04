@@ -573,11 +573,15 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                             const productOptions = products.map(p => ({
                                 value: `p:${p.id}`,
                                 label: `${p.code} - ${p.name}`,
-                                searchString: p.barcode ? `${p.code} - ${p.name} ${p.barcode}` : undefined,
+                                subLabel: p.barcode ? `Barcode: ${p.barcode}` : undefined,
+                                searchString: p.barcode ? `${p.code} - ${p.name} ${p.barcode}` : `${p.code} - ${p.name}`,
+                                keywords: [p.barcode, p.code, p.name].filter(Boolean) as string[],
                             }));
                             const serviceOptions = (services ?? []).map(s => ({
                                 value: `s:${s.id}`,
                                 label: `${s.code} - ${s.name}`,
+                                searchString: `${s.code} - ${s.name}`,
+                                keywords: [s.code, s.name].filter(Boolean) as string[],
                             }));
                             const allOptions = [...productOptions, ...serviceOptions];
                             const currentValue = item.item_type === 'service' && item.service_id

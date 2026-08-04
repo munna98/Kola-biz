@@ -21,6 +21,7 @@ interface ComboboxOption {
   label: string
   searchString?: string
   subLabel?: string
+  keywords?: string[]
 }
 
 interface ComboboxProps {
@@ -38,7 +39,64 @@ interface ComboboxProps {
   /** Called synchronously inside onCloseAutoFocus right after an item is selected.
    *  Use this to redirect focus before the browser moves it anywhere else. */
   onAfterSelect?: () => void
+  filter?: (value: string, search: string, keywords?: string[]) => number
 }
+
+const defaultComboboxFilter = (value: string, search: string, keywords?: string[]) => {
+  const searchTrim = search.trim().toLowerCase();
+  if (!searchTrim) return 1;
+
+  // 1. Exact match on explicit keywords (e.g. barcode "130" or item code "130")
+  if (keywords && keywords.length > 0) {
+    for (const kw of keywords) {
+      if (!kw) continue;
+      const kwLower = String(kw).trim().toLowerCase();
+      if (kwLower === searchTrim) {
+        return 1000; // Top priority for exact barcode/code match!
+      }
+    }
+  }
+
+  const valueLower = value.toLowerCase();
+  const valueTokens = valueLower.split(/[\s\-:\/\\]+/).filter(Boolean);
+
+  // 2. Exact match on individual tokens in value (e.g. code/barcode embedded in searchString)
+  for (const token of valueTokens) {
+    if (token === searchTrim) {
+      return 900;
+    }
+  }
+
+  // 3. Prefix match on explicit keywords (e.g. barcode "1300" when typing "130")
+  if (keywords && keywords.length > 0) {
+    let bestKwScore = 0;
+    for (const kw of keywords) {
+      if (!kw) continue;
+      const kwLower = String(kw).trim().toLowerCase();
+      if (kwLower.startsWith(searchTrim)) {
+        const lenDiff = kwLower.length - searchTrim.length;
+        const score = Math.max(100, 500 - lenDiff * 10);
+        if (score > bestKwScore) bestKwScore = score;
+      }
+    }
+    if (bestKwScore > 0) return bestKwScore;
+  }
+
+  // 4. Prefix match on value tokens
+  for (const token of valueTokens) {
+    if (token.startsWith(searchTrim)) {
+      const lenDiff = token.length - searchTrim.length;
+      return Math.max(50, 400 - lenDiff * 10);
+    }
+  }
+
+  // 5. Substring match on full value
+  if (valueLower.includes(searchTrim)) {
+    return 10;
+  }
+
+  return 0;
+};
 
 export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { disabled?: boolean }>(({
   options,
@@ -54,6 +112,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   onActionClick,
   onEmptyEnter,
   onAfterSelect,
+  filter,
 }, ref) => {
   const [open, setOpen] = React.useState(false)
   const [hasOpenedOnFocus, setHasOpenedOnFocus] = React.useState(false)
@@ -138,7 +197,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
           }
         }}
       >
-        <Command>
+        <Command filter={filter || defaultComboboxFilter}>
           <CommandInput
             placeholder={searchPlaceholder}
             autoFocus
@@ -191,6 +250,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
                   // cmdk uses the 'value' prop for internal filtering. 
                   // It should ideally be the label string.
                   value={option.searchString || String(option.label)}
+                  keywords={option.keywords}
                   onSelect={() => {
                     itemSelected.current = true;
                     onChange(option.value)

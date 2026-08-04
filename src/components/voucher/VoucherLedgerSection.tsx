@@ -151,6 +151,9 @@ export function VoucherLedgerSection({
                                     ...products.map(p => ({
                                         value: p.id,
                                         label: `${p.code} - ${p.name}`,
+                                        subLabel: p.barcode ? `Barcode: ${p.barcode}` : undefined,
+                                        searchString: p.barcode ? `${p.code} - ${p.name} ${p.barcode}` : `${p.code} - ${p.name}`,
+                                        keywords: [p.barcode, p.code, p.name].filter(Boolean) as string[],
                                     }))
                                 ]}
                                 onChange={(val) => onUpdateItem(index, 'product_id', val === '' ? undefined : val)}
