@@ -388,44 +388,6 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
         }
     };
 
-    /**
-     * Reliably focus and open the product Combobox for the given row index.
-     * Retries if the target row has not finished mounting in the DOM yet.
-     */
-    const focusAndOpenProductCombobox = (targetIdx: number) => {
-        let attempts = 0;
-        const maxAttempts = 15;
-
-        const tryFocus = () => {
-            const targetRow = document.querySelector(`[data-row-index="${targetIdx}"]`);
-            if (targetRow) {
-                const firstInput = targetRow.querySelector(
-                    'button[role="combobox"], input:not([disabled]), button:not([disabled])'
-                ) as HTMLElement | null;
-
-                if (firstInput) {
-                    firstInput.focus();
-                    if (firstInput instanceof HTMLInputElement) {
-                        firstInput.select();
-                    } else if (firstInput instanceof HTMLButtonElement) {
-                        const isExpanded = firstInput.getAttribute('aria-expanded') === 'true';
-                        if (!isExpanded) {
-                            firstInput.click();
-                        }
-                    }
-                    return;
-                }
-            }
-
-            attempts++;
-            if (attempts < maxAttempts) {
-                setTimeout(tryFocus, 30);
-            }
-        };
-
-        setTimeout(tryFocus, 100);
-    };
-
     // Expose methods to parent component
     useImperativeHandle(ref, () => ({
         focusFirstProduct: () => {
@@ -648,41 +610,85 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                                 if (existingIdx !== -1) {
                                                     const existingQty = items[existingIdx].initial_quantity || 0;
                                                     onUpdateItem(existingIdx, 'initial_quantity', existingQty + 1);
+                                                    // Remove current (new/empty) row if it has no product yet
+                                                    if (!items[idx].product_id) {
+                                                        onRemoveItem(idx);
+                                                    }
 
+                                                    // When skipToNextRowAfterProduct is also on, focus the next product input
+                                                    // so the user can keep scanning/selecting products without interruption.
                                                     if (settings?.skipToNextRowAfterProduct) {
-                                                        // When both Skip to Next Row After Product & Increment Qty on Duplicate are enabled,
-                                                        // focus moves to the product input, not quantity.
-                                                        const targetIndex = idx;
-                                                        if (items[idx].product_id) {
-                                                            onRemoveItem(idx);
-                                                        }
-                                                        focusAndOpenProductCombobox(targetIndex);
-                                                        return;
+                                                        setTimeout(() => {
+                                                            // After removing the empty row, the last row's product should be focused
+                                                            // Find the last row and focus its product combobox, or add a new row
+                                                            const allRows = document.querySelectorAll('[data-row-index]');
+                                                            const lastRow = allRows[allRows.length - 1];
+                                                            if (lastRow) {
+                                                                // Check if the last row already has a product selected
+                                                                const lastRowIdx = parseInt(lastRow.getAttribute('data-row-index') || '0');
+                                                                const lastItem = items[lastRowIdx];
+                                                                if (lastItem && lastItem.product_id) {
+                                                                    // All rows have products, need a new empty row
+                                                                    onAddItem();
+                                                                    setTimeout(() => {
+                                                                        const newRows = document.querySelectorAll('[data-row-index]');
+                                                                        const newRow = newRows[newRows.length - 1];
+                                                                        const productBtn = newRow?.querySelector('button:not([disabled])') as HTMLElement;
+                                                                        if (productBtn) {
+                                                                            productBtn.focus();
+                                                                            productBtn.click();
+                                                                        }
+                                                                    }, 50);
+                                                                } else {
+                                                                    // Last row is empty, focus its product input
+                                                                    const productBtn = lastRow.querySelector('button:not([disabled])') as HTMLElement;
+                                                                    if (productBtn) {
+                                                                        productBtn.focus();
+                                                                        productBtn.click();
+                                                                    }
+                                                                }
+                                                            }
+                                                        }, 50);
                                                     } else {
-                                                        // Remove current (new/empty) row if it has no product yet
-                                                        if (!items[idx].product_id) {
-                                                            onRemoveItem(idx);
-                                                        }
-                                                        // Focus the incremented row's quantity field
+                                                        // Default: focus the incremented row's quantity field
                                                         setTimeout(() => {
                                                             const targetRow = document.querySelector(`[data-row-index="${existingIdx}"]`);
                                                             const qtyInput = targetRow?.querySelector('[data-field="quantity"]') as HTMLElement | null;
                                                             qtyInput?.focus();
                                                             if (qtyInput instanceof HTMLInputElement) qtyInput.select();
                                                         }, 50);
-                                                        return;
                                                     }
+                                                    return;
                                                 }
                                             }
 
                                             // --- Skip to Next Row After Product ---
                                             if (settings?.skipToNextRowAfterProduct) {
                                                 onUpdateItem(idx, 'product_id', prodId, { initialQuantity: 1 });
-                                                const targetIdx = idx + 1;
-                                                if (targetIdx >= items.length) {
-                                                    onAddItem();
-                                                }
-                                                focusAndOpenProductCombobox(targetIdx);
+                                                // Jump to next row (add new if needed)
+                                                setTimeout(() => {
+                                                    const currentRow = document.querySelector(`[data-row-index="${idx}"]`);
+                                                    if (currentRow) {
+                                                        const nextRow = currentRow.nextElementSibling;
+                                                        if (nextRow) {
+                                                            const firstInput = nextRow.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
+                                                            if (firstInput) {
+                                                                firstInput.focus();
+                                                                if (firstInput instanceof HTMLButtonElement) firstInput.click();
+                                                            }
+                                                        } else {
+                                                            onAddItem();
+                                                            setTimeout(() => {
+                                                                const newRow = currentRow.parentElement?.lastElementChild;
+                                                                const firstInput = newRow?.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
+                                                                if (firstInput) {
+                                                                    firstInput.focus();
+                                                                    if (firstInput instanceof HTMLButtonElement) firstInput.click();
+                                                                }
+                                                            }, 50);
+                                                        }
+                                                    }
+                                                }, 100);
                                             } else {
                                                 onUpdateItem(idx, 'product_id', prodId);
                                                 setTimeout(() => focusFirstEditableAfterProduct(idx), 100);
