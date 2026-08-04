@@ -3,6 +3,7 @@ import { RootState, toggleSidebar } from '../../store';
 import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { IconLayoutSidebar, IconLayoutSidebarLeftCollapse } from '@tabler/icons-react';
 import { ALL_MENU_ITEMS } from '../../lib/menu-items';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 export default function Sidebar() {
     const dispatch = useDispatch();
@@ -25,25 +26,46 @@ export default function Sidebar() {
                 <button
                     onClick={() => dispatch(toggleSidebar())}
                     className="p-1 hover:bg-accent rounded"
+                    title={sidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
                 >
                     {sidebarCollapsed ? <IconLayoutSidebar size={20} /> : <IconLayoutSidebarLeftCollapse size={20} />}
                 </button>
             </div>
             <nav className="p-2 flex-1 overflow-y-auto scrollbar-hide">
-                {visibleMenuItems.map(item => (
-                    <button
-                        key={item.id}
-                        onClick={() => navigateTo(item.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-md mb-1 transition-colors ${activeSection === item.id
-                            ? 'bg-primary text-primary-foreground'
-                            : 'hover:bg-accent'
-                            }`}
-                    >
-                        <item.icon size={20} />
-                        {!sidebarCollapsed && <span>{item.label}</span>}
-                    </button>
-                ))}
+                <TooltipProvider delayDuration={100}>
+                    {visibleMenuItems.map(item => {
+                        const menuItem = (
+                            <button
+                                key={item.id}
+                                onClick={() => navigateTo(item.id)}
+                                className={`w-full flex items-center gap-3 px-3 py-2 rounded-md mb-1 transition-colors ${activeSection === item.id
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'hover:bg-accent'
+                                    }`}
+                            >
+                                <item.icon size={20} />
+                                {!sidebarCollapsed && <span>{item.label}</span>}
+                            </button>
+                        );
+
+                        if (sidebarCollapsed) {
+                            return (
+                                <Tooltip key={item.id}>
+                                    <TooltipTrigger asChild>
+                                        {menuItem}
+                                    </TooltipTrigger>
+                                    <TooltipContent side="right" align="center">
+                                        {item.label}
+                                    </TooltipContent>
+                                </Tooltip>
+                            );
+                        }
+
+                        return menuItem;
+                    })}
+                </TooltipProvider>
             </nav>
         </aside>
     );
 }
+
