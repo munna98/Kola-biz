@@ -545,8 +545,8 @@ export default function SalesReturnPage() {
             dispatch(setSalesReturnReference(invoice.reference || ''));
             dispatch(setSalesReturnNarration(invoice.narration || ''));
             dispatch(setSalesReturnDiscountRate(invoice.discount_rate || 0));
-            dispatch(setSalesReturnDiscountAmount(invoice.discount_amount || 0));
-            dispatch(setSalesReturnMarginScheme(!!invoice.is_margin_scheme_invoice));
+            const loadedIsMarginScheme = Boolean(invoice.is_margin_scheme_invoice);
+            dispatch(setSalesReturnMarginScheme(loadedIsMarginScheme));
 
             // Populate Items
             items.forEach(item => {
