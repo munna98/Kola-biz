@@ -33,6 +33,7 @@ pub struct SalesReturn {
     pub created_at: String,
     pub deleted_at: Option<String>,
     pub tax_inclusive: i64,
+    pub gst_disabled: i64,
     pub is_margin_scheme_invoice: i64,
 }
 
@@ -268,6 +269,7 @@ pub async fn get_sales_returns(
             v.created_at,
             v.deleted_at,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.gst_disabled, 0) as gst_disabled,
             COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
@@ -306,6 +308,7 @@ pub async fn get_sales_return(
             v.created_at,
             v.deleted_at,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.gst_disabled, 0) as gst_disabled,
             COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
@@ -454,8 +457,8 @@ pub(crate) async fn create_sales_return_in_tx(
 
     let voucher_id = Uuid::now_v7().to_string();
     sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total, is_margin_scheme_invoice)
-         VALUES (?, ?, 'sales_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?)",
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total, is_margin_scheme_invoice, gst_disabled)
+         VALUES (?, ?, 'sales_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?)",
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -472,6 +475,7 @@ pub(crate) async fn create_sales_return_in_tx(
     .bind(tax_inclusive as i64)
     .bind(grand_total)
     .bind(invoice.is_margin_scheme_invoice as i64)
+    .bind(gst_disabled as i64)
     .execute(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -766,7 +770,7 @@ pub async fn update_sales_return(
 
     sqlx::query(
         "UPDATE vouchers
-         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?, status = 'posted', tax_inclusive = ?, grand_total = ?
+         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?, status = 'posted', tax_inclusive = ?, grand_total = ?, gst_disabled = ?
          WHERE id = ? AND voucher_type = 'sales_return'",
     )
     .bind(&invoice.voucher_date)
@@ -781,6 +785,7 @@ pub async fn update_sales_return(
     .bind(&invoice.narration)
     .bind(tax_inclusive as i64)
     .bind(grand_total)
+    .bind(gst_disabled as i64)
     .bind(&id)
     .execute(&mut *tx)
     .await

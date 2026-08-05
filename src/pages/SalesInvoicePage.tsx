@@ -647,7 +647,9 @@ export default function SalesInvoicePage() {
     dispatch(setSalesHasUnsavedChanges(true));
   };
 
-  const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number, isMarginSchemeOverride?: boolean) => {
+  const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number, isMarginSchemeOverride?: boolean, isGstDisabledOverride?: boolean) => {
+    const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
+
     // Slab-aware GST resolution
     const productMap: Record<string, Product> = {};
     products.forEach(p => { productMap[String(p.id)] = p; });
@@ -655,7 +657,7 @@ export default function SalesInvoicePage() {
     gstSlabs.forEach(s => { slabMap[s.id] = s; });
 
     const resolveItemGstRate = (item: typeof salesState.items[number]) => {
-      if (gstDisabled) return 0;
+      if (isGstDisabledEffective) return 0;
       if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
         return item.resolved_gst_rate;
       }
@@ -1120,11 +1122,17 @@ export default function SalesInvoicePage() {
         purchase_cost: item.purchase_cost ?? 0,
       }));
 
+      const loadedGstDisabled = (invoice as any).gst_disabled !== undefined && (invoice as any).gst_disabled !== null
+        ? Boolean((invoice as any).gst_disabled)
+        : (invoice.tax === 0 && items.length > 0 && items.every((i: any) => i.resolved_gst_rate === 0 || i.tax_amount === 0));
+      setGstDisabled(loadedGstDisabled);
+
       updateTotalsWithItems(
         loadedItems,
         invoice.discount_amount ? undefined : invoice.discount_rate,
         invoice.discount_amount || undefined,
-        loadedIsMarginScheme
+        loadedIsMarginScheme,
+        loadedGstDisabled
       );
 
       dispatch(setSalesMode('viewing'));

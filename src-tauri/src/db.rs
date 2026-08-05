@@ -441,6 +441,11 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         .execute(pool)
         .await;
 
+    // Migration: Add gst_disabled to vouchers if not exists
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN gst_disabled INTEGER DEFAULT 0")
+        .execute(pool)
+        .await;
+
     // Data fix: Backfill grand_total for payment/receipt vouchers where it was never stored (still 0).
     // We derive grand_total from the journal credit (payment) or debit (receipt) side which was
     // always correctly recorded. Falls back to total_amount if no journal entries exist.

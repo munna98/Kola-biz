@@ -377,6 +377,7 @@ export interface CreateSalesInvoice {
   items: CreateSalesInvoiceItem[];
   user_id?: string;
   created_by?: string;
+  gst_disabled?: boolean;
 }
 
 export interface SalesInvoice {
@@ -397,6 +398,7 @@ export interface SalesInvoice {
   foreign_total?: number;
   created_at: string;
   created_by_name?: string;
+  gst_disabled?: number | boolean;
 }
 
 // ======= EMPLOYEES / USERS =======

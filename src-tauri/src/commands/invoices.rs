@@ -128,6 +128,7 @@ pub struct PurchaseInvoice {
     pub deleted_at: Option<String>,
     pub created_by_name: Option<String>,
     pub tax_inclusive: i64,
+    pub gst_disabled: i64,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -571,7 +572,8 @@ pub async fn get_purchase_invoices(
             v.created_at,
             v.deleted_at,
             u.full_name as created_by_name,
-            COALESCE(v.tax_inclusive, 0) as tax_inclusive
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.gst_disabled, 0) as gst_disabled
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -612,7 +614,8 @@ pub async fn get_purchase_invoice(
             v.created_at,
             v.deleted_at,
             u.full_name as created_by_name,
-            COALESCE(v.tax_inclusive, 0) as tax_inclusive
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.gst_disabled, 0) as gst_disabled
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -843,13 +846,14 @@ pub async fn create_purchase_invoice(
 
     let voucher_id = Uuid::now_v7().to_string();
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, gst_disabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("purchase_invoice").bind(&invoice.voucher_date).bind(&invoice.supplier_id)
     .bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(discount_rate)
     .bind(discount_amount).bind(total_tax).bind(total_amount).bind(&invoice.narration)
-    .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total)
+    .bind(gst_disabled as i64).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
     for item in &processed_items {
@@ -1212,14 +1216,14 @@ pub async fn update_purchase_invoice(
         "UPDATE vouchers 
          SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, 
              discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?,
-             tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?
+             tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, gst_disabled = ?
          WHERE id = ?"
     )
     .bind(&invoice.voucher_date).bind(&invoice.supplier_id).bind(&invoice.party_type).bind(&invoice.reference)
     .bind(subtotal).bind(discount_rate).bind(discount_amount)
     .bind(total_tax).bind(total_amount).bind(&invoice.narration)
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
-    .bind(grand_total).bind(&voucher_id)
+    .bind(grand_total).bind(gst_disabled as i64).bind(&voucher_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     if let Some(old_id) = &old_party_id {
@@ -1532,6 +1536,7 @@ pub struct SalesInvoice {
     pub deleted_at: Option<String>,
     pub created_by_name: Option<String>,
     pub tax_inclusive: i64,
+    pub gst_disabled: i64,
     pub linked_return_id: Option<String>,
     pub is_margin_scheme_invoice: i64,
     pub metadata: Option<String>,
@@ -1661,6 +1666,7 @@ pub async fn get_sales_invoices(
             v.deleted_at,
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.gst_disabled, 0) as gst_disabled,
             v.linked_return_id,
             COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice,
             v.metadata,
@@ -1729,6 +1735,7 @@ pub(crate) async fn get_sales_invoice_with_pool(
             v.deleted_at,
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.gst_disabled, 0) as gst_disabled,
             v.linked_return_id,
             COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice,
             v.metadata,
@@ -1975,8 +1982,8 @@ pub async fn create_sales_invoice(
     let metadata_json = metadata_obj.to_string();
 
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, is_margin_scheme_invoice, metadata, currency_id, exchange_rate, foreign_total)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, is_margin_scheme_invoice, metadata, currency_id, exchange_rate, foreign_total, gst_disabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("sales_invoice").bind(&invoice.voucher_date).bind(&invoice.customer_id)
     .bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(discount_rate)
@@ -1984,6 +1991,7 @@ pub async fn create_sales_invoice(
     .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total)
     .bind(invoice.is_margin_scheme_invoice as i64).bind(&metadata_json)
     .bind(&invoice.currency_id).bind(exchange_rate).bind(grand_total_foreign)
+    .bind(gst_disabled as i64)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
@@ -2372,7 +2380,7 @@ pub async fn update_sales_invoice(
          SET voucher_date = ?, party_id = ?, salesperson_id = ?, party_type = ?, reference = ?, subtotal = ?, 
              discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?,
              tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, metadata = ?,
-             currency_id = ?, exchange_rate = ?, foreign_total = ?, is_margin_scheme_invoice = ?
+             currency_id = ?, exchange_rate = ?, foreign_total = ?, is_margin_scheme_invoice = ?, gst_disabled = ?
          WHERE id = ?"
     )
     .bind(&invoice.voucher_date).bind(&invoice.customer_id).bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference)
@@ -2381,7 +2389,7 @@ pub async fn update_sales_invoice(
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
     .bind(grand_total).bind(&metadata_json)
     .bind(&invoice.currency_id).bind(exchange_rate).bind(grand_total_foreign)
-    .bind(invoice.is_margin_scheme_invoice as i64)
+    .bind(invoice.is_margin_scheme_invoice as i64).bind(gst_disabled as i64)
     .bind(&voucher_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 

@@ -280,7 +280,9 @@ export default function PurchaseReturnPage() {
         dispatch(setPurchaseReturnHasUnsavedChanges(true));
     };
 
-    const updateTotalsWithItems = (items: typeof purchaseReturnState.items, discountRate?: number, discountAmount?: number) => {
+    const updateTotalsWithItems = (items: typeof purchaseReturnState.items, discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean) => {
+        const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
+
         // Slab-aware GST resolution mapper
         const slabMap: Record<string, GstTaxSlab> = {};
         gstSlabs.forEach(s => { slabMap[s.id] = s; });
@@ -288,7 +290,7 @@ export default function PurchaseReturnPage() {
         products.forEach(p => { productMap[String(p.id)] = p; });
 
         const resolveItemGstRate = (item: typeof purchaseReturnState.items[number]) => {
-            if (gstDisabled) return 0;
+            if (isGstDisabledEffective) return 0;
             if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
                 return item.resolved_gst_rate;
             }
@@ -518,10 +520,16 @@ export default function PurchaseReturnPage() {
                 discount_amount: item.discount_amount || 0,
             }));
 
+            const loadedGstDisabled = (invoice as any).gst_disabled !== undefined && (invoice as any).gst_disabled !== null
+                ? Boolean((invoice as any).gst_disabled)
+                : (invoice.tax_amount === 0 && items.length > 0 && items.every((i: any) => i.resolved_gst_rate === 0 || i.tax_amount === 0));
+            setGstDisabled(loadedGstDisabled);
+
             updateTotalsWithItems(
                 loadedItems,
                 invoice.discount_amount ? undefined : invoice.discount_rate,
-                invoice.discount_amount || undefined
+                invoice.discount_amount || undefined,
+                loadedGstDisabled
             );
 
             dispatch(setPurchaseReturnMode('viewing'));

@@ -322,7 +322,9 @@ export default function SalesReturnPage() {
         dispatch(setSalesReturnHasUnsavedChanges(true));
     };
 
-    const updateTotalsWithItems = (items: typeof salesReturnState.items, discountRate?: number, discountAmount?: number, isMarginSchemeOverride?: boolean) => {
+    const updateTotalsWithItems = (items: typeof salesReturnState.items, discountRate?: number, discountAmount?: number, isMarginSchemeOverride?: boolean, isGstDisabledOverride?: boolean) => {
+        const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
+
         // Slab-aware GST resolution mapper
         const slabMap: Record<string, GstTaxSlab> = {};
         gstSlabs.forEach(s => { slabMap[s.id] = s; });
@@ -330,7 +332,7 @@ export default function SalesReturnPage() {
         products.forEach(p => { productMap[String(p.id)] = p; });
 
         const resolveItemGstRate = (item: typeof salesReturnState.items[number]) => {
-            if (gstDisabled) return 0;
+            if (isGstDisabledEffective) return 0;
             if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
                 return item.resolved_gst_rate;
             }
@@ -601,10 +603,17 @@ export default function SalesReturnPage() {
                 purchase_cost: item.purchase_cost || 0,
             }));
 
+            const loadedGstDisabled = (invoice as any).gst_disabled !== undefined && (invoice as any).gst_disabled !== null
+                ? Boolean((invoice as any).gst_disabled)
+                : (invoice.tax_amount === 0 && items.length > 0 && items.every((i: any) => i.resolved_gst_rate === 0 || i.tax_amount === 0));
+            setGstDisabled(loadedGstDisabled);
+
             updateTotalsWithItems(
                 loadedItems,
                 invoice.discount_amount ? undefined : invoice.discount_rate,
-                invoice.discount_amount || undefined
+                invoice.discount_amount || undefined,
+                loadedIsMarginScheme,
+                loadedGstDisabled
             );
 
             dispatch(setSalesReturnMode('viewing'));

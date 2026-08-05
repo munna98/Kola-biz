@@ -32,6 +32,7 @@ pub struct SalesQuotation {
     pub deleted_at: Option<String>,
     pub created_by_name: Option<String>,
     pub tax_inclusive: i64,
+    pub gst_disabled: i64,
     pub valid_until: Option<String>, // Added for quotations
     pub metadata: Option<String>,
 }
@@ -141,6 +142,7 @@ pub async fn get_sales_quotations(
             v.deleted_at,
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.gst_disabled, 0) as gst_disabled,
             json_extract(v.metadata, '$.valid_until') as valid_until,
             v.metadata
          FROM vouchers v
@@ -278,13 +280,13 @@ pub async fn create_sales_quotation(
 
     let voucher_id = Uuid::now_v7().to_string();
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, metadata)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, metadata, gst_disabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("sales_quotation").bind(&quotation.voucher_date).bind(&quotation.customer_id)
     .bind(&quotation.salesperson_id).bind(&quotation.party_type).bind(&quotation.reference).bind(subtotal).bind(discount_rate)
     .bind(discount_amount).bind(total_tax).bind(total_amount).bind(&quotation.narration)
-    .bind(&quotation.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total).bind(&metadata).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    .bind(&quotation.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total).bind(&metadata).bind(gst_disabled as i64).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
     for item in &processed_items {
@@ -438,13 +440,13 @@ pub async fn update_sales_quotation(
         "UPDATE vouchers 
          SET voucher_date = ?, party_id = ?, salesperson_id = ?, party_type = ?, reference = ?, subtotal = ?, 
              discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?,
-             tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, metadata = ?
+             tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, metadata = ?, gst_disabled = ?
          WHERE id = ? AND voucher_type = 'sales_quotation'"
     )
     .bind(&quotation.voucher_date).bind(&quotation.customer_id).bind(&quotation.salesperson_id).bind(&quotation.party_type)
     .bind(&quotation.reference).bind(subtotal).bind(discount_rate).bind(discount_amount).bind(total_tax)
     .bind(total_amount).bind(&quotation.narration).bind(tax_inclusive as i64).bind(total_cgst)
-    .bind(total_sgst).bind(total_igst).bind(grand_total).bind(&metadata).bind(&id)
+    .bind(total_sgst).bind(total_igst).bind(grand_total).bind(&metadata).bind(gst_disabled as i64).bind(&id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Delete existing items
@@ -504,6 +506,7 @@ pub async fn get_sales_quotation_with_pool(
             v.deleted_at,
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.gst_disabled, 0) as gst_disabled,
             json_extract(v.metadata, '$.valid_until') as valid_until,
             v.metadata
         FROM vouchers v

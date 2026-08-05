@@ -27,6 +27,7 @@ pub struct PurchaseReturn {
     pub created_at: String,
     pub deleted_at: Option<String>,
     pub tax_inclusive: i64,
+    pub gst_disabled: i64,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -125,7 +126,8 @@ pub async fn get_purchase_returns(
             v.status,
             v.created_at,
             v.deleted_at,
-            COALESCE(v.tax_inclusive, 0) as tax_inclusive
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.gst_disabled, 0) as gst_disabled
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -162,7 +164,8 @@ pub async fn get_purchase_return(
             v.status,
             v.created_at,
             v.deleted_at,
-            COALESCE(v.tax_inclusive, 0) as tax_inclusive
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.gst_disabled, 0) as gst_disabled
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
@@ -289,8 +292,8 @@ pub async fn create_purchase_return(
 
     let voucher_id = Uuid::now_v7().to_string();
     sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total)
-         VALUES (?, ?, 'purchase_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?)",
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total, gst_disabled)
+         VALUES (?, ?, 'purchase_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?)",
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -306,6 +309,7 @@ pub async fn create_purchase_return(
     .bind(&invoice.narration)
     .bind(tax_inclusive as i64)
     .bind(grand_total)
+    .bind(gst_disabled as i64)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -549,7 +553,7 @@ pub async fn update_purchase_return(
 
     sqlx::query(
         "UPDATE vouchers
-         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?, status = 'posted', tax_inclusive = ?, grand_total = ?
+         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?, status = 'posted', tax_inclusive = ?, grand_total = ?, gst_disabled = ?
          WHERE id = ? AND voucher_type = 'purchase_return'",
     )
     .bind(&invoice.voucher_date)
@@ -564,6 +568,7 @@ pub async fn update_purchase_return(
     .bind(&invoice.narration)
     .bind(tax_inclusive as i64)
     .bind(grand_total)
+    .bind(gst_disabled as i64)
     .bind(&id)
     .execute(&mut *tx)
     .await

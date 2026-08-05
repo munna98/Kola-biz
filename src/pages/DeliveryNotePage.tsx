@@ -90,7 +90,7 @@ export default function DeliveryNotePage() {
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
-  const gstDisabled = true; const setGstDisabled = () => {};
+  const [gstDisabled, setGstDisabled] = useState(false);
   const [services, setServices] = useState<any[]>([]);
   const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
 
@@ -311,14 +311,16 @@ export default function DeliveryNotePage() {
     dispatch(setDeliveryNoteHasUnsavedChanges(true));
   };
 
-  const updateTotalsWithItems = (items: typeof noteState.items, discountRate?: number, discountAmount?: number) => {
+  const updateTotalsWithItems = (items: typeof noteState.items, discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean) => {
+    const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
+
     const productMap: Record<string, Product> = {};
     products.forEach(p => { productMap[String(p.id)] = p; });
     const slabMap: Record<string, GstTaxSlab> = {};
     gstSlabs.forEach(s => { slabMap[s.id] = s; });
 
     const resolveItemGstRate = (item: typeof noteState.items[number]) => {
-      if (gstDisabled) return 0;
+      if (isGstDisabledEffective) return 0;
       if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) return item.resolved_gst_rate;
       if (item.gst_slab_id) {
         const savedSlab = slabMap[item.gst_slab_id];
@@ -519,7 +521,12 @@ export default function DeliveryNotePage() {
         discount_amount: item.discount_amount || 0,
       }));
 
-      updateTotalsWithItems(loadedItems, note.discount_amount ? undefined : note.discount_rate, note.discount_amount || undefined);
+      const loadedGstDisabled = (note as any).gst_disabled !== undefined && (note as any).gst_disabled !== null
+        ? Boolean((note as any).gst_disabled)
+        : (note.tax_amount === 0 && items.length > 0 && items.every((i: any) => i.resolved_gst_rate === 0 || i.tax_amount === 0));
+      setGstDisabled(loadedGstDisabled);
+
+      updateTotalsWithItems(loadedItems, note.discount_amount ? undefined : note.discount_rate, note.discount_amount || undefined, loadedGstDisabled);
 
       dispatch(setDeliveryNoteMode('viewing'));
       dispatch(setDeliveryNoteHasUnsavedChanges(false));

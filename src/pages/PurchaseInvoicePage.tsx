@@ -315,11 +315,17 @@ export default function PurchaseInvoicePage() {
 
       mappedItems.forEach(item => dispatch(addItem(item)));
 
+      const loadedGstDisabled = (voucher as any).gst_disabled !== undefined && (voucher as any).gst_disabled !== null
+        ? Boolean((voucher as any).gst_disabled)
+        : (voucher.tax_amount === 0 && items.length > 0 && items.every((i: any) => i.resolved_gst_rate === 0 || i.tax_amount === 0));
+      setGstDisabled(loadedGstDisabled);
+
       // Recalculate totals from the exact saved discount amount when present.
       updateTotalsWithItems(
         mappedItems,
         voucher.discount_amount ? undefined : voucher.discount_rate,
-        voucher.discount_amount || undefined
+        voucher.discount_amount || undefined,
+        loadedGstDisabled
       );
 
       dispatch(setPurchaseHasUnsavedChanges(false));
@@ -542,7 +548,9 @@ export default function PurchaseInvoicePage() {
     markUnsaved();
   };
 
-  const updateTotalsWithItems = (items: any[], discountRate?: number, discountAmount?: number) => {
+  const updateTotalsWithItems = (items: any[], discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean) => {
+    const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
+
     // Slab-aware GST resolution
     const productMap: Record<string, Product> = {};
     products.forEach(p => { productMap[String(p.id)] = p; });
@@ -550,7 +558,7 @@ export default function PurchaseInvoicePage() {
     gstSlabs.forEach(s => { slabMap[s.id] = s; });
 
     const resolveItemGstRate = (item: any) => {
-      if (gstDisabled) return 0;
+      if (isGstDisabledEffective) return 0;
       if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
         return item.resolved_gst_rate;
       }
