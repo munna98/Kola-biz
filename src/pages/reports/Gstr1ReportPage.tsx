@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { IconDownload, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
-import { api, GstSummaryRow } from '@/lib/tauri';
+import { api, GstSummaryRow, GstSettings } from '@/lib/tauri';
 import { useMoney } from '@/hooks/useMoney';
 
 const today = new Date().toISOString().split('T')[0];
@@ -27,7 +27,14 @@ export default function Gstr1ReportPage() {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<GstSummaryRow[]>([]);
   const [fetched, setFetched] = useState(false);
+  const [gstSettings, setGstSettings] = useState<GstSettings | null>(null);
   const fmt = useMoney();
+
+  useEffect(() => {
+    api.gst.getSettings().then(setGstSettings).catch(() => {});
+  }, []);
+
+  const showMarginCol = gstSettings?.margin_scheme_enabled ?? false;
 
   const fetchData = async () => {
     try {
@@ -61,6 +68,7 @@ export default function Gstr1ReportPage() {
     const headers = [
       'Sl.', 'Invoice No', 'Invoice Date', 'Party', 'Party GST No',
       'Description', 'HSN/SAC', 'UQC', 'Qty', 'GST Rate (%)',
+      ...(showMarginCol ? ['Margin Scheme'] : []),
       'Taxable Value', 'CGST', 'SGST', 'IGST', 'Total Tax', 'Invoice Value',
     ];
     const data = rows.map(r => [
@@ -74,6 +82,7 @@ export default function Gstr1ReportPage() {
       r.uqc,
       r.qty,
       r.gst_rate,
+      ...(showMarginCol ? [r.is_margin_scheme ? 'Yes' : 'No'] : []),
       r.taxable_value,
       r.cgst,
       r.sgst,
@@ -83,6 +92,7 @@ export default function Gstr1ReportPage() {
     ]);
     const totalRow = [
       '', '', '', '', '', 'TOTAL', '', '', totals.qty, '',
+      ...(showMarginCol ? [''] : []),
       totals.taxable,
       totals.cgst,
       totals.sgst,
@@ -92,7 +102,10 @@ export default function Gstr1ReportPage() {
     ];
 
     const ws = XLSX.utils.aoa_to_sheet([headers, ...data, totalRow]);
-    ws['!cols'] = [8, 16, 14, 24, 18, 28, 14, 8, 10, 14, 16, 16, 16, 16, 14, 16].map(w => ({ wch: w }));
+    const colWidths = [8, 16, 14, 24, 18, 28, 14, 8, 10, 14];
+    if (showMarginCol) colWidths.push(14);
+    colWidths.push(16, 16, 16, 16, 14, 16);
+    ws['!cols'] = colWidths.map(w => ({ wch: w }));
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'GSTR-1');
     XLSX.writeFile(wb, `GSTR1_Report_${fromDate}_to_${toDate}.xlsx`);
@@ -172,6 +185,9 @@ export default function Gstr1ReportPage() {
                   <th className="px-3 py-2.5 font-medium">UQC</th>
                   <th className="px-3 py-2.5 font-medium text-right">Qty</th>
                   <th className="px-3 py-2.5 font-medium text-right">GST Rate</th>
+                  {showMarginCol && (
+                    <th className="px-3 py-2.5 font-medium text-center whitespace-nowrap">Margin Scheme</th>
+                  )}
                   <th className="px-3 py-2.5 font-medium text-right">Taxable Value</th>
                   <th className="px-3 py-2.5 font-medium text-right">CGST</th>
                   <th className="px-3 py-2.5 font-medium text-right">SGST</th>
@@ -193,6 +209,17 @@ export default function Gstr1ReportPage() {
                     <td className="px-3 py-2.5 text-xs font-medium">{row.uqc}</td>
                     <td className="px-3 py-2.5 text-right font-medium">{row.qty}</td>
                     <td className="px-3 py-2.5 text-right">{row.gst_rate}%</td>
+                    {showMarginCol && (
+                      <td className="px-3 py-2.5 text-center">
+                        {row.is_margin_scheme ? (
+                          <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                            Yes
+                          </span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    )}
                     <td className="px-3 py-2.5 text-right">{fmt(row.taxable_value)}</td>
                     <td className="px-3 py-2.5 text-right">{fmt(row.cgst)}</td>
                     <td className="px-3 py-2.5 text-right">{fmt(row.sgst)}</td>
@@ -207,6 +234,7 @@ export default function Gstr1ReportPage() {
                   <td className="px-3 py-2.5" colSpan={8}>Total</td>
                   <td className="px-3 py-2.5 text-right">{totals.qty}</td>
                   <td className="px-3 py-2.5 text-right"></td>
+                  {showMarginCol && <td className="px-3 py-2.5" />}
                   <td className="px-3 py-2.5 text-right">{fmt(totals.taxable)}</td>
                   <td className="px-3 py-2.5 text-right">{fmt(totals.cgst)}</td>
                   <td className="px-3 py-2.5 text-right">{fmt(totals.sgst)}</td>

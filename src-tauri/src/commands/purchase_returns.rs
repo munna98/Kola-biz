@@ -6,7 +6,6 @@ use uuid::Uuid;
 
 use super::invoices::{finalize_processed_items, prepare_voucher_line};
 use super::resolve_voucher_line_unit;
-use crate::voucher_seq::get_next_voucher_number;
 
 // ============= PURCHASE RETURN =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -89,6 +88,8 @@ fn default_item_type() -> String {
 
 #[derive(Deserialize)]
 pub struct CreatePurchaseReturn {
+    #[serde(default)]
+    pub voucher_no: Option<String>,
     pub supplier_id: String,
     pub party_type: String,
     pub voucher_date: String,
@@ -205,7 +206,14 @@ pub async fn create_purchase_return(
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    let voucher_no = get_next_voucher_number(&pool, "purchase_return").await?;
+    let voucher_no = match &invoice.voucher_no {
+        Some(v) if !v.trim().is_empty() => {
+            let custom_no = v.trim().to_string();
+            crate::voucher_seq::sync_voucher_sequence_if_higher_in_tx(&mut tx, "purchase_return", &custom_no).await?;
+            custom_no
+        }
+        _ => crate::voucher_seq::get_next_voucher_number_in_tx(&mut tx, "purchase_return").await?,
+    };
     let company_state: Option<String> =
         sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
             .fetch_optional(&mut *tx)

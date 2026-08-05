@@ -140,6 +140,101 @@ pub async fn get_next_voucher_number_in_tx(
     Ok(voucher_no)
 }
 
+pub struct ParsedVoucherNo {
+    pub prefix: String,
+    pub separator: String,
+    pub padding: i64,
+    pub num: i64,
+    pub include_financial_year: bool,
+}
+
+/// Parses custom voucher number into prefix, separator, padding, counter, and FY flag.
+/// e.g. "A-01" -> prefix: "A", sep: "-", padding: 2, num: 1
+/// e.g. "SI-24-25-0042" -> prefix: "SI", sep: "-", padding: 4, num: 42, include_fy: true
+pub fn parse_custom_voucher_no(s: &str) -> Option<ParsedVoucherNo> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let end_idx = trimmed.rfind(|c: char| !c.is_ascii_digit());
+    let (prefix_part, digit_part) = match end_idx {
+        Some(idx) => (&trimmed[..=idx], &trimmed[idx + 1..]),
+        None => ("", trimmed),
+    };
+
+    if digit_part.is_empty() {
+        return None;
+    }
+
+    let num = digit_part.parse::<i64>().ok()?;
+    let padding = (digit_part.len() as i64).max(2);
+
+    let sep_char = prefix_part.chars().rev().find(|c| !c.is_alphanumeric());
+
+    let (mut raw_prefix, separator) = match sep_char {
+        Some(sep) => {
+            let sep_str = sep.to_string();
+            let p = prefix_part.trim_end_matches(sep).to_string();
+            (p, sep_str)
+        }
+        None => (prefix_part.to_string(), "-".to_string()),
+    };
+
+    let fy_str = current_financial_year();
+    let include_financial_year = if !fy_str.is_empty() && raw_prefix.ends_with(&fy_str) {
+        raw_prefix = raw_prefix
+            .trim_end_matches(&fy_str)
+            .trim_end_matches(|c: char| !c.is_alphanumeric())
+            .to_string();
+        true
+    } else {
+        false
+    };
+
+    Some(ParsedVoucherNo {
+        prefix: raw_prefix,
+        separator,
+        padding,
+        num,
+        include_financial_year,
+    })
+}
+
+pub fn extract_numeric_suffix(s: &str) -> Option<i64> {
+    parse_custom_voucher_no(s).map(|p| p.num)
+}
+
+/// If a custom voucher number is provided, update prefix, separator, padding, FY flag, and next_number
+/// in voucher_sequences so that subsequent manual entries follow the imported pattern & sequence.
+pub async fn sync_voucher_sequence_if_higher_in_tx(
+    tx: &mut Transaction<'_, Sqlite>,
+    voucher_type: &str,
+    voucher_no: &str,
+) -> Result<(), String> {
+    if let Some(parsed) = parse_custom_voucher_no(voucher_no) {
+        sqlx::query(
+            "UPDATE voucher_sequences 
+             SET prefix = ?,
+                 separator = ?,
+                 padding = MAX(padding, ?),
+                 include_financial_year = ?,
+                 next_number = MAX(next_number, ? + 1)
+             WHERE voucher_type = ?",
+        )
+        .bind(&parsed.prefix)
+        .bind(&parsed.separator)
+        .bind(parsed.padding)
+        .bind(parsed.include_financial_year)
+        .bind(parsed.num)
+        .bind(voucher_type)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 /// Preview what the next voucher number would look like WITHOUT incrementing the counter.
 pub async fn preview_voucher_number_for(
     pool: &SqlitePool,

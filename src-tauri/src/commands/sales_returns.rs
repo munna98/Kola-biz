@@ -227,6 +227,8 @@ async fn sales_return_cost_rate(
 
 #[derive(Deserialize)]
 pub struct CreateSalesReturn {
+    #[serde(default)]
+    pub voucher_no: Option<String>,
     pub customer_id: String,
     pub party_type: String,
     pub voucher_date: String,
@@ -357,7 +359,14 @@ pub(crate) async fn create_sales_return_in_tx(
     tx: &mut Transaction<'_, Sqlite>,
     invoice: &CreateSalesReturn,
 ) -> Result<String, String> {
-    let voucher_no = get_next_voucher_number_in_tx(tx, "sales_return").await?;
+    let voucher_no = match &invoice.voucher_no {
+        Some(v) if !v.trim().is_empty() => {
+            let custom_no = v.trim().to_string();
+            crate::voucher_seq::sync_voucher_sequence_if_higher_in_tx(tx, "sales_return", &custom_no).await?;
+            custom_no
+        }
+        _ => get_next_voucher_number_in_tx(tx, "sales_return").await?,
+    };
     let company_state: Option<String> =
         sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
             .fetch_optional(&mut **tx)

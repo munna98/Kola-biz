@@ -6,7 +6,6 @@ use tauri::State;
 
 use super::resolve_voucher_line_unit;
 use super::sales_returns::{create_sales_return_in_tx, CreateSalesReturn, CreateSalesReturnItem};
-use crate::voucher_seq::get_next_voucher_number;
 use uuid::Uuid;
 
 fn round2(value: f64) -> f64 {
@@ -526,6 +525,8 @@ fn default_item_type() -> String {
 
 #[derive(Deserialize)]
 pub struct CreatePurchaseInvoice {
+    #[serde(default)]
+    pub voucher_no: Option<String>,
     /// Foreign currency ID for this invoice. None means base/domestic currency.
     #[serde(default)]
     pub currency_id: Option<String>,
@@ -716,7 +717,14 @@ pub async fn create_purchase_invoice(
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    let voucher_no = get_next_voucher_number(&pool, "purchase_invoice").await?;
+    let voucher_no = match &invoice.voucher_no {
+        Some(v) if !v.trim().is_empty() => {
+            let custom_no = v.trim().to_string();
+            crate::voucher_seq::sync_voucher_sequence_if_higher_in_tx(&mut tx, "purchase_invoice", &custom_no).await?;
+            custom_no
+        }
+        _ => crate::voucher_seq::get_next_voucher_number_in_tx(&mut tx, "purchase_invoice").await?,
+    };
 
     let company_state: Option<String> =
         sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")
@@ -1597,6 +1605,8 @@ pub struct CreateSalesInvoiceItem {
 
 #[derive(Deserialize)]
 pub struct CreateSalesInvoice {
+    #[serde(default)]
+    pub voucher_no: Option<String>,
     /// Foreign currency ID for this invoice. None means base/domestic currency.
     #[serde(default)]
     pub currency_id: Option<String>,
@@ -1678,49 +1688,7 @@ pub async fn get_sales_invoice(
     id: String,
 ) -> Result<SalesInvoice, String> {
     let pool = registry.active_pool().await?;
-    let invoice = sqlx::query_as::<_, SalesInvoice>(
-        "SELECT 
-            v.id,
-            v.voucher_no,
-            v.voucher_date,
-            v.party_id as customer_id,
-            coa.account_name as customer_name,
-            v.salesperson_id,
-            v.party_type,
-            v.reference,
-            v.total_amount,
-            ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
-            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as grand_total,
-            v.discount_rate,
-            v.discount_amount,
-            v.narration,
-            v.status,
-            v.created_at,
-            v.deleted_at,
-            u.full_name as created_by_name,
-            COALESCE(v.tax_inclusive, 0) as tax_inclusive,
-            v.linked_return_id,
-            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice,
-            v.metadata,
-            v.currency_id,
-            v.exchange_rate,
-            cur.code as foreign_currency_code,
-            cur.symbol as foreign_currency_symbol
-        FROM vouchers v
-        LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
-        LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
-        LEFT JOIN users u ON v.created_by = u.id
-        LEFT JOIN currencies cur ON v.currency_id = cur.id
-        WHERE v.id = ? AND v.voucher_type = 'sales_invoice' AND v.deleted_at IS NULL
-        GROUP BY v.id",
-    )
-    .bind(id)
-    .fetch_optional(&pool)
-    .await
-    .map_err(|e| e.to_string())?
-    .ok_or_else(|| "Sales invoice not found".to_string())?;
-
-    Ok(invoice)
+    get_sales_invoice_with_pool(&pool, &id).await
 }
 
 #[tauri::command]
@@ -1729,20 +1697,11 @@ pub async fn get_sales_invoice_items(
     voucher_id: String,
 ) -> Result<Vec<SalesInvoiceItem>, String> {
     let pool = registry.active_pool().await?;
-    sqlx::query_as::<_, SalesInvoiceItem>(
-        "SELECT vi.*,
-                COALESCE(p.code, s.code) as product_code,
-                COALESCE(p.name, s.name) as product_name
-        FROM voucher_items vi
-        LEFT JOIN products p ON vi.product_id = p.id
-        LEFT JOIN services s ON vi.service_id = s.id
-        WHERE vi.voucher_id = ?",
-    )
-    .bind(voucher_id)
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| e.to_string())
+    get_sales_invoice_items_with_pool(&pool, &voucher_id).await
 }
+
+
+
 
 /// Internal version for use by other modules (e.g., templates.rs)
 pub(crate) async fn get_sales_invoice_with_pool(
@@ -1865,6 +1824,7 @@ async fn create_draft_return_for_sales_invoice_in_tx(
     }
 
     let sales_return = CreateSalesReturn {
+        voucher_no: None,
         customer_id: invoice.customer_id.clone(),
         party_type: invoice.party_type.clone(),
         voucher_date: invoice.voucher_date.clone(),
@@ -1897,7 +1857,14 @@ pub async fn create_sales_invoice(
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    let voucher_no = get_next_voucher_number(&pool, "sales_invoice").await?;
+    let voucher_no = match &invoice.voucher_no {
+        Some(v) if !v.trim().is_empty() => {
+            let custom_no = v.trim().to_string();
+            crate::voucher_seq::sync_voucher_sequence_if_higher_in_tx(&mut tx, "sales_invoice", &custom_no).await?;
+            custom_no
+        }
+        _ => crate::voucher_seq::get_next_voucher_number_in_tx(&mut tx, "sales_invoice").await?,
+    };
 
     let company_state: Option<String> =
         sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")

@@ -105,6 +105,8 @@ export interface GstSummaryRow {
   igst: number;
   total_tax: number;
   total_value: number;
+  /** True when this line was sold under the GST Margin Scheme (Rule 32(5)) */
+  is_margin_scheme: boolean;
 }
 
 export interface Gstr3bSummary {

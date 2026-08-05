@@ -1031,6 +1031,9 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await?;
 
+    // Migration: Sync voucher sequence settings with existing imported/created vouchers
+    let _ = backfill_voucher_sequences(pool).await;
+
     // Company Profile & Other Global Settings
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS company_profile (
@@ -1590,6 +1593,51 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     crate::seeds::seed_initial_data(pool).await?;
     crate::seeds::seed_handlebars_templates(pool).await?;
 
+    Ok(())
+}
+
+async fn backfill_voucher_sequences(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    let voucher_types = [
+        "sales_invoice",
+        "sales_quotation",
+        "delivery_note",
+        "purchase_invoice",
+        "sales_return",
+        "purchase_return",
+    ];
+
+    for v_type in voucher_types {
+        let latest_no: Option<String> = sqlx::query_scalar(
+            "SELECT voucher_no FROM vouchers 
+             WHERE voucher_type = ? AND deleted_at IS NULL AND voucher_no NOT LIKE '__DELETED%'
+             ORDER BY created_at DESC, id DESC LIMIT 1",
+        )
+        .bind(v_type)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(v_no) = latest_no {
+            if let Some(parsed) = crate::voucher_seq::parse_custom_voucher_no(&v_no) {
+                let _ = sqlx::query(
+                    "UPDATE voucher_sequences 
+                     SET prefix = ?,
+                         separator = ?,
+                         padding = MAX(padding, ?),
+                         include_financial_year = ?,
+                         next_number = MAX(next_number, ?)
+                     WHERE voucher_type = ?",
+                )
+                .bind(&parsed.prefix)
+                .bind(&parsed.separator)
+                .bind(parsed.padding)
+                .bind(parsed.include_financial_year)
+                .bind(parsed.num + 1)
+                .bind(v_type)
+                .execute(pool)
+                .await;
+            }
+        }
+    }
 
     Ok(())
 }

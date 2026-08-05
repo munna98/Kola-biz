@@ -15,7 +15,8 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { IconArrowUp, IconArrowDown, IconDeviceFloppy, IconCalendarStats, IconSortAscendingNumbers } from '@tabler/icons-react';
+import { IconArrowUp, IconArrowDown, IconDeviceFloppy, IconCalendarStats, IconSortAscendingNumbers, IconFileUpload } from '@tabler/icons-react';
+import ImportVouchersDialog, { type VoucherTypeKey } from '@/components/dialogs/ImportVouchersDialog';
 
 
 interface ColumnSettings {
@@ -116,6 +117,9 @@ export default function VoucherSettingsPage() {
     // ---- Reassign Voucher Numbers state ----
     const [reassigning, setReassigning] = useState(false);
     const [showReassignDialog, setShowReassignDialog] = useState(false);
+
+    // ---- Import Vouchers state ----
+    const [showImportDialog, setShowImportDialog] = useState(false);
 
     useEffect(() => {
         loadSettings(selectedVoucher);
@@ -802,8 +806,41 @@ export default function VoucherSettingsPage() {
                         </div>
                     )}
 
+                    {/* ---- Import Historical Vouchers Card ---- */}
+                    <div className="border rounded-xl p-5">
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="flex flex-col gap-1">
+                                <p className="font-semibold flex items-center gap-2">
+                                    <IconFileUpload className="h-4 w-4 text-primary" />
+                                    Import Historical Vouchers
+                                </p>
+                                <p className="text-sm text-muted-foreground">
+                                    Bulk import{' '}
+                                    <strong>{VOUCHER_TYPES.find(v => v.value === selectedVoucher)?.label}</strong>
+                                    {' '}data from an Excel or CSV file.
+                                    Rows are matched by <strong>Party Code</strong> and <strong>Product Code</strong>.
+                                </p>
+                            </div>
+                            <Button
+                                variant="outline"
+                                className="shrink-0"
+                                onClick={() => setShowImportDialog(true)}
+                            >
+                                <IconFileUpload className="mr-2 h-4 w-4" />
+                                Import Vouchers
+                            </Button>
+                        </div>
+                    </div>
+
                 </div>
             </div>
+
+            {/* ---- Import Vouchers Dialog ---- */}
+            <ImportVouchersDialog
+                open={showImportDialog}
+                onOpenChange={setShowImportDialog}
+                voucherType={selectedVoucher as VoucherTypeKey}
+            />
 
             {/* ---- Reassign Confirmation Dialog ---- */}
             <AlertDialog open={showReassignDialog} onOpenChange={setShowReassignDialog}>

@@ -5,7 +5,6 @@ use std::sync::Arc;
 use tauri::State;
 
 use super::invoices::{finalize_processed_items, prepare_voucher_line};
-use crate::voucher_seq::get_next_voucher_number;
 use uuid::Uuid;
 
 fn round2(value: f64) -> f64 {
@@ -97,6 +96,8 @@ fn default_item_type() -> String {
 
 #[derive(Deserialize)]
 pub struct CreateSalesQuotation {
+    #[serde(default)]
+    pub voucher_no: Option<String>,
     pub customer_id: String,
     pub salesperson_id: Option<String>,
     pub party_type: String,
@@ -181,7 +182,14 @@ pub async fn create_sales_quotation(
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    let voucher_no = get_next_voucher_number(&pool, "sales_quotation").await?;
+    let voucher_no = match &quotation.voucher_no {
+        Some(v) if !v.trim().is_empty() => {
+            let custom_no = v.trim().to_string();
+            crate::voucher_seq::sync_voucher_sequence_if_higher_in_tx(&mut tx, "sales_quotation", &custom_no).await?;
+            custom_no
+        }
+        _ => crate::voucher_seq::get_next_voucher_number_in_tx(&mut tx, "sales_quotation").await?,
+    };
 
     let company_state: Option<String> =
         sqlx::query_scalar("SELECT state FROM company_profile ORDER BY id DESC LIMIT 1")

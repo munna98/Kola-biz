@@ -244,7 +244,7 @@ pub async fn get_gstr1_summary(
 ) -> Result<serde_json::Value, String> {
     let pool = registry.active_pool().await?;
     // Each row: (invoice_no, invoice_date, party_name, party_gstin, description, hsn, uqc, qty, gst_rate, taxable, cgst, sgst, igst, tax, total)
-    let rows: Vec<(String, String, String, String, String, String, String, f64, f64, f64, f64, f64, f64, f64, f64)> = sqlx::query_as(
+    let rows: Vec<(String, String, String, String, String, String, String, f64, f64, f64, f64, f64, f64, f64, f64, i64)> = sqlx::query_as(
         "SELECT
             v.voucher_no                                                           AS invoice_no,
             v.voucher_date                                                         AS invoice_date,
@@ -260,7 +260,8 @@ pub async fn get_gstr1_summary(
             COALESCE(SUM(vi.sgst_amount), 0)                                      AS sgst,
             COALESCE(SUM(vi.igst_amount), 0)                                      AS igst,
             COALESCE(SUM(vi.cgst_amount + vi.sgst_amount + vi.igst_amount), 0)    AS total_tax,
-            COALESCE(SUM(vi.amount + vi.cgst_amount + vi.sgst_amount + vi.igst_amount), 0) AS total_value
+            COALESCE(SUM(vi.amount + vi.cgst_amount + vi.sgst_amount + vi.igst_amount), 0) AS total_value,
+            MAX(COALESCE(vi.is_margin_scheme, 0))                                 AS is_margin_scheme
          FROM voucher_items vi
          JOIN vouchers v ON vi.voucher_id = v.id
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
@@ -281,7 +282,7 @@ pub async fn get_gstr1_summary(
     let items: Vec<serde_json::Value> = rows
         .into_iter()
         .enumerate()
-        .map(|(i, (invoice_no, invoice_date, party_name, party_gstin, desc, hsn, uqc, qty, rate, taxable, cgst, sgst, igst, tax, total))| {
+        .map(|(i, (invoice_no, invoice_date, party_name, party_gstin, desc, hsn, uqc, qty, rate, taxable, cgst, sgst, igst, tax, total, is_ms))| {
             json!({
                 "sl": i + 1,
                 "invoice_no": invoice_no,
@@ -299,6 +300,7 @@ pub async fn get_gstr1_summary(
                 "igst": igst,
                 "total_tax": tax,
                 "total_value": total,
+                "is_margin_scheme": is_ms == 1,
             })
         })
         .collect();
