@@ -2323,28 +2323,37 @@ pub async fn update_sales_invoice(
         } else {
             item.product_id.as_deref().unwrap_or("")
         };
-        prepared_lines.push(
-            prepare_voucher_line(
-                &mut tx,
-                &pool,
-                "sale",
-                &item.item_type,
-                item_id,
-                item.unit_id.as_deref(),
-                item.description.clone(),
-                item.initial_quantity,
-                item.count,
-                item.deduction_per_unit,
-                item.rate,
-                item.tax_rate,
-                item.discount_percent,
-                item.discount_amount,
-                item.remarks.clone(),
-                tax_inclusive,
-                gst_disabled,
-            )
-            .await?,
-        );
+        let mut line = prepare_voucher_line(
+            &mut tx,
+            &pool,
+            "sale",
+            &item.item_type,
+            item_id,
+            item.unit_id.as_deref(),
+            item.description.clone(),
+            item.initial_quantity,
+            item.count,
+            item.deduction_per_unit,
+            item.rate,
+            item.tax_rate,
+            item.discount_percent,
+            item.discount_amount,
+            item.remarks.clone(),
+            tax_inclusive,
+            gst_disabled,
+        )
+        .await?;
+        if invoice.is_margin_scheme_invoice {
+            line.is_margin_scheme = true;
+            line.purchase_cost = if item.purchase_cost > 0.0 {
+                item.purchase_cost
+            } else if item.item_type != "service" {
+                get_product_purchase_cost_rate(&mut tx, item_id).await.unwrap_or(0.0)
+            } else {
+                0.0
+            };
+        }
+        prepared_lines.push(line);
     }
 
     let (processed, discount_rate, discount_amount) = finalize_processed_items(
@@ -2396,7 +2405,7 @@ pub async fn update_sales_invoice(
          SET voucher_date = ?, party_id = ?, salesperson_id = ?, party_type = ?, reference = ?, subtotal = ?, 
              discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?,
              tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, metadata = ?,
-             currency_id = ?, exchange_rate = ?, foreign_total = ?
+             currency_id = ?, exchange_rate = ?, foreign_total = ?, is_margin_scheme_invoice = ?
          WHERE id = ?"
     )
     .bind(&invoice.voucher_date).bind(&invoice.customer_id).bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference)
@@ -2405,6 +2414,7 @@ pub async fn update_sales_invoice(
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
     .bind(grand_total).bind(&metadata_json)
     .bind(&invoice.currency_id).bind(exchange_rate).bind(grand_total_foreign)
+    .bind(invoice.is_margin_scheme_invoice as i64)
     .bind(&voucher_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
@@ -2544,8 +2554,8 @@ pub async fn update_sales_invoice(
     // Insert items
     for item in &processed_items {
         sqlx::query(
-            "INSERT INTO voucher_items (id, voucher_id, item_type, product_id, service_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO voucher_items (id, voucher_id, item_type, product_id, service_id, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount, discount_percent, discount_amount, invoice_discount_amount, remarks, cgst_rate, sgst_rate, igst_rate, cgst_amount, sgst_amount, igst_amount, hsn_sac_code, gst_slab_id, resolved_gst_rate, is_margin_scheme, purchase_cost, margin_amount)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(&item.id).bind(&voucher_id).bind(&item.item_type).bind(&item.product_id).bind(&item.service_id)
         .bind(&item.description).bind(item.initial_quantity)
@@ -2553,6 +2563,7 @@ pub async fn update_sales_invoice(
         .bind(item.rate).bind(item.amount).bind(item.net_amount).bind(item.tax_rate).bind(item.tax_amount).bind(item.discount_percent).bind(item.discount_amount)
         .bind(item.invoice_discount_amount).bind(&item.remarks).bind(item.cgst_rate).bind(item.sgst_rate).bind(item.igst_rate).bind(item.cgst_amount).bind(item.sgst_amount)
         .bind(item.igst_amount).bind(&item.hsn_sac_code).bind(&item.gst_slab_id).bind(item.resolved_gst_rate)
+        .bind(item.is_margin_scheme as i64).bind(item.purchase_cost).bind(item.margin_amount)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;

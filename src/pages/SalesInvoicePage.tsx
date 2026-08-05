@@ -1006,6 +1006,8 @@ export default function SalesInvoicePage() {
       dispatch(setSalesDiscountAmount(invoice.discount_amount || 0));
       const loadedTaxInclusive = Boolean(invoice.tax_inclusive);
       setIsTaxInclusive(loadedTaxInclusive);
+      const loadedIsMarginScheme = Boolean(invoice.is_margin_scheme_invoice);
+      dispatch(setSalesMarginScheme(loadedIsMarginScheme));
       dispatch(setSalesReturnDraft(undefined));
       if (invoice.linked_return_id) {
         const [linkedReturn, linkedReturnItems] = await Promise.all([
@@ -1061,10 +1063,10 @@ export default function SalesInvoicePage() {
           ? item.rate * (1 + (storedGstRate / 100))
           : item.rate;
         dispatch(addSalesItem({
-        product_id: item.product_id || 0, // Using product_id from item if available, else need map
-        product_code: item.product_code,
-        product_name: item.description, // Fallback
-        unit_id: item.unit_id,
+          product_id: item.product_id || 0, // Using product_id from item if available, else need map
+          product_code: item.product_code,
+          product_name: item.description, // Fallback
+          unit_id: item.unit_id,
           hsn_sac_code: item.hsn_sac_code,
           gst_slab_id: item.gst_slab_id,
           resolved_gst_rate: item.resolved_gst_rate,
@@ -1083,6 +1085,7 @@ export default function SalesInvoicePage() {
           tax_rate: item.tax_rate,
           discount_percent: item.discount_percent || 0,
           discount_amount: item.discount_amount || 0,
+          purchase_cost: item.purchase_cost ?? 0,
         }));
       });
 
@@ -1114,12 +1117,14 @@ export default function SalesInvoicePage() {
         tax_rate: item.tax_rate,
         discount_percent: item.discount_percent || 0,
         discount_amount: item.discount_amount || 0,
+        purchase_cost: item.purchase_cost ?? 0,
       }));
 
       updateTotalsWithItems(
         loadedItems,
         invoice.discount_amount ? undefined : invoice.discount_rate,
-        invoice.discount_amount || undefined
+        invoice.discount_amount || undefined,
+        loadedIsMarginScheme
       );
 
       dispatch(setSalesMode('viewing'));
