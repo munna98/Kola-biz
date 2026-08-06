@@ -2814,10 +2814,16 @@ pub async fn get_last_voucher_id(
     voucher_type: String,
 ) -> Result<Option<String>, String> {
     let pool = registry.active_pool().await?;
+    // Use numeric-aware sort: split voucher_no into (non-digit prefix, integer suffix)
+    // so that "A-100" sorts after "A-99" rather than before it (lexicographic bug fix).
     sqlx::query_scalar::<_, String>(
         "SELECT id FROM vouchers \
          WHERE voucher_type = ? AND deleted_at IS NULL \
-         ORDER BY voucher_no DESC, id DESC LIMIT 1",
+         ORDER BY \
+           RTRIM(voucher_no, '0123456789') ASC, \
+           CAST(LTRIM(SUBSTR(voucher_no, LENGTH(RTRIM(voucher_no, '0123456789')) + 1), '0') AS INTEGER) DESC, \
+           id DESC \
+         LIMIT 1",
     )
     .bind(voucher_type)
     .fetch_optional(&pool)
@@ -2845,17 +2851,34 @@ pub async fn get_previous_voucher_id(
         None => return Ok(None),
     };
 
+    // Numeric-aware comparison: split voucher_no into (non-digit prefix, integer suffix)
+    // so that "A-100" correctly comes after "A-99" (fixes lexicographic ordering bug).
     sqlx::query_scalar::<_, String>(
         "SELECT id FROM vouchers \
          WHERE voucher_type = ? \
            AND deleted_at IS NULL \
-           AND (voucher_no < ? OR (voucher_no = ? AND id < ?)) \
-         ORDER BY voucher_no DESC, id DESC LIMIT 1",
+           AND ( \
+             RTRIM(voucher_no, '0123456789') < RTRIM(?, '0123456789') \
+             OR ( \
+               RTRIM(voucher_no, '0123456789') = RTRIM(?, '0123456789') \
+               AND CAST(LTRIM(SUBSTR(voucher_no, LENGTH(RTRIM(voucher_no, '0123456789')) + 1), '0') AS INTEGER) \
+                 < CAST(LTRIM(SUBSTR(?, LENGTH(RTRIM(?, '0123456789')) + 1), '0') AS INTEGER) \
+             ) \
+             OR (voucher_no = ? AND id < ?) \
+           ) \
+         ORDER BY \
+           RTRIM(voucher_no, '0123456789') DESC, \
+           CAST(LTRIM(SUBSTR(voucher_no, LENGTH(RTRIM(voucher_no, '0123456789')) + 1), '0') AS INTEGER) DESC, \
+           id DESC \
+         LIMIT 1",
     )
-    .bind(voucher_type)
+    .bind(&voucher_type)
     .bind(&current_no)
     .bind(&current_no)
-    .bind(current_id)
+    .bind(&current_no)
+    .bind(&current_no)
+    .bind(&current_no)
+    .bind(&current_id)
     .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())
@@ -2881,17 +2904,34 @@ pub async fn get_next_voucher_id(
         None => return Ok(None),
     };
 
+    // Numeric-aware comparison: split voucher_no into (non-digit prefix, integer suffix)
+    // so that "A-100" correctly comes after "A-99" (fixes lexicographic ordering bug).
     sqlx::query_scalar::<_, String>(
         "SELECT id FROM vouchers \
          WHERE voucher_type = ? \
            AND deleted_at IS NULL \
-           AND (voucher_no > ? OR (voucher_no = ? AND id > ?)) \
-         ORDER BY voucher_no ASC, id ASC LIMIT 1",
+           AND ( \
+             RTRIM(voucher_no, '0123456789') > RTRIM(?, '0123456789') \
+             OR ( \
+               RTRIM(voucher_no, '0123456789') = RTRIM(?, '0123456789') \
+               AND CAST(LTRIM(SUBSTR(voucher_no, LENGTH(RTRIM(voucher_no, '0123456789')) + 1), '0') AS INTEGER) \
+                 > CAST(LTRIM(SUBSTR(?, LENGTH(RTRIM(?, '0123456789')) + 1), '0') AS INTEGER) \
+             ) \
+             OR (voucher_no = ? AND id > ?) \
+           ) \
+         ORDER BY \
+           RTRIM(voucher_no, '0123456789') ASC, \
+           CAST(LTRIM(SUBSTR(voucher_no, LENGTH(RTRIM(voucher_no, '0123456789')) + 1), '0') AS INTEGER) ASC, \
+           id ASC \
+         LIMIT 1",
     )
-    .bind(voucher_type)
+    .bind(&voucher_type)
     .bind(&current_no)
     .bind(&current_no)
-    .bind(current_id)
+    .bind(&current_no)
+    .bind(&current_no)
+    .bind(&current_no)
+    .bind(&current_id)
     .fetch_optional(&pool)
     .await
     .map_err(|e| e.to_string())
