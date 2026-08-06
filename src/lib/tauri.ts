@@ -137,6 +137,7 @@ export interface Product {
   mrp: number;
   cost?: number;
   barcode?: string;
+  part_number?: string;
   is_active: number;
   created_at: string;
   has_transactions: boolean;
@@ -201,6 +202,7 @@ export interface CreateProduct {
   mrp: number;
   cost?: number;
   barcode?: string;
+  part_number?: string;
   conversions?: CreateProductUnitConversion[];
   hsn_sac_code?: string;
   gst_slab_id?: string;

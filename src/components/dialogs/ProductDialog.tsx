@@ -130,6 +130,7 @@ export default function ProductDialog({
     code: '',
     name: '',
     barcode: '',
+    part_number: '',
     unit_id: defaultUnitId,
     purchase_rate: 0,
     sales_rate: 0,
@@ -158,7 +159,7 @@ export default function ProductDialog({
   const [marginSchemeEnabled, setMarginSchemeEnabled] = useState(false);
   const unitLocked = Boolean(product?.has_transactions);
 
-  const orderedFields = ['code', 'name', 'group', 'brand', 'unit', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp', 'cost', 'barcode'];
+  const orderedFields = ['code', 'name', 'group', 'brand', 'unit', 'part_number', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp', 'cost', 'barcode'];
 
   const { register, handleKeyDown, handleSelectKeyDown, parseNumber, formatNumber } = useDialog(
     open,
@@ -199,6 +200,7 @@ export default function ProductDialog({
           code: product.code,
           name: product.name,
           barcode: product.barcode || '',
+          part_number: product.part_number || '',
           group_id: product.group_id,
           brand_id: product.brand_id,
           unit_id: product.unit_id,
@@ -251,6 +253,7 @@ export default function ProductDialog({
           code: '',
           name: '',
           barcode: '',
+          part_number: '',
           group_id: undefined,
           brand_id: undefined,
           unit_id: initialUnitId,
@@ -304,6 +307,7 @@ export default function ProductDialog({
       code: '',
       name: '',
       barcode: '',
+      part_number: '',
       group_id: undefined,
       brand_id: undefined,
       unit_id: unitId,
@@ -413,7 +417,7 @@ export default function ProductDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl">
+      <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{product ? 'Edit' : 'Add'} Product</DialogTitle>
           <DialogDescription>
@@ -498,8 +502,8 @@ export default function ProductDialog({
             </div>
           </div>
 
-          {(dialogFields.group || dialogFields.brand) && (
-            <div className="grid grid-cols-3 gap-4">
+          {(dialogFields.group || dialogFields.brand || dialogFields.part_number || product?.part_number) && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {dialogFields.group && (
                 <div>
                   <Label className="text-xs font-medium mb-1 block">Product Group</Label>
@@ -550,7 +554,7 @@ export default function ProductDialog({
                   </Select>
                 </div>
               )}
-              {/* Base Unit always in this row when group/brand row is visible */}
+              {/* Base Unit always in this row when group/brand/part_number row is visible */}
               <div>
                 <Label className="text-xs font-medium mb-1 block">Base Unit</Label>
                 <div className="flex gap-1">
@@ -587,11 +591,24 @@ export default function ProductDialog({
                   </Button>
                 </div>
               </div>
+              {(dialogFields.part_number || product?.part_number) && (
+                <div>
+                  <Label className="text-xs font-medium mb-1 block">Part Number</Label>
+                  <Input
+                    ref={register('part_number') as any}
+                    value={form.part_number || ''}
+                    onChange={e => setForm({ ...form, part_number: e.target.value })}
+                    onKeyDown={(e) => handleKeyDown(e, 'part_number')}
+                    placeholder="e.g., PN-98765"
+                    className="h-8 text-sm font-mono"
+                  />
+                </div>
+              )}
             </div>
           )}
 
-          {/* Base Unit standalone row — shown when both Group and Brand are hidden */}
-          {!dialogFields.group && !dialogFields.brand && (
+          {/* Base Unit standalone row — shown when Group, Brand, and Part Number are all hidden */}
+          {!dialogFields.group && !dialogFields.brand && !dialogFields.part_number && !product?.part_number && (
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label className="text-xs font-medium mb-1 block">Base Unit</Label>

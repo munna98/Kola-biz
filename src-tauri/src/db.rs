@@ -201,6 +201,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             sales_rate REAL NOT NULL,
             mrp REAL NOT NULL,
             barcode TEXT,
+            part_number TEXT,
             is_active INTEGER DEFAULT 1,
             deleted_at DATETIME,
             deleted_by TEXT,
@@ -219,6 +220,11 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
 
     // Migration: Add brand_id to products if not exists
     let _ = sqlx::query("ALTER TABLE products ADD COLUMN brand_id TEXT REFERENCES product_brands(id)")
+        .execute(pool)
+        .await;
+
+    // Migration: Add part_number to products if not exists
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN part_number TEXT")
         .execute(pool)
         .await;
 

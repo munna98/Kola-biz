@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
+import { buildProductComboboxOption, getProductComboboxHeaderColumns, getProductComboboxWidthClass, type ProductComboboxDisplaySettings, DEFAULT_COMBOBOX_DISPLAY_SETTINGS, type ProductComboboxColumnWidths, DEFAULT_COMBOBOX_COLUMN_WIDTHS } from '@/lib/combobox-helpers';
 import {
   Select,
   SelectContent,
@@ -81,13 +82,17 @@ export default function ExpenseReportPage() {
 
   // Data
   const [rows, setRows] = useState<ExpenseReportRow[]>([]);
-  const [entryDetails, setEntryDetails] = useState<ExpenseDetail[]>([]);   // flat list when a product is chosen
+  const [entryDetails, setEntryDetails] = useState<ExpenseDetail[]>([]);
   const [expandedKeys, setExpandedKeys] = useState<Record<string, boolean>>({});
   const [expandedDetails, setExpandedDetails] = useState<Record<string, ExpenseDetail[]>>({});
   const [expandLoading, setExpandLoading] = useState<Record<string, boolean>>({});
 
   const [products, setProducts] = useState<Product[]>([]);
   const [expenseAccounts, setExpenseAccounts] = useState<LedgerAccount[]>([]);
+  const [comboboxDisplaySettings, setComboboxDisplaySettings] = useState<ProductComboboxDisplaySettings>(DEFAULT_COMBOBOX_DISPLAY_SETTINGS);
+  const [columnWidths, setColumnWidths] = useState<ProductComboboxColumnWidths>(DEFAULT_COMBOBOX_COLUMN_WIDTHS);
+  const [groups, setGroups] = useState<any[]>([]);
+  const [brands, setBrands] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -96,10 +101,23 @@ export default function ExpenseReportPage() {
   useEffect(() => {
     const init = async () => {
       try {
-        const [settingVal, accounts] = await Promise.all([
+        const [settingVal, accounts, cbSet, colW, grps, brnds] = await Promise.all([
           invoke<string | null>('get_app_setting', { key: 'update_payment_to_product_cost' }).catch(() => null),
           invoke<LedgerAccount[]>('get_chart_of_accounts').catch(() => []),
+          invoke<string | null>('get_app_setting', { key: 'product_combobox_display_settings' }).catch(() => null),
+          invoke<string | null>('get_app_setting', { key: 'product_combobox_column_widths' }).catch(() => null),
+          invoke<any[]>('get_product_groups').catch(() => []),
+          invoke<any[]>('get_product_brands').catch(() => []),
         ]);
+
+        if (cbSet) {
+          try { setComboboxDisplaySettings(JSON.parse(cbSet)); } catch {}
+        }
+        if (colW) {
+          try { setColumnWidths(JSON.parse(colW)); } catch {}
+        }
+        setGroups(grps);
+        setBrands(brnds);
 
         const isEnabled = settingVal === 'true' || settingVal === '"true"';
         setProductCostEnabled(isEnabled);
@@ -119,16 +137,9 @@ export default function ExpenseReportPage() {
     init();
   }, []);
 
-  // Auto-load once init is done (groupBy is set by init)
-  useEffect(() => {
-    loadReport();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);  // run once on mount; user clicks Apply for subsequent loads
-
   // ── Load grouped summary ────────────────────────────────────────────────
 
   const loadReport = useCallback(async () => {
-    setLoading(true);
     setRows([]);
     setEntryDetails([]);
     setExpandedKeys({});
@@ -349,9 +360,16 @@ export default function ExpenseReportPage() {
                 <span className="ml-1.5 text-[10px] text-primary font-medium">(selecting shows entries)</span>
               </Label>
               <Combobox
+                headerColumns={getProductComboboxHeaderColumns(comboboxDisplaySettings, columnWidths)}
+                popoverClassName={getProductComboboxWidthClass(comboboxDisplaySettings, columnWidths)}
                 options={[
                   { value: '', label: 'All Products' },
-                  ...products.map(p => ({ value: p.id, label: `${p.code} – ${p.name}` })),
+                  ...products.map(p => buildProductComboboxOption({
+                    product: p,
+                    groups,
+                    brands,
+                    displaySettings: comboboxDisplaySettings,
+                  })),
                 ]}
                 value={selectedProductId}
                 onChange={val => setSelectedProductId(val as string)}

@@ -35,6 +35,7 @@ type ProductFilter = 'all' | 'master' | 'child';
 const formatProductSpecs = (p: Product, money: (amount: number | null | undefined) => string) => {
   let text = `*${p.name.toUpperCase()}*\n`;
   if (p.code) text += `• *Code:* ${p.code}\n`;
+  if (p.part_number) text += `• *Part No:* ${p.part_number}\n`;
   if (p.sales_rate !== undefined && p.sales_rate !== null) {
     text += `• *Price:* ${money(p.sales_rate)}\n`;
   }
@@ -247,6 +248,7 @@ export default function ProductsPage() {
     const matchesSearch =
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.part_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (groups.find(g => g.id === p.group_id)?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
 
     if (!matchesSearch) return false;
@@ -398,6 +400,7 @@ export default function ProductsPage() {
                 {columnSettings.group && <th className="p-3">Group</th>}
                 {columnSettings.brand && <th className="p-3">Brand</th>}
                 {columnSettings.unit && <th className="p-3">Unit</th>}
+                {columnSettings.part_number && <th className="p-3">Part No.</th>}
                 {columnSettings.purchase_rate && <th className="p-3">Purchase</th>}
                 {columnSettings.sales_rate && <th className="p-3">Sales</th>}
                 {columnSettings.mrp && <th className="p-3">MRP</th>}
@@ -421,6 +424,7 @@ export default function ProductsPage() {
                     colSpan={
                       3 +
                       (columnSettings.code ? 1 : 0) +
+                      (columnSettings.part_number ? 1 : 0) +
                       (columnSettings.hsn_sac_code ? 1 : 0) +
                       (columnSettings.group ? 1 : 0) +
                       (columnSettings.brand ? 1 : 0) +
@@ -478,6 +482,7 @@ export default function ProductsPage() {
                       {columnSettings.group && <td className="p-3 text-sm">{groups.find(g => g.id === p.group_id)?.name || '-'}</td>}
                       {columnSettings.brand && <td className="p-3 text-sm">{brands.find(b => b.id === p.brand_id)?.name || '-'}</td>}
                       {columnSettings.unit && <td className="p-3">{units.find(u => u.id === p.unit_id)?.symbol || '-'}</td>}
+                      {columnSettings.part_number && <td className="p-3 font-mono text-sm">{p.part_number || '-'}</td>}
                       {columnSettings.purchase_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.purchase_rate)}</td>}
                       {columnSettings.sales_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.sales_rate)}</td>}
                       {columnSettings.mrp && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.mrp)}</td>}
@@ -639,11 +644,12 @@ export default function ProductsPage() {
         open={importOpen}
         onOpenChange={setImportOpen}
         title="Import Products from Excel"
-        expectedColumns={['name', 'code', 'group', 'unit', 'purchase_rate', 'sales_rate', 'mrp', 'barcode', 'hsn_sac_code']}
+        expectedColumns={['name', 'code', 'part_number', 'group', 'unit', 'purchase_rate', 'sales_rate', 'mrp', 'barcode', 'hsn_sac_code']}
         sampleData={[
           {
             name: "Premium Widget",
             code: "PW-001",
+            part_number: "PN-8877",
             group: "General",
             unit: "PCS",
             purchase_rate: 100.0,
@@ -673,6 +679,7 @@ export default function ProductsPage() {
             return {
               name: String(r.name),
               code: r.code ? String(r.code) : '',
+              part_number: r.part_number ? String(r.part_number) : undefined,
               group_id: groupId,
               unit_id: unitId,
               purchase_rate: Number(r.purchase_rate) || 0,

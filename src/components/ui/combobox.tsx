@@ -16,22 +16,34 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 
-interface ComboboxOption {
+export interface ComboboxHeaderColumn {
+  key: string
+  label: string
+  widthPx?: number
+  width?: string
+  align?: 'left' | 'right' | 'center'
+}
+
+export interface ComboboxOption {
   value: string | number
   label: string
+  itemLabel?: string
   searchString?: string
   subLabel?: string
+  columns?: Record<string, string | number | undefined | null>
   keywords?: string[]
 }
 
 interface ComboboxProps {
   options: ComboboxOption[]
+  headerColumns?: ComboboxHeaderColumn[]
   value?: string | number
   onChange: (value: string | number) => void
   onCreate?: (value: string) => void
   placeholder?: string
   searchPlaceholder?: string
   className?: string
+  popoverClassName?: string
   onKeyDown?: (e: React.KeyboardEvent) => void
   openOnFocus?: boolean
   onEmptyEnter?: () => void
@@ -100,12 +112,14 @@ const defaultComboboxFilter = (value: string, search: string, keywords?: string[
 
 export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { disabled?: boolean }>(({
   options,
+  headerColumns,
   value,
   onChange,
   onCreate,
   placeholder = "Select option...",
   searchPlaceholder = "Search...",
   className,
+  popoverClassName,
   disabled = false,
   onKeyDown,
   openOnFocus = true,
@@ -140,6 +154,8 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   }, [open]);
 
   const selectedOption = options.find((opt) => opt.value === value)
+  const widthMatch = popoverClassName?.match(/w-\[(\d+)px\]/);
+  const popoverWidthStyle = widthMatch ? { width: `${widthMatch[1]}px`, maxWidth: '95vw' } : undefined;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -149,17 +165,17 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
           variant="outline"
           role="combobox"
           aria-expanded={open}
-          className={cn("justify-between h-8 text-sm w-full font-normal group", className)}
+          className={cn("justify-between h-8 text-sm w-full min-w-0 overflow-hidden font-normal group", className)}
           disabled={disabled}
           onKeyDown={onKeyDown}
           onFocus={handleFocus}
           onPointerDown={() => { isPointerDown.current = true }}
           onPointerUp={() => { setTimeout(() => { isPointerDown.current = false }, 300) }}
         >
-          <span className="truncate text-left flex-1">
+          <span className="truncate text-left flex-1 min-w-0">
             {selectedOption?.label || placeholder}
           </span>
-          <div className="flex items-center gap-1">
+          <div className="flex items-center gap-1 shrink-0">
             {onActionClick && (
               <div
                 role="button"
@@ -178,7 +194,11 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
         </Button>
       </PopoverTrigger>
       <PopoverContent
-        className="p-0 w-[var(--radix-popover-trigger-width)]"
+        style={popoverWidthStyle}
+        className={cn(
+          "p-0 min-w-[var(--radix-popover-trigger-width)] w-[var(--radix-popover-trigger-width)]",
+          popoverClassName
+        )}
         align="start"
         onOpenAutoFocus={() => {
           // Allow auto-focusing the input
@@ -203,7 +223,31 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
             autoFocus
             onValueChange={setInputValue}
           />
-          <CommandList>
+
+          {headerColumns && headerColumns.length > 0 && (
+            <div className="flex items-center px-3 py-1.5 bg-muted/60 text-[11px] font-semibold text-muted-foreground border-b select-none">
+              <div className="w-4 shrink-0 mr-2" />
+              <div className="flex items-center gap-2 flex-1 min-w-0 pr-1">
+                {headerColumns.map((col) => (
+                  <div
+                    key={col.key}
+                    style={col.widthPx ? { width: `${col.widthPx}px`, minWidth: `${col.widthPx}px` } : undefined}
+                    className={cn(
+                      "truncate font-semibold px-1 text-xs shrink-0",
+                      !col.widthPx && (col.width || "w-20"),
+                      col.align === "right" && "text-right",
+                      col.align === "center" && "text-center",
+                      col.align === "left" && "text-left"
+                    )}
+                  >
+                    {col.label}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <CommandList className="max-h-[300px]">
             <CommandEmpty>
               {onCreate && inputValue ? (
                 <div className="p-1">
@@ -255,11 +299,12 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
                     itemSelected.current = true;
                     onChange(option.value)
                     setOpen(false)
-                    skipOpen.current = true
+                    skipOpen.current = true;
                     setTimeout(() => {
                       skipOpen.current = false
                     }, 300)
                   }}
+                  className="flex items-center py-2 px-3 text-xs"
                 >
                   <Check
                     className={cn(
@@ -267,9 +312,40 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
                       value === option.value ? "opacity-100" : "opacity-0"
                     )}
                   />
-                  <span className="flex-1 truncate">{option.label}</span>
-                  {option.subLabel && (
-                    <span className="ml-3 text-xs text-muted-foreground font-normal truncate max-w-[40%]">{option.subLabel}</span>
+
+                  {headerColumns && headerColumns.length > 0 && option.columns ? (
+                    <div className="flex items-center gap-2 flex-1 min-w-0 pr-1">
+                      {headerColumns.map((col) => {
+                        const val = col.key === 'product_name'
+                          ? (option.itemLabel || option.label)
+                          : option.columns?.[col.key];
+                        return (
+                          <div
+                            key={col.key}
+                            style={col.widthPx ? { width: `${col.widthPx}px`, minWidth: `${col.widthPx}px` } : undefined}
+                            className={cn(
+                              "truncate text-xs px-1 shrink-0",
+                              col.key === 'product_name' ? "font-medium text-foreground" : (col.key === 'code' ? "font-normal text-foreground font-medium" : "font-mono text-muted-foreground"),
+                              !col.widthPx && (col.width || "w-20"),
+                              col.align === "right" && "text-right",
+                              col.align === "center" && "text-center",
+                              col.align === "left" && "text-left"
+                            )}
+                          >
+                            {val !== undefined && val !== null && val !== "" ? String(val) : "—"}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <>
+                      <span className="flex-1 font-medium truncate">{option.label}</span>
+                      {option.subLabel && (
+                        <span className="ml-3 text-xs text-muted-foreground font-normal truncate max-w-[50%] shrink-0">
+                          {option.subLabel}
+                        </span>
+                      )}
+                    </>
                   )}
                 </CommandItem>
               ))}

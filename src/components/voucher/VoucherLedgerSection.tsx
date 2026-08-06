@@ -1,4 +1,5 @@
 import React from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Combobox } from '@/components/ui/combobox';
@@ -6,6 +7,7 @@ import { IconTrash, IconReceipt2 } from '@tabler/icons-react';
 import { VoucherItemsTable } from '@/components/voucher/VoucherItemsTable';
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
 import type { Product } from '@/lib/tauri';
+import { buildProductComboboxOption, getProductComboboxHeaderColumns, getProductComboboxWidthClass, type ProductComboboxDisplaySettings, DEFAULT_COMBOBOX_DISPLAY_SETTINGS, type ProductComboboxColumnWidths, DEFAULT_COMBOBOX_COLUMN_WIDTHS } from '@/lib/combobox-helpers';
 
 interface LedgerAccount {
     id: number;
@@ -62,6 +64,48 @@ export function VoucherLedgerSection({
         onRemoveItem,
         onAddItem
     });
+
+    const [comboboxDisplaySettings, setComboboxDisplaySettings] = React.useState<ProductComboboxDisplaySettings>(DEFAULT_COMBOBOX_DISPLAY_SETTINGS);
+    const [columnWidths, setColumnWidths] = React.useState<ProductComboboxColumnWidths>(DEFAULT_COMBOBOX_COLUMN_WIDTHS);
+    const [groups, setGroups] = React.useState<any[]>([]);
+    const [brands, setBrands] = React.useState<any[]>([]);
+    const [stockMap, setStockMap] = React.useState<Record<string, number>>({});
+
+    React.useEffect(() => {
+        if (!showProductSelect) return;
+        invoke<string | null>('get_app_setting', { key: 'product_combobox_display_settings' })
+            .then(v => {
+                if (v) {
+                    try { setComboboxDisplaySettings(JSON.parse(v)); } catch {}
+                }
+            })
+            .catch(console.error);
+
+        invoke<string | null>('get_app_setting', { key: 'product_combobox_column_widths' })
+            .then(v => {
+                if (v) {
+                    try { setColumnWidths(JSON.parse(v)); } catch {}
+                }
+            })
+            .catch(console.error);
+
+        invoke<any[]>('get_product_groups').then(setGroups).catch(console.error);
+        invoke<any[]>('get_product_brands').then(setBrands).catch(console.error);
+    }, [showProductSelect]);
+
+    React.useEffect(() => {
+        if (showProductSelect && comboboxDisplaySettings.show_stock) {
+            invoke<any[]>('get_stock_report', { groupId: null, asOnDate: new Date().toISOString().split('T')[0] })
+                .then(summary => {
+                    const map: Record<string, number> = {};
+                    for (const item of summary) {
+                        map[item.product_id] = item.current_stock;
+                    }
+                    setStockMap(map);
+                })
+                .catch(console.error);
+        }
+    }, [showProductSelect, comboboxDisplaySettings.show_stock]);
 
     const gridStyle = {
         gridTemplateColumns: showProductSelect
@@ -145,15 +189,17 @@ export function VoucherLedgerSection({
                     {showProductSelect && (
                         <div>
                             <Combobox
+                                headerColumns={getProductComboboxHeaderColumns(comboboxDisplaySettings, columnWidths)}
+                                popoverClassName={getProductComboboxWidthClass(comboboxDisplaySettings, columnWidths)}
                                 value={item.product_id || ''}
                                 options={[
                                     { value: '', label: '— Clear —' },
-                                    ...products.map(p => ({
-                                        value: p.id,
-                                        label: `${p.code} - ${p.name}`,
-                                        subLabel: p.barcode ? `Barcode: ${p.barcode}` : undefined,
-                                        searchString: p.barcode ? `${p.code} - ${p.name} ${p.barcode}` : `${p.code} - ${p.name}`,
-                                        keywords: [p.barcode, p.code, p.name].filter(Boolean) as string[],
+                                    ...products.map(p => buildProductComboboxOption({
+                                        product: p as any,
+                                        groups,
+                                        brands,
+                                        displaySettings: comboboxDisplaySettings,
+                                        stockMap,
                                     }))
                                 ]}
                                 onChange={(val) => onUpdateItem(index, 'product_id', val === '' ? undefined : val)}

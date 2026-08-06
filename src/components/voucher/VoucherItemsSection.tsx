@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 import { getDefaultProductUnitId, type ProductUnitDefaultKind } from '@/lib/product-units';
 import type { GstTaxSlab, Product as TauriProduct } from '@/lib/tauri';
 import { useMoney } from '@/hooks/useMoney';
+import { buildProductComboboxOption, getProductComboboxHeaderColumns, getProductComboboxWidthClass, type ProductComboboxDisplaySettings, DEFAULT_COMBOBOX_DISPLAY_SETTINGS, type ProductComboboxColumnWidths, DEFAULT_COMBOBOX_COLUMN_WIDTHS } from '@/lib/combobox-helpers';
 
 /** Hover card content that lazily fetches stock qty for a product */
 const ProductHoverInfo = ({ productId, fullProducts }: { productId: string; fullProducts: TauriProduct[] }) => {
@@ -244,6 +245,7 @@ interface Product {
     code: string;
     name: string;
     barcode?: string;
+    part_number?: string;
     unit_id: string;
     purchase_rate?: number;
     sales_rate?: number;
@@ -360,6 +362,47 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     const money = moneyFormatter || defaultMoney;
     // Ref to the first product combobox
     const firstProductRef = useRef<HTMLButtonElement>(null);
+
+    const [comboboxDisplaySettings, setComboboxDisplaySettings] = React.useState<ProductComboboxDisplaySettings>(DEFAULT_COMBOBOX_DISPLAY_SETTINGS);
+    const [columnWidths, setColumnWidths] = React.useState<ProductComboboxColumnWidths>(DEFAULT_COMBOBOX_COLUMN_WIDTHS);
+    const [groups, setGroups] = React.useState<any[]>([]);
+    const [brands, setBrands] = React.useState<any[]>([]);
+    const [stockMap, setStockMap] = React.useState<Record<string, number>>({});
+
+    React.useEffect(() => {
+        invoke<string | null>('get_app_setting', { key: 'product_combobox_display_settings' })
+            .then(v => {
+                if (v) {
+                    try { setComboboxDisplaySettings(JSON.parse(v)); } catch {}
+                }
+            })
+            .catch(console.error);
+
+        invoke<string | null>('get_app_setting', { key: 'product_combobox_column_widths' })
+            .then(v => {
+                if (v) {
+                    try { setColumnWidths(JSON.parse(v)); } catch {}
+                }
+            })
+            .catch(console.error);
+
+        invoke<any[]>('get_product_groups').then(setGroups).catch(console.error);
+        invoke<any[]>('get_product_brands').then(setBrands).catch(console.error);
+    }, []);
+
+    React.useEffect(() => {
+        if (comboboxDisplaySettings.show_stock) {
+            invoke<any[]>('get_stock_report', { groupId: null, asOnDate: new Date().toISOString().split('T')[0] })
+                .then(summary => {
+                    const map: Record<string, number> = {};
+                    for (const item of summary) {
+                        map[item.product_id] = item.current_stock;
+                    }
+                    setStockMap(map);
+                })
+                .catch(console.error);
+        }
+    }, [comboboxDisplaySettings.show_stock]);
 
     // FOCUSABLE_FIELDS: the column ids (in order) that can receive keyboard focus after product selection.
     // 'product' itself is excluded; 'final_qty', 'amount', 'total' are read-only display cells.
@@ -570,17 +613,27 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 </div>
                             );
                         case 'product': {
-                            const productOptions = products.map(p => ({
-                                value: `p:${p.id}`,
-                                label: `${p.code} - ${p.name}`,
-                                subLabel: p.barcode ? `Barcode: ${p.barcode}` : undefined,
-                                searchString: p.barcode ? `${p.code} - ${p.name} ${p.barcode}` : `${p.code} - ${p.name}`,
-                                keywords: [p.barcode, p.code, p.name].filter(Boolean) as string[],
-                            }));
+                            const productList = fullProducts.length > 0 ? fullProducts : products;
+                            const productOptions = productList.map(p => {
+                                const opt = buildProductComboboxOption({
+                                    product: p as any,
+                                    groups,
+                                    brands,
+                                    displaySettings: comboboxDisplaySettings,
+                                    stockMap,
+                                    moneyFormatter: (amt) => (amt !== undefined && amt !== null ? money(amt) : ''),
+                                });
+                                return {
+                                    ...opt,
+                                    value: `p:${p.id}`,
+                                };
+                            });
                             const serviceOptions = (services ?? []).map(s => ({
                                 value: `s:${s.id}`,
-                                label: `${s.code} - ${s.name}`,
-                                searchString: `${s.code} - ${s.name}`,
+                                label: s.code ? `${s.code} ${s.name}` : s.name,
+                                itemLabel: s.name,
+                                columns: s.code ? { code: s.code } : undefined,
+                                searchString: `${s.code || ''} ${s.name}`,
                                 keywords: [s.code, s.name].filter(Boolean) as string[],
                             }));
                             const allOptions = [...productOptions, ...serviceOptions];
@@ -589,10 +642,14 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 : item.product_id
                                     ? `p:${item.product_id}`
                                     : null;
+                            const cbHeaderCols = getProductComboboxHeaderColumns(comboboxDisplaySettings, columnWidths);
+                            const cbWidthClass = getProductComboboxWidthClass(comboboxDisplaySettings, columnWidths);
                             return (
                                 <Combobox
                                     key={col.id}
                                     ref={idx === 0 ? firstProductRef : undefined}
+                                    headerColumns={cbHeaderCols}
+                                    popoverClassName={cbWidthClass}
                                     options={allOptions}
                                     value={currentValue ?? undefined}
                                     onChange={(value) => {

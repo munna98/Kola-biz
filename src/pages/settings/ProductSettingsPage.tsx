@@ -6,11 +6,13 @@ import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { IconDeviceFloppy, IconTable, IconListDetails, IconLock, IconAdjustments, IconCloud, IconEye, IconEyeOff, IconBrandWhatsapp } from '@tabler/icons-react';
+import { type ProductComboboxDisplaySettings, DEFAULT_COMBOBOX_DISPLAY_SETTINGS, type ProductComboboxColumnWidths, DEFAULT_COMBOBOX_COLUMN_WIDTHS } from '@/lib/combobox-helpers';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface ProductTableColumns {
   code: boolean;
+  part_number: boolean;
   hsn_sac_code: boolean;
   group: boolean;
   brand: boolean;
@@ -32,6 +34,7 @@ export interface ProductTableColumns {
 
 export interface ProductDialogFields {
   code: boolean;
+  part_number: boolean;
   group: boolean;
   brand: boolean;
   hsn_sac_code: boolean;
@@ -53,6 +56,7 @@ export interface ProductDialogFields {
 
 export const DEFAULT_TABLE_COLUMNS: ProductTableColumns = {
   code: true,
+  part_number: false,
   hsn_sac_code: true,
   group: true,
   brand: true,
@@ -74,6 +78,7 @@ export const DEFAULT_TABLE_COLUMNS: ProductTableColumns = {
 
 export const DEFAULT_DIALOG_FIELDS: ProductDialogFields = {
   code: true,
+  part_number: false,
   group: true,
   brand: true,
   hsn_sac_code: true,
@@ -117,6 +122,7 @@ const TABLE_COLUMN_DEFS: { key: keyof ProductTableColumns; label: string; descri
   { key: 'group', label: 'Group', description: 'Product group / category' },
   { key: 'brand', label: 'Brand', description: 'Product brand name' },
   { key: 'unit', label: 'Unit', description: 'Base unit of measurement' },
+  { key: 'part_number', label: 'Part Number', description: 'Manufacturer / OEM Part Number column' },
   { key: 'purchase_rate', label: 'Purchase Rate', description: 'Default purchase price' },
   { key: 'sales_rate', label: 'Sales Rate', description: 'Default selling price' },
   { key: 'mrp', label: 'MRP', description: 'Maximum retail price' },
@@ -136,6 +142,7 @@ const DIALOG_FIELD_DEFS: { key: keyof ProductDialogFields; label: string; descri
   { key: 'code', label: 'Code', description: 'Auto-generated product / SKU code' },
   { key: 'group', label: 'Product Group', description: 'Category / group selector' },
   { key: 'brand', label: 'Brand', description: 'Brand selector' },
+  { key: 'part_number', label: 'Part Number', description: 'Manufacturer / OEM Part Number input field' },
   { key: 'hsn_sac_code', label: 'HSN / SAC Code', description: 'Commodity code for GST' },
   { key: 'gst_slab', label: 'GST Category', description: 'Tax slab selector' },
   { key: 'purchase_rate', label: 'Purchase Rate', description: 'Default purchase price field' },
@@ -153,11 +160,24 @@ const DIALOG_FIELD_DEFS: { key: keyof ProductDialogFields; label: string; descri
   { key: 'vehicle_color', label: 'Vehicle Color', description: 'Vehicle color text field' },
 ];
 
+const COMBOBOX_FIELD_DEFS: { key: keyof ProductComboboxDisplaySettings; widthKey: keyof ProductComboboxColumnWidths; label: string; description: string }[] = [
+  { key: 'show_part_number', widthKey: 'part_number', label: 'Part Number', description: 'Show Part #: <number> column in dropdown table' },
+  { key: 'show_barcode', widthKey: 'barcode', label: 'Barcode', description: 'Show Barcode column in dropdown table' },
+  { key: 'show_sales_rate', widthKey: 'sales_rate', label: 'Sales Rate', description: 'Show S.Rate column in dropdown table' },
+  { key: 'show_purchase_rate', widthKey: 'purchase_rate', label: 'Purchase Rate', description: 'Show P.Rate column in dropdown table' },
+  { key: 'show_mrp', widthKey: 'mrp', label: 'MRP', description: 'Show MRP column in dropdown table' },
+  { key: 'show_stock', widthKey: 'stock', label: 'Current Stock', description: 'Show Stock column in dropdown table' },
+  { key: 'show_group', widthKey: 'group', label: 'Product Group', description: 'Show Group column in dropdown table' },
+  { key: 'show_brand', widthKey: 'brand', label: 'Product Brand', description: 'Show Brand column in dropdown table' },
+];
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export default function ProductSettingsPage() {
   const [tableColumns, setTableColumns] = useState<ProductTableColumns>(DEFAULT_TABLE_COLUMNS);
   const [dialogFields, setDialogFields] = useState<ProductDialogFields>(DEFAULT_DIALOG_FIELDS);
+  const [comboboxSettings, setComboboxSettings] = useState<ProductComboboxDisplaySettings>(DEFAULT_COMBOBOX_DISPLAY_SETTINGS);
+  const [columnWidths, setColumnWidths] = useState<ProductComboboxColumnWidths>(DEFAULT_COMBOBOX_COLUMN_WIDTHS);
   const [preventDuplicates, setPreventDuplicates] = useState(false);
   const [updatePaymentToProductCost, setUpdatePaymentToProductCost] = useState(false);
   const [whatsappShareEnabled, setWhatsappShareEnabled] = useState(false);
@@ -178,10 +198,12 @@ export default function ProductSettingsPage() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [cols, fields, preventDupes, updateCost, waShare,
+      const [cols, fields, cbSettings, colWidths, preventDupes, updateCost, waShare,
         r2En, r2Ep, r2Bn, r2Ak, r2Sk, r2Pu, r2Wu] = await Promise.all([
         loadSetting('product_table_columns', DEFAULT_TABLE_COLUMNS),
         loadSetting('product_dialog_fields', DEFAULT_DIALOG_FIELDS),
+        loadSetting('product_combobox_display_settings', DEFAULT_COMBOBOX_DISPLAY_SETTINGS),
+        loadSetting('product_combobox_column_widths', DEFAULT_COMBOBOX_COLUMN_WIDTHS),
         invoke<string | null>('get_app_setting', { key: 'prevent_duplicate_product_names' }),
         invoke<string | null>('get_app_setting', { key: 'update_payment_to_product_cost' }),
         invoke<string | null>('get_app_setting', { key: 'whatsapp_share_enabled' }),
@@ -195,6 +217,8 @@ export default function ProductSettingsPage() {
       ]);
       setTableColumns(cols);
       setDialogFields(fields);
+      setComboboxSettings(cbSettings);
+      setColumnWidths(colWidths);
       setPreventDuplicates(preventDupes === 'true' || preventDupes === '"true"');
       setUpdatePaymentToProductCost(updateCost === 'true' || updateCost === '"true"');
       setWhatsappShareEnabled(waShare === 'true');
@@ -225,6 +249,8 @@ export default function ProductSettingsPage() {
       await Promise.all([
         saveSetting('product_table_columns', tableColumns),
         saveSetting('product_dialog_fields', dialogFields),
+        saveSetting('product_combobox_display_settings', comboboxSettings),
+        saveSetting('product_combobox_column_widths', columnWidths),
         invoke('set_app_setting', { key: 'prevent_duplicate_product_names', value: preventDuplicates ? 'true' : 'false' }),
         invoke('set_app_setting', { key: 'update_payment_to_product_cost', value: updatePaymentToProductCost ? 'true' : 'false' }),
         invoke('set_app_setting', { key: 'whatsapp_share_enabled', value: whatsappShareEnabled ? 'true' : 'false' }),
@@ -249,6 +275,8 @@ export default function ProductSettingsPage() {
   const handleReset = async () => {
     setTableColumns(DEFAULT_TABLE_COLUMNS);
     setDialogFields(DEFAULT_DIALOG_FIELDS);
+    setComboboxSettings(DEFAULT_COMBOBOX_DISPLAY_SETTINGS);
+    setColumnWidths(DEFAULT_COMBOBOX_COLUMN_WIDTHS);
     setPreventDuplicates(false);
     setUpdatePaymentToProductCost(false);
     setWhatsappShareEnabled(false);
@@ -364,6 +392,112 @@ export default function ProductSettingsPage() {
                     setDirty(true);
                   }}
                 />
+              </div>
+            </div>
+          </section>
+
+          {/* ── Product Combobox Dropdown Display ── */}
+          <section className="bg-card border rounded-lg overflow-hidden lg:col-span-2">
+            <div className="flex items-center gap-3 px-6 py-4 border-b bg-muted/30">
+              <IconListDetails size={18} className="text-primary" />
+              <div>
+                <h2 className="text-base font-semibold">Product Combobox Dropdown Display</h2>
+                <p className="text-xs text-muted-foreground">
+                  Configure which product details appear in the selection dropdown across all vouchers.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-4">
+              {/* Code & Product Name Column Width Controls */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex items-center justify-between p-3.5 rounded-lg border bg-muted/20">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="width-code" className="text-sm font-medium">Code Column Width</Label>
+                    <p className="text-xs text-muted-foreground">Width in pixels for Code column in dropdown</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="width-code"
+                      type="number"
+                      min={40}
+                      max={300}
+                      className="w-20 h-8 text-xs text-right"
+                      value={columnWidths.code ?? 70}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 70;
+                        setColumnWidths(prev => ({ ...prev, code: val }));
+                        setDirty(true);
+                      }}
+                    />
+                    <span className="text-xs text-muted-foreground">px</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between p-3.5 rounded-lg border bg-muted/20">
+                  <div className="space-y-0.5">
+                    <Label htmlFor="width-product-name" className="text-sm font-medium">Product Name Column Width</Label>
+                    <p className="text-xs text-muted-foreground">Width in pixels for Product Name column in dropdown</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      id="width-product-name"
+                      type="number"
+                      min={100}
+                      max={500}
+                      className="w-20 h-8 text-xs text-right"
+                      value={columnWidths.product_name ?? 240}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 240;
+                        setColumnWidths(prev => ({ ...prev, product_name: val }));
+                        setDirty(true);
+                      }}
+                    />
+                    <span className="text-xs text-muted-foreground">px</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {COMBOBOX_FIELD_DEFS.map(def => (
+                  <div key={def.key} className="flex items-center justify-between p-3.5 rounded-lg border bg-muted/10 hover:bg-muted/20 transition-colors">
+                    <div className="space-y-0.5 pr-2">
+                      <Label htmlFor={`cb-${def.key}`} className="text-sm font-medium cursor-pointer block">
+                        {def.label}
+                      </Label>
+                      <p className="text-xs text-muted-foreground">
+                        {def.description}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {comboboxSettings[def.key] && (
+                        <div className="flex items-center gap-1">
+                          <Input
+                            type="number"
+                            min={40}
+                            max={300}
+                            className="w-16 h-7 text-xs text-right"
+                            value={columnWidths[def.widthKey] ?? DEFAULT_COMBOBOX_COLUMN_WIDTHS[def.widthKey]}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || DEFAULT_COMBOBOX_COLUMN_WIDTHS[def.widthKey];
+                              setColumnWidths(prev => ({ ...prev, [def.widthKey]: val }));
+                              setDirty(true);
+                            }}
+                          />
+                          <span className="text-[10px] text-muted-foreground">px</span>
+                        </div>
+                      )}
+                      <Switch
+                        id={`cb-${def.key}`}
+                        checked={comboboxSettings[def.key]}
+                        onCheckedChange={(checked) => {
+                          setComboboxSettings(prev => ({ ...prev, [def.key]: checked }));
+                          setDirty(true);
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           </section>
