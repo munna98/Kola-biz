@@ -135,6 +135,7 @@ pub fn run() {
             get_account_types,
             get_account_groups,
             get_all_account_groups,
+            get_account_group_tree,
             get_accounts_by_groups,
             create_account_group,
             delete_account_group,

@@ -266,6 +266,76 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await?;
 
+    // ==================== ACCOUNT GROUPS MIGRATIONS ====================
+
+    // Migration: Add parent_group_id for hierarchical (Tally-like) group nesting
+    let _ = sqlx::query("ALTER TABLE account_groups ADD COLUMN parent_group_id TEXT REFERENCES account_groups(id)")
+        .execute(pool).await;
+
+    // Migration: Add is_system flag — system/seeded groups cannot be deleted
+    let _ = sqlx::query("ALTER TABLE account_groups ADD COLUMN is_system INTEGER DEFAULT 0")
+        .execute(pool).await;
+
+    // Migration: Add base_type — stored only on root primary groups (Asset/Liability/Equity/Income/Expense)
+    // Sub-groups derive their base type by walking up to the root ancestor.
+    let _ = sqlx::query("ALTER TABLE account_groups ADD COLUMN base_type TEXT")
+        .execute(pool).await;
+
+    // Migration: Mark all original seeded groups as system-protected
+    let _ = sqlx::query(
+        "UPDATE account_groups SET is_system = 1
+         WHERE name IN (
+             'Current Assets','Bank Account','Cash','Non-Current Assets',
+             'Accounts Receivable','Inventory','Tax Receivable',
+             'Current Liabilities','Non-Current Liabilities','Accounts Payable',
+             'Tax Payable','Duties & Taxes','Equity','Revenue','Other Income',
+             'Cost of Sales','Operating Expenses','Financial Expenses','Discounts'
+         )"
+    ).execute(pool).await;
+
+    // Migration: Set base_type on the groups that will remain as primary (root) nodes
+    let _ = sqlx::query("UPDATE account_groups SET base_type = 'Asset'     WHERE name = 'Current Assets'       AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
+    let _ = sqlx::query("UPDATE account_groups SET base_type = 'Liability' WHERE name = 'Current Liabilities'  AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
+    let _ = sqlx::query("UPDATE account_groups SET base_type = 'Income'    WHERE name = 'Revenue'              AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
+    let _ = sqlx::query("UPDATE account_groups SET base_type = 'Expense'   WHERE name = 'Cost of Sales'        AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
+    let _ = sqlx::query("UPDATE account_groups SET base_type = 'Expense'   WHERE name = 'Operating Expenses'   AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
+
+    // Migration: Assign sub-groups under Current Assets
+    let _ = sqlx::query(
+        "UPDATE account_groups
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Current Assets')
+         WHERE name IN ('Bank Account','Cash','Accounts Receivable','Inventory','Tax Receivable')
+           AND parent_group_id IS NULL"
+    ).execute(pool).await;
+
+    // Migration: Assign sub-groups under Current Liabilities
+    let _ = sqlx::query(
+        "UPDATE account_groups
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Current Liabilities')
+         WHERE name IN ('Accounts Payable','Tax Payable','Duties & Taxes')
+           AND parent_group_id IS NULL"
+    ).execute(pool).await;
+
+    // Migration: Assign sub-groups under Operating Expenses
+    let _ = sqlx::query(
+        "UPDATE account_groups
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Operating Expenses')
+         WHERE name IN ('Financial Expenses','Discounts')
+           AND parent_group_id IS NULL"
+    ).execute(pool).await;
+
+    // Migration: Assign Other Income under Revenue
+    let _ = sqlx::query(
+        "UPDATE account_groups
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Revenue')
+         WHERE name = 'Other Income'
+           AND parent_group_id IS NULL"
+    ).execute(pool).await;
+
+    // Migration: Non-Current Assets / Non-Current Liabilities get assigned
+    // once Fixed Assets / Loans (Liability) primary groups are seeded (done in seed_initial_data)
+    // This is handled in seeds/data.rs after inserting the new primaries.
+
     // Chart of Accounts (Parties & Ledgers)
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS chart_of_accounts (

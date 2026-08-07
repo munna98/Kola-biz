@@ -636,6 +636,9 @@ pub struct AccountGroup {
     pub id: String,
     pub name: String,
     pub account_type: String,
+    pub parent_group_id: Option<String>,  // Tally-like hierarchy
+    pub is_system: i64,                    // 1 = protected seeded group
+    pub base_type: Option<String>,         // Only on primary (root) groups
     pub is_active: i64,
     pub created_at: String,
 }
@@ -644,6 +647,7 @@ pub struct AccountGroup {
 pub struct CreateAccountGroup {
     pub name: String,
     pub account_type: String,
+    pub parent_group_id: Option<String>,  // Optional parent for sub-group creation
 }
 
 #[tauri::command]
@@ -652,7 +656,35 @@ pub async fn get_all_account_groups(
 ) -> Result<Vec<AccountGroup>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, AccountGroup>(
-        "SELECT * FROM account_groups WHERE is_active = 1 ORDER BY account_type, name ASC",
+        "SELECT id, name, account_type,
+                parent_group_id, COALESCE(is_system, 0) as is_system,
+                base_type, is_active, created_at
+         FROM account_groups
+         WHERE is_active = 1
+         ORDER BY account_type, name ASC",
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// Returns all active account groups with hierarchy data.
+/// The frontend builds the visual tree from parent_group_id references.
+#[tauri::command]
+pub async fn get_account_group_tree(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<AccountGroup>, String> {
+    let pool = registry.active_pool().await?;
+    sqlx::query_as::<_, AccountGroup>(
+        "SELECT id, name, account_type,
+                parent_group_id, COALESCE(is_system, 0) as is_system,
+                base_type, is_active, created_at
+         FROM account_groups
+         WHERE is_active = 1
+         ORDER BY
+           CASE WHEN parent_group_id IS NULL THEN 0 ELSE 1 END ASC,
+           account_type ASC,
+           name ASC",
     )
     .fetch_all(&pool)
     .await
@@ -666,29 +698,109 @@ pub async fn create_account_group(
 ) -> Result<AccountGroup, String> {
     let pool = registry.active_pool().await?;
     let id = Uuid::now_v7().to_string();
-    sqlx::query("INSERT INTO account_groups (id, name, account_type) VALUES (?, ?, ?)")
-        .bind(&id)
-        .bind(&group.name)
-        .bind(&group.account_type)
-        .execute(&pool)
-        .await
-        .map_err(|e| e.to_string())?;
 
-    sqlx::query_as::<_, AccountGroup>("SELECT * FROM account_groups WHERE id = ?")
-        .bind(id)
-        .fetch_one(&pool)
+    // Derive account_type from parent if a parent is given and type is not specified clearly
+    let resolved_type = if let Some(ref pid) = group.parent_group_id {
+        // Walk up to find the base_type of the parent chain
+        let parent_type: Option<String> = sqlx::query_scalar(
+            "WITH RECURSIVE ancestors(id, account_type, parent_group_id, base_type) AS (
+                 SELECT id, account_type, parent_group_id, base_type FROM account_groups WHERE id = ?
+                 UNION ALL
+                 SELECT ag.id, ag.account_type, ag.parent_group_id, ag.base_type
+                 FROM account_groups ag
+                 JOIN ancestors a ON ag.id = a.parent_group_id
+             )
+             SELECT COALESCE(base_type, account_type) FROM ancestors
+             WHERE parent_group_id IS NULL OR base_type IS NOT NULL
+             LIMIT 1"
+        )
+        .bind(pid)
+        .fetch_optional(&pool)
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?
+        .flatten();
+        parent_type.unwrap_or_else(|| group.account_type.clone())
+    } else {
+        group.account_type.clone()
+    };
+
+    sqlx::query(
+        "INSERT INTO account_groups (id, name, account_type, parent_group_id, is_system) VALUES (?, ?, ?, ?, 0)"
+    )
+    .bind(&id)
+    .bind(&group.name)
+    .bind(&resolved_type)
+    .bind(&group.parent_group_id)
+    .execute(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    sqlx::query_as::<_, AccountGroup>(
+        "SELECT id, name, account_type, parent_group_id, COALESCE(is_system,0) as is_system, base_type, is_active, created_at
+         FROM account_groups WHERE id = ?"
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub async fn delete_account_group(
     registry: State<'_, Arc<DbRegistry>>,
-    id: i64,
+    id: String,
 ) -> Result<(), String> {
     let pool = registry.active_pool().await?;
+
+    // Fetch the group to check system flag
+    let group: Option<(i64, String)> = sqlx::query_as(
+        "SELECT COALESCE(is_system, 0), name FROM account_groups WHERE id = ? AND is_active = 1"
+    )
+    .bind(&id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let (is_system, name) = group.ok_or_else(|| "Account group not found".to_string())?;
+
+    if is_system == 1 {
+        return Err(format!("'{}' is a system group and cannot be deleted.", name));
+    }
+
+    // Check if any child groups exist under this group
+    let child_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM account_groups WHERE parent_group_id = ? AND is_active = 1"
+    )
+    .bind(&id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if child_count > 0 {
+        return Err(format!(
+            "Cannot delete '{}' — it has {} sub-group(s). Delete or move them first.",
+            name, child_count
+        ));
+    }
+
+    // Check if any ledgers (chart_of_accounts) are assigned to this group
+    let ledger_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM chart_of_accounts WHERE account_group = ? AND deleted_at IS NULL"
+    )
+    .bind(&name)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if ledger_count > 0 {
+        return Err(format!(
+            "Cannot delete '{}' — {} ledger(s) are assigned to it. Reassign them first.",
+            name, ledger_count
+        ));
+    }
+
     sqlx::query("UPDATE account_groups SET is_active = 0 WHERE id = ?")
-        .bind(id)
+        .bind(&id)
         .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;

@@ -325,6 +325,9 @@ export interface AccountGroup {
   id: string;
   name: string;
   account_type: string;
+  parent_group_id: string | null;   // Hierarchy: null = primary/root group
+  is_system: number;                 // 1 = seeded/protected group
+  base_type: string | null;          // Only on primary groups (Asset/Liability/Equity/Income/Expense)
   is_active: number;
   created_at: string;
 }
@@ -332,6 +335,58 @@ export interface AccountGroup {
 export interface CreateAccountGroup {
   name: string;
   account_type: string;
+  parent_group_id?: string | null;  // Optional parent for sub-group creation
+}
+
+/** Helper: build a flat list of AccountGroups into a tree structure for UI rendering */
+export interface AccountGroupNode extends AccountGroup {
+  children: AccountGroupNode[];
+  depth: number;
+}
+
+export function buildAccountGroupTree(groups: AccountGroup[]): AccountGroupNode[] {
+  const map = new Map<string, AccountGroupNode>();
+  for (const g of groups) {
+    map.set(g.id, { ...g, children: [], depth: 0 });
+  }
+  const roots: AccountGroupNode[] = [];
+  for (const node of map.values()) {
+    if (!node.parent_group_id) {
+      roots.push(node);
+    } else {
+      const parent = map.get(node.parent_group_id);
+      if (parent) {
+        parent.children.push(node);
+      } else {
+        roots.push(node); // orphan — treat as root
+      }
+    }
+  }
+  // Assign depths recursively
+  function assignDepth(node: AccountGroupNode, depth: number) {
+    node.depth = depth;
+    for (const child of node.children) assignDepth(child, depth + 1);
+  }
+  for (const root of roots) assignDepth(root, 0);
+  // Sort roots and children alphabetically by name
+  roots.sort((a, b) => a.name.localeCompare(b.name));
+  for (const node of map.values()) {
+    node.children.sort((a, b) => a.name.localeCompare(b.name));
+  }
+  return roots;
+}
+
+/** Flatten a tree back to a depth-ordered flat list (for combobox display with indentation) */
+export function flattenGroupTree(nodes: AccountGroupNode[]): AccountGroupNode[] {
+  const result: AccountGroupNode[] = [];
+  function walk(list: AccountGroupNode[]) {
+    for (const node of list) {
+      result.push(node);
+      walk(node.children);
+    }
+  }
+  walk(nodes);
+  return result;
 }
 
 // ======= INVOICES =======
@@ -545,6 +600,7 @@ export const api = {
   },
   accountGroups: {
     list: () => invoke<AccountGroup[]>('get_all_account_groups'),
+    getTree: () => invoke<AccountGroup[]>('get_account_group_tree'),
     create: (data: CreateAccountGroup) => invoke<AccountGroup>('create_account_group', { group: data }),
     delete: (id: string) => invoke<void>('delete_account_group', { id }),
   },

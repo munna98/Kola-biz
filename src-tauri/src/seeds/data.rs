@@ -3,32 +3,32 @@ use sqlx::SqlitePool;
 use uuid::Uuid;
 
 pub async fn seed_initial_data(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
-    // Insert default account groups
-    let groups = [
-        ("Current Assets", "Asset"),
-        ("Bank Account", "Asset"),
-        ("Cash", "Asset"),
-        ("Non-Current Assets", "Asset"),
-        ("Accounts Receivable", "Asset"),
-        ("Inventory", "Asset"),
-        ("Tax Receivable", "Asset"),
-        ("Current Liabilities", "Liability"),
-        ("Non-Current Liabilities", "Liability"),
-        ("Accounts Payable", "Liability"),
-        ("Tax Payable", "Liability"),
-        ("Duties & Taxes", "Liability"),
-        ("Equity", "Equity"),
-        ("Revenue", "Income"),
-        ("Other Income", "Income"),
-        ("Cost of Sales", "Expense"),
-        ("Operating Expenses", "Expense"),
-        ("Financial Expenses", "Expense"),
-        ("Discounts", "Expense"),
+    // ---- Step 1: Insert original flat groups (unchanged names, now marked is_system=1) ----
+    let groups: &[(&str, &str)] = &[
+        ("Current Assets",         "Asset"),
+        ("Bank Account",           "Asset"),
+        ("Cash",                   "Asset"),
+        ("Non-Current Assets",     "Asset"),
+        ("Accounts Receivable",    "Asset"),
+        ("Inventory",              "Asset"),
+        ("Tax Receivable",         "Asset"),
+        ("Current Liabilities",    "Liability"),
+        ("Non-Current Liabilities","Liability"),
+        ("Accounts Payable",       "Liability"),
+        ("Tax Payable",            "Liability"),
+        ("Duties & Taxes",         "Liability"),
+        ("Equity",                 "Equity"),
+        ("Revenue",                "Income"),
+        ("Other Income",           "Income"),
+        ("Cost of Sales",          "Expense"),
+        ("Operating Expenses",     "Expense"),
+        ("Financial Expenses",     "Expense"),
+        ("Discounts",              "Expense"),
     ];
 
     for (name, acc_type) in groups {
         sqlx::query(
-            "INSERT OR IGNORE INTO account_groups (id, name, account_type) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO account_groups (id, name, account_type, is_system) VALUES (?, ?, ?, 1)",
         )
         .bind(Uuid::now_v7().to_string())
         .bind(name)
@@ -36,6 +36,67 @@ pub async fn seed_initial_data(pool: &SqlitePool) -> Result<(), Box<dyn std::err
         .execute(pool)
         .await?;
     }
+
+    // ---- Step 2: Insert new Tally-style Primary Groups (roots of the hierarchy) ----
+    // These sit ABOVE the existing groups and are also is_system=1.
+    // base_type is stored here so sub-groups can derive their accounting type by walking up.
+    let primary_groups: &[(&str, &str, &str)] = &[
+        // (name, account_type, base_type)
+        ("Capital Account",         "Equity",    "Equity"),
+        ("Fixed Assets",            "Asset",     "Asset"),
+        ("Investments",             "Asset",     "Asset"),
+        ("Loans (Liability)",       "Liability", "Liability"),
+        ("Suspense A/c",            "Asset",     "Asset"),
+        ("Indirect Income",         "Income",    "Income"),
+        ("Direct Income",           "Income",    "Income"),
+        ("Direct Expenses",         "Expense",   "Expense"),
+        ("Indirect Expenses",       "Expense",   "Expense"),
+        ("Branch/Divisions",        "Asset",     "Asset"),
+    ];
+
+    for (name, acc_type, base_type) in primary_groups {
+        sqlx::query(
+            "INSERT OR IGNORE INTO account_groups (id, name, account_type, is_system, base_type) VALUES (?, ?, ?, 1, ?)",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(name)
+        .bind(acc_type)
+        .bind(base_type)
+        .execute(pool)
+        .await?;
+    }
+
+    // ---- Step 3: Assign parent links for groups that were left unlinked in db.rs ----
+    // (db.rs handles sub-groups under existing primaries; here we handle the new primaries)
+
+    // Non-Current Assets → Fixed Assets
+    let _ = sqlx::query(
+        "UPDATE account_groups
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Fixed Assets')
+         WHERE name = 'Non-Current Assets' AND parent_group_id IS NULL"
+    ).execute(pool).await;
+
+    // Non-Current Liabilities → Loans (Liability)
+    let _ = sqlx::query(
+        "UPDATE account_groups
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Loans (Liability)')
+         WHERE name = 'Non-Current Liabilities' AND parent_group_id IS NULL"
+    ).execute(pool).await;
+
+    // Equity group → Capital Account
+    let _ = sqlx::query(
+        "UPDATE account_groups
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Capital Account')
+         WHERE name = 'Equity' AND parent_group_id IS NULL"
+    ).execute(pool).await;
+
+    // Set base_type on the new primary groups (idempotent - safe to run multiple times)
+    let _ = sqlx::query(
+        "UPDATE account_groups SET base_type = account_type
+         WHERE base_type IS NULL AND parent_group_id IS NULL AND is_system = 1"
+    ).execute(pool).await;
+
+
 
     // Insert default chart of accounts
     let coas = [
