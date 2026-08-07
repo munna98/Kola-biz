@@ -104,6 +104,46 @@ pub async fn get_accounts_by_groups(
     query.fetch_all(&pool).await.map_err(|e| e.to_string())
 }
 
+pub async fn get_next_account_code_helper(
+    pool: &SqlitePool,
+    account_type: &str,
+) -> Result<String, String> {
+    let start_num: i64 = match account_type {
+        "Asset" => 1000,
+        "Liability" => 2000,
+        "Equity" => 3000,
+        "Income" => 4000,
+        "Expense" => 5000,
+        _ => 1000,
+    };
+
+    let max_code: Option<i64> = sqlx::query_scalar(
+        "SELECT MAX(CAST(account_code AS INTEGER))
+         FROM chart_of_accounts
+         WHERE LENGTH(account_code) = 4
+           AND account_code >= ?1
+           AND account_code < ?2"
+    )
+    .bind(format!("{}", start_num))
+    .bind(format!("{}", start_num + 1000))
+    .fetch_optional(pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .flatten();
+
+    let next_num = max_code.unwrap_or(start_num).max(start_num) + 1;
+    Ok(format!("{:04}", next_num))
+}
+
+#[tauri::command]
+pub async fn get_next_account_code(
+    registry: State<'_, Arc<DbRegistry>>,
+    account_type: String,
+) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
+    get_next_account_code_helper(&pool, &account_type).await
+}
+
 #[tauri::command]
 pub async fn create_chart_of_account(
     registry: State<'_, Arc<DbRegistry>>,
@@ -115,6 +155,12 @@ pub async fn create_chart_of_account(
         .opening_balance_type
         .unwrap_or_else(|| "Dr".to_string());
 
+    let final_code = if account.account_code.trim().is_empty() {
+        get_next_account_code_helper(&pool, &account.account_type).await?
+    } else {
+        account.account_code.trim().to_string()
+    };
+
     let id = Uuid::now_v7().to_string();
 
     let _ = sqlx::query(
@@ -122,7 +168,7 @@ pub async fn create_chart_of_account(
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)"
     )
     .bind(&id)
-    .bind(&account.account_code)
+    .bind(&final_code)
     .bind(&account.account_name)
     .bind(&account.account_type)
     .bind(&account.account_group)

@@ -597,6 +597,7 @@ export const api = {
     hardDelete: (id: string) => invoke<void>('hard_delete_chart_of_account', { id }),
     getTypes: () => invoke<string[]>('get_account_types'),
     getGroups: () => invoke<string[]>('get_account_groups'),
+    getNextCode: (accountType: string) => invoke<string>('get_next_account_code', { accountType }),
   },
   accountGroups: {
     list: () => invoke<AccountGroup[]>('get_all_account_groups'),

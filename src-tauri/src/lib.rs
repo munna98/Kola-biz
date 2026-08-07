@@ -126,6 +126,7 @@ pub fn run() {
             get_next_supplier_code,
             // Chart of Accounts
             get_chart_of_accounts,
+            get_next_account_code,
             create_chart_of_account,
             update_chart_of_account,
             delete_chart_of_account,

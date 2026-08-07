@@ -298,7 +298,7 @@ export default function ProfitLossPage() {
     dispatch(setLedgerReportSelectedAccount(acc.id as any));
     dispatch(
       setActiveSectionWithParams({
-        section: 'ledger_report',
+        section: 'ledger',
         params: { accountId: acc.id },
       })
     );

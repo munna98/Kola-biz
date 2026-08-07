@@ -317,7 +317,7 @@ export default function BalanceSheetPage() {
     dispatch(setLedgerReportSelectedAccount(acc.id as any));
     dispatch(
       setActiveSectionWithParams({
-        section: 'ledger_report',
+        section: 'ledger',
         params: { accountId: acc.id },
       })
     );

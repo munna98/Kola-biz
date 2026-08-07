@@ -69,6 +69,13 @@ export default function LedgerReportPage() {
     loadAccounts();
   }, []);
 
+  // Auto-generate report when an account is selected via drill-down navigation
+  useEffect(() => {
+    if (selectedAccount) {
+      loadLedger();
+    }
+  }, [selectedAccount]);
+
   // Reset to base currency view when account changes or new report is generated
   useEffect(() => {
     setViewCurrency('base');

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,7 @@ import { api, ChartOfAccount, CreateChartOfAccount, AccountGroup, AccountGroupNo
 import { toast } from 'sonner';
 import { useDialog } from '@/hooks/use-dialog';
 import { Combobox } from '@/components/ui/combobox';
+import { IconRefresh } from '@tabler/icons-react';
 
 interface ChartOfAccountDialogProps {
     open: boolean;
@@ -63,6 +64,15 @@ export default function ChartOfAccountDialog({
         orderedFields
     );
 
+    const fetchNextCode = useCallback(async (type: string) => {
+        try {
+            const nextCode = await api.chartOfAccounts.getNextCode(type);
+            setForm(f => ({ ...f, account_code: nextCode }));
+        } catch (err) {
+            console.error('Failed to fetch next account code:', err);
+        }
+    }, []);
+
     useEffect(() => {
         if (accountToEdit) {
             setForm({
@@ -74,7 +84,7 @@ export default function ChartOfAccountDialog({
                 opening_balance: accountToEdit.opening_balance,
                 opening_balance_type: accountToEdit.opening_balance_type || 'Dr',
             });
-        } else {
+        } else if (open) {
             setForm({
                 account_code: '',
                 account_name: initialName,
@@ -84,8 +94,9 @@ export default function ChartOfAccountDialog({
                 opening_balance: 0,
                 opening_balance_type: 'Dr',
             });
+            fetchNextCode('Asset');
         }
-    }, [accountToEdit, open, initialName]);
+    }, [accountToEdit, open, initialName, fetchNextCode]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -122,6 +133,9 @@ export default function ChartOfAccountDialog({
     const handleGroupChange = (groupName: string) => {
         const derivedType = deriveAccountType(groupName, accountGroups);
         setForm(f => ({ ...f, account_group: groupName, account_type: derivedType }));
+        if (!accountToEdit) {
+            fetchNextCode(derivedType);
+        }
         focusNext('group');
     };
 
@@ -158,12 +172,24 @@ export default function ChartOfAccountDialog({
                 <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="grid grid-cols-2 gap-4">
                         <div>
-                            <Label>Account Code</Label>
+                            <div className="flex justify-between items-center mb-1">
+                                <Label>Account Code</Label>
+                                {!accountToEdit && (
+                                    <button
+                                        type="button"
+                                        className="text-[11px] text-primary hover:underline flex items-center gap-0.5"
+                                        onClick={() => fetchNextCode(form.account_type || 'Asset')}
+                                    >
+                                        <IconRefresh size={11} /> Auto-generate
+                                    </button>
+                                )}
+                            </div>
                             <Input
                                 ref={register('code') as any}
                                 value={form.account_code}
                                 onChange={e => setForm({ ...form, account_code: e.target.value })}
                                 onKeyDown={(e) => handleKeyDown(e, 'code')}
+                                placeholder="Auto-generated (e.g. 1008)"
                                 required
                                 disabled={accountToEdit?.is_system === 1}
                             />
