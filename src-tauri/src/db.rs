@@ -298,7 +298,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("UPDATE account_groups SET base_type = 'Liability' WHERE name = 'Current Liabilities'  AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
     let _ = sqlx::query("UPDATE account_groups SET base_type = 'Income'    WHERE name = 'Sales Accounts'       AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
     let _ = sqlx::query("UPDATE account_groups SET base_type = 'Expense'   WHERE name = 'Purchase Accounts'    AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
-    let _ = sqlx::query("UPDATE account_groups SET base_type = 'Expense'   WHERE name = 'Operating Expenses'   AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
+    let _ = sqlx::query("UPDATE account_groups SET base_type = 'Expense'   WHERE name = 'Indirect Expenses'    AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
 
     // Migration: Assign sub-groups under Current Assets
     let _ = sqlx::query(
@@ -316,20 +316,18 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
            AND parent_group_id IS NULL"
     ).execute(pool).await;
 
-    // Migration: Assign sub-groups under Operating Expenses
+    // Migration: Assign sub-groups under Indirect Expenses
     let _ = sqlx::query(
         "UPDATE account_groups
-         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Operating Expenses')
-         WHERE name IN ('Financial Expenses','Discounts')
-           AND parent_group_id IS NULL"
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Indirect Expenses')
+         WHERE name IN ('Operating Expenses','Financial Expenses','Discounts')"
     ).execute(pool).await;
 
-    // Migration: Assign Other Income under Revenue
+    // Migration: Assign Other Income under Indirect Income
     let _ = sqlx::query(
         "UPDATE account_groups
-         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Revenue')
-         WHERE name = 'Other Income'
-           AND parent_group_id IS NULL"
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Indirect Income')
+         WHERE name = 'Other Income'"
     ).execute(pool).await;
 
     // Migration: Update default ledger 3001 from 'Capital' to 'Owner''s Capital' under group 'Capital Account'
