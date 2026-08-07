@@ -324,10 +324,10 @@ export default function ProfitLossPage() {
             </p>
           </div>
           <div className="flex gap-2 items-center">
-            <Button variant="outline" size="xs" className="h-8 text-xs" onClick={expandAll}>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={expandAll}>
               Expand All
             </Button>
-            <Button variant="outline" size="xs" className="h-8 text-xs" onClick={collapseAll}>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={collapseAll}>
               Collapse All
             </Button>
             <Button variant="outline" size="sm" onClick={loadReport}>

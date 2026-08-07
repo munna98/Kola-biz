@@ -11,7 +11,7 @@ import {
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
-import { AccountGroup, AccountGroupNode, buildAccountGroupTree } from '@/lib/tauri';
+import { AccountGroup, AccountGroupNode } from '@/lib/tauri';
 import { useDispatch } from 'react-redux';
 import { setLedgerReportSelectedAccount, setActiveSectionWithParams } from '@/store';
 import { cn } from '@/lib/utils';
@@ -346,10 +346,10 @@ export default function BalanceSheetPage() {
             </p>
           </div>
           <div className="flex gap-2 items-center">
-            <Button variant="outline" size="xs" className="h-8 text-xs" onClick={expandAll}>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={expandAll}>
               Expand All
             </Button>
-            <Button variant="outline" size="xs" className="h-8 text-xs" onClick={collapseAll}>
+            <Button variant="outline" size="sm" className="h-8 text-xs" onClick={collapseAll}>
               Collapse All
             </Button>
             <Button variant="outline" size="sm" onClick={loadReport}>
