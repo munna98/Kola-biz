@@ -332,8 +332,6 @@ export default function TaxSettingsPage() {
         </CardContent>
       </Card>
 
-      </Card>
-
       {/* ── Slab Dialog ── */}
       <Dialog open={slabDialogOpen} onOpenChange={setSlabDialogOpen}>
         <DialogContent className="max-w-md">
