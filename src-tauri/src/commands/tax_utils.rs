@@ -145,32 +145,38 @@ pub struct GstAccounts {
 /// `is_purchase = true`  → Input Credit accounts
 /// `is_purchase = false` → Payable (Output) accounts
 pub fn resolve_gst_account_names(
-    effective_rate: f64,
+    _effective_rate: f64,
     is_inter_state: bool,
     is_purchase: bool,
 ) -> GstAccounts {
-    let suffix = if is_purchase {
-        "Input Credit"
+    if is_purchase {
+        if is_inter_state {
+            GstAccounts {
+                cgst_account: None,
+                sgst_account: None,
+                igst_account: Some("IGST Input Credit".to_string()),
+            }
+        } else {
+            GstAccounts {
+                cgst_account: Some("CGST Input Credit".to_string()),
+                sgst_account: Some("SGST Input Credit".to_string()),
+                igst_account: None,
+            }
+        }
     } else {
-        "Payable"
-    };
-
-    if is_inter_state {
-        let name = format!("IGST {}% {}", format_rate(effective_rate), suffix);
-        return GstAccounts {
-            cgst_account: None,
-            sgst_account: None,
-            igst_account: Some(name),
-        };
-    }
-
-    let split_rate = effective_rate / 2.0;
-    // Format as e.g. "2.5" or "9" — remove trailing zeros
-    let rate_str = format_rate(split_rate);
-    GstAccounts {
-        cgst_account: Some(format!("CGST {}% {}", rate_str, suffix)),
-        sgst_account: Some(format!("SGST {}% {}", rate_str, suffix)),
-        igst_account: None,
+        if is_inter_state {
+            GstAccounts {
+                cgst_account: None,
+                sgst_account: None,
+                igst_account: Some("IGST Output".to_string()),
+            }
+        } else {
+            GstAccounts {
+                cgst_account: Some("CGST Output".to_string()),
+                sgst_account: Some("SGST Output".to_string()),
+                igst_account: None,
+            }
+        }
     }
 }
 

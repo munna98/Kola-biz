@@ -298,35 +298,16 @@ pub async fn seed_initial_data(pool: &SqlitePool) -> Result<(), Box<dyn std::err
     // ==================== GST Accounts ====================
     // Output Tax accounts (sales — Liability)
     // Input Credit accounts (purchases — Asset)
+    // Core GST Tax Accounts
     let gst_coas: &[(&str, &str, &str, &str, &str)] = &[
-        // Output (Payable) — intra-state
-        ("GST-C25P",  "CGST 2.5% Payable",        "Liability", "Duties & Taxes", "CGST collected on sales at 5% slab"),
-        ("GST-S25P",  "SGST 2.5% Payable",        "Liability", "Duties & Taxes", "SGST collected on sales at 5% slab"),
-        ("GST-C6P",   "CGST 6% Payable",          "Liability", "Duties & Taxes", "CGST collected on sales at 12% slab"),
-        ("GST-S6P",   "SGST 6% Payable",          "Liability", "Duties & Taxes", "SGST collected on sales at 12% slab"),
-        ("GST-C9P",   "CGST 9% Payable",          "Liability", "Duties & Taxes", "CGST collected on sales at 18% slab"),
-        ("GST-S9P",   "SGST 9% Payable",          "Liability", "Duties & Taxes", "SGST collected on sales at 18% slab"),
-        ("GST-C14P",  "CGST 14% Payable",         "Liability", "Duties & Taxes", "CGST collected on sales at 28% slab"),
-        ("GST-S14P",  "SGST 14% Payable",         "Liability", "Duties & Taxes", "SGST collected on sales at 28% slab"),
-        // Output (Payable) — inter-state
-        ("GST-I5P",   "IGST 5% Payable",          "Liability", "Duties & Taxes", "IGST collected on inter-state sales at 5%"),
-        ("GST-I12P",  "IGST 12% Payable",         "Liability", "Duties & Taxes", "IGST collected on inter-state sales at 12%"),
-        ("GST-I18P",  "IGST 18% Payable",         "Liability", "Duties & Taxes", "IGST collected on inter-state sales at 18%"),
-        ("GST-I28P",  "IGST 28% Payable",         "Liability", "Duties & Taxes", "IGST collected on inter-state sales at 28%"),
-        // Input Credits (purchases — Asset)
-        ("GST-C25I",  "CGST 2.5% Input Credit",   "Asset",     "Tax Receivable",  "CGST paid on purchases at 5% slab"),
-        ("GST-S25I",  "SGST 2.5% Input Credit",   "Asset",     "Tax Receivable",  "SGST paid on purchases at 5% slab"),
-        ("GST-C6I",   "CGST 6% Input Credit",     "Asset",     "Tax Receivable",  "CGST paid on purchases at 12% slab"),
-        ("GST-S6I",   "SGST 6% Input Credit",     "Asset",     "Tax Receivable",  "SGST paid on purchases at 12% slab"),
-        ("GST-C9I",   "CGST 9% Input Credit",     "Asset",     "Tax Receivable",  "CGST paid on purchases at 18% slab"),
-        ("GST-S9I",   "SGST 9% Input Credit",     "Asset",     "Tax Receivable",  "SGST paid on purchases at 18% slab"),
-        ("GST-C14I",  "CGST 14% Input Credit",    "Asset",     "Tax Receivable",  "CGST paid on purchases at 28% slab"),
-        ("GST-S14I",  "SGST 14% Input Credit",    "Asset",     "Tax Receivable",  "SGST paid on purchases at 28% slab"),
-        // Input Credits — inter-state
-        ("GST-I5I",   "IGST 5% Input Credit",     "Asset",     "Tax Receivable",  "IGST paid on inter-state purchases at 5%"),
-        ("GST-I12I",  "IGST 12% Input Credit",    "Asset",     "Tax Receivable",  "IGST paid on inter-state purchases at 12%"),
-        ("GST-I18I",  "IGST 18% Input Credit",    "Asset",     "Tax Receivable",  "IGST paid on inter-state purchases at 18%"),
-        ("GST-I28I",  "IGST 28% Input Credit",    "Asset",     "Tax Receivable",  "IGST paid on inter-state purchases at 28%"),
+        // Output Tax (Payable) — Liability
+        ("2002-CGST", "CGST Output",       "Liability", "Duties & Taxes", "Central GST collected on intra-state sales"),
+        ("2002-SGST", "SGST Output",       "Liability", "Duties & Taxes", "State GST collected on intra-state sales"),
+        ("2002-IGST", "IGST Output",       "Liability", "Duties & Taxes", "Integrated GST collected on inter-state sales"),
+        // Input Tax Credit — Asset
+        ("1005-CGST", "CGST Input Credit",  "Asset",     "Tax Receivable", "Central GST paid on intra-state purchases"),
+        ("1005-SGST", "SGST Input Credit",  "Asset",     "Tax Receivable", "State GST paid on intra-state purchases"),
+        ("1005-IGST", "IGST Input Credit",  "Asset",     "Tax Receivable", "Integrated GST paid on inter-state purchases"),
     ];
 
     for (code, name, acc_type, group, desc) in gst_coas {

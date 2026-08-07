@@ -359,6 +359,24 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("UPDATE account_groups SET name = 'Purchase Accounts' WHERE name = 'Cost of Sales'").execute(pool).await;
     let _ = sqlx::query("UPDATE chart_of_accounts SET account_group = 'Purchase Accounts' WHERE account_group = 'Cost of Sales'").execute(pool).await;
 
+    // Migration: Legacy GST Slab Ledgers Clean-up
+    // 1. Delete zero-balance / unused legacy tax slab ledgers
+    let _ = sqlx::query(
+        "DELETE FROM chart_of_accounts
+         WHERE (account_code LIKE 'GST-%' OR account_code LIKE 'GST-AUTO-%')
+           AND account_code NOT IN ('2002-CGST','2002-SGST','2002-IGST','1005-CGST','1005-SGST','1005-IGST')
+           AND id NOT IN (SELECT DISTINCT account_id FROM journal_entries WHERE account_id IS NOT NULL)"
+    ).execute(pool).await;
+
+    // 2. Deactivate used legacy tax slab ledgers so they hide from selection pickers while preserving historical entries
+    let _ = sqlx::query(
+        "UPDATE chart_of_accounts
+         SET is_active = 0
+         WHERE (account_code LIKE 'GST-%' OR account_code LIKE 'GST-AUTO-%')
+           AND account_code NOT IN ('2002-CGST','2002-SGST','2002-IGST','1005-CGST','1005-SGST','1005-IGST')
+           AND account_name NOT IN ('CGST Output','SGST Output','IGST Output','CGST Input Credit','SGST Input Credit','IGST Input Credit')"
+    ).execute(pool).await;
+
     // Migration: Non-Current Assets / Non-Current Liabilities get assigned
     // once Fixed Assets / Loans (Liability) primary groups are seeded (done in seed_initial_data)
     // This is handled in seeds/data.rs after inserting the new primaries.

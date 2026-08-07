@@ -12,9 +12,9 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
 } from '@/components/ui/dialog';
-import { IconPlus, IconEdit, IconTrash, IconPercentage, IconSettings, IconListDetails } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconPercentage, IconSettings } from '@tabler/icons-react';
 import { toast } from 'sonner';
-import { api, GstTaxSlab, GstSettings, ChartOfAccount } from '@/lib/tauri';
+import { api, GstTaxSlab, GstSettings } from '@/lib/tauri';
 import { useCurrencyLabel, useMoney } from '@/hooks/useMoney';
 
 const DEFAULT_GST_SETTINGS: GstSettings = {
@@ -46,7 +46,6 @@ const EMPTY_FORM: SlabForm = {
 export default function TaxSettingsPage() {
   const [settings, setSettings] = useState<GstSettings>(DEFAULT_GST_SETTINGS);
   const [slabs, setSlabs] = useState<GstTaxSlab[]>([]);
-  const [gstAccounts, setGstAccounts] = useState<ChartOfAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [slabDialogOpen, setSlabDialogOpen] = useState(false);
@@ -58,22 +57,16 @@ export default function TaxSettingsPage() {
   const load = async () => {
     try {
       setLoading(true);
-      const [s, sl, coa] = await Promise.all([
+      const [s, sl] = await Promise.all([
         api.gst.getSettings(),
         api.gst.getSlabs(),
-        api.chartOfAccounts.list(),
       ]);
       setSettings(s);
       setSlabs(sl);
-      setGstAccounts(coa.filter(a => a.account_group === 'Duties & Taxes'));
     } catch (e: any) {
       // Settings may not exist yet — use defaults
-      const [sl, coa] = await Promise.all([
-        api.gst.getSlabs(),
-        api.chartOfAccounts.list(),
-      ]);
+      const sl = await api.gst.getSlabs();
       setSlabs(sl);
-      setGstAccounts(coa.filter(a => a.account_group === 'Duties & Taxes'));
     } finally {
       setLoading(false);
     }
@@ -339,32 +332,6 @@ export default function TaxSettingsPage() {
         </CardContent>
       </Card>
 
-      {/* ── Section 3: GST Accounts Overview ── */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <IconListDetails size={16} /> GST Accounts
-          </CardTitle>
-          <CardDescription>
-            Auto-generated accounts in "Duties &amp; Taxes" group. Dynamic slabs post to rate-based ledgers.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {gstAccounts.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">
-              No GST accounts found. Restart the app to seed default accounts.
-            </p>
-          ) : (
-            <div className="grid grid-cols-2 gap-2">
-              {gstAccounts.map(acct => (
-                <div key={acct.id} className="flex items-center justify-between p-2.5 rounded-md border bg-muted/20">
-                  <span className="text-sm font-medium">{acct.account_name}</span>
-                  <Badge variant="outline" className="text-xs">{acct.account_type}</Badge>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
       </Card>
 
       {/* ── Slab Dialog ── */}
