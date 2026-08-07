@@ -199,7 +199,7 @@ export default function AccountGroupsDialog({ open, onOpenChange, onGroupsChange
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle>Manage Account Groups</DialogTitle>
           <DialogDescription>

@@ -296,8 +296,8 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     // Migration: Set base_type on the groups that will remain as primary (root) nodes
     let _ = sqlx::query("UPDATE account_groups SET base_type = 'Asset'     WHERE name = 'Current Assets'       AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
     let _ = sqlx::query("UPDATE account_groups SET base_type = 'Liability' WHERE name = 'Current Liabilities'  AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
-    let _ = sqlx::query("UPDATE account_groups SET base_type = 'Income'    WHERE name = 'Revenue'              AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
-    let _ = sqlx::query("UPDATE account_groups SET base_type = 'Expense'   WHERE name = 'Cost of Sales'        AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
+    let _ = sqlx::query("UPDATE account_groups SET base_type = 'Income'    WHERE name = 'Sales Accounts'       AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
+    let _ = sqlx::query("UPDATE account_groups SET base_type = 'Expense'   WHERE name = 'Purchase Accounts'    AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
     let _ = sqlx::query("UPDATE account_groups SET base_type = 'Expense'   WHERE name = 'Operating Expenses'   AND (parent_group_id IS NULL OR parent_group_id = '')").execute(pool).await;
 
     // Migration: Assign sub-groups under Current Assets
@@ -331,6 +331,35 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
          WHERE name = 'Other Income'
            AND parent_group_id IS NULL"
     ).execute(pool).await;
+
+    // Migration: Update default ledger 3001 from 'Capital' to 'Owner''s Capital' under group 'Capital Account'
+    let _ = sqlx::query(
+        "UPDATE chart_of_accounts
+         SET account_name = 'Owner''s Capital', account_group = 'Capital Account'
+         WHERE account_code = '3001' AND account_name = 'Capital'"
+    ).execute(pool).await;
+
+    // Migration: Re-assign Discount Received (4004) to 'Indirect Income'
+    let _ = sqlx::query(
+        "UPDATE chart_of_accounts
+         SET account_group = 'Indirect Income'
+         WHERE account_code = '4004'"
+    ).execute(pool).await;
+
+    // Migration: Re-assign Discount Allowed (5007) to 'Indirect Expenses'
+    let _ = sqlx::query(
+        "UPDATE chart_of_accounts
+         SET account_group = 'Indirect Expenses'
+         WHERE account_code = '5007'"
+    ).execute(pool).await;
+
+    // Migration: Update group name 'Revenue' -> 'Sales Accounts' if present
+    let _ = sqlx::query("UPDATE account_groups SET name = 'Sales Accounts' WHERE name = 'Revenue'").execute(pool).await;
+    let _ = sqlx::query("UPDATE chart_of_accounts SET account_group = 'Sales Accounts' WHERE account_group = 'Revenue'").execute(pool).await;
+
+    // Migration: Update group name 'Cost of Sales' -> 'Purchase Accounts' if present
+    let _ = sqlx::query("UPDATE account_groups SET name = 'Purchase Accounts' WHERE name = 'Cost of Sales'").execute(pool).await;
+    let _ = sqlx::query("UPDATE chart_of_accounts SET account_group = 'Purchase Accounts' WHERE account_group = 'Cost of Sales'").execute(pool).await;
 
     // Migration: Non-Current Assets / Non-Current Liabilities get assigned
     // once Fixed Assets / Loans (Liability) primary groups are seeded (done in seed_initial_data)

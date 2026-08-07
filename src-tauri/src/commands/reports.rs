@@ -250,13 +250,16 @@ pub async fn get_ledger_report(
 // ============= BALANCE SHEET =============
 #[derive(Serialize, Deserialize)]
 pub struct BSAccount {
+    pub id: String,
     pub account_name: String,
     pub account_code: String,
+    pub account_group: String,
     pub amount: f64,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct BalanceSheetData {
+    pub groups: Vec<crate::commands::accounts::AccountGroup>,
     pub assets: Vec<BSAccount>,
     pub liabilities: Vec<BSAccount>,
     pub equity: Vec<BSAccount>,
@@ -271,11 +274,21 @@ pub async fn get_balance_sheet(
     as_on_date: String,
 ) -> Result<BalanceSheetData, String> {
     let pool = registry.active_pool().await?;
+
+    let groups = sqlx::query_as::<_, crate::commands::accounts::AccountGroup>(
+        "SELECT id, name, account_type, parent_group_id, COALESCE(is_system, 0) as is_system, base_type, is_active, created_at FROM account_groups WHERE is_active = 1"
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
     let query = "
         SELECT 
+            coa.id,
             coa.account_name,
             coa.account_code,
             coa.account_type,
+            coa.account_group,
             CAST(coa.opening_balance AS REAL) as opening_balance,
             coa.opening_balance_type,
             CAST(COALESCE(SUM(je.debit), 0) AS REAL) as total_debit,
@@ -287,7 +300,7 @@ pub async fn get_balance_sheet(
         GROUP BY coa.id
     ";
 
-    let rows = sqlx::query_as::<_, (String, String, String, f64, String, f64, f64)>(query)
+    let rows = sqlx::query_as::<_, (String, String, String, String, String, f64, String, f64, f64)>(query)
         .bind(&as_on_date)
         .fetch_all(&pool)
         .await
@@ -300,7 +313,7 @@ pub async fn get_balance_sheet(
     let mut total_liabilities = 0.0;
     let mut total_equity = 0.0;
 
-    for (name, code, acc_type, op_bal, op_type, dr, cr) in rows {
+    for (id, name, code, acc_type, group_name, op_bal, op_type, dr, cr) in rows {
         let balance = if acc_type == "Asset" {
             if op_type == "Dr" {
                 dr - cr + op_bal
@@ -323,8 +336,10 @@ pub async fn get_balance_sheet(
         }
 
         let account = BSAccount {
+            id,
             account_name: name,
             account_code: code,
+            account_group: group_name,
             amount: balance.abs(),
         };
 
@@ -374,16 +389,19 @@ pub async fn get_balance_sheet(
         }
     }
 
-    if net_profit != 0.0 {
+    if net_profit.abs() >= 0.01 {
         total_equity += net_profit;
         equity.push(BSAccount {
+            id: "NET_PROFIT".to_string(),
             account_name: "Net Profit for the Period".to_string(),
             account_code: "NET_PROFIT".to_string(),
+            account_group: "Reserves & Surplus".to_string(),
             amount: net_profit,
         });
     }
 
     Ok(BalanceSheetData {
+        groups,
         assets,
         liabilities,
         equity,
@@ -396,6 +414,7 @@ pub async fn get_balance_sheet(
 // ============= PROFIT & LOSS =============
 #[derive(Serialize, Deserialize)]
 pub struct ProfitLossData {
+    pub groups: Vec<crate::commands::accounts::AccountGroup>,
     pub income: Vec<PLAccount>,
     pub expenses: Vec<PLAccount>,
     pub total_income: f64,
@@ -405,8 +424,10 @@ pub struct ProfitLossData {
 
 #[derive(Serialize, Deserialize)]
 pub struct PLAccount {
+    pub id: String,
     pub account_name: String,
     pub account_code: String,
+    pub account_group: String,
     pub amount: f64,
 }
 
@@ -417,11 +438,21 @@ pub async fn get_profit_loss(
     to_date: String,
 ) -> Result<ProfitLossData, String> {
     let pool = registry.active_pool().await?;
+
+    let groups = sqlx::query_as::<_, crate::commands::accounts::AccountGroup>(
+        "SELECT id, name, account_type, parent_group_id, COALESCE(is_system, 0) as is_system, base_type, is_active, created_at FROM account_groups WHERE is_active = 1"
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
     let query = "
         SELECT 
+            coa.id,
             coa.account_name,
             coa.account_code,
             coa.account_type,
+            coa.account_group,
             CAST(COALESCE(SUM(je.debit), 0) AS REAL) as dr,
             CAST(COALESCE(SUM(je.credit), 0) AS REAL) as cr
         FROM chart_of_accounts coa
@@ -432,7 +463,7 @@ pub async fn get_profit_loss(
         GROUP BY coa.id
     ";
 
-    let rows = sqlx::query_as::<_, (String, String, String, f64, f64)>(query)
+    let rows = sqlx::query_as::<_, (String, String, String, String, String, f64, f64)>(query)
         .bind(&from_date)
         .bind(&to_date)
         .fetch_all(&pool)
@@ -444,14 +475,16 @@ pub async fn get_profit_loss(
     let mut total_income = 0.0;
     let mut total_expenses = 0.0;
 
-    for (name, code, acc_type, dr, cr) in rows {
+    for (id, name, code, acc_type, group_name, dr, cr) in rows {
         if acc_type == "Income" {
             let amount = cr - dr;
             if amount.abs() >= 0.01 {
                 total_income += amount;
                 income.push(PLAccount {
+                    id,
                     account_name: name,
                     account_code: code,
+                    account_group: group_name,
                     amount,
                 });
             }
@@ -460,20 +493,25 @@ pub async fn get_profit_loss(
             if amount.abs() >= 0.01 {
                 total_expenses += amount;
                 expenses.push(PLAccount {
+                    id,
                     account_name: name,
                     account_code: code,
+                    account_group: group_name,
                     amount,
                 });
             }
         }
     }
 
+    let net_profit = total_income - total_expenses;
+
     Ok(ProfitLossData {
+        groups,
         income,
         expenses,
         total_income,
         total_expenses,
-        net_profit: total_income - total_expenses,
+        net_profit,
     })
 }
 
