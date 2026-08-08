@@ -226,7 +226,7 @@ pub async fn get_ledger_report(
     let report_opening_balance = if from_date.is_some() {
         running_balance - entries.iter().map(|e| e.debit - e.credit).sum::<f64>()
     } else {
-        opening_balance
+        base_balance
     };
 
     let linked_currency: Option<(String, String)> = sqlx::query_as(

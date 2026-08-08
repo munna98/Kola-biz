@@ -2508,7 +2508,7 @@ async fn inject_gst_context(
     is_inter_state: bool,
 ) {
     // 1. GST enabled setting
-    let mut gst_enabled: bool = sqlx::query_scalar::<_, String>(
+    let gst_enabled: bool = sqlx::query_scalar::<_, String>(
         "SELECT setting_value FROM app_settings WHERE setting_key = 'gst_enabled'",
     )
     .fetch_optional(pool)
