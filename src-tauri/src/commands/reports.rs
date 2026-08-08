@@ -211,12 +211,6 @@ pub async fn get_ledger_report(
         entry.foreign_balance = foreign_running;
     }
 
-    let report_opening_balance = if from_date.is_some() {
-        running_balance - entries.iter().map(|e| e.debit - e.credit).sum::<f64>()
-    } else {
-        base_balance
-    };
-
     let linked_currency: Option<(String, String)> = sqlx::query_as(
         "SELECT cur.code, COALESCE(cur.symbol, cur.code) as symbol
          FROM chart_of_accounts coa
