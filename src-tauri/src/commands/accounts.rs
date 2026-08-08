@@ -1,6 +1,6 @@
 use crate::company_db::DbRegistry;
+use crate::voucher_seq::get_next_voucher_number_in_tx;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 use std::sync::Arc;
 use tauri::State;
 
@@ -20,7 +20,15 @@ pub struct ChartOfAccount {
     pub is_active: i64,
     pub is_system: i64,
     pub party_id: Option<String>,
+    pub party_type: Option<String>,
+    // Address / contact fields (added via migration, always nullable)
     pub address_line_1: Option<String>,
+    pub address_line_2: Option<String>,
+    pub city: Option<String>,
+    pub state: Option<String>,
+    pub postal_code: Option<String>,
+    pub gstin: Option<String>,
+    pub price_category_id: Option<String>,
     pub deleted_at: Option<String>,
     pub created_at: String,
     pub updated_at: String,
@@ -37,30 +45,18 @@ pub struct CreateChartOfAccount {
     pub opening_balance_type: Option<String>,
 }
 
-async fn get_next_voucher_number(pool: &SqlitePool, voucher_type: &str) -> Result<String, String> {
-    let prefix = match voucher_type {
-        "purchase" => "PI",
-        "sales" => "SI",
-        "payment" => "PV",
-        "receipt" => "RV",
-        "journal" => "JV",
-        "opening_balance" => "OB",
-        _ => "V",
-    };
-
-    let last_number = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT MAX(CAST(SUBSTR(voucher_no, ?1 + 1) AS INTEGER)) FROM vouchers WHERE voucher_type = ?2"
-    )
-    .bind(prefix.len() as i32)
-    .bind(voucher_type)
-    .fetch_optional(pool)
-    .await
-    .map_err(|e| e.to_string())?
-    .flatten()
-    .unwrap_or(0);
-
-    Ok(format!("{}{:05}", prefix, last_number + 1))
-}
+/// Full column projection for `chart_of_accounts` rows → `ChartOfAccount`.
+/// All optional/migration-added columns are included so that adding new
+/// nullable columns to the table never breaks existing queries.
+/// Update this constant whenever a new column is added to the table.
+const COA_SELECT_COLS: &str =
+    "id, account_code, account_name, account_type, account_group, description,
+     CAST(COALESCE(opening_balance, 0) AS REAL) as opening_balance,
+     COALESCE(opening_balance_type, 'Dr') as opening_balance_type,
+     is_active, is_system, party_id, party_type,
+     address_line_1, address_line_2, city, state, postal_code, gstin,
+     price_category_id,
+     deleted_at, created_at, updated_at";
 
 #[tauri::command]
 pub async fn get_chart_of_accounts(
@@ -68,7 +64,7 @@ pub async fn get_chart_of_accounts(
 ) -> Result<Vec<ChartOfAccount>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, ChartOfAccount>(
-        "SELECT id, account_code, account_name, account_type, account_group, description, CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, is_active, is_system, party_id, address_line_1, deleted_at, created_at, updated_at FROM chart_of_accounts WHERE deleted_at IS NULL ORDER BY account_code ASC"
+        &format!("SELECT {} FROM chart_of_accounts WHERE deleted_at IS NULL ORDER BY account_code ASC", COA_SELECT_COLS)
     )
         .fetch_all(&pool)
         .await
@@ -87,12 +83,10 @@ pub async fn get_accounts_by_groups(
 
     let placeholders: Vec<String> = (1..=groups.len()).map(|i| format!("?{}", i)).collect();
     let query_str = format!(
-        "SELECT id, account_code, account_name, account_type, account_group, description, 
-                CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, 
-                is_active, is_system, party_id, address_line_1, deleted_at, created_at, updated_at 
-         FROM chart_of_accounts 
-         WHERE deleted_at IS NULL AND account_group IN ({}) 
+        "SELECT {} FROM chart_of_accounts \
+         WHERE deleted_at IS NULL AND account_group IN ({}) \
          ORDER BY account_name ASC",
+        COA_SELECT_COLS,
         placeholders.join(", ")
     );
 
@@ -183,8 +177,8 @@ pub async fn create_chart_of_account(
     if opening_balance > 0.0 {
         let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-        // Get next voucher number
-        let voucher_no = get_next_voucher_number(&pool, "opening_balance").await?;
+        // Get next voucher number inside the transaction (uses the voucher_sequences table)
+        let voucher_no = get_next_voucher_number_in_tx(&mut tx, "opening_balance").await?;
         let voucher_id = Uuid::now_v7().to_string();
 
         // Create voucher entry
@@ -195,7 +189,7 @@ pub async fn create_chart_of_account(
         .bind(&voucher_id)
         .bind(&voucher_no)
         .bind("opening_balance")
-        .bind("2025-12-21")
+        .bind(chrono::Local::now().format("%Y-%m-%d").to_string())
         .bind(format!("Opening balance for {}", account.account_name))
         .bind(format!("Initial balance for account: {}", account.account_name))
         .bind(&id)
@@ -283,7 +277,9 @@ pub async fn create_chart_of_account(
         tx.commit().await.map_err(|e| e.to_string())?;
     }
 
-    sqlx::query_as::<_, ChartOfAccount>("SELECT * FROM chart_of_accounts WHERE id = ?")
+    sqlx::query_as::<_, ChartOfAccount>(
+        &format!("SELECT {} FROM chart_of_accounts WHERE id = ?", COA_SELECT_COLS)
+    )
         .bind(id)
         .fetch_one(&pool)
         .await
@@ -306,7 +302,7 @@ pub async fn update_chart_of_account(
 
     // Get current opening balance to detect changes
     let current_account = sqlx::query_as::<_, ChartOfAccount>(
-        "SELECT id, account_code, account_name, account_type, account_group, description, CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, is_active, is_system, party_id, deleted_at, created_at, updated_at FROM chart_of_accounts WHERE id = ?"
+        &format!("SELECT {} FROM chart_of_accounts WHERE id = ?", COA_SELECT_COLS)
     )
     .bind(&id)
     .fetch_optional(&mut *tx)
@@ -365,16 +361,19 @@ pub async fn update_chart_of_account(
 
             vid
         } else {
-            // Create a new opening balance voucher if one doesn't exist
-            let voucher_no = get_next_voucher_number(&pool, "opening_balance").await?;
+            // Create a new opening balance voucher if one doesn't exist.
+            // Use get_next_voucher_number_in_tx to run inside the existing transaction,
+            // which is safe and avoids any pool-level lock contention.
+            let voucher_no = get_next_voucher_number_in_tx(&mut tx, "opening_balance").await?;
             let new_vid = Uuid::now_v7().to_string();
+            let voucher_date = chrono::Local::now().format("%Y-%m-%d").to_string();
             let _ = sqlx::query(
                 "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, reference, narration, status, party_id, total_amount)
                  VALUES (?, ?, 'opening_balance', ?, ?, ?, 'posted', ?, ?)"
             )
             .bind(&new_vid)
             .bind(&voucher_no)
-            .bind(chrono::Local::now().format("%Y-%m-%d").to_string())
+            .bind(&voucher_date)
             .bind(format!("Opening balance for {}", account.account_name))
             .bind(format!("Initial balance for account: {}", account.account_name))
             .bind(&id)
@@ -491,7 +490,9 @@ pub async fn delete_chart_of_account(
     let pool = registry.active_pool().await?;
     // Get the account to check if it's a default account
     let account =
-        sqlx::query_as::<_, ChartOfAccount>("SELECT id, account_code, account_name, account_type, account_group, description, CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, is_active, is_system, party_id, deleted_at, created_at, updated_at FROM chart_of_accounts WHERE id = ?")
+        sqlx::query_as::<_, ChartOfAccount>(
+            &format!("SELECT {} FROM chart_of_accounts WHERE id = ?", COA_SELECT_COLS)
+        )
             .bind(&id)
             .fetch_optional(&pool)
             .await
@@ -574,7 +575,7 @@ pub async fn get_deleted_chart_of_accounts(
 ) -> Result<Vec<ChartOfAccount>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, ChartOfAccount>(
-        "SELECT * FROM chart_of_accounts WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+        &format!("SELECT {} FROM chart_of_accounts WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC", COA_SELECT_COLS)
     )
     .fetch_all(&pool)
     .await
@@ -584,11 +585,11 @@ pub async fn get_deleted_chart_of_accounts(
 #[tauri::command]
 pub async fn restore_chart_of_account(
     registry: State<'_, Arc<DbRegistry>>,
-    id: i64,
+    id: String,
 ) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     sqlx::query("UPDATE chart_of_accounts SET is_active = 1, deleted_at = NULL WHERE id = ?")
-        .bind(id)
+        .bind(&id)
         .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -599,13 +600,15 @@ pub async fn restore_chart_of_account(
 #[tauri::command]
 pub async fn hard_delete_chart_of_account(
     registry: State<'_, Arc<DbRegistry>>,
-    id: i64,
+    id: String,
 ) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     // Reference checks (same as soft delete)
     let account =
-        sqlx::query_as::<_, ChartOfAccount>("SELECT id, account_code, account_name, account_type, account_group, description, CAST(opening_balance AS REAL) as opening_balance, opening_balance_type, is_active, is_system, party_id, deleted_at, created_at, updated_at FROM chart_of_accounts WHERE id = ?")
-            .bind(id)
+        sqlx::query_as::<_, ChartOfAccount>(
+            &format!("SELECT {} FROM chart_of_accounts WHERE id = ?", COA_SELECT_COLS)
+        )
+            .bind(&id)
             .fetch_optional(&pool)
             .await
             .map_err(|e| e.to_string())?
@@ -617,7 +620,7 @@ pub async fn hard_delete_chart_of_account(
 
     let journal_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE account_id = ?")
-            .bind(id)
+            .bind(&id)
             .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -630,7 +633,7 @@ pub async fn hard_delete_chart_of_account(
 
     let ob_count: i64 =
         sqlx::query_scalar("SELECT COUNT(*) FROM opening_balances WHERE account_id = ?")
-            .bind(id)
+            .bind(&id)
             .fetch_one(&pool)
             .await
             .map_err(|e| e.to_string())?;
@@ -642,7 +645,7 @@ pub async fn hard_delete_chart_of_account(
     }
 
     sqlx::query("DELETE FROM chart_of_accounts WHERE id = ?")
-        .bind(id)
+        .bind(&id)
         .execute(&pool)
         .await
         .map_err(|e| e.to_string())?;

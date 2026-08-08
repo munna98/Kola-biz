@@ -109,7 +109,8 @@ pub async fn get_ledger_report(
             "SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL), CAST(COALESCE(SUM(je.credit), 0) AS REAL)
              FROM journal_entries je
              JOIN vouchers v ON je.voucher_id = v.id
-             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL",
+             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL
+               AND v.voucher_type != 'opening_balance'",
         )
         .bind(&account_id)
         .bind(from)
@@ -179,7 +180,9 @@ pub async fn get_ledger_report(
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         LEFT JOIN currencies cur ON je.currency_id = cur.id
-        WHERE je.account_id = ? AND v.deleted_at IS NULL {}
+        WHERE je.account_id = ? AND v.deleted_at IS NULL
+          AND v.voucher_type != 'opening_balance'
+          {}
         ORDER BY v.voucher_date ASC, v.id ASC",
         date_filter
     );

@@ -20,7 +20,7 @@ import {
 import { useMoney } from '@/hooks/useMoney';
 
 interface LedgerAccount {
-  id: number;
+  id: string;
   account_code: string;
   account_name: string;
 }
@@ -275,7 +275,7 @@ export default function LedgerReportPage() {
                 label: `${a.account_code} - ${a.account_name}`,
               }))}
               value={selectedAccount}
-              onChange={(val) => dispatch(setLedgerReportSelectedAccount(val as number))}
+              onChange={(val) => dispatch(setLedgerReportSelectedAccount(val as string))}
               placeholder="Choose account..."
               searchPlaceholder="Search accounts..."
             />

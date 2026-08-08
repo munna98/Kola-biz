@@ -2863,7 +2863,7 @@ export interface LedgerEntry {
 }
 
 export interface LedgerReportState {
-  selectedAccount: number;
+  selectedAccount: string | null;
   entries: LedgerEntry[];
   fromDate: string;
   toDate: string;
@@ -2888,7 +2888,7 @@ const getInitialToDate = () => {
 };
 
 const ledgerReportInitialState: LedgerReportState = {
-  selectedAccount: 0,
+  selectedAccount: null,
   entries: [],
   fromDate: getInitialFromDate(),
   toDate: getInitialToDate(),
@@ -2905,7 +2905,7 @@ const ledgerReportSlice = createSlice({
   name: 'ledgerReport',
   initialState: ledgerReportInitialState,
   reducers: {
-    setLedgerReportSelectedAccount: (state, action: PayloadAction<number>) => {
+    setLedgerReportSelectedAccount: (state, action: PayloadAction<string | null>) => {
       state.selectedAccount = action.payload;
       state.entries = [];
       state.openingBalance = 0;
@@ -2941,7 +2941,7 @@ const ledgerReportSlice = createSlice({
       state.hasGenerated = true;
     },
     clearLedgerReport: (state) => {
-      state.selectedAccount = 0;
+      state.selectedAccount = null;
       state.entries = [];
       state.fromDate = getInitialFromDate();
       state.toDate = getInitialToDate();
