@@ -1,6 +1,7 @@
 use crate::company_db::DbRegistry;
 use crate::voucher_seq::get_next_voucher_number_in_tx;
 use serde::{Deserialize, Serialize};
+use sqlx::SqlitePool;
 use std::sync::Arc;
 use tauri::State;
 
