@@ -1,7 +1,7 @@
 <!-- [HEADER] -->
 <div class="invoice-header">
     <div class="invoice-title">
-        <h1>INVOICE</h1>
+        <h1>{{#if header_title}}{{header_title}}{{else}}INVOICE{{/if}}</h1>
     </div>
     {{#if company.has_logo}}
     <div class="logo-placeholder">
@@ -67,7 +67,11 @@
         <h3>PAYABLE TO:</h3>
         <div class="party-details">
             <p class="party-name">{{company.name}}</p>
+            {{#if show_company_address}}
+            {{#if company.address}}
             <p>{{company.address}}</p>
+            {{/if}}
+            {{/if}}
             {{#if company.phone}}
             <p>+ {{company.phone}}</p>
             {{/if}}
@@ -196,6 +200,6 @@
 
     <div class="signature-area">
         <div class="signature-line"></div>
-        <p class="thank-you">THANK YOU FOR YOUR PURCHASE</p>
+        <p class="thank-you">{{#if bill_note}}{{bill_note}}{{else}}THANK YOU FOR YOUR PURCHASE{{/if}}</p>
     </div>
 </div>

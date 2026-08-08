@@ -258,6 +258,14 @@ pub async fn seed_handlebars_templates(
         .execute(pool)
         .await?;
 
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SI-003' AND design_mode != 'designer'")
+        .bind(&min_h)
+        .bind(&min_b)
+        .bind(&min_f)
+        .bind(MINIMAL_CSS)
+        .execute(pool)
+        .await?;
+
     sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SQ-001' AND design_mode != 'designer'")
         .bind(&sq_h)
         .bind(&sq_b)

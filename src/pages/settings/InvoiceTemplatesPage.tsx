@@ -60,6 +60,9 @@ interface InvoiceTemplate {
     // Balance section style (thermal only)
     balance_font_size: number;
     balance_bold: number;
+    // Custom Text Labels
+    header_title?: string | null;
+    bill_note?: string | null;
 }
 
 const FEATURE_LABELS: Record<string, string> = {
@@ -419,6 +422,67 @@ export function InvoiceTemplatesPage() {
                                                         </div>
                                                     )
                                                 })}
+                                            </div>
+
+                                            {/* Custom Header Title & Bill Note */}
+                                            <div className="border-t pt-3 mt-3 space-y-3">
+                                                <Label className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                                                    Custom Header & Bill Note
+                                                </Label>
+                                                <div className="grid gap-2">
+                                                    <div>
+                                                        <Label className="text-[10px] text-muted-foreground block mb-1">Header Title</Label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="INVOICE (Default)"
+                                                            value={template.header_title ?? ''}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                setTemplates((prev) =>
+                                                                    prev.map((t) => (t.id === template.id ? { ...t, header_title: val } : t))
+                                                                );
+                                                            }}
+                                                            onBlur={async (e) => {
+                                                                try {
+                                                                    await invoke('update_template_settings', {
+                                                                        templateId: template.id.toString(),
+                                                                        settings: { header_title: e.target.value },
+                                                                    });
+                                                                    toast.success('Header title updated');
+                                                                } catch (error) {
+                                                                    toast.error('Failed to update header title');
+                                                                }
+                                                            }}
+                                                            className="w-full h-8 px-2.5 text-xs border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                                        />
+                                                    </div>
+                                                    <div>
+                                                        <Label className="text-[10px] text-muted-foreground block mb-1">Bill Note / Thank You Note</Label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="THANK YOU FOR YOUR PURCHASE (Default)"
+                                                            value={template.bill_note ?? ''}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value;
+                                                                setTemplates((prev) =>
+                                                                    prev.map((t) => (t.id === template.id ? { ...t, bill_note: val } : t))
+                                                                );
+                                                            }}
+                                                            onBlur={async (e) => {
+                                                                try {
+                                                                    await invoke('update_template_settings', {
+                                                                        templateId: template.id.toString(),
+                                                                        settings: { bill_note: e.target.value },
+                                                                    });
+                                                                    toast.success('Bill note updated');
+                                                                } catch (error) {
+                                                                    toast.error('Failed to update bill note');
+                                                                }
+                                                            }}
+                                                            className="w-full h-8 px-2.5 text-xs border rounded-md bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                                        />
+                                                    </div>
+                                                </div>
                                             </div>
 
                                              {/* Table Row Padding Slider */}

@@ -887,6 +887,8 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             use_letterhead INTEGER DEFAULT 0,
             letterhead_margin_top REAL DEFAULT 45.0,
             letterhead_margin_bottom REAL DEFAULT 25.0,
+            header_title TEXT,
+            bill_note TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         )",
@@ -1602,6 +1604,12 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE invoice_templates ADD COLUMN letterhead_margin_top REAL DEFAULT 45.0")
         .execute(pool).await;
     let _ = sqlx::query("ALTER TABLE invoice_templates ADD COLUMN letterhead_margin_bottom REAL DEFAULT 25.0")
+        .execute(pool).await;
+
+    // Migration: Add custom header title and bill note to invoice_templates
+    let _ = sqlx::query("ALTER TABLE invoice_templates ADD COLUMN header_title TEXT")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE invoice_templates ADD COLUMN bill_note TEXT")
         .execute(pool).await;
 
     // ==================== MULTI-CURRENCY / FOREX MIGRATIONS ====================

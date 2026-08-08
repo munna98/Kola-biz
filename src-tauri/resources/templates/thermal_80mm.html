@@ -23,7 +23,9 @@
     </div>
     {{/if}}
     <h1>{{company.name}}</h1>
+    {{#if show_company_address}}
     <p>{{company.address}}</p>
+    {{/if}}
     <p>Ph: {{company.phone}}</p>
     {{#if company.gstin}}
     <p>GSTIN: {{company.gstin}}</p>
@@ -32,7 +34,7 @@
 <div class="separator"></div>
 <div class="invoice-info">
     <div class="row">
-        <span>Invoice:</span>
+        <span>{{#if header_title}}{{header_title}}{{else}}Invoice{{/if}}:</span>
         <span><strong>{{voucher_no}}</strong></span>
     </div>
     <div class="row">
@@ -160,7 +162,7 @@
 <!-- [FOOTER] -->
 <div class="separator"></div>
 <div class="footer">
-    <p class="center"><strong>Thank You for Your Business!</strong></p>
+    <p class="center"><strong>{{#if bill_note}}{{bill_note}}{{else}}Thank You for Your Business!{{/if}}</strong></p>
     {{#if narration}}
     <p class="center small">{{narration}}</p>
     {{/if}}

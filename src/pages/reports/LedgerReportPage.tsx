@@ -365,7 +365,7 @@ export default function LedgerReportPage() {
             <div className="flex items-center justify-center h-64">
               <p className="text-muted-foreground">Click 'Generate Report' to view ledger</p>
             </div>
-          ) : displayedEntries.length === 0 ? (
+          ) : (displayedEntries.length === 0 && openingBalance === 0 && closingBalance === 0) ? (
             <div className="flex items-center justify-center h-64">
               <p className="text-muted-foreground">No transactions found for this account</p>
             </div>

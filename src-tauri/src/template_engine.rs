@@ -162,6 +162,16 @@ impl TemplateEngine {
                 "letterhead_margin_bottom".to_string(),
                 json!(template.letterhead_margin_bottom.unwrap_or(25.0)),
             );
+            if let Some(ref title) = template.header_title {
+                if !title.trim().is_empty() {
+                    obj.insert("header_title".to_string(), json!(title));
+                }
+            }
+            if let Some(ref note) = template.bill_note {
+                if !note.trim().is_empty() {
+                    obj.insert("bill_note".to_string(), json!(note));
+                }
+            }
         }
 
         // Add company data

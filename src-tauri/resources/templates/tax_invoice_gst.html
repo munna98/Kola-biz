@@ -32,7 +32,7 @@
 {{/if}}
 
 <div class="invoice-title-row">
-  {{#if is_margin_scheme_invoice}}Tax Invoice (Under Margin Scheme){{else}}Tax Invoice{{/if}}
+  {{#if header_title}}{{header_title}}{{else}}{{#if is_margin_scheme_invoice}}Tax Invoice (Under Margin Scheme){{else}}Tax Invoice{{/if}}{{/if}}
 </div>
 
 <table class="header-outer">
@@ -44,9 +44,11 @@
         <!-- Block 1: Company -->
         <div class="addr-block addr-company">
           <strong class="company-name">{{company.name}}</strong>
+          {{#if show_company_address}}
           {{#if company.address_line1}}<div class="addr-line">{{company.address_line1}}</div>{{/if}}
           {{#if company.address_line2}}<div class="addr-line">{{company.address_line2}}</div>{{/if}}
           {{#if company.city}}<div class="addr-line">{{company.city}}{{#if company.state}}, {{company.state}}{{/if}}{{#if company.pincode}} - {{company.pincode}}{{/if}}</div>{{/if}}
+          {{/if}}
           <div class="addr-field-row">
             <span class="addr-field-label">GSTIN/UIN</span>
             <span class="addr-field-colon">:</span>

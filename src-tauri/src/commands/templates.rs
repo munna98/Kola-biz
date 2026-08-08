@@ -62,6 +62,8 @@ pub struct InvoiceTemplate {
     pub use_letterhead: Option<i64>,
     pub letterhead_margin_top: Option<f64>,
     pub letterhead_margin_bottom: Option<f64>,
+    pub header_title: Option<String>,
+    pub bill_note: Option<String>,
 
     pub created_at: String,
     pub updated_at: String,
@@ -137,6 +139,8 @@ pub struct TemplateSettingsUpdate {
     pub use_letterhead: Option<bool>,
     pub letterhead_margin_top: Option<f64>,
     pub letterhead_margin_bottom: Option<f64>,
+    pub header_title: Option<String>,
+    pub bill_note: Option<String>,
 }
 
 #[tauri::command]
@@ -231,6 +235,14 @@ pub async fn update_template_settings(
     }
     if let Some(val) = settings.letterhead_margin_bottom {
         separated.push("letterhead_margin_bottom = ");
+        separated.push_bind_unseparated(val);
+    }
+    if let Some(val) = settings.header_title {
+        separated.push("header_title = ");
+        separated.push_bind_unseparated(val);
+    }
+    if let Some(val) = settings.bill_note {
+        separated.push("bill_note = ");
         separated.push_bind_unseparated(val);
     }
 

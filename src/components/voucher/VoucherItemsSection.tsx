@@ -667,9 +667,12 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                                 if (existingIdx !== -1) {
                                                     const existingQty = items[existingIdx].initial_quantity || 0;
                                                     onUpdateItem(existingIdx, 'initial_quantity', existingQty + 1);
-                                                    // Remove current (new/empty) row if it has no product yet
+                                                    // Remove current (new/empty) row if it has no product yet.
+                                                    // Use setTimeout so the Redux dispatch from onUpdateItem settles first —
+                                                    // otherwise handleRemoveItem reads a stale items snapshot and its
+                                                    // updateTotalsWithItems call overwrites the correct incremented total.
                                                     if (!items[idx].product_id) {
-                                                        onRemoveItem(idx);
+                                                        setTimeout(() => onRemoveItem(idx), 0);
                                                     }
 
                                                     // When skipToNextRowAfterProduct is also on, focus the next product input

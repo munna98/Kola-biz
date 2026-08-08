@@ -88,29 +88,50 @@ pub async fn get_ledger_report(
     to_date: String,
 ) -> Result<LedgerReport, String> {
     let pool = registry.active_pool().await?;
-    let account = sqlx::query_as::<_, (f64, String)>(
-        "SELECT CAST(opening_balance AS REAL), opening_balance_type FROM chart_of_accounts WHERE id = ?"
+
+    // Check if an active (non-deleted) opening balance voucher exists in journal_entries for this account
+    let has_ob_voucher: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+            SELECT 1 FROM vouchers v 
+            JOIN journal_entries je ON v.id = je.voucher_id 
+            WHERE v.voucher_type = 'opening_balance' 
+              AND je.account_id = ? 
+              AND v.deleted_at IS NULL
+         )"
     )
     .bind(&account_id)
     .fetch_one(&pool)
     .await
-    .map_err(|e| format!("Failed to fetch account {}: {}", account_id, e))?;
+    .unwrap_or(false);
 
-    let opening_balance = if account.1 == "Dr" {
-        account.0
+    // If an OB voucher exists in journal_entries, base balance before all vouchers is 0.
+    // Otherwise, fallback to chart_of_accounts.opening_balance for legacy accounts without vouchers.
+    let base_balance = if has_ob_voucher {
+        0.0
     } else {
-        -account.0
+        let account = sqlx::query_as::<_, (f64, String)>(
+            "SELECT CAST(opening_balance AS REAL), opening_balance_type FROM chart_of_accounts WHERE id = ?"
+        )
+        .bind(&account_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| format!("Failed to fetch account {}: {}", account_id, e))?;
+
+        if account.1 == "Dr" {
+            account.0
+        } else {
+            -account.0
+        }
     };
 
-    let mut running_balance = opening_balance;
+    let mut running_balance = base_balance;
 
     if let Some(ref from) = from_date {
         let balance_before: Option<(f64, f64)> = sqlx::query_as(
             "SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL), CAST(COALESCE(SUM(je.credit), 0) AS REAL)
              FROM journal_entries je
              JOIN vouchers v ON je.voucher_id = v.id
-             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL
-               AND v.voucher_type != 'opening_balance'",
+             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL",
         )
         .bind(&account_id)
         .bind(from)
@@ -122,6 +143,8 @@ pub async fn get_ledger_report(
             running_balance += dr - cr;
         }
     }
+
+    let report_opening_balance = running_balance;
 
     let date_filter = if let Some(ref from) = from_date {
         format!(
@@ -180,9 +203,7 @@ pub async fn get_ledger_report(
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         LEFT JOIN currencies cur ON je.currency_id = cur.id
-        WHERE je.account_id = ? AND v.deleted_at IS NULL
-          AND v.voucher_type != 'opening_balance'
-          {}
+        WHERE je.account_id = ? AND v.deleted_at IS NULL {}
         ORDER BY v.voucher_date ASC, v.id ASC",
         date_filter
     );

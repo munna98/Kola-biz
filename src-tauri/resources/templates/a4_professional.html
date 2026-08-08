@@ -46,6 +46,7 @@
     {{/if}}
     <div class="company-info">
         <h1>{{company.name}}</h1>
+        {{#if show_company_address}}
         {{#if company.address_line1}}
         <p>{{company.address_line1}}</p>
         {{/if}}
@@ -54,6 +55,7 @@
         {{/if}}
         <p>{{company.city}}{{#if company.state}}, {{company.state}}{{/if}}{{#if company.pincode}} -
             {{company.pincode}}{{/if}}</p>
+        {{/if}}
         <div class="contact-line">
             {{#if company.phone}}<span>Phone: {{company.phone}}</span>{{/if}}
             {{#if company.email}}<span>Email: {{company.email}}</span>{{/if}}
@@ -88,7 +90,7 @@
         {{/if}}
     </div>
     <div class="invoice-header">
-        <h2>INVOICE</h2>
+        <h2>{{#if header_title}}{{header_title}}{{else}}INVOICE{{/if}}</h2>
     </div>
     <div class="right">
         <table class="meta-table">
