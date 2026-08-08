@@ -274,7 +274,7 @@ export default function LedgerReportPage() {
                 value: a.id,
                 label: `${a.account_code} - ${a.account_name}`,
               }))}
-              value={selectedAccount}
+              value={selectedAccount ?? undefined}
               onChange={(val) => dispatch(setLedgerReportSelectedAccount(val as string))}
               placeholder="Choose account..."
               searchPlaceholder="Search accounts..."
