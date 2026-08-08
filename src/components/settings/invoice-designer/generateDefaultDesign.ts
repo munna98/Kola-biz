@@ -182,7 +182,7 @@ function generateThermalDesign(
     });
     y += 5;
 
-    // Customer: {{party.name}}
+    // To: {{party.name}}
     if (features.show_party_name) {
         elements.push({
             id: genId(),
@@ -192,7 +192,7 @@ function generateThermalDesign(
             width: contentWidth,
             height: 5,
             fieldBinding: 'party.name',
-            content: 'Customer: ',
+            content: 'To: ',
             label: 'Customer Name',
             styles: { fontSize: 9, padding: 0, lineHeight: 1.3 },
             visible: true,
