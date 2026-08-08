@@ -89,49 +89,32 @@ pub async fn get_ledger_report(
 ) -> Result<LedgerReport, String> {
     let pool = registry.active_pool().await?;
 
-    // Check if an active (non-deleted) opening balance voucher exists in journal_entries for this account
-    let has_ob_voucher: bool = sqlx::query_scalar(
-        "SELECT EXISTS(
-            SELECT 1 FROM vouchers v 
-            JOIN journal_entries je ON v.id = je.voucher_id 
-            WHERE v.voucher_type = 'opening_balance' 
-              AND je.account_id = ? 
-              AND v.deleted_at IS NULL
-         )"
+    // 1. Fetch initial opening balance configured on the account
+    let account = sqlx::query_as::<_, (f64, String)>(
+        "SELECT CAST(COALESCE(opening_balance, 0) AS REAL), COALESCE(opening_balance_type, 'Dr') FROM chart_of_accounts WHERE id = ?"
     )
     .bind(&account_id)
     .fetch_one(&pool)
     .await
-    .unwrap_or(false);
+    .map_err(|e| format!("Failed to fetch account {}: {}", account_id, e))?;
 
-    // If an OB voucher exists in journal_entries, base balance before all vouchers is 0.
-    // Otherwise, fallback to chart_of_accounts.opening_balance for legacy accounts without vouchers.
-    let base_balance = if has_ob_voucher {
-        0.0
+    let coa_opening_balance = if account.1 == "Dr" {
+        account.0
     } else {
-        let account = sqlx::query_as::<_, (f64, String)>(
-            "SELECT CAST(opening_balance AS REAL), opening_balance_type FROM chart_of_accounts WHERE id = ?"
-        )
-        .bind(&account_id)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| format!("Failed to fetch account {}: {}", account_id, e))?;
-
-        if account.1 == "Dr" {
-            account.0
-        } else {
-            -account.0
-        }
+        -account.0
     };
 
-    let mut running_balance = base_balance;
+    let mut running_balance = coa_opening_balance;
 
+    // 2. Sum prior transactions (before from_date), EXCLUDING opening_balance vouchers
+    // because coa_opening_balance already accounts for the initial opening balance.
     if let Some(ref from) = from_date {
         let balance_before: Option<(f64, f64)> = sqlx::query_as(
             "SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL), CAST(COALESCE(SUM(je.credit), 0) AS REAL)
              FROM journal_entries je
              JOIN vouchers v ON je.voucher_id = v.id
-             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL",
+             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL
+               AND v.voucher_type != 'opening_balance'",
         )
         .bind(&account_id)
         .bind(from)
@@ -168,6 +151,7 @@ pub async fn get_ledger_report(
                  JOIN vouchers v ON je.voucher_id = v.id
                  LEFT JOIN currencies cur ON je.currency_id = cur.id
                  WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL
+                   AND v.voucher_type != 'opening_balance'
                    AND (je.foreign_debit > 0 OR je.foreign_credit > 0)",
             )
             .bind(&account_id)
@@ -185,6 +169,8 @@ pub async fn get_ledger_report(
             (0.0, String::new(), String::new())
         };
 
+    // 3. Fetch transactions in period, EXCLUDING opening_balance vouchers
+    // so OB vouchers are not listed as standalone transaction rows
     let query = format!(
         "SELECT 
             v.id,
@@ -203,7 +189,9 @@ pub async fn get_ledger_report(
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         LEFT JOIN currencies cur ON je.currency_id = cur.id
-        WHERE je.account_id = ? AND v.deleted_at IS NULL {}
+        WHERE je.account_id = ? AND v.deleted_at IS NULL
+          AND v.voucher_type != 'opening_balance'
+          {}
         ORDER BY v.voucher_date ASC, v.id ASC",
         date_filter
     );
@@ -214,7 +202,7 @@ pub async fn get_ledger_report(
         .await
         .map_err(|e| e.to_string())?;
 
-    // Compute running INR balance and foreign running balance
+    // 4. Compute running INR balance and foreign running balance
     let mut foreign_running = foreign_opening_balance;
     for entry in &mut entries {
         running_balance += entry.debit - entry.credit;
