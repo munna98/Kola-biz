@@ -315,10 +315,14 @@ pub async fn get_balance_sheet(
             COALESCE(coa.opening_balance_type, 'Dr') as opening_balance_type,
             CAST(COALESCE(SUM(je.debit), 0) AS REAL) as total_debit,
             CAST(COALESCE(SUM(je.credit), 0) AS REAL) as total_credit,
-            CAST(COALESCE(SUM(CASE WHEN v.voucher_type = 'opening_balance' THEN 1 ELSE 0 END), 0) AS INTEGER) as ob_voucher_count
+            CAST(COALESCE(SUM(CASE WHEN je.voucher_type = 'opening_balance' THEN 1 ELSE 0 END), 0) AS INTEGER) as ob_voucher_count
         FROM chart_of_accounts coa
-        LEFT JOIN journal_entries je ON coa.id = je.account_id
-        LEFT JOIN vouchers v ON je.voucher_id = v.id AND v.voucher_date <= ? AND v.deleted_at IS NULL
+        LEFT JOIN (
+            SELECT je.account_id, je.debit, je.credit, v.voucher_type
+            FROM journal_entries je
+            JOIN vouchers v ON je.voucher_id = v.id
+            WHERE v.deleted_at IS NULL AND v.voucher_date <= ?
+        ) je ON coa.id = je.account_id
         WHERE coa.deleted_at IS NULL
         GROUP BY coa.id
     ";
