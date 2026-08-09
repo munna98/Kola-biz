@@ -301,7 +301,7 @@ pub async fn get_balance_sheet(
             CAST(COALESCE(SUM(je.credit), 0) AS REAL) as total_credit
         FROM chart_of_accounts coa
         LEFT JOIN journal_entries je ON coa.id = je.account_id
-        LEFT JOIN vouchers v ON je.voucher_id = v.id AND v.voucher_date <= ? AND v.deleted_at IS NULL
+        LEFT JOIN vouchers v ON je.voucher_id = v.id AND v.voucher_date <= ? AND v.deleted_at IS NULL AND v.voucher_type != 'opening_balance'
         WHERE coa.deleted_at IS NULL
         GROUP BY coa.id
     ";
@@ -1084,7 +1084,7 @@ pub async fn get_party_outstanding(
                 SUM(credit - debit) as net_cr_dr
             FROM journal_entries je
             JOIN vouchers v ON je.voucher_id = v.id
-            WHERE v.voucher_date <= ? AND v.deleted_at IS NULL
+            WHERE v.voucher_date <= ? AND v.deleted_at IS NULL AND v.voucher_type != 'opening_balance'
             GROUP BY je.account_id
         ) je_stats ON coa.id = je_stats.account_id
         LEFT JOIN (
@@ -1590,7 +1590,7 @@ pub async fn get_dashboard_metrics(
             COALESCE((SELECT SUM(je.debit - je.credit)
                       FROM journal_entries je
                       JOIN vouchers v ON je.voucher_id = v.id
-                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL), 0)
+                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL AND v.voucher_type != 'opening_balance'), 0)
         ), 0) AS REAL)
          FROM chart_of_accounts coa
          WHERE coa.account_group IN ('Cash', 'Bank Accounts')
@@ -1609,7 +1609,7 @@ pub async fn get_dashboard_metrics(
             COALESCE((SELECT SUM(je.debit - je.credit)
                       FROM journal_entries je
                       JOIN vouchers v ON je.voucher_id = v.id
-                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL), 0)
+                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL AND v.voucher_type != 'opening_balance'), 0)
         ), 0) AS REAL)
          FROM chart_of_accounts coa
          WHERE coa.account_group = 'Accounts Receivable'
@@ -1628,7 +1628,7 @@ pub async fn get_dashboard_metrics(
             COALESCE((SELECT SUM(je.credit - je.debit)
                       FROM journal_entries je
                       JOIN vouchers v ON je.voucher_id = v.id
-                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL), 0)
+                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL AND v.voucher_type != 'opening_balance'), 0)
         ), 0) AS REAL)
          FROM chart_of_accounts coa
          WHERE coa.account_group = 'Accounts Payable'
