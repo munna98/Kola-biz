@@ -814,27 +814,19 @@ async fn get_purchase_invoice_data(
                 let tax_rate = if item.resolved_gst_rate > 0.0 { item.resolved_gst_rate } else { item.tax_rate };
 
                 // Tax calculation is based on net_amount (taxable base)
-                let (base_amt, tax_amt, ex_tax_rate) = if tax_inclusive && tax_rate > 0.0 {
-                    let base = taxable_amt / (1.0 + tax_rate / 100.0);
-                    let tax = taxable_amt - base;
-                    let final_qty = item.initial_quantity - (item.count as f64) * item.deduction_per_unit;
-                    let original_base = item_level_taxable_amt;
-                    let ex_rate = if final_qty > 0.0 { original_base / final_qty } else { item.rate };
-                    (base, tax, ex_rate)
-                } else {
-                    (taxable_amt, item.tax_amount, item.rate)
-                };
+                // NOTE: When tax_inclusive is set, prepare_voucher_line already reverse-calculates
+                // the ex-tax base before storing (divides by 1+rate/100). So item.amount,
+                // item.net_amount, and item.rate are ALREADY ex-tax — do NOT divide again.
+                let (base_amt, tax_amt, ex_tax_rate) = (taxable_amt, item.tax_amount, item.rate);
 
-                // Display amount derived from original gross (for Amount column)
-                let display_base = if tax_inclusive && tax_rate > 0.0 {
-                    display_amt / (1.0 + tax_rate / 100.0)
-                } else {
-                    display_amt
-                };
+                // Display amount is also already ex-tax
+                let display_base = display_amt;
 
                 // Store the inclusive/original values for reference
-                obj.insert("inclusive_rate".to_string(), json!(item.rate));
-                obj.insert("inclusive_amount".to_string(), json!(item.amount));
+                let inclusive_rate = if tax_inclusive && tax_rate > 0.0 { round2(item.rate * (1.0 + tax_rate / 100.0)) } else { item.rate };
+                let inclusive_amount = if tax_inclusive && tax_rate > 0.0 { round2(display_amt * (1.0 + tax_rate / 100.0)) } else { display_amt };
+                obj.insert("inclusive_rate".to_string(), json!(inclusive_rate));
+                obj.insert("inclusive_amount".to_string(), json!(inclusive_amount));
                 
                 // Override rate and amount with ex-tax values — amount shows original (pre-invoice-discount)
                 obj.insert("rate".to_string(), json!(round2(ex_tax_rate)));
@@ -1128,27 +1120,19 @@ async fn get_sales_invoice_data(
                 let tax_rate = if item.resolved_gst_rate > 0.0 { item.resolved_gst_rate } else { item.tax_rate };
 
                 // Tax calculation is based on net_amount (taxable base)
-                let (base_amt, tax_amt, ex_tax_rate) = if tax_inclusive && tax_rate > 0.0 {
-                    let base = taxable_amt / (1.0 + tax_rate / 100.0);
-                    let tax = taxable_amt - base;
-                    let final_qty = item.initial_quantity - (item.count as f64) * item.deduction_per_unit;
-                    let original_base = item_level_taxable_amt;
-                    let ex_rate = if final_qty > 0.0 { original_base / final_qty } else { item.rate };
-                    (base, tax, ex_rate)
-                } else {
-                    (taxable_amt, item.tax_amount, item.rate)
-                };
+                // NOTE: When tax_inclusive is set, prepare_voucher_line already reverse-calculates
+                // the ex-tax base before storing (divides by 1+rate/100). So item.amount,
+                // item.net_amount, and item.rate are ALREADY ex-tax — do NOT divide again.
+                let (base_amt, tax_amt, ex_tax_rate) = (taxable_amt, item.tax_amount, item.rate);
 
-                // Display amount derived from original gross (for Amount column)
-                let display_base = if tax_inclusive && tax_rate > 0.0 {
-                    display_amt / (1.0 + tax_rate / 100.0)
-                } else {
-                    display_amt
-                };
+                // Display amount is also already ex-tax
+                let display_base = display_amt;
 
                 // Store the inclusive/original values for reference
-                obj.insert("inclusive_rate".to_string(), json!(item.rate));
-                obj.insert("inclusive_amount".to_string(), json!(item.amount));
+                let inclusive_rate = if tax_inclusive && tax_rate > 0.0 { round2(item.rate * (1.0 + tax_rate / 100.0)) } else { item.rate };
+                let inclusive_amount = if tax_inclusive && tax_rate > 0.0 { round2(display_amt * (1.0 + tax_rate / 100.0)) } else { display_amt };
+                obj.insert("inclusive_rate".to_string(), json!(inclusive_rate));
+                obj.insert("inclusive_amount".to_string(), json!(inclusive_amount));
                 
                 // Override rate and amount with ex-tax values — amount shows original (pre-invoice-discount)
                 obj.insert("rate".to_string(), json!(round2(ex_tax_rate)));
@@ -1482,27 +1466,19 @@ async fn get_sales_quotation_data(
                 let tax_rate = if item.resolved_gst_rate > 0.0 { item.resolved_gst_rate } else { item.tax_rate };
 
                 // Tax calculation is based on net_amount (taxable base)
-                let (base_amt, tax_amt, ex_tax_rate) = if tax_inclusive && tax_rate > 0.0 {
-                    let base = taxable_amt / (1.0 + tax_rate / 100.0);
-                    let tax = taxable_amt - base;
-                    let final_qty = item.initial_quantity - (item.count as f64) * item.deduction_per_unit;
-                    let original_base = item_level_taxable_amt;
-                    let ex_rate = if final_qty > 0.0 { original_base / final_qty } else { item.rate };
-                    (base, tax, ex_rate)
-                } else {
-                    (taxable_amt, item.tax_amount, item.rate)
-                };
+                // NOTE: When tax_inclusive is set, prepare_voucher_line already reverse-calculates
+                // the ex-tax base before storing (divides by 1+rate/100). So item.amount,
+                // item.net_amount, and item.rate are ALREADY ex-tax — do NOT divide again.
+                let (base_amt, tax_amt, ex_tax_rate) = (taxable_amt, item.tax_amount, item.rate);
 
-                // Display amount derived from original gross (for Amount column)
-                let display_base = if tax_inclusive && tax_rate > 0.0 {
-                    display_amt / (1.0 + tax_rate / 100.0)
-                } else {
-                    display_amt
-                };
+                // Display amount is also already ex-tax
+                let display_base = display_amt;
 
                 // Store the inclusive/original values for reference
-                obj.insert("inclusive_rate".to_string(), json!(item.rate));
-                obj.insert("inclusive_amount".to_string(), json!(item.amount));
+                let inclusive_rate = if tax_inclusive && tax_rate > 0.0 { round2(item.rate * (1.0 + tax_rate / 100.0)) } else { item.rate };
+                let inclusive_amount = if tax_inclusive && tax_rate > 0.0 { round2(display_amt * (1.0 + tax_rate / 100.0)) } else { display_amt };
+                obj.insert("inclusive_rate".to_string(), json!(inclusive_rate));
+                obj.insert("inclusive_amount".to_string(), json!(inclusive_amount));
                 
                 // Override rate and amount with ex-tax values — amount shows original (pre-invoice-discount)
                 obj.insert("rate".to_string(), json!(round2(ex_tax_rate)));
@@ -1757,25 +1733,16 @@ async fn get_delivery_note_data(
                 let display_amt = item.amount;
                 let tax_rate = if item.resolved_gst_rate > 0.0 { item.resolved_gst_rate } else { item.tax_rate };
 
-                let (base_amt, tax_amt, ex_tax_rate) = if tax_inclusive && tax_rate > 0.0 {
-                    let base = taxable_amt / (1.0 + tax_rate / 100.0);
-                    let tax = taxable_amt - base;
-                    let final_qty = item.initial_quantity - (item.count as f64) * item.deduction_per_unit;
-                    let original_base = item_level_taxable_amt;
-                    let ex_rate = if final_qty > 0.0 { original_base / final_qty } else { item.rate };
-                    (base, tax, ex_rate)
-                } else {
-                    (taxable_amt, item.tax_amount, item.rate)
-                };
+                // NOTE: When tax_inclusive is set, prepare_voucher_line already reverse-calculates
+                // the ex-tax base before storing. item.amount, item.net_amount, item.rate are ALREADY ex-tax.
+                let (base_amt, tax_amt, ex_tax_rate) = (taxable_amt, item.tax_amount, item.rate);
 
-                let display_base = if tax_inclusive && tax_rate > 0.0 {
-                    display_amt / (1.0 + tax_rate / 100.0)
-                } else {
-                    display_amt
-                };
+                let display_base = display_amt;
 
-                obj.insert("inclusive_rate".to_string(), json!(item.rate));
-                obj.insert("inclusive_amount".to_string(), json!(item.amount));
+                let inclusive_rate = if tax_inclusive && tax_rate > 0.0 { round2(item.rate * (1.0 + tax_rate / 100.0)) } else { item.rate };
+                let inclusive_amount = if tax_inclusive && tax_rate > 0.0 { round2(display_amt * (1.0 + tax_rate / 100.0)) } else { display_amt };
+                obj.insert("inclusive_rate".to_string(), json!(inclusive_rate));
+                obj.insert("inclusive_amount".to_string(), json!(inclusive_amount));
                 obj.insert("rate".to_string(), json!(round2(ex_tax_rate)));
                 obj.insert("amount".to_string(), json!(round2(display_base)));
                 obj.insert("base_amount".to_string(), json!(round2(base_amt)));
@@ -2057,25 +2024,16 @@ async fn get_sales_return_data(
                 let display_amt = item.amount;
                 let tax_rate = if item.resolved_gst_rate > 0.0 { item.resolved_gst_rate } else { item.tax_rate };
 
-                let (base_amt, tax_amt, ex_tax_rate) = if tax_inclusive && tax_rate > 0.0 {
-                    let base = taxable_amt / (1.0 + tax_rate / 100.0);
-                    let tax = taxable_amt - base;
-                    let final_qty = item.initial_quantity - (item.count as f64) * item.deduction_per_unit;
-                    let original_base = item_level_taxable_amt;
-                    let ex_rate = if final_qty > 0.0 { original_base / final_qty } else { item.rate };
-                    (base, tax, ex_rate)
-                } else {
-                    (taxable_amt, item.tax_amount, item.rate)
-                };
+                // NOTE: When tax_inclusive is set, prepare_voucher_line already reverse-calculates
+                // the ex-tax base before storing. item.amount, item.net_amount, item.rate are ALREADY ex-tax.
+                let (base_amt, tax_amt, ex_tax_rate) = (taxable_amt, item.tax_amount, item.rate);
 
-                let display_base = if tax_inclusive && tax_rate > 0.0 {
-                    display_amt / (1.0 + tax_rate / 100.0)
-                } else {
-                    display_amt
-                };
+                let display_base = display_amt;
 
-                obj.insert("inclusive_rate".to_string(), json!(item.rate));
-                obj.insert("inclusive_amount".to_string(), json!(item.amount));
+                let inclusive_rate = if tax_inclusive && tax_rate > 0.0 { round2(item.rate * (1.0 + tax_rate / 100.0)) } else { item.rate };
+                let inclusive_amount = if tax_inclusive && tax_rate > 0.0 { round2(display_amt * (1.0 + tax_rate / 100.0)) } else { display_amt };
+                obj.insert("inclusive_rate".to_string(), json!(inclusive_rate));
+                obj.insert("inclusive_amount".to_string(), json!(inclusive_amount));
                 
                 obj.insert("rate".to_string(), json!(round2(ex_tax_rate)));
                 obj.insert("amount".to_string(), json!(round2(display_base)));
