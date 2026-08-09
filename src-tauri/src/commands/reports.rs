@@ -89,57 +89,49 @@ pub async fn get_ledger_report(
 ) -> Result<LedgerReport, String> {
     let pool = registry.active_pool().await?;
 
-    // Check if an active opening balance voucher exists in journal_entries for this account
-    let has_ob_voucher: bool = sqlx::query_scalar(
-        "SELECT EXISTS(
-            SELECT 1 FROM vouchers v 
-            JOIN journal_entries je ON v.id = je.voucher_id 
-            WHERE v.voucher_type = 'opening_balance' 
-              AND je.account_id = ? 
-              AND v.deleted_at IS NULL
-         )"
+    // 1. Fetch initial opening balance and account code
+    let account = sqlx::query_as::<_, (f64, String, String)>(
+        "SELECT CAST(COALESCE(opening_balance, 0) AS REAL), COALESCE(opening_balance_type, 'Dr'), account_code FROM chart_of_accounts WHERE id = ?"
     )
     .bind(&account_id)
     .fetch_one(&pool)
     .await
-    .unwrap_or(false);
+    .map_err(|e| format!("Failed to fetch account {}: {}", account_id, e))?;
 
-    // If an OB voucher exists in journal_entries, the initial balance before all vouchers is 0
-    // because the OB voucher is itself recorded in journal_entries.
-    // Otherwise fallback to chart_of_accounts.opening_balance for legacy accounts without vouchers.
-    let base_balance = if has_ob_voucher {
+    let is_ob_adjustment_account = account.2 == "3004";
+
+    let coa_opening_balance = if is_ob_adjustment_account {
         0.0
+    } else if account.1 == "Dr" {
+        account.0
     } else {
-        let account = sqlx::query_as::<_, (f64, String)>(
-            "SELECT CAST(COALESCE(opening_balance, 0) AS REAL), COALESCE(opening_balance_type, 'Dr') FROM chart_of_accounts WHERE id = ?"
-        )
-        .bind(&account_id)
-        .fetch_one(&pool)
-        .await
-        .map_err(|e| format!("Failed to fetch account {}: {}", account_id, e))?;
-
-        if account.1 == "Dr" {
-            account.0
-        } else {
-            -account.0
-        }
+        -account.0
     };
 
-    let mut running_balance = base_balance;
+    let mut running_balance = coa_opening_balance;
 
-    // 2. Sum prior transactions (before from_date)
+    // 2. Sum prior transactions (before from_date), EXCLUDING opening_balance vouchers for standard accounts
     if let Some(ref from) = from_date {
-        let balance_before: Option<(f64, f64)> = sqlx::query_as(
+        let ob_before_filter = if is_ob_adjustment_account {
+            ""
+        } else {
+            "AND v.voucher_type != 'opening_balance'"
+        };
+
+        let before_query = format!(
             "SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL), CAST(COALESCE(SUM(je.credit), 0) AS REAL)
              FROM journal_entries je
              JOIN vouchers v ON je.voucher_id = v.id
-             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL",
-        )
-        .bind(&account_id)
-        .bind(from)
-        .fetch_optional(&pool)
-        .await
-        .map_err(|e| e.to_string())?;
+             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL {}",
+            ob_before_filter
+        );
+
+        let balance_before: Option<(f64, f64)> = sqlx::query_as(&before_query)
+            .bind(&account_id)
+            .bind(from)
+            .fetch_optional(&pool)
+            .await
+            .map_err(|e| e.to_string())?;
 
         if let Some((dr, cr)) = balance_before {
             running_balance += dr - cr;
@@ -155,6 +147,12 @@ pub async fn get_ledger_report(
         )
     } else {
         format!("AND v.voucher_date <= '{}'", to_date)
+    };
+
+    let ob_voucher_filter = if is_ob_adjustment_account {
+        ""
+    } else {
+        "AND v.voucher_type != 'opening_balance'"
     };
 
     // --- Foreign currency opening balance (sum of foreign amounts before from_date) ---
@@ -208,7 +206,9 @@ pub async fn get_ledger_report(
         LEFT JOIN currencies cur ON je.currency_id = cur.id
         WHERE je.account_id = ? AND v.deleted_at IS NULL
           {}
+          {}
         ORDER BY v.voucher_date ASC, v.id ASC",
+        ob_voucher_filter,
         date_filter
     );
 
