@@ -89,32 +89,51 @@ pub async fn get_ledger_report(
 ) -> Result<LedgerReport, String> {
     let pool = registry.active_pool().await?;
 
-    // 1. Fetch initial opening balance configured on the account
-    let account = sqlx::query_as::<_, (f64, String)>(
-        "SELECT CAST(COALESCE(opening_balance, 0) AS REAL), COALESCE(opening_balance_type, 'Dr') FROM chart_of_accounts WHERE id = ?"
+    // Check if an active opening balance voucher exists in journal_entries for this account
+    let has_ob_voucher: bool = sqlx::query_scalar(
+        "SELECT EXISTS(
+            SELECT 1 FROM vouchers v 
+            JOIN journal_entries je ON v.id = je.voucher_id 
+            WHERE v.voucher_type = 'opening_balance' 
+              AND je.account_id = ? 
+              AND v.deleted_at IS NULL
+         )"
     )
     .bind(&account_id)
     .fetch_one(&pool)
     .await
-    .map_err(|e| format!("Failed to fetch account {}: {}", account_id, e))?;
+    .unwrap_or(false);
 
-    let coa_opening_balance = if account.1 == "Dr" {
-        account.0
+    // If an OB voucher exists in journal_entries, the initial balance before all vouchers is 0
+    // because the OB voucher is itself recorded in journal_entries.
+    // Otherwise fallback to chart_of_accounts.opening_balance for legacy accounts without vouchers.
+    let base_balance = if has_ob_voucher {
+        0.0
     } else {
-        -account.0
+        let account = sqlx::query_as::<_, (f64, String)>(
+            "SELECT CAST(COALESCE(opening_balance, 0) AS REAL), COALESCE(opening_balance_type, 'Dr') FROM chart_of_accounts WHERE id = ?"
+        )
+        .bind(&account_id)
+        .fetch_one(&pool)
+        .await
+        .map_err(|e| format!("Failed to fetch account {}: {}", account_id, e))?;
+
+        if account.1 == "Dr" {
+            account.0
+        } else {
+            -account.0
+        }
     };
 
-    let mut running_balance = coa_opening_balance;
+    let mut running_balance = base_balance;
 
-    // 2. Sum prior transactions (before from_date), EXCLUDING opening_balance vouchers
-    // because coa_opening_balance already accounts for the initial opening balance.
+    // 2. Sum prior transactions (before from_date)
     if let Some(ref from) = from_date {
         let balance_before: Option<(f64, f64)> = sqlx::query_as(
             "SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL), CAST(COALESCE(SUM(je.credit), 0) AS REAL)
              FROM journal_entries je
              JOIN vouchers v ON je.voucher_id = v.id
-             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL
-               AND v.voucher_type != 'opening_balance'",
+             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL",
         )
         .bind(&account_id)
         .bind(from)
@@ -151,7 +170,6 @@ pub async fn get_ledger_report(
                  JOIN vouchers v ON je.voucher_id = v.id
                  LEFT JOIN currencies cur ON je.currency_id = cur.id
                  WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL
-                   AND v.voucher_type != 'opening_balance'
                    AND (je.foreign_debit > 0 OR je.foreign_credit > 0)",
             )
             .bind(&account_id)
@@ -169,8 +187,7 @@ pub async fn get_ledger_report(
             (0.0, String::new(), String::new())
         };
 
-    // 3. Fetch transactions in period, EXCLUDING opening_balance vouchers
-    // so OB vouchers are not listed as standalone transaction rows
+    // 3. Fetch transactions in period
     let query = format!(
         "SELECT 
             v.id,
@@ -190,7 +207,6 @@ pub async fn get_ledger_report(
         JOIN vouchers v ON je.voucher_id = v.id
         LEFT JOIN currencies cur ON je.currency_id = cur.id
         WHERE je.account_id = ? AND v.deleted_at IS NULL
-          AND v.voucher_type != 'opening_balance'
           {}
         ORDER BY v.voucher_date ASC, v.id ASC",
         date_filter
@@ -229,7 +245,7 @@ pub async fn get_ledger_report(
         None => (String::new(), String::new()),
     };
 
-    // Detect dominant foreign currency (first non-empty found in entries or pre-period query, fallback to linked default)
+    // Detect dominant foreign currency
     let (dominant_currency_code, dominant_currency_symbol) = entries
         .iter()
         .find(|e| !e.currency_code.is_empty())
@@ -295,18 +311,19 @@ pub async fn get_balance_sheet(
             coa.account_code,
             coa.account_type,
             coa.account_group,
-            CAST(coa.opening_balance AS REAL) as opening_balance,
-            coa.opening_balance_type,
+            CAST(COALESCE(coa.opening_balance, 0) AS REAL) as opening_balance,
+            COALESCE(coa.opening_balance_type, 'Dr') as opening_balance_type,
             CAST(COALESCE(SUM(je.debit), 0) AS REAL) as total_debit,
-            CAST(COALESCE(SUM(je.credit), 0) AS REAL) as total_credit
+            CAST(COALESCE(SUM(je.credit), 0) AS REAL) as total_credit,
+            CAST(COALESCE(SUM(CASE WHEN v.voucher_type = 'opening_balance' THEN 1 ELSE 0 END), 0) AS INTEGER) as ob_voucher_count
         FROM chart_of_accounts coa
         LEFT JOIN journal_entries je ON coa.id = je.account_id
-        LEFT JOIN vouchers v ON je.voucher_id = v.id AND v.voucher_date <= ? AND v.deleted_at IS NULL AND v.voucher_type != 'opening_balance'
+        LEFT JOIN vouchers v ON je.voucher_id = v.id AND v.voucher_date <= ? AND v.deleted_at IS NULL
         WHERE coa.deleted_at IS NULL
         GROUP BY coa.id
     ";
 
-    let rows = sqlx::query_as::<_, (String, String, String, String, String, f64, String, f64, f64)>(query)
+    let rows = sqlx::query_as::<_, (String, String, String, String, String, f64, String, f64, f64, i32)>(query)
         .bind(&as_on_date)
         .fetch_all(&pool)
         .await
@@ -319,18 +336,22 @@ pub async fn get_balance_sheet(
     let mut total_liabilities = 0.0;
     let mut total_equity = 0.0;
 
-    for (id, name, code, acc_type, group_name, op_bal, op_type, dr, cr) in rows {
+    for (id, name, code, acc_type, group_name, op_bal, op_type, dr, cr, ob_voucher_count) in rows {
+        // If an OB voucher exists in journal_entries for this account, dr/cr already includes the opening balance.
+        // So effective op_bal is 0 to avoid double counting coa.opening_balance.
+        let effective_op_bal = if ob_voucher_count > 0 { 0.0 } else { op_bal };
+
         let balance = if acc_type == "Asset" {
             if op_type == "Dr" {
-                dr - cr + op_bal
+                dr - cr + effective_op_bal
             } else {
-                dr - cr - op_bal
+                dr - cr - effective_op_bal
             }
         } else if acc_type == "Liability" || acc_type == "Equity" {
             if op_type == "Cr" {
-                cr - dr + op_bal
+                cr - dr + effective_op_bal
             } else {
-                cr - dr - op_bal
+                cr - dr - effective_op_bal
             }
         } else {
             0.0
@@ -1084,7 +1105,7 @@ pub async fn get_party_outstanding(
                 SUM(credit - debit) as net_cr_dr
             FROM journal_entries je
             JOIN vouchers v ON je.voucher_id = v.id
-            WHERE v.voucher_date <= ? AND v.deleted_at IS NULL AND v.voucher_type != 'opening_balance'
+            WHERE v.voucher_date <= ? AND v.deleted_at IS NULL
             GROUP BY je.account_id
         ) je_stats ON coa.id = je_stats.account_id
         LEFT JOIN (
@@ -1584,13 +1605,11 @@ pub async fn get_dashboard_metrics(
     // Get cash balance (sum of cash/bank accounts)
     let cash_balance: Option<f64> = sqlx::query_scalar(
         "SELECT CAST(COALESCE(SUM(
-            CASE
-                WHEN coa.opening_balance_type = 'Dr' THEN coa.opening_balance ELSE -coa.opening_balance
-            END +
             COALESCE((SELECT SUM(je.debit - je.credit)
                       FROM journal_entries je
                       JOIN vouchers v ON je.voucher_id = v.id
-                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL AND v.voucher_type != 'opening_balance'), 0)
+                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL), 
+                      CASE WHEN coa.opening_balance_type = 'Dr' THEN coa.opening_balance ELSE -coa.opening_balance END)
         ), 0) AS REAL)
          FROM chart_of_accounts coa
          WHERE coa.account_group IN ('Cash', 'Bank Accounts')
@@ -1603,13 +1622,11 @@ pub async fn get_dashboard_metrics(
     // Get receivables
     let receivables: Option<f64> = sqlx::query_scalar(
         "SELECT CAST(COALESCE(SUM(
-            CASE
-                WHEN coa.opening_balance_type = 'Dr' THEN coa.opening_balance ELSE -coa.opening_balance
-            END +
             COALESCE((SELECT SUM(je.debit - je.credit)
                       FROM journal_entries je
                       JOIN vouchers v ON je.voucher_id = v.id
-                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL AND v.voucher_type != 'opening_balance'), 0)
+                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL), 
+                      CASE WHEN coa.opening_balance_type = 'Dr' THEN coa.opening_balance ELSE -coa.opening_balance END)
         ), 0) AS REAL)
          FROM chart_of_accounts coa
          WHERE coa.account_group = 'Accounts Receivable'
@@ -1622,13 +1639,11 @@ pub async fn get_dashboard_metrics(
     // Get payables
     let payables: Option<f64> = sqlx::query_scalar(
         "SELECT CAST(COALESCE(SUM(
-            CASE
-                WHEN coa.opening_balance_type = 'Cr' THEN coa.opening_balance ELSE -coa.opening_balance
-            END +
             COALESCE((SELECT SUM(je.credit - je.debit)
                       FROM journal_entries je
                       JOIN vouchers v ON je.voucher_id = v.id
-                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL AND v.voucher_type != 'opening_balance'), 0)
+                      WHERE je.account_id = coa.id AND v.deleted_at IS NULL), 
+                      CASE WHEN coa.opening_balance_type = 'Cr' THEN coa.opening_balance ELSE -coa.opening_balance END)
         ), 0) AS REAL)
          FROM chart_of_accounts coa
          WHERE coa.account_group = 'Accounts Payable'
