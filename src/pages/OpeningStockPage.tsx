@@ -61,6 +61,8 @@ export default function OpeningStockPage() {
         [productUnitConversions]
     );
 
+    // Derived state
+    const isReadOnly = openingStockState.mode === 'viewing';
     const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
 
     // Load dependencies
