@@ -666,14 +666,22 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                                 );
                                                 if (existingIdx !== -1) {
                                                     const existingQty = items[existingIdx].initial_quantity || 0;
-                                                    onUpdateItem(existingIdx, 'initial_quantity', existingQty + 1);
-                                                    // Remove current (new/empty) row if it has no product yet.
-                                                    // Use setTimeout so the Redux dispatch from onUpdateItem settles first —
-                                                    // otherwise handleRemoveItem reads a stale items snapshot and its
-                                                    // updateTotalsWithItems call overwrites the correct incremented total.
+                                                    // Remove the current (new/empty) row FIRST (synchronously),
+                                                    // THEN call onUpdateItem to increment qty.
+                                                    //
+                                                    // Fix for stale-closure bug: the old approach used
+                                                    // setTimeout(() => onRemoveItem(idx), 0) AFTER onUpdateItem.
+                                                    // This caused onRemoveItem's updateTotalsWithItems to run after
+                                                    // onUpdateItem's and overwrite the correct total with a stale one.
+                                                    //
+                                                    // By removing first, then incrementing, onUpdateItem is the LAST
+                                                    // call to updateTotalsWithItems. The empty row contributes ₹0 to
+                                                    // the total, so the calculation in onUpdateItem (which still reads
+                                                    // the stale items array including the empty row) is still correct.
                                                     if (!items[idx].product_id) {
-                                                        setTimeout(() => onRemoveItem(idx), 0);
+                                                        onRemoveItem(idx);
                                                     }
+                                                    onUpdateItem(existingIdx, 'initial_quantity', existingQty + 1);
 
                                                     // When skipToNextRowAfterProduct is also on, focus the next product input
                                                     // so the user can keep scanning/selecting products without interruption.
