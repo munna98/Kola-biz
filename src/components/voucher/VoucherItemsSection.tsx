@@ -135,16 +135,28 @@ const RateCell = React.forwardRef<HTMLInputElement, RateCellProps>(({ rate, exTa
     // When focused: show real stored (inclusive) rate for editing
     // When blurred:  show ex-tax rate (reverse-calculated) for clarity
     const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-        setIsFocused(true);
-        setLocalValue(rate ? String(rate) : '');
-        // Defer select() so it runs after React re-renders the inclusive rate value.
-        // Guard: only call select() if the rate input is still the focused element —
-        // prevents a stale RAF from stealing focus back from the quantity input when
-        // focusFirstEditableAfterProduct() redirects focus after product selection.
         const el = e.currentTarget;
+
+        // If a product selection is in progress, this focus is transient
+        // (browser auto-focused the rate input when the combobox popover closed).
+        // Blur immediately — this runs synchronously BEFORE the browser paints,
+        // so the user never sees the rate input as focused.
+        if (document.body.hasAttribute('data-voucher-selecting')) {
+            el.blur();
+            return;
+        }
+
+        // Defer visual changes so they only apply if the rate input is STILL
+        // focused after the current event cycle (additional safety net).
         requestAnimationFrame(() => {
             if (document.activeElement === el) {
-                el.select();
+                setIsFocused(true);
+                setLocalValue(rate ? String(rate) : '');
+                requestAnimationFrame(() => {
+                    if (document.activeElement === el) {
+                        el.select();
+                    }
+                });
             }
         });
     };
@@ -159,6 +171,7 @@ const RateCell = React.forwardRef<HTMLInputElement, RateCellProps>(({ rate, exTa
             ref={ref}
             data-field="rate"
             type="number"
+            tabIndex={-1}
             value={isFocused ? localValue : blurredValue}
             onFocus={handleFocus}
             onBlur={handleBlur}
@@ -166,7 +179,12 @@ const RateCell = React.forwardRef<HTMLInputElement, RateCellProps>(({ rate, exTa
                 setLocalValue(e.target.value);
                 onChange(e.target.value);
             }}
-            className="h-7 text-xs text-right font-mono"
+            className={cn(
+                "h-7 text-xs text-right font-mono",
+                // Suppress the focus ring until the RAF guard confirms focus stayed.
+                // This prevents the visible blink during transient focus events.
+                !isFocused && "focus-visible:ring-0 focus-visible:border-input"
+            )}
             placeholder="0.00"
             step="0.01"
             disabled={isReadOnly}
@@ -731,10 +749,13 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                             }
 
                                             // --- Skip to Next Row After Product ---
+                                            // Set a flag so the RateCell knows to reject transient focus.
+                                            document.body.setAttribute('data-voucher-selecting', 'true');
                                             if (settings?.skipToNextRowAfterProduct) {
                                                 onUpdateItem(idx, 'product_id', prodId, { initialQuantity: 1 });
                                                 // Jump to next row (add new if needed)
                                                 setTimeout(() => {
+                                                    document.body.removeAttribute('data-voucher-selecting');
                                                     const currentRow = document.querySelector(`[data-row-index="${idx}"]`);
                                                     if (currentRow) {
                                                         const nextRow = currentRow.nextElementSibling;
@@ -759,12 +780,19 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                                 }, 100);
                                             } else {
                                                 onUpdateItem(idx, 'product_id', prodId);
-                                                setTimeout(() => focusFirstEditableAfterProduct(idx), 100);
+                                                setTimeout(() => {
+                                                    document.body.removeAttribute('data-voucher-selecting');
+                                                    focusFirstEditableAfterProduct(idx);
+                                                }, 100);
                                             }
                                         } else if (strVal.startsWith('s:')) {
                                             const svcId = strVal.slice(2);
+                                            document.body.setAttribute('data-voucher-selecting', 'true');
                                             onUpdateItem(idx, 'service_id', svcId);
-                                            setTimeout(() => focusFirstEditableAfterProduct(idx), 100);
+                                            setTimeout(() => {
+                                                document.body.removeAttribute('data-voucher-selecting');
+                                                focusFirstEditableAfterProduct(idx);
+                                            }, 100);
                                         }
                                     }}
                                     placeholder="Select product"
