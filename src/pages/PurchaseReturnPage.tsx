@@ -73,6 +73,7 @@ export default function PurchaseReturnPage() {
     const [isInitializing, setIsInitializing] = useState(true);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
+    const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
     const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean } | undefined>(undefined);
     const { print } = usePrint();
     const productUnitsByProduct = useMemo(
@@ -89,7 +90,7 @@ export default function PurchaseReturnPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, gstSettings, slabsData] = await Promise.all([
+                const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, gstSettings, slabsData, masterSettingVal] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
                     invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -97,10 +98,12 @@ export default function PurchaseReturnPage() {
                     invoke<any>('get_voucher_settings', { voucherType: 'purchase_return' }),
                     api.gst.getSettings().catch(() => null),
                     api.gst.getSlabs().catch(() => [] as GstTaxSlab[]),
+                    invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
                 ]);
                 setProducts(productsData);
                 setUnits(unitsData);
                 setProductUnitConversions(productUnitConversionsData);
+                setMasterProductsEnabled(masterSettingVal === 'true');
                 if (gstSettings?.gst_enabled) {
                     setGstSlabs(slabsData);
                 }
@@ -769,7 +772,7 @@ export default function PurchaseReturnPage() {
                     {/* Items Section */}
                     <VoucherItemsSection
                         items={purchaseReturnState.items}
-                        products={products}
+                        products={masterProductsEnabled ? products.filter(p => (p as any).is_master !== 1) : products}
                         units={units}
                         productUnitsByProduct={productUnitsByProduct}
                         isReadOnly={isReadOnly}

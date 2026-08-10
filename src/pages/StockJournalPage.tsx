@@ -73,6 +73,8 @@ export default function StockJournalPage() {
     const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
     const [creatingProductSection, setCreatingProductSection] = useState<JournalSection>('source');
 
+    const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
+
     const formRef = useRef<HTMLFormElement>(null);
     const productUnitsByProduct = useMemo(
         () => buildProductUnitMap(productUnitConversions),
@@ -91,16 +93,18 @@ export default function StockJournalPage() {
     useEffect(() => {
         const loadDependencies = async () => {
             try {
-                const [productsData, unitsData, productUnitConversionsData, groupsData] = await Promise.all([
+                const [productsData, unitsData, productUnitConversionsData, groupsData, masterSettingVal] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
                     invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
                     invoke<ProductGroup[]>('get_product_groups'),
+                    invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
                 ]);
                 setProducts(productsData);
                 setUnits(unitsData);
                 setProductUnitConversions(productUnitConversionsData);
                 setProductGroups(groupsData);
+                setMasterProductsEnabled(masterSettingVal === 'true');
             } catch (error) {
                 console.error('Failed to load dependencies:', error);
                 toast.error('Failed to load products or units');
@@ -554,7 +558,7 @@ export default function StockJournalPage() {
 
                 <VoucherItemsSection
                     items={items}
-                    products={products}
+                    products={masterProductsEnabled ? products.filter(p => (p as any).is_master !== 1) : products}
                     units={units}
                     productUnitsByProduct={productUnitsByProduct}
                     isReadOnly={isReadOnly}

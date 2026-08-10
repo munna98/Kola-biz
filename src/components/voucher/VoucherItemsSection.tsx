@@ -631,7 +631,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 </div>
                             );
                         case 'product': {
-                            const productList = fullProducts.length > 0 ? fullProducts : products;
+                            const productList = products;
                             const productOptions = productList.map(p => {
                                 const opt = buildProductComboboxOption({
                                     product: p as any,
