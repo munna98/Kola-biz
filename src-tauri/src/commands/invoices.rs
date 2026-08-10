@@ -677,7 +677,8 @@ pub(crate) async fn get_purchase_invoice_with_pool(
             v.created_at,
             v.deleted_at,
             u.full_name as created_by_name,
-            COALESCE(v.tax_inclusive, 0) as tax_inclusive
+            COALESCE(v.tax_inclusive, 0) as tax_inclusive,
+            COALESCE(v.gst_disabled, 0) as gst_disabled
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
