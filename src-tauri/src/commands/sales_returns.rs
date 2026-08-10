@@ -243,6 +243,9 @@ pub struct CreateSalesReturn {
     /// When true, this return is against a Margin Scheme invoice.
     #[serde(default)]
     pub is_margin_scheme_invoice: bool,
+    /// When true, skip quantity validation against reference sales invoice.
+    #[serde(default)]
+    pub skip_linked_validation: Option<bool>,
 }
 
 #[tauri::command]
@@ -452,8 +455,10 @@ pub(crate) async fn create_sales_return_in_tx(
     let total_amount = subtotal - discount_amount;
     let grand_total = total_amount + total_tax;
 
-    validate_linked_return_quantities(tx, invoice.reference.as_deref(), None, &processed_items)
-        .await?;
+    if !invoice.skip_linked_validation.unwrap_or(false) {
+        validate_linked_return_quantities(tx, invoice.reference.as_deref(), None, &processed_items)
+            .await?;
+    }
 
     let voucher_id = Uuid::now_v7().to_string();
     sqlx::query(
@@ -760,13 +765,15 @@ pub async fn update_sales_return(
     let total_amount = subtotal - discount_amount;
     let grand_total = total_amount + total_tax;
 
-    validate_linked_return_quantities(
-        &mut tx,
-        invoice.reference.as_deref(),
-        Some(&id),
-        &processed_items,
-    )
-    .await?;
+    if !invoice.skip_linked_validation.unwrap_or(false) {
+        validate_linked_return_quantities(
+            &mut tx,
+            invoice.reference.as_deref(),
+            Some(&id),
+            &processed_items,
+        )
+        .await?;
+    }
 
     sqlx::query(
         "UPDATE vouchers

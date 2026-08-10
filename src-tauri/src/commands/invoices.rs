@@ -1844,6 +1844,7 @@ async fn create_draft_return_for_sales_invoice_in_tx(
         tax_inclusive: invoice.tax_inclusive,
         gst_disabled: invoice.gst_disabled,
         is_margin_scheme_invoice: invoice.is_margin_scheme_invoice,
+        skip_linked_validation: Some(true),
     };
     let return_id = create_sales_return_in_tx(pool, tx, &sales_return).await?;
 
