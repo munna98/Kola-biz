@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -8,6 +9,8 @@ import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
+import { useSelector } from 'react-redux';
+import { RootState } from '@/store';
 
 interface TrialBalanceRow {
   account_code: string;
@@ -17,6 +20,7 @@ interface TrialBalanceRow {
 }
 
 export default function TrialBalancePage() {
+  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
   const [data, setData] = useState<TrialBalanceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [fromDate, setFromDate] = useState('');
@@ -53,8 +57,68 @@ export default function TrialBalancePage() {
   };
 
   const handleExport = () => {
-    // TODO: Implement CSV export
-    toast.info('Export functionality coming soon');
+    if (data.length === 0) {
+      toast.error('No trial balance data to export');
+      return;
+    }
+
+    try {
+      const companyName = companyProfile?.company_name || 'Company';
+      const reportTitle = `${companyName} - Trial Balance Report`;
+      const periodTitle = fromDate
+        ? `Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`
+        : `As of ${formatDate(toDate)}`;
+
+      const rows: any[][] = [];
+
+      // Header block
+      rows.push([reportTitle]);
+      rows.push([periodTitle]);
+      rows.push([]);
+
+      // Column Headers
+      rows.push(['Account Code', 'Account Name', 'Debit (Dr)', 'Credit (Cr)']);
+
+      for (const row of data) {
+        rows.push([
+          row.account_code,
+          row.account_name,
+          row.debit,
+          row.credit,
+        ]);
+      }
+
+      // Totals
+      rows.push(['', 'TOTAL', totalDebit, totalCredit]);
+      rows.push([]);
+
+      // Balance Status
+      rows.push([
+        '',
+        'STATUS',
+        isBalanced ? 'BALANCED' : `UNBALANCED (Difference: ${difference.toFixed(2)})`,
+        '',
+      ]);
+
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 18 }, // Account Code
+        { wch: 40 }, // Account Name
+        { wch: 20 }, // Debit
+        { wch: 20 }, // Credit
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Trial Balance');
+
+      const fileName = `Trial_Balance_${toDate}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast.success(`Trial balance exported as ${fileName}`);
+    } catch (err) {
+      console.error('Export error:', err);
+      toast.error('Failed to export Trial Balance to Excel');
+    }
   };
 
   return (

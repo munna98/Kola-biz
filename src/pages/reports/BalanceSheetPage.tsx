@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,8 +13,8 @@ import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
 import { AccountGroup, AccountGroupNode } from '@/lib/tauri';
-import { useDispatch } from 'react-redux';
-import { setLedgerReportSelectedAccount, setActiveSectionWithParams } from '@/store';
+import { useDispatch, useSelector } from 'react-redux';
+import { RootState, setLedgerReportSelectedAccount, setActiveSectionWithParams } from '@/store';
 import { cn } from '@/lib/utils';
 
 interface BSAccount {
@@ -143,6 +144,33 @@ function buildBSTRree(
   return filterNonZero(roots);
 }
 
+// Flatten tree structure recursively for Excel export
+function flattenTreeForExcel(nodes: BSGroupTreeNode[], rows: any[][]) {
+  for (const node of nodes) {
+    const indent = '  '.repeat(node.depth);
+    rows.push([
+      '',
+      `${indent}${node.name}`,
+      'Group',
+      node.totalAmount,
+    ]);
+
+    for (const child of node.bsChildren) {
+      flattenTreeForExcel([child], rows);
+    }
+
+    for (const acc of node.accounts) {
+      const accIndent = '  '.repeat(node.depth + 1);
+      rows.push([
+        acc.account_code,
+        `${accIndent}${acc.account_name}`,
+        acc.account_group,
+        acc.amount,
+      ]);
+    }
+  }
+}
+
 // Tree Row Component
 interface BSRowProps {
   node: BSGroupTreeNode;
@@ -243,6 +271,7 @@ function BSTRow({ node, onDrilldown, expandedGroups, toggleExpand, money }: BSRo
 
 export default function BalanceSheetPage() {
   const dispatch = useDispatch();
+  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
   const [data, setData] = useState<BalanceSheetData | null>(null);
   const [loading, setLoading] = useState(false);
   const [asOnDate, setAsOnDate] = useState(new Date().toISOString().split('T')[0]);
@@ -328,7 +357,108 @@ export default function BalanceSheetPage() {
   };
 
   const handleExport = () => {
-    toast.info('Export functionality coming soon');
+    if (!data) {
+      toast.error('No balance sheet data to export');
+      return;
+    }
+
+    try {
+      const companyName = companyProfile?.company_name || 'Company';
+      const reportTitle = `${companyName} - Balance Sheet`;
+      const asOfTitle = `As on ${formatDate(asOnDate)}`;
+
+      const rows: any[][] = [];
+
+      // Title block
+      rows.push([reportTitle]);
+      rows.push([asOfTitle]);
+      rows.push([]);
+
+      // Column Headers
+      rows.push(['Account Code', 'Particulars', 'Type / Group', 'Amount']);
+
+      // 1. ASSETS SECTION
+      rows.push(['', 'ASSETS', 'Section', data.total_assets]);
+      flattenTreeForExcel(assetTree, rows);
+      rows.push(['', 'TOTAL ASSETS', 'Total', data.total_assets]);
+      rows.push([]);
+
+      // 2. LIABILITIES SECTION
+      rows.push(['', 'LIABILITIES', 'Section', data.total_liabilities]);
+      flattenTreeForExcel(liabilityTree, rows);
+      rows.push(['', 'TOTAL LIABILITIES', 'Total', data.total_liabilities]);
+      rows.push([]);
+
+      // 3. CAPITAL & EQUITY SECTION
+      rows.push(['', 'CAPITAL & EQUITY', 'Section', data.total_equity]);
+      flattenTreeForExcel(equityTree, rows);
+      rows.push(['', 'TOTAL CAPITAL & EQUITY', 'Total', data.total_equity]);
+      rows.push([]);
+
+      // 4. TOTAL LIABILITIES + EQUITY
+      const totalLiabEquity = data.total_liabilities + data.total_equity;
+      rows.push(['', 'TOTAL LIABILITIES & EQUITY', 'Total', totalLiabEquity]);
+      rows.push([]);
+
+      // 5. BALANCE STATUS
+      const diff = Math.abs(data.total_assets - totalLiabEquity);
+      const isBalanced = diff < 0.01;
+      rows.push([
+        '',
+        'BALANCE SHEET STATUS',
+        'Status',
+        isBalanced ? 'BALANCED' : `UNBALANCED (Diff: ${diff.toFixed(2)})`,
+      ]);
+
+      // Sheet 1: Structured Balance Sheet
+      const wsBalanceSheet = XLSX.utils.aoa_to_sheet(rows);
+      wsBalanceSheet['!cols'] = [
+        { wch: 18 }, // Account Code
+        { wch: 45 }, // Particulars
+        { wch: 25 }, // Type / Group
+        { wch: 20 }, // Amount
+      ];
+
+      // Sheet 2: Detailed Account Breakdown
+      const detailedRows: any[][] = [];
+      detailedRows.push([reportTitle]);
+      detailedRows.push([asOfTitle]);
+      detailedRows.push([]);
+      detailedRows.push(['Account Code', 'Account Name', 'Account Group', 'Section', 'Amount']);
+
+      for (const acc of data.assets) {
+        detailedRows.push([acc.account_code, acc.account_name, acc.account_group, 'Asset', acc.amount]);
+      }
+      for (const acc of data.liabilities) {
+        detailedRows.push([acc.account_code, acc.account_name, acc.account_group, 'Liability', acc.amount]);
+      }
+      for (const acc of data.equity) {
+        detailedRows.push([acc.account_code, acc.account_name, acc.account_group, 'Equity', acc.amount]);
+      }
+
+      const wsDetailed = XLSX.utils.aoa_to_sheet(detailedRows);
+      wsDetailed['!cols'] = [
+        { wch: 18 }, // Account Code
+        { wch: 35 }, // Account Name
+        { wch: 25 }, // Account Group
+        { wch: 15 }, // Section
+        { wch: 20 }, // Amount
+      ];
+
+      // Create Workbook and append sheets
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, wsBalanceSheet, 'Balance Sheet');
+      XLSX.utils.book_append_sheet(wb, wsDetailed, 'Account Details');
+
+      // Trigger download
+      const fileName = `Balance_Sheet_${asOnDate}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast.success(`Balance sheet exported as ${fileName}`);
+    } catch (err) {
+      console.error('Export error:', err);
+      toast.error('Failed to export Balance Sheet to Excel');
+    }
   };
 
   const totalLiabilitiesAndEquity = data ? data.total_liabilities + data.total_equity : 0;

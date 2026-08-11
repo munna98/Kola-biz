@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,8 +13,8 @@ import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
 import { AccountGroup, AccountGroupNode } from '@/lib/tauri';
-import { useDispatch } from 'react-redux';
-import { setLedgerReportSelectedAccount, setActiveSectionWithParams } from '@/store';
+import { useDispatch, useSelector } from 'react-redux';
+import { RootState, setLedgerReportSelectedAccount, setActiveSectionWithParams } from '@/store';
 import { cn } from '@/lib/utils';
 
 interface PLAccount {
@@ -135,6 +136,33 @@ function buildPLTree(
   return filterNonZero(roots);
 }
 
+// Flatten tree structure recursively for Excel export
+function flattenPLTreeForExcel(nodes: PLGroupTreeNode[], rows: any[][]) {
+  for (const node of nodes) {
+    const indent = '  '.repeat(node.depth);
+    rows.push([
+      '',
+      `${indent}${node.name}`,
+      'Group',
+      node.totalAmount,
+    ]);
+
+    for (const child of node.plChildren) {
+      flattenPLTreeForExcel([child], rows);
+    }
+
+    for (const acc of node.accounts) {
+      const accIndent = '  '.repeat(node.depth + 1);
+      rows.push([
+        acc.account_code,
+        `${accIndent}${acc.account_name}`,
+        acc.account_group,
+        acc.amount,
+      ]);
+    }
+  }
+}
+
 // Tree Row Component
 interface PLRowProps {
   node: PLGroupTreeNode;
@@ -229,6 +257,7 @@ function PLTRow({ node, onDrilldown, expandedGroups, toggleExpand, money }: PLRo
 
 export default function ProfitLossPage() {
   const dispatch = useDispatch();
+  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
   const [data, setData] = useState<ProfitLossData | null>(null);
   const [loading, setLoading] = useState(false);
   const [fromDate, setFromDate] = useState(() => {
@@ -309,7 +338,90 @@ export default function ProfitLossPage() {
   };
 
   const handleExport = () => {
-    toast.info('Export functionality coming soon');
+    if (!data) {
+      toast.error('No profit & loss data to export');
+      return;
+    }
+
+    try {
+      const companyName = companyProfile?.company_name || 'Company';
+      const reportTitle = `${companyName} - Profit & Loss Statement`;
+      const periodTitle = `Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`;
+
+      const rows: any[][] = [];
+
+      // Title block
+      rows.push([reportTitle]);
+      rows.push([periodTitle]);
+      rows.push([]);
+
+      // Column Headers
+      rows.push(['Account Code', 'Particulars', 'Type / Group', 'Amount']);
+
+      // 1. INCOME SECTION
+      rows.push(['', 'INCOME', 'Section', data.total_income]);
+      flattenPLTreeForExcel(incomeTree, rows);
+      rows.push(['', 'TOTAL INCOME', 'Total', data.total_income]);
+      rows.push([]);
+
+      // 2. EXPENSES SECTION
+      rows.push(['', 'EXPENSES', 'Section', data.total_expenses]);
+      flattenPLTreeForExcel(expenseTree, rows);
+      rows.push(['', 'TOTAL EXPENSES', 'Total', data.total_expenses]);
+      rows.push([]);
+
+      // 3. NET PROFIT / LOSS
+      rows.push([
+        '',
+        data.net_profit >= 0 ? 'NET PROFIT' : 'NET LOSS',
+        'Summary',
+        data.net_profit,
+      ]);
+
+      // Sheet 1: Structured P&L
+      const wsPL = XLSX.utils.aoa_to_sheet(rows);
+      wsPL['!cols'] = [
+        { wch: 18 }, // Account Code
+        { wch: 45 }, // Particulars
+        { wch: 25 }, // Type / Group
+        { wch: 20 }, // Amount
+      ];
+
+      // Sheet 2: Detailed Breakdown
+      const detailedRows: any[][] = [];
+      detailedRows.push([reportTitle]);
+      detailedRows.push([periodTitle]);
+      detailedRows.push([]);
+      detailedRows.push(['Account Code', 'Account Name', 'Account Group', 'Section', 'Amount']);
+
+      for (const acc of data.income) {
+        detailedRows.push([acc.account_code, acc.account_name, acc.account_group, 'Income', acc.amount]);
+      }
+      for (const acc of data.expenses) {
+        detailedRows.push([acc.account_code, acc.account_name, acc.account_group, 'Expense', acc.amount]);
+      }
+
+      const wsDetailed = XLSX.utils.aoa_to_sheet(detailedRows);
+      wsDetailed['!cols'] = [
+        { wch: 18 }, // Account Code
+        { wch: 35 }, // Account Name
+        { wch: 25 }, // Account Group
+        { wch: 15 }, // Section
+        { wch: 20 }, // Amount
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, wsPL, 'Profit & Loss');
+      XLSX.utils.book_append_sheet(wb, wsDetailed, 'Account Details');
+
+      const fileName = `Profit_and_Loss_${fromDate}_to_${toDate}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast.success(`Profit & Loss exported as ${fileName}`);
+    } catch (err) {
+      console.error('Export error:', err);
+      toast.error('Failed to export Profit & Loss statement to Excel');
+    }
   };
 
   return (
