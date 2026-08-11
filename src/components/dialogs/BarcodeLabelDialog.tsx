@@ -26,6 +26,8 @@ interface Product {
     salesRate: number;
     mrp?: number;
     quantity?: number;
+    supplierCode?: string;
+    supplierName?: string;
 }
 
 interface BarcodeLabelDialogProps {
@@ -341,6 +343,8 @@ function getElementText(element: LabelElement, product: Product, money: (amount:
         case 'product.name': return product.name;
         case 'product.salesRate': return money(product.salesRate);
         case 'product.mrp': return `MRP ${money(product.mrp || product.salesRate)}`;
+        case 'product.supplierCode': return product.supplierCode || '';
+        case 'product.supplierName': return product.supplierName || '';
         default: return element.content || '';
     }
 }

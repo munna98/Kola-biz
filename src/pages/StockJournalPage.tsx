@@ -261,6 +261,7 @@ export default function StockJournalPage() {
             resetForm: resetStockJournalForm,
         },
         onLoadVoucher: handleLoadVoucher,
+        onDelete: () => handleDelete(),
     });
 
     const handleSave = async (e?: React.FormEvent) => {

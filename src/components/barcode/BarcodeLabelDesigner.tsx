@@ -113,6 +113,20 @@ export function buildDefaultElements(companyName?: string, customText?: string):
             textAlign: 'center', color: '#000000', letterSpacing: 0,
             content: '',
         },
+        {
+            id: 'supplierCode', label: 'Supplier Code', type: 'text', enabled: false,
+            x: 2, y: 23, width: 46, height: 2.5,
+            fontFamily: 'Arial', fontSize: 6, fontWeight: 'normal', fontStyle: 'normal',
+            textAlign: 'center', color: '#000000', letterSpacing: 0,
+            dataField: 'product.supplierCode',
+        },
+        {
+            id: 'supplierName', label: 'Supplier Name', type: 'text', enabled: false,
+            x: 2, y: 23, width: 46, height: 2.5,
+            fontFamily: 'Arial', fontSize: 6, fontWeight: 'normal', fontStyle: 'normal',
+            textAlign: 'center', color: '#000000', letterSpacing: 0,
+            dataField: 'product.supplierName',
+        },
     ];
 }
 
@@ -188,6 +202,8 @@ const SAMPLE_PRODUCT = {
     name: 'Sample Product',
     salesRate: 999.00,
     mrp: 1099.00,
+    supplierCode: 'SUP-001',
+    supplierName: 'Acme Traders',
 };
 
 // ── Formatting Toolbar ──
@@ -674,6 +690,8 @@ function DesignerElement({ element, selected, scale, barcodeFormat, onSelect, on
             case 'product.name': return SAMPLE_PRODUCT.name;
             case 'product.salesRate': return money(SAMPLE_PRODUCT.salesRate);
             case 'product.mrp': return `MRP ${money(SAMPLE_PRODUCT.mrp)}`;
+            case 'product.supplierCode': return SAMPLE_PRODUCT.supplierCode;
+            case 'product.supplierName': return SAMPLE_PRODUCT.supplierName;
             default: return element.content || null; // null = show placeholder
         }
     };

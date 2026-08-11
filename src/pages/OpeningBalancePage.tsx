@@ -159,6 +159,7 @@ export default function OpeningBalancePage() {
             resetForm: resetOpeningBalanceForm,
         },
         onLoadVoucher: loadVoucher,
+        onDelete: () => handleDeleteVoucher(),
     });
 
     useEffect(() => {

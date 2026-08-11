@@ -159,6 +159,7 @@ export default function OpeningStockPage() {
             resetForm: resetOpeningStockForm,
         },
         onLoadVoucher: (id) => handleLoadVoucher(id),
+        onDelete: () => handleDelete(),
     });
 
     // Calculate total whenever items change

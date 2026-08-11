@@ -168,7 +168,8 @@ export default function JournalEntryPage() {
             setHasUnsavedChanges: setJournalHasUnsavedChanges,
             resetForm: resetJournalForm
         },
-        onLoadVoucher: loadVoucher
+        onLoadVoucher: loadVoucher,
+        onDelete: () => handleDeleteVoucher()
     });
 
     useEffect(() => {

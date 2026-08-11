@@ -719,7 +719,8 @@ export default function SalesQuotationPage() {
       setHasUnsavedChanges: setQuotationHasUnsavedChanges,
       resetForm: resetQuotationForm
     },
-    onLoadVoucher: loadVoucher
+    onLoadVoucher: loadVoucher,
+    onDelete: () => handleDeleteVoucher()
   });
 
   const handleNewInvoice = (skipConfirm?: boolean) => {

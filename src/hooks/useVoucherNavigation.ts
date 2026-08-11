@@ -18,13 +18,15 @@ interface UseVoucherNavigationProps {
     sliceState: any; // Checked against VoucherNavigationState
     actions: VoucherNavigationActions;
     onLoadVoucher: (id: string) => Promise<void>;
+    onDelete?: () => Promise<void> | void;
 }
 
 export function useVoucherNavigation({
     voucherType,
     sliceState,
     actions,
-    onLoadVoucher
+    onLoadVoucher,
+    onDelete: onDeleteCallback,
 }: UseVoucherNavigationProps) {
     const dispatch = useDispatch();
     const confirm = useConfirm();
@@ -100,9 +102,24 @@ export function useVoucherNavigation({
         return true;
     };
 
+    const handleNavigateToLast = async () => {
+        if (!lastVoucherId) return;
+        if (mode === 'editing' && hasUnsavedChanges) {
+            if (!await confirmDiscardChanges()) return;
+        }
+        dispatch(actions.setHasUnsavedChanges(false));
+        dispatch(actions.setMode('viewing'));
+        dispatch(actions.setCurrentVoucherId(lastVoucherId));
+        await onLoadVoucher(lastVoucherId);
+    };
+
     const handleNavigatePrevious = async () => {
         if (mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
+        }
+        if (mode === 'new' && hasLastVoucher) {
+            await handleNavigateToLast();
+            return;
         }
         if (navigationData.previousId) {
             dispatch(actions.setMode('viewing'));
@@ -119,6 +136,9 @@ export function useVoucherNavigation({
             dispatch(actions.setMode('viewing'));
             dispatch(actions.setCurrentVoucherId(navigationData.nextId));
             await onLoadVoucher(navigationData.nextId);
+        } else if (mode === 'viewing') {
+            // PageDown / Alt+Right on the last saved voucher transitions back to new mode
+            await handleNew();
         }
     };
 
@@ -189,24 +209,38 @@ export function useVoucherNavigation({
     };
 
     // Keyboard shortcuts
-    // Using e.code for physical key detection (more reliable across keyboard layouts)
     useEffect(() => {
         const handleKeyDown = async (e: KeyboardEvent) => {
-            // Alt+Left: Navigate previous
-            if (e.altKey && e.code === 'ArrowLeft') {
+            // Previous voucher: Alt+Left or PageUp
+            if ((e.altKey && e.code === 'ArrowLeft') || e.code === 'PageUp') {
                 e.preventDefault();
                 handleNavigatePrevious();
+                return;
             }
-            // Alt+Right: Navigate next
-            if (e.altKey && e.code === 'ArrowRight') {
+            // Next voucher: Alt+Right or PageDown
+            if ((e.altKey && e.code === 'ArrowRight') || e.code === 'PageDown') {
                 e.preventDefault();
                 handleNavigateNext();
+                return;
+            }
+            // Delete voucher: Ctrl+Delete, Alt+D, or Ctrl+D (when in viewing mode)
+            if (mode === 'viewing' && currentVoucherId) {
+                if (
+                    ((e.ctrlKey || e.metaKey) && e.code === 'Delete') ||
+                    (e.altKey && e.code === 'KeyD') ||
+                    ((e.ctrlKey || e.metaKey) && e.code === 'KeyD')
+                ) {
+                    e.preventDefault();
+                    if (onDeleteCallback) {
+                        onDeleteCallback();
+                    }
+                }
             }
         };
 
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [navigationData, mode, hasUnsavedChanges]);
+    }, [navigationData, mode, hasUnsavedChanges, currentVoucherId, lastVoucherId, onDeleteCallback]);
 
     return {
         handleNavigatePrevious,
@@ -221,15 +255,7 @@ export function useVoucherNavigation({
         nextVoucherNo,
         hasLastVoucher,
         refreshNewModeData: fetchNewModeData,
-        handleNavigateToLast: async () => {
-            if (!lastVoucherId) return;
-            if (mode === 'editing' && hasUnsavedChanges) {
-                if (!await confirmDiscardChanges()) return;
-            }
-            dispatch(actions.setHasUnsavedChanges(false));
-            dispatch(actions.setMode('viewing'));
-            dispatch(actions.setCurrentVoucherId(lastVoucherId));
-            await onLoadVoucher(lastVoucherId);
-        },
+        handleNavigateToLast,
     };
 }
+

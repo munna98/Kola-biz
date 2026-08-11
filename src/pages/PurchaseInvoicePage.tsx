@@ -108,7 +108,7 @@ export default function PurchaseInvoicePage() {
 
   // Barcode dialog state
   const [showBarcodeDialog, setShowBarcodeDialog] = useState(false);
-  const [barcodeProducts, setBarcodeProducts] = useState<{ code: string; name: string; salesRate: number; quantity: number }[]>([]);
+  const [barcodeProducts, setBarcodeProducts] = useState<{ code: string; name: string; salesRate: number; quantity: number; supplierCode?: string; supplierName?: string }[]>([]);
 
   // Price Category Quick-Edit dialog state
   const [showPriceCatDialog, setShowPriceCatDialog] = useState(false);
@@ -349,7 +349,8 @@ export default function PurchaseInvoicePage() {
       setHasUnsavedChanges: setPurchaseHasUnsavedChanges,
       resetForm: resetForm
     },
-    onLoadVoucher: handleLoadVoucher
+    onLoadVoucher: handleLoadVoucher,
+    onDelete: () => handleDelete()
   });
 
   useEffect(() => {
@@ -929,11 +930,14 @@ export default function PurchaseInvoicePage() {
             const salesRate = snapshotItem?.sales_rate !== undefined && snapshotItem.sales_rate !== null
               ? snapshotItem.sales_rate
               : (fi.rate || 0); // fi.rate is purchase rate — only used as last resort
+            const supplier = parties.find(p => p.id === purchaseState.form.supplier_id);
             return {
               code: fi.product_code || '',
               name: fi.product_name || snapshotItem?.product_name || '',
               salesRate,
               quantity: fi.final_quantity ?? snapshotItem?.quantity ?? 0,
+              supplierCode: supplier?.id ? String(supplier.id) : '',
+              supplierName: supplier?.name || '',
             };
           });
           setBarcodeProducts(barcodeItems);
@@ -943,6 +947,7 @@ export default function PurchaseInvoicePage() {
             .filter(it => it.product_id && it.product_id !== '0')
             .map(it => {
               const product = products.find(p => String(p.id) === it.product_id);
+              const supplier = parties.find(p => p.id === purchaseState.form.supplier_id);
               return {
                 code: product?.code || '',
                 name: product?.name || it.product_name || '',
@@ -950,6 +955,8 @@ export default function PurchaseInvoicePage() {
                   ? it.sales_rate
                   : (product?.sales_rate || 0),
                 quantity: it.quantity,
+                supplierCode: product?.supplier_id || (supplier?.id ? String(supplier.id) : ''),
+                supplierName: product?.supplier_name || supplier?.name || '',
               };
             });
           setBarcodeProducts(barcodeItems);
@@ -1014,11 +1021,14 @@ export default function PurchaseInvoicePage() {
       .filter(item => item.product_id)
       .map(item => {
         const product = products.find(p => String(p.id) === String(item.product_id));
+        const supplier = parties.find(p => p.id === purchaseState.form.supplier_id);
         return {
           code: product?.code || '',
           name: product?.name || item.product_name || '',
           salesRate: item.sales_rate !== undefined ? item.sales_rate : (product?.sales_rate || item.rate || 0),
           quantity: item.initial_quantity - item.count * item.deduction_per_unit,
+          supplierCode: product?.supplier_id || (supplier?.id ? String(supplier.id) : ''),
+          supplierName: product?.supplier_name || supplier?.name || '',
         };
       });
     setBarcodeProducts(items);

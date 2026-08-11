@@ -46,6 +46,7 @@ export function PrintPreviewDialog({
     const [enableBarcode, setEnableBarcode] = useState(false);
     const [barcodeDialogOpen, setBarcodeDialogOpen] = useState(false);
     const [invoiceItems, setInvoiceItems] = useState<InvoiceItem[]>([]);
+    const [supplierInfo, setSupplierInfo] = useState<{ code?: string; name?: string }>({});
     const frameRef = useRef<HTMLIFrameElement>(null);
 
     useEffect(() => {
@@ -89,10 +90,14 @@ export function PrintPreviewDialog({
 
     const loadInvoiceItems = async () => {
         try {
-            const items = await invoke<InvoiceItem[]>('get_purchase_invoice_items', {
-                voucherId: voucherId
-            });
+            const [items, voucher] = await Promise.all([
+                invoke<InvoiceItem[]>('get_purchase_invoice_items', { voucherId }),
+                invoke<any>('get_purchase_invoice', { id: voucherId }).catch(() => null),
+            ]);
             setInvoiceItems(items);
+            if (voucher) {
+                setSupplierInfo({ code: voucher.supplier_id, name: voucher.supplier_name });
+            }
         } catch (error) {
             console.error('Failed to load invoice items:', error);
         }
@@ -196,6 +201,8 @@ export function PrintPreviewDialog({
                     name: item.product_name,
                     salesRate: item.rate,
                     quantity: item.count,
+                    supplierCode: supplierInfo.code || '',
+                    supplierName: supplierInfo.name || '',
                 }))}
             />
         </>

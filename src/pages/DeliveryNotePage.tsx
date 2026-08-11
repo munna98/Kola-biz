@@ -567,6 +567,7 @@ export default function DeliveryNotePage() {
       resetForm: resetDeliveryNoteForm,
     },
     onLoadVoucher: loadVoucher,
+    onDelete: () => handleDeleteVoucher(),
   });
 
   const handleNewNote = (skipConfirm?: boolean) => handleNew(skipConfirm);

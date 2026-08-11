@@ -639,7 +639,14 @@ export default function ProductsPage() {
       <BarcodeLabelDialog
         open={barcodeDialogOpen}
         onOpenChange={setBarcodeDialogOpen}
-        products={barcodeProduct ? [{ code: barcodeProduct.code, name: barcodeProduct.name, salesRate: barcodeProduct.sales_rate }] : []}
+        products={barcodeProduct ? [{
+          code: barcodeProduct.code,
+          name: barcodeProduct.name,
+          salesRate: barcodeProduct.sales_rate,
+          mrp: barcodeProduct.mrp,
+          supplierCode: barcodeProduct.supplier_id || '',
+          supplierName: barcodeProduct.supplier_name || ''
+        }] : []}
       />
 
       <ImportExcelDialog

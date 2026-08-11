@@ -392,7 +392,8 @@ export default function ReceiptPage() {
             setHasUnsavedChanges: setReceiptHasUnsavedChanges,
             resetForm: resetReceiptForm
         },
-        onLoadVoucher: loadVoucher
+        onLoadVoucher: loadVoucher,
+        onDelete: () => handleDeleteVoucher()
     });
 
     useEffect(() => {

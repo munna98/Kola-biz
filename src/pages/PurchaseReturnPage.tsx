@@ -569,7 +569,8 @@ export default function PurchaseReturnPage() {
             setHasUnsavedChanges: setPurchaseReturnHasUnsavedChanges,
             resetForm: resetPurchaseReturnForm
         },
-        onLoadVoucher: loadVoucher
+        onLoadVoucher: loadVoucher,
+        onDelete: () => handleDeleteVoucher()
     });
 
     useEffect(() => {

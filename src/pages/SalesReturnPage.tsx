@@ -653,7 +653,8 @@ export default function SalesReturnPage() {
             setHasUnsavedChanges: setSalesReturnHasUnsavedChanges,
             resetForm: resetSalesReturnForm
         },
-        onLoadVoucher: loadVoucher
+        onLoadVoucher: loadVoucher,
+        onDelete: () => handleDeleteVoucher()
     });
 
     const handleDeleteVoucher = async () => {

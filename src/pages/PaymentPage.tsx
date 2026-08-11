@@ -368,7 +368,8 @@ export default function PaymentPage() {
             setHasUnsavedChanges: setPaymentHasUnsavedChanges,
             resetForm: resetPaymentForm
         },
-        onLoadVoucher: loadVoucher
+        onLoadVoucher: loadVoucher,
+        onDelete: () => handleDeleteVoucher()
     });
 
     useEffect(() => {

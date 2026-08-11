@@ -545,6 +545,7 @@ export const api = {
     listDeleted: () => invoke<Product[]>('get_deleted_products'),
     create: (data: CreateProduct) => invoke<Product>('create_product', { product: data }),
     batchCreate: (data: CreateProduct[]) => invoke<number>('batch_create_products', { products: data }),
+    update: (id: string, data: CreateProduct) => invoke<void>('update_product', { id, product: data }),
     updateMultipleRates: (rates: { id: string; purchase_rate: number; sales_rate: number; mrp: number; cost: number }[]) => invoke<void>('update_multiple_product_rates', { rates }),
     updateMultipleSuppliers: (suppliers: { id: string; supplier_id: string }[]) => invoke<void>('update_multiple_product_suppliers', { suppliers }),
     delete: (id: string, deletedBy: string) => invoke<void>('delete_product', { id, deletedBy }),

@@ -1181,7 +1181,8 @@ export default function SalesInvoicePage() {
       setHasUnsavedChanges: setSalesHasUnsavedChanges,
       resetForm: resetSalesForm
     },
-    onLoadVoucher: loadVoucher
+    onLoadVoucher: loadVoucher,
+    onDelete: () => handleDeleteVoucher()
   });
 
   const handleNewInvoice = (skipConfirm?: boolean) => {
