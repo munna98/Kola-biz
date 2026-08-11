@@ -105,6 +105,18 @@ export function VoucherJournalSection({
                                     onSectionExit?.();
                                 }
                             }}
+                            onAfterSelect={() => {
+                                requestAnimationFrame(() => {
+                                    const row = document.querySelector(`[data-row-index="${index}"]`);
+                                    const rowInputs = Array.from(
+                                        row?.querySelectorAll('input:not([disabled]):not([data-exclude-nav="true"]), button:not([disabled]):not([data-exclude-nav="true"])') ?? []
+                                    ) as HTMLElement[];
+                                    const targetIndex = (line.credit > 0 && (!line.debit || line.debit === 0)) ? 2 : 1;
+                                    const nextInput = rowInputs[targetIndex] || rowInputs[1];
+                                    nextInput?.focus();
+                                    if (nextInput instanceof HTMLInputElement) nextInput.select();
+                                });
+                            }}
                         />
                     </div>
 

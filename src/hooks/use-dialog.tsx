@@ -33,14 +33,21 @@ export function useDialog(
         const currentIndex = orderedFields.indexOf(field);
         if (currentIndex === -1) return;
 
-        const nextField = orderedFields[currentIndex + 1];
-        if (nextField && refs.current[nextField]) {
-            setTimeout(() => {
-                refs.current[nextField]?.focus();
-            }, 50); // Small delay to allow popovers/selects to close
-        } else if (currentIndex === orderedFields.length - 1) {
-            refs.current[field]?.closest('form')?.requestSubmit();
+        for (let i = currentIndex + 1; i < orderedFields.length; i++) {
+            const nextFieldName = orderedFields[i];
+            const el = refs.current[nextFieldName];
+            if (el && document.body.contains(el)) {
+                setTimeout(() => {
+                    el.focus();
+                    if (el instanceof HTMLInputElement) {
+                        el.select();
+                    }
+                }, 50); // Small delay to allow popovers/selects to close
+                return;
+            }
         }
+
+        refs.current[field]?.closest('form')?.requestSubmit();
     };
 
     const handleKeyDown = (e: React.KeyboardEvent, field: string, options?: RegisterOptions) => {
@@ -61,9 +68,16 @@ export function useDialog(
         if (e.key === 'ArrowUp') {
             e.preventDefault();
             const currentIndex = orderedFields.indexOf(field);
-            if (currentIndex > 0) {
-                const prevField = orderedFields[currentIndex - 1];
-                refs.current[prevField]?.focus();
+            for (let i = currentIndex - 1; i >= 0; i--) {
+                const prevFieldName = orderedFields[i];
+                const el = refs.current[prevFieldName];
+                if (el && document.body.contains(el)) {
+                    el.focus();
+                    if (el instanceof HTMLInputElement) {
+                        el.select();
+                    }
+                    return;
+                }
             }
         }
     };

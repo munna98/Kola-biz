@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
@@ -52,6 +52,22 @@ const POPULAR_MODELS: Record<string, string[]> = {
 };
 
 const getDefaultUnitId = (units: Unit[]) => units.find((unit) => unit.is_default === 1)?.id || units[0]?.id || '';
+
+const findGstSlabForRate = (num: number, slabs: GstTaxSlab[]) => {
+  const activeSlabs = slabs.filter(s => s.is_active === 1);
+  // 1. Exact match on fixed_rate
+  let match = activeSlabs.find(s => s.fixed_rate === num);
+  if (match) return match;
+  // 2. Match on below_rate or above_rate
+  match = activeSlabs.find(s => s.below_rate === num || s.above_rate === num);
+  if (match) return match;
+  // 3. Match numeric value in slab name (e.g. "GST 5%" -> 5, "5%" -> 5)
+  match = activeSlabs.find(s => {
+    const nameDigits = s.name.match(/\d+/);
+    return nameDigits && parseInt(nameDigits[0], 10) === num;
+  });
+  return match;
+};
 
 const createBaseRow = (unitId: string, purchaseRate = 0, salesRate = 0): ConversionRow => ({
   key: `base-${unitId || 'empty'}`,
@@ -163,11 +179,34 @@ export default function ProductDialog({
 
   const orderedFields = ['code', 'name', 'group', 'brand', 'unit', 'part_number', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp', 'cost', 'barcode'];
 
-  const { register, handleKeyDown, handleSelectKeyDown, parseNumber, formatNumber } = useDialog(
+  const { register, handleKeyDown, handleSelectKeyDown, focusNext, parseNumber, formatNumber } = useDialog(
     open,
     onOpenChange,
     orderedFields
   );
+
+  const digitBufferRef = useRef('');
+  const digitTimeoutRef = useRef<any>(null);
+
+  const handleDigitShortcut = (key: string): boolean => {
+    if (!/^\d$/.test(key)) return false;
+
+    clearTimeout(digitTimeoutRef.current);
+    digitBufferRef.current += key;
+    const rateNum = parseInt(digitBufferRef.current, 10);
+
+    const slab = findGstSlabForRate(rateNum, gstSlabs);
+    if (slab) {
+      setForm(prev => ({ ...prev, gst_slab_id: slab.id }));
+      toast.info(`GST Category set to ${slab.name}`, { duration: 1500 });
+    }
+
+    digitTimeoutRef.current = setTimeout(() => {
+      digitBufferRef.current = '';
+    }, 750);
+
+    return true;
+  };
 
   // Load GST slabs once
   useEffect(() => {
@@ -518,7 +557,10 @@ export default function ProductDialog({
                   <Label className="text-xs font-medium mb-1 block">Product Group</Label>
                   <Select
                     value={form.group_id?.toString() || 'none'}
-                    onValueChange={v => setForm({ ...form, group_id: v === 'none' ? undefined : v })}
+                    onValueChange={v => {
+                      setForm({ ...form, group_id: v === 'none' ? undefined : v });
+                      setTimeout(() => focusNext('group'), 100);
+                    }}
                   >
                     <SelectTrigger
                       ref={register('group') as any}
@@ -543,7 +585,10 @@ export default function ProductDialog({
                   <Label className="text-xs font-medium mb-1 block">Brand</Label>
                   <Select
                     value={form.brand_id?.toString() || 'none'}
-                    onValueChange={v => setForm({ ...form, brand_id: v === 'none' ? undefined : v })}
+                    onValueChange={v => {
+                      setForm({ ...form, brand_id: v === 'none' ? undefined : v });
+                      setTimeout(() => focusNext('brand'), 100);
+                    }}
                   >
                     <SelectTrigger
                       ref={register('brand') as any}
@@ -590,13 +635,22 @@ export default function ProductDialog({
                 <div className="flex gap-1">
                   <Select
                     value={form.unit_id}
-                    onValueChange={v => setForm({ ...form, unit_id: v })}
+                    onValueChange={v => {
+                      setForm({ ...form, unit_id: v });
+                      setTimeout(() => focusNext('unit'), 100);
+                    }}
                     disabled={unitLocked}
                   >
                     <SelectTrigger
                       ref={register('unit') as any}
                       className="h-8 text-sm"
-                      onKeyDown={(e) => handleSelectKeyDown(e, 'unit')}
+                      onKeyDown={(e) => {
+                        if (/^\d$/.test(e.key)) {
+                          handleDigitShortcut(e.key);
+                          return;
+                        }
+                        handleSelectKeyDown(e, 'unit');
+                      }}
                       disabled={unitLocked}
                     >
                       <SelectValue />
@@ -645,13 +699,22 @@ export default function ProductDialog({
                 <div className="flex gap-1">
                   <Select
                     value={form.unit_id}
-                    onValueChange={v => setForm({ ...form, unit_id: v })}
+                    onValueChange={v => {
+                      setForm({ ...form, unit_id: v });
+                      setTimeout(() => focusNext('unit'), 100);
+                    }}
                     disabled={unitLocked}
                   >
                     <SelectTrigger
                       ref={register('unit') as any}
                       className="h-8 text-sm"
-                      onKeyDown={(e) => handleSelectKeyDown(e, 'unit')}
+                      onKeyDown={(e) => {
+                        if (/^\d$/.test(e.key)) {
+                          handleDigitShortcut(e.key);
+                          return;
+                        }
+                        handleSelectKeyDown(e, 'unit');
+                      }}
                       disabled={unitLocked}
                     >
                       <SelectValue />
@@ -701,12 +764,21 @@ export default function ProductDialog({
                   <Label className="text-xs font-medium mb-1 block">GST Category</Label>
                   <Select
                     value={form.gst_slab_id || 'gst_0'}
-                    onValueChange={v => setForm({ ...form, gst_slab_id: v })}
+                    onValueChange={v => {
+                      setForm({ ...form, gst_slab_id: v });
+                      setTimeout(() => focusNext('gst_slab'), 100);
+                    }}
                   >
                     <SelectTrigger
                       ref={register('gst_slab') as any}
                       className="h-8 text-sm"
-                      onKeyDown={(e) => handleSelectKeyDown(e, 'gst_slab')}
+                      onKeyDown={(e) => {
+                        if (/^\d$/.test(e.key)) {
+                          handleDigitShortcut(e.key);
+                          return;
+                        }
+                        handleSelectKeyDown(e, 'gst_slab');
+                      }}
                     >
                       <SelectValue placeholder="NIL" />
                     </SelectTrigger>
