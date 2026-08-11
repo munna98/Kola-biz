@@ -399,7 +399,7 @@ export default function ProductsPage() {
                 {columnSettings.hsn_sac_code && <th className="p-3">HSN Code</th>}
                 {columnSettings.group && <th className="p-3">Group</th>}
                 {columnSettings.brand && <th className="p-3">Brand</th>}
-                <th className="p-3">Supplier</th>
+                {columnSettings.supplier && <th className="p-3">Supplier</th>}
                 {columnSettings.unit && <th className="p-3">Unit</th>}
                 {columnSettings.part_number && <th className="p-3">Part No.</th>}
                 {columnSettings.purchase_rate && <th className="p-3">Purchase</th>}
@@ -423,12 +423,13 @@ export default function ProductsPage() {
                 <tr>
                   <td
                     colSpan={
-                      4 +
+                      3 +
                       (columnSettings.code ? 1 : 0) +
                       (columnSettings.part_number ? 1 : 0) +
                       (columnSettings.hsn_sac_code ? 1 : 0) +
                       (columnSettings.group ? 1 : 0) +
                       (columnSettings.brand ? 1 : 0) +
+                      (columnSettings.supplier ? 1 : 0) +
                       (columnSettings.unit ? 1 : 0) +
                       (columnSettings.purchase_rate ? 1 : 0) +
                       (columnSettings.sales_rate ? 1 : 0) +
@@ -482,7 +483,7 @@ export default function ProductsPage() {
                       {columnSettings.hsn_sac_code && <td className="p-3 text-sm">{p.hsn_sac_code || '-'}</td>}
                       {columnSettings.group && <td className="p-3 text-sm">{groups.find(g => g.id === p.group_id)?.name || '-'}</td>}
                       {columnSettings.brand && <td className="p-3 text-sm">{brands.find(b => b.id === p.brand_id)?.name || '-'}</td>}
-                      <td className="p-3 text-sm">{p.supplier_name || '-'}</td>
+                      {columnSettings.supplier && <td className="p-3 text-sm">{p.supplier_name || '-'}</td>}
                       {columnSettings.unit && <td className="p-3">{units.find(u => u.id === p.unit_id)?.symbol || '-'}</td>}
                       {columnSettings.part_number && <td className="p-3 font-mono text-sm">{p.part_number || '-'}</td>}
                       {columnSettings.purchase_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.purchase_rate)}</td>}

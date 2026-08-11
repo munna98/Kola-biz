@@ -166,6 +166,15 @@ const OLD_LABEL_DIMS: Record<string, { width: number; height: number }> = {
 export function migrateSettings(old: OldBarcodeSettings): BarcodeDesignerSettings {
     // Already new format
     if (old.elements && old.labelWidth) {
+        const defaults = buildDefaultElements();
+        const existingIds = new Set(old.elements.map(e => e.id));
+        const missing = defaults.filter(d => !existingIds.has(d.id)).map(d => ({ ...d, enabled: false }));
+        if (missing.length > 0) {
+            return {
+                ...(old as BarcodeDesignerSettings),
+                elements: [...old.elements, ...missing],
+            };
+        }
         return old as BarcodeDesignerSettings;
     }
 

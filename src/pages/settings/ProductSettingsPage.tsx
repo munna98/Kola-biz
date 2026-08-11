@@ -21,6 +21,7 @@ export interface ProductTableColumns {
   sales_rate: boolean;
   mrp: boolean;
   cost: boolean;
+  supplier: boolean;
   tax_slab: boolean;
   vehicle_manufacturer: boolean;
   vehicle_model: boolean;
@@ -44,6 +45,7 @@ export interface ProductDialogFields {
   mrp: boolean;
   cost: boolean;
   barcode: boolean;
+  supplier: boolean;
   vehicle_manufacturer: boolean;
   vehicle_model: boolean;
   vehicle_year: boolean;
@@ -65,6 +67,7 @@ export const DEFAULT_TABLE_COLUMNS: ProductTableColumns = {
   sales_rate: true,
   mrp: true,
   cost: true,
+  supplier: false,
   tax_slab: true,
   vehicle_manufacturer: false,
   vehicle_model: false,
@@ -88,6 +91,7 @@ export const DEFAULT_DIALOG_FIELDS: ProductDialogFields = {
   mrp: true,
   cost: true,
   barcode: true,
+  supplier: false,
   vehicle_manufacturer: false,
   vehicle_model: false,
   vehicle_year: false,
@@ -127,6 +131,7 @@ const TABLE_COLUMN_DEFS: { key: keyof ProductTableColumns; label: string; descri
   { key: 'sales_rate', label: 'Sales Rate', description: 'Default selling price' },
   { key: 'mrp', label: 'MRP', description: 'Maximum retail price' },
   { key: 'cost', label: 'Cost', description: 'Product cost price column' },
+  { key: 'supplier', label: 'Supplier', description: 'Assigned product supplier column' },
   { key: 'tax_slab', label: 'Tax Slab', description: 'GST tax slab (shown only if GST is enabled)' },
   { key: 'vehicle_manufacturer', label: 'Vehicle Manufacturer', description: 'Vehicle manufacturer column' },
   { key: 'vehicle_model', label: 'Vehicle Model', description: 'Vehicle model column' },
@@ -150,6 +155,7 @@ const DIALOG_FIELD_DEFS: { key: keyof ProductDialogFields; label: string; descri
   { key: 'mrp', label: 'MRP', description: 'Maximum retail price field' },
   { key: 'cost', label: 'Cost', description: 'Product cost price field' },
   { key: 'barcode', label: 'Barcode', description: 'Barcode / scan field' },
+  { key: 'supplier', label: 'Supplier', description: 'Assigned supplier selector' },
   { key: 'vehicle_manufacturer', label: 'Vehicle Manufacturer', description: 'Vehicle manufacturer selection field' },
   { key: 'vehicle_model', label: 'Vehicle Model', description: 'Vehicle model input field' },
   { key: 'vehicle_year', label: 'Vehicle Year', description: 'Vehicle manufacture year input field' },

@@ -511,7 +511,7 @@ export default function ProductDialog({
             </div>
           </div>
 
-          {(dialogFields.group || dialogFields.brand || dialogFields.part_number || product?.part_number) && (
+          {(dialogFields.group || dialogFields.brand || dialogFields.supplier || dialogFields.part_number || product?.part_number) && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {dialogFields.group && (
                 <div>
@@ -563,25 +563,27 @@ export default function ProductDialog({
                   </Select>
                 </div>
               )}
-              <div>
-                <Label className="text-xs font-medium mb-1 block">Supplier</Label>
-                <Select
-                  value={form.supplier_id?.toString() || 'none'}
-                  onValueChange={v => setForm({ ...form, supplier_id: v === 'none' ? undefined : v })}
-                >
-                  <SelectTrigger className="h-8 text-sm">
-                    <SelectValue placeholder="Select supplier" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No Supplier</SelectItem>
-                    {suppliers.map(s => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {s.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {dialogFields.supplier && (
+                <div>
+                  <Label className="text-xs font-medium mb-1 block">Supplier</Label>
+                  <Select
+                    value={form.supplier_id?.toString() || 'none'}
+                    onValueChange={v => setForm({ ...form, supplier_id: v === 'none' ? undefined : v })}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Select supplier" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Supplier</SelectItem>
+                      {suppliers.map(s => (
+                        <SelectItem key={s.id} value={s.id}>
+                          {s.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               {/* Base Unit always in this row when group/brand/part_number row is visible */}
               <div>
                 <Label className="text-xs font-medium mb-1 block">Base Unit</Label>
