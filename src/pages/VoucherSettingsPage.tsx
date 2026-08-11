@@ -42,6 +42,7 @@ interface VoucherSettings {
     updateSalesRate?: boolean;
     updateMrp?: boolean;
     updateCost?: boolean;
+    updateSupplierOnPurchase?: boolean; // Update product supplier at master level when saving purchase invoice
     showProductInfoOnHover?: boolean; // Show Stock, P Rate, MRP on Sl No hover
     showInvoiceProfit?: boolean; // Show total cost & gross profit in invoice footer
     profitCostSource?: 'cost_rate' | 'product_master_cost'; // Which cost field to use for profit calculation
@@ -106,6 +107,7 @@ export default function VoucherSettingsPage() {
     const [updateSalesRate, setUpdateSalesRate] = useState(true);
     const [updateMrp, setUpdateMrp] = useState(true);
     const [updateCost, setUpdateCost] = useState(true);
+    const [updateSupplierOnPurchase, setUpdateSupplierOnPurchase] = useState(false);
     const [showProductInfoOnHover, setShowProductInfoOnHover] = useState(false);
     const [showInvoiceProfit, setShowInvoiceProfit] = useState(false);
     const [profitCostSource, setProfitCostSource] = useState<'cost_rate' | 'product_master_cost'>('cost_rate');
@@ -159,6 +161,7 @@ export default function VoucherSettingsPage() {
                 setUpdateSalesRate(savedSettings.updateSalesRate !== false);
                 setUpdateMrp(savedSettings.updateMrp !== false);
                 setUpdateCost(savedSettings.updateCost !== false);
+                setUpdateSupplierOnPurchase(savedSettings.updateSupplierOnPurchase || false);
                 setShowProductInfoOnHover(savedSettings.showProductInfoOnHover || false);
                 setShowInvoiceProfit(savedSettings.showInvoiceProfit || false);
                 setProfitCostSource(savedSettings.profitCostSource || 'cost_rate');
@@ -210,6 +213,7 @@ export default function VoucherSettingsPage() {
                 setUpdateSalesRate(true);
                 setUpdateMrp(true);
                 setUpdateCost(true);
+                setUpdateSupplierOnPurchase(false);
                 setShowProductInfoOnHover(false);
                 setShowInvoiceProfit(false);
                 setProfitCostSource('cost_rate');
@@ -251,6 +255,7 @@ export default function VoucherSettingsPage() {
                 updateSalesRate: updateSalesRate,
                 updateMrp: updateMrp,
                 updateCost: updateCost,
+                updateSupplierOnPurchase: updateSupplierOnPurchase,
                 showProductInfoOnHover: showProductInfoOnHover,
                 showInvoiceProfit: showInvoiceProfit,
                 profitCostSource: profitCostSource,
@@ -551,6 +556,26 @@ export default function VoucherSettingsPage() {
                                                 </div>
                                             </div>
                                         )}
+                                    </div>
+                                </div>
+
+                                <div className="flex items-start gap-4 mb-6">
+                                    <Checkbox
+                                        id="update-supplier-on-purchase"
+                                        checked={updateSupplierOnPurchase}
+                                        onCheckedChange={(checked) => setUpdateSupplierOnPurchase(checked as boolean)}
+                                        className="mt-1"
+                                    />
+                                    <div className="grid gap-1.5 leading-none w-full">
+                                        <label
+                                            htmlFor="update-supplier-on-purchase"
+                                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                        >
+                                            Update Supplier on Purchase
+                                        </label>
+                                        <p className="text-sm text-muted-foreground">
+                                            When saving a purchase invoice, automatically update the assigned product supplier to the selected party.
+                                        </p>
                                     </div>
                                 </div>
                             </>

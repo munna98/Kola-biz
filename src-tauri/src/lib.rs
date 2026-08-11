@@ -87,6 +87,7 @@ pub fn run() {
             batch_create_products,
             update_product,
             update_multiple_product_rates,
+            update_multiple_product_suppliers,
             delete_product,
             get_deleted_products,
             restore_product,

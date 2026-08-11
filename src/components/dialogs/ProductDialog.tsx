@@ -140,6 +140,7 @@ export default function ProductDialog({
     hsn_sac_code: '',
     gst_slab_id: 'gst_0',
     brand_id: undefined,
+    supplier_id: undefined,
     vehicle_manufacturer: undefined,
     vehicle_model: undefined,
     vehicle_year: undefined,
@@ -157,6 +158,7 @@ export default function ProductDialog({
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [dialogFields, setDialogFields] = useState<ProductDialogFields>(DEFAULT_DIALOG_FIELDS);
   const [marginSchemeEnabled, setMarginSchemeEnabled] = useState(false);
+  const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
   const unitLocked = Boolean(product?.has_transactions);
 
   const orderedFields = ['code', 'name', 'group', 'brand', 'unit', 'part_number', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp', 'cost', 'barcode'];
@@ -174,6 +176,10 @@ export default function ProductDialog({
     // Load master product feature flag
     invoke<string | null>('get_app_setting', { key: 'enable_master_products' })
       .then(v => setMasterProductsEnabled(v === 'true'))
+      .catch(console.error);
+    // Load suppliers list
+    invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Payable'] })
+      .then(accs => setSuppliers(accs.map(a => ({ id: a.id, name: a.account_name }))))
       .catch(console.error);
     // Load dialog field visibility settings
     invoke<string | null>('get_app_setting', { key: 'product_dialog_fields' })
@@ -203,6 +209,7 @@ export default function ProductDialog({
           part_number: product.part_number || '',
           group_id: product.group_id,
           brand_id: product.brand_id,
+          supplier_id: product.supplier_id,
           unit_id: product.unit_id,
           purchase_rate: product.purchase_rate,
           sales_rate: product.sales_rate,
@@ -256,6 +263,7 @@ export default function ProductDialog({
           part_number: '',
           group_id: undefined,
           brand_id: undefined,
+          supplier_id: undefined,
           unit_id: initialUnitId,
           purchase_rate: 0,
           sales_rate: 0,
@@ -310,6 +318,7 @@ export default function ProductDialog({
       part_number: '',
       group_id: undefined,
       brand_id: undefined,
+      supplier_id: undefined,
       unit_id: unitId,
       purchase_rate: 0,
       sales_rate: 0,
@@ -554,6 +563,25 @@ export default function ProductDialog({
                   </Select>
                 </div>
               )}
+              <div>
+                <Label className="text-xs font-medium mb-1 block">Supplier</Label>
+                <Select
+                  value={form.supplier_id?.toString() || 'none'}
+                  onValueChange={v => setForm({ ...form, supplier_id: v === 'none' ? undefined : v })}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="Select supplier" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Supplier</SelectItem>
+                    {suppliers.map(s => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               {/* Base Unit always in this row when group/brand/part_number row is visible */}
               <div>
                 <Label className="text-xs font-medium mb-1 block">Base Unit</Label>

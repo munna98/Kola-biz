@@ -88,19 +88,20 @@ pub(crate) async fn create_child_product_in_tx(
         String,
         Option<String>,
         Option<String>,
+        Option<String>,
         String,
         Option<String>,
         Option<String>,
         Option<String>,
     )> = sqlx::query_as(
-        "SELECT name, group_id, brand_id, unit_id, hsn_sac_code, gst_slab_id, part_number FROM products WHERE id = ?",
+        "SELECT name, group_id, brand_id, supplier_id, unit_id, hsn_sac_code, gst_slab_id, part_number FROM products WHERE id = ?",
     )
     .bind(master_product_id)
     .fetch_optional(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    let (name, group_id, brand_id, unit_id, hsn_sac_code, gst_slab_id, part_number) =
+    let (name, group_id, brand_id, supplier_id, unit_id, hsn_sac_code, gst_slab_id, part_number) =
         master.ok_or_else(|| format!("Master product '{}' not found", master_product_id))?;
 
     // Generate next sequential code within the same transaction
@@ -109,15 +110,16 @@ pub(crate) async fn create_child_product_in_tx(
 
     sqlx::query(
         "INSERT INTO products \
-         (id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, \
+         (id, code, name, group_id, brand_id, supplier_id, unit_id, purchase_rate, sales_rate, mrp, \
           barcode, part_number, hsn_sac_code, gst_slab_id, is_master, parent_product_id, is_active) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 0, ?, 1)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, 0, ?, 1)",
     )
     .bind(&child_id)
     .bind(&code)
     .bind(&name)
     .bind(&group_id)
     .bind(&brand_id)
+    .bind(&supplier_id)
     .bind(&unit_id)
     .bind(purchase_rate)
     .bind(sales_rate)
@@ -477,6 +479,8 @@ pub struct Product {
     pub name: String,
     pub group_id: Option<String>,
     pub brand_id: Option<String>,
+    pub supplier_id: Option<String>,
+    pub supplier_name: Option<String>,
     pub unit_id: String,
     pub purchase_rate: f64,
     pub sales_rate: f64,
@@ -541,6 +545,7 @@ pub struct CreateProduct {
     pub name: String,
     pub group_id: Option<String>,
     pub brand_id: Option<String>,
+    pub supplier_id: Option<String>,
     pub unit_id: String,
     pub purchase_rate: f64,
     pub sales_rate: f64,
@@ -779,16 +784,19 @@ pub async fn get_product_unit_conversions(
 pub async fn get_products(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Product>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Product>(
-        "SELECT id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, part_number, is_active, created_at,
+        "SELECT products.id, products.code, products.name, products.group_id, products.brand_id, products.supplier_id,
+                coa.account_name as supplier_name,
+                products.unit_id, products.purchase_rate, products.sales_rate, products.mrp, products.cost, products.barcode, products.part_number, products.is_active, products.created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
-                hsn_sac_code, gst_slab_id,
-                COALESCE(is_master, 0) as is_master,
-                parent_product_id,
-                COALESCE(is_margin_scheme_default, 0) as is_margin_scheme_default,
-                vehicle_manufacturer, vehicle_model, vehicle_year, vehicle_odometer, vehicle_fuel_type, vehicle_transmission, vehicle_owner, vehicle_color
+                products.hsn_sac_code, products.gst_slab_id,
+                COALESCE(products.is_master, 0) as is_master,
+                products.parent_product_id,
+                COALESCE(products.is_margin_scheme_default, 0) as is_margin_scheme_default,
+                products.vehicle_manufacturer, products.vehicle_model, products.vehicle_year, products.vehicle_odometer, products.vehicle_fuel_type, products.vehicle_transmission, products.vehicle_owner, products.vehicle_color
          FROM products
-         WHERE deleted_at IS NULL 
-         ORDER BY created_at DESC",
+         LEFT JOIN chart_of_accounts coa ON products.supplier_id = coa.id
+         WHERE products.deleted_at IS NULL 
+         ORDER BY products.created_at DESC",
     )
     .fetch_all(&pool)
     .await
@@ -844,15 +852,16 @@ pub async fn create_product(
     };
 
     sqlx::query(
-        "INSERT INTO products (id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, part_number, hsn_sac_code, gst_slab_id, is_master, is_margin_scheme_default,
+        "INSERT INTO products (id, code, name, group_id, brand_id, supplier_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, part_number, hsn_sac_code, gst_slab_id, is_master, is_margin_scheme_default,
                               vehicle_manufacturer, vehicle_model, vehicle_year, vehicle_odometer, vehicle_fuel_type, vehicle_transmission, vehicle_owner, vehicle_color) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&code)
     .bind(&product.name)
     .bind(product.group_id.clone())
     .bind(product.brand_id.clone())
+    .bind(product.supplier_id.clone())
     .bind(&product.unit_id)
     .bind(product.purchase_rate)
     .bind(product.sales_rate)
@@ -889,14 +898,18 @@ pub async fn create_product(
     tx.commit().await.map_err(|e| e.to_string())?;
 
     sqlx::query_as::<_, Product>(
-        "SELECT id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, part_number, is_active, created_at,
+        "SELECT products.id, products.code, products.name, products.group_id, products.brand_id, products.supplier_id,
+                coa.account_name as supplier_name,
+                products.unit_id, products.purchase_rate, products.sales_rate, products.mrp, products.cost, products.barcode, products.part_number, products.is_active, products.created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
-                hsn_sac_code, gst_slab_id,
-                COALESCE(is_master, 0) as is_master,
-                parent_product_id,
-                COALESCE(is_margin_scheme_default, 0) as is_margin_scheme_default,
-                vehicle_manufacturer, vehicle_model, vehicle_year, vehicle_odometer, vehicle_fuel_type, vehicle_transmission, vehicle_owner, vehicle_color
-         FROM products WHERE id = ?",
+                products.hsn_sac_code, products.gst_slab_id,
+                COALESCE(products.is_master, 0) as is_master,
+                products.parent_product_id,
+                COALESCE(products.is_margin_scheme_default, 0) as is_margin_scheme_default,
+                products.vehicle_manufacturer, products.vehicle_model, products.vehicle_year, products.vehicle_odometer, products.vehicle_fuel_type, products.vehicle_transmission, products.vehicle_owner, products.vehicle_color
+         FROM products
+         LEFT JOIN chart_of_accounts coa ON products.supplier_id = coa.id
+         WHERE products.id = ?",
     )
     .bind(id)
     .fetch_one(&pool)
@@ -929,14 +942,15 @@ pub async fn batch_create_products(
         };
 
         sqlx::query(
-            "INSERT INTO products (id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, barcode, part_number, hsn_sac_code, gst_slab_id, is_master) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO products (id, code, name, group_id, brand_id, supplier_id, unit_id, purchase_rate, sales_rate, mrp, barcode, part_number, hsn_sac_code, gst_slab_id, is_master) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(&code)
         .bind(&product.name)
         .bind(product.group_id.clone())
         .bind(product.brand_id.clone())
+        .bind(product.supplier_id.clone())
         .bind(&product.unit_id)
         .bind(product.purchase_rate)
         .bind(product.sales_rate)
@@ -1024,7 +1038,7 @@ pub async fn update_product(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
     sqlx::query(
         "UPDATE products 
-         SET code = ?, name = ?, group_id = ?, brand_id = ?, unit_id = ?, purchase_rate = ?, sales_rate = ?, mrp = ?, cost = ?,
+         SET code = ?, name = ?, group_id = ?, brand_id = ?, supplier_id = ?, unit_id = ?, purchase_rate = ?, sales_rate = ?, mrp = ?, cost = ?,
              barcode = ?, part_number = ?, hsn_sac_code = ?, gst_slab_id = ?, is_master = ?, is_margin_scheme_default = ?,
              vehicle_manufacturer = ?, vehicle_model = ?, vehicle_year = ?, vehicle_odometer = ?, vehicle_fuel_type = ?, vehicle_transmission = ?, vehicle_owner = ?, vehicle_color = ?,
              updated_at = CURRENT_TIMESTAMP 
@@ -1034,6 +1048,7 @@ pub async fn update_product(
     .bind(&product.name)
     .bind(product.group_id)
     .bind(product.brand_id)
+    .bind(product.supplier_id)
     .bind(&product.unit_id)
     .bind(product.purchase_rate)
     .bind(product.sales_rate)
@@ -1067,6 +1082,41 @@ pub async fn update_product(
         &product.conversions,
     )
     .await?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
+#[derive(Deserialize)]
+pub struct UpdateProductSupplier {
+    pub id: String,
+    pub supplier_id: String,
+}
+
+#[tauri::command]
+pub async fn update_multiple_product_suppliers(
+    registry: State<'_, Arc<DbRegistry>>,
+    suppliers: Vec<UpdateProductSupplier>,
+) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    for item in suppliers {
+        if !item.id.trim().is_empty() && !item.supplier_id.trim().is_empty() {
+            sqlx::query(
+                "UPDATE products 
+                 SET supplier_id = ?, updated_at = CURRENT_TIMESTAMP 
+                 WHERE id = ? OR parent_product_id = ?",
+            )
+            .bind(&item.supplier_id)
+            .bind(&item.id)
+            .bind(&item.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
 
     tx.commit().await.map_err(|e| e.to_string())?;
 

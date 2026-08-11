@@ -88,7 +88,7 @@ export default function PurchaseInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean, updateCost?: boolean, showProductInfoOnHover?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean, updateCost?: boolean, updateSupplierOnPurchase?: boolean, showProductInfoOnHover?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [gstDisabled, setGstDisabled] = useState(false);
@@ -707,6 +707,19 @@ export default function PurchaseInvoicePage() {
           }
         }
 
+        if (voucherSettings?.updateSupplierOnPurchase && purchaseState.form.supplier_id) {
+          const suppliersToUpdate = purchaseState.items
+            .filter(item => item.product_id && item.item_type !== 'service')
+            .map(item => ({
+              id: item.product_id?.toString() || '',
+              supplier_id: String(purchaseState.form.supplier_id),
+            }));
+
+          if (suppliersToUpdate.length > 0) {
+            await api.products.updateMultipleSuppliers(suppliersToUpdate).catch(console.error);
+          }
+        }
+
         // Capture the voucher ID for barcode product fetch after the branch
         savedVoucherIdForBarcode = purchaseState.currentVoucherId;
         hasMasterProductItems = masterProductsEnabled && purchaseState.items.some(
@@ -826,6 +839,19 @@ export default function PurchaseInvoicePage() {
           
           if (ratesToUpdate.length > 0) {
             await invoke('update_multiple_product_rates', { rates: ratesToUpdate }).catch(console.error);
+          }
+        }
+
+        if (voucherSettings?.updateSupplierOnPurchase && purchaseState.form.supplier_id) {
+          const suppliersToUpdate = purchaseState.items
+            .filter(item => item.product_id && item.item_type !== 'service')
+            .map(item => ({
+              id: item.product_id?.toString() || '',
+              supplier_id: String(purchaseState.form.supplier_id),
+            }));
+
+          if (suppliersToUpdate.length > 0) {
+            await api.products.updateMultipleSuppliers(suppliersToUpdate).catch(console.error);
           }
         }
 

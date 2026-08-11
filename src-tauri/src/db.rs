@@ -228,6 +228,11 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         .execute(pool)
         .await;
 
+    // Migration: Add supplier_id to products if not exists
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN supplier_id TEXT REFERENCES chart_of_accounts(id)")
+        .execute(pool)
+        .await;
+
     // Services
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS services (
