@@ -9,8 +9,11 @@ import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
+import { useDispatch } from 'react-redux';
+import { setActiveSectionWithParams } from '@/store';
 
 interface DayBookEntry {
+  voucher_id: string;
   voucher_no: string;
   voucher_type: string;
   voucher_date: string;
@@ -22,6 +25,7 @@ interface DayBookEntry {
 }
 
 export default function DayBookPage() {
+  const dispatch = useDispatch();
   const [entries, setEntries] = useState<DayBookEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0]);
@@ -59,6 +63,52 @@ export default function DayBookPage() {
 
   const handleExport = () => {
     toast.info('Export functionality coming soon');
+  };
+
+  const handleVoucherClick = (id: string, type: string) => {
+    let section = '';
+    switch (type) {
+      case 'sales_invoice':
+        section = 'sales';
+        break;
+      case 'sales_return':
+        section = 'sales_return';
+        break;
+      case 'purchase_invoice':
+        section = 'purchase';
+        break;
+      case 'purchase_return':
+        section = 'purchase_return';
+        break;
+      case 'payment':
+        section = 'payments';
+        break;
+      case 'receipt':
+        section = 'receipts';
+        break;
+      case 'journal':
+        section = 'journal';
+        break;
+      case 'opening_balance':
+        section = 'opening';
+        break;
+      case 'delivery_note':
+        section = 'delivery_note';
+        break;
+      case 'sales_quotation':
+        section = 'sales_quotation';
+        break;
+      default:
+        toast.error(`Unknown voucher type: ${type}`);
+        return;
+    }
+
+    dispatch(
+      setActiveSectionWithParams({
+        section,
+        params: { voucherId: id },
+      })
+    );
   };
 
   const getVoucherTypeLabel = (type: string) => {
@@ -181,7 +231,15 @@ export default function DayBookPage() {
                       entries.map((entry, idx) => (
                         <tr key={idx} className="border-b hover:bg-muted/30">
                           <td className="p-3 text-sm">{formatDate(entry.voucher_date)}</td>
-                          <td className="p-3 font-mono text-sm">{entry.voucher_no}</td>
+                          <td className="p-3 font-mono text-sm">
+                            <button
+                              type="button"
+                              onClick={() => handleVoucherClick(entry.voucher_id, entry.voucher_type)}
+                              className="text-primary hover:underline font-mono font-medium text-left cursor-pointer focus:outline-none"
+                            >
+                              {entry.voucher_no}
+                            </button>
+                          </td>
                           <td className="p-3 text-sm">
                             <span className="px-2 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wider bg-muted/50 text-muted-foreground">
                               {getVoucherTypeLabel(entry.voucher_type)}

@@ -820,6 +820,7 @@ pub async fn get_cash_flow(
 // ============= DAY BOOK =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct DayBookEntry {
+    pub voucher_id: String,
     pub voucher_no: String,
     pub voucher_type: String,
     pub voucher_date: String,
@@ -841,6 +842,7 @@ pub async fn get_day_book(
     let query = if detailed.unwrap_or(false) {
         "
             SELECT 
+                v.id as voucher_id,
                 v.voucher_no,
                 v.voucher_type,
                 v.voucher_date,
@@ -862,6 +864,7 @@ pub async fn get_day_book(
     } else {
         "
             SELECT 
+                v.id as voucher_id,
                 v.voucher_no,
                 v.voucher_type,
                 v.voucher_date,
