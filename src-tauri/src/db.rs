@@ -1743,38 +1743,59 @@ async fn backfill_voucher_sequences(pool: &SqlitePool) -> Result<(), sqlx::Error
         "purchase_invoice",
         "sales_return",
         "purchase_return",
+        "purchase_quotation",
+        "payment",
+        "receipt",
+        "journal",
+        "opening_balance",
+        "opening_stock",
+        "stock_journal",
     ];
 
     for v_type in voucher_types {
-        let latest_no: Option<String> = sqlx::query_scalar(
+        let all_nos: Vec<String> = sqlx::query_scalar(
             "SELECT voucher_no FROM vouchers 
-             WHERE voucher_type = ? AND deleted_at IS NULL AND voucher_no NOT LIKE '__DELETED%'
-             ORDER BY created_at DESC, id DESC LIMIT 1",
+             WHERE voucher_type = ? AND deleted_at IS NULL AND voucher_no NOT LIKE '__DELETED%'",
         )
         .bind(v_type)
-        .fetch_optional(pool)
+        .fetch_all(pool)
         .await?;
 
-        if let Some(v_no) = latest_no {
+        let mut max_next = 1i64;
+        for v_no in all_nos {
             if let Some(parsed) = crate::voucher_seq::parse_custom_voucher_no(&v_no) {
                 let _ = sqlx::query(
                     "UPDATE voucher_sequences 
                      SET prefix = ?,
                          separator = ?,
                          padding = MAX(padding, ?),
-                         include_financial_year = ?,
-                         next_number = MAX(next_number, ?)
+                         include_financial_year = ?
                      WHERE voucher_type = ?",
                 )
                 .bind(&parsed.prefix)
                 .bind(&parsed.separator)
                 .bind(parsed.padding)
                 .bind(parsed.include_financial_year)
-                .bind(parsed.num + 1)
                 .bind(v_type)
                 .execute(pool)
                 .await;
+
+                if parsed.num + 1 > max_next {
+                    max_next = parsed.num + 1;
+                }
             }
+        }
+
+        if max_next > 1 {
+            let _ = sqlx::query(
+                "UPDATE voucher_sequences 
+                 SET next_number = MAX(next_number, ?) 
+                 WHERE voucher_type = ?",
+            )
+            .bind(max_next)
+            .bind(v_type)
+            .execute(pool)
+            .await;
         }
     }
 

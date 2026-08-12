@@ -270,6 +270,75 @@ pub async fn get_ledger_report(
 }
 
 // ============= BALANCE SHEET =============
+fn round2(value: f64) -> f64 {
+    (value * 100.0).round() / 100.0
+}
+
+pub async fn get_stock_value_as_of_date(
+    pool: &sqlx::SqlitePool,
+    as_of_date: &str,
+    is_opening: bool,
+) -> Result<f64, String> {
+    let date_condition = if is_opening {
+        "v.voucher_date < ? OR (v.voucher_type = 'opening_stock' AND v.voucher_date = ?)"
+    } else {
+        "v.voucher_date <= ?"
+    };
+
+    let query = format!(
+        "SELECT 
+            p.id,
+            COALESCE(SUM(CASE WHEN sm.movement_type = 'IN' THEN sm.quantity ELSE -sm.quantity END), 0) as net_qty,
+            COALESCE(
+                (
+                    SELECT CASE WHEN SUM(sm_in.quantity) > 0 THEN SUM(sm_in.cost_amount) / SUM(sm_in.quantity) ELSE NULL END
+                    FROM stock_movements sm_in
+                    JOIN vouchers v_in ON sm_in.voucher_id = v_in.id
+                    WHERE sm_in.product_id = p.id
+                      AND sm_in.movement_type = 'IN'
+                      AND v_in.voucher_type IN ('purchase_invoice', 'opening_stock', 'stock_journal')
+                      AND v_in.deleted_at IS NULL
+                      AND ({})
+                ),
+                p.purchase_rate,
+                0.0
+            ) as unit_cost
+        FROM products p
+        LEFT JOIN stock_movements sm ON p.id = sm.product_id
+        LEFT JOIN vouchers v ON sm.voucher_id = v.id AND v.deleted_at IS NULL AND ({})
+        WHERE p.deleted_at IS NULL
+        GROUP BY p.id
+        HAVING net_qty > 0",
+        date_condition, date_condition
+    );
+
+    let rows: Vec<(String, f64, f64)> = if is_opening {
+        sqlx::query_as(&query)
+            .bind(as_of_date)
+            .bind(as_of_date)
+            .bind(as_of_date)
+            .bind(as_of_date)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query_as(&query)
+            .bind(as_of_date)
+            .bind(as_of_date)
+            .fetch_all(pool)
+            .await
+            .map_err(|e| e.to_string())?
+    };
+
+    let mut total_value = 0.0;
+    for (_id, qty, cost) in rows {
+        total_value += qty * cost;
+    }
+
+    Ok(round2(total_value))
+}
+
+// ============= BALANCE SHEET =============
 #[derive(Serialize, Deserialize)]
 pub struct BSAccount {
     pub id: String,
@@ -303,6 +372,8 @@ pub async fn get_balance_sheet(
     .fetch_all(&pool)
     .await
     .map_err(|e| e.to_string())?;
+
+    let closing_stock_asset = get_stock_value_as_of_date(&pool, &as_on_date, false).await?;
 
     let query = "
         SELECT 
@@ -345,7 +416,7 @@ pub async fn get_balance_sheet(
         // So effective op_bal is 0 to avoid double counting coa.opening_balance.
         let effective_op_bal = if ob_voucher_count > 0 { 0.0 } else { op_bal };
 
-        let balance = if acc_type == "Asset" {
+        let mut balance = if acc_type == "Asset" {
             if op_type == "Dr" {
                 dr - cr + effective_op_bal
             } else {
@@ -361,6 +432,11 @@ pub async fn get_balance_sheet(
             0.0
         };
 
+        // Override Inventory (1004) asset balance with dynamic closing stock asset value
+        if code == "1004" || (acc_type == "Asset" && name == "Inventory") {
+            balance = closing_stock_asset;
+        }
+
         // Skip zero balances
         if balance.abs() < 0.01 {
             continue;
@@ -371,7 +447,7 @@ pub async fn get_balance_sheet(
             account_name: name,
             account_code: code,
             account_group: group_name,
-            amount: balance.abs(),
+            amount: round2(balance),
         };
 
         match acc_type.as_str() {
@@ -391,9 +467,25 @@ pub async fn get_balance_sheet(
         }
     }
 
-    // Calculate Net Profit for Balance Sheet (Retained Earnings)
+    // Ensure Inventory Asset is present if closing_stock_asset > 0
+    if closing_stock_asset >= 0.01 && !assets.iter().any(|a| a.account_code == "1004" || a.account_name == "Inventory") {
+        total_assets += closing_stock_asset;
+        assets.push(BSAccount {
+            id: "INVENTORY_ASSET".to_string(),
+            account_name: "Inventory".to_string(),
+            account_code: "1004".to_string(),
+            account_group: "Inventory".to_string(),
+            amount: closing_stock_asset,
+        });
+    }
+
+    // Calculate Net Profit for Balance Sheet (COGS-based)
+    let opening_stock_val = 0.0;
+    let closing_stock_val = closing_stock_asset;
+
     let pl_query = "
         SELECT 
+            coa.account_code,
             coa.account_type,
             CAST(COALESCE(SUM(je.debit), 0) AS REAL) as dr,
             CAST(COALESCE(SUM(je.credit), 0) AS REAL) as cr
@@ -401,24 +493,35 @@ pub async fn get_balance_sheet(
         JOIN journal_entries je ON coa.id = je.account_id
         JOIN vouchers v ON je.voucher_id = v.id
         WHERE v.voucher_date <= ? AND v.deleted_at IS NULL
+        AND v.voucher_type != 'opening_balance'
         AND coa.account_type IN ('Income', 'Expense')
-        GROUP BY coa.account_type
+        GROUP BY coa.id, coa.account_code, coa.account_type
     ";
 
-    let pl_rows = sqlx::query_as::<_, (String, f64, f64)>(pl_query)
+    let pl_rows = sqlx::query_as::<_, (String, String, f64, f64)>(pl_query)
         .bind(&as_on_date)
         .fetch_all(&pool)
         .await
         .map_err(|e| e.to_string())?;
 
-    let mut net_profit = 0.0;
-    for (acc_type, dr, cr) in pl_rows {
+    let mut total_income = 0.0;
+    let mut purchases = 0.0;
+    let mut operating_expenses = 0.0;
+
+    for (code, acc_type, dr, cr) in pl_rows {
         if acc_type == "Income" {
-            net_profit += cr - dr;
+            total_income += cr - dr;
+        } else if code == "5001" {
+            purchases += dr - cr;
+        } else if code == "5003" {
+            purchases -= cr - dr;
         } else {
-            net_profit -= dr - cr;
+            operating_expenses += dr - cr;
         }
     }
+
+    let cogs = (opening_stock_val + purchases - closing_stock_val).max(0.0);
+    let net_profit = round2(total_income - cogs - operating_expenses);
 
     if net_profit.abs() >= 0.01 {
         total_equity += net_profit;
@@ -436,9 +539,9 @@ pub async fn get_balance_sheet(
         assets,
         liabilities,
         equity,
-        total_assets,
-        total_liabilities,
-        total_equity,
+        total_assets: round2(total_assets),
+        total_liabilities: round2(total_liabilities),
+        total_equity: round2(total_equity),
     })
 }
 
@@ -450,6 +553,11 @@ pub struct ProfitLossData {
     pub expenses: Vec<PLAccount>,
     pub total_income: f64,
     pub total_expenses: f64,
+    pub opening_stock: f64,
+    pub purchases: f64,
+    pub closing_stock: f64,
+    pub cogs: f64,
+    pub gross_profit: f64,
     pub net_profit: f64,
 }
 
@@ -477,6 +585,9 @@ pub async fn get_profit_loss(
     .await
     .map_err(|e| e.to_string())?;
 
+    let opening_stock = get_stock_value_as_of_date(&pool, &from_date, true).await?;
+    let closing_stock = get_stock_value_as_of_date(&pool, &to_date, false).await?;
+
     let query = "
         SELECT 
             coa.id,
@@ -490,6 +601,7 @@ pub async fn get_profit_loss(
         JOIN journal_entries je ON coa.id = je.account_id
         JOIN vouchers v ON je.voucher_id = v.id
         WHERE v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+        AND v.voucher_type != 'opening_balance'
         AND coa.account_type IN ('Income', 'Expense')
         GROUP BY coa.id
     ";
@@ -504,7 +616,8 @@ pub async fn get_profit_loss(
     let mut income = Vec::new();
     let mut expenses = Vec::new();
     let mut total_income = 0.0;
-    let mut total_expenses = 0.0;
+    let mut purchases = 0.0;
+    let mut total_operating_expenses = 0.0;
 
     for (id, name, code, acc_type, group_name, dr, cr) in rows {
         if acc_type == "Income" {
@@ -516,32 +629,44 @@ pub async fn get_profit_loss(
                     account_name: name,
                     account_code: code,
                     account_group: group_name,
-                    amount,
+                    amount: round2(amount),
                 });
             }
+        } else if code == "5001" {
+            purchases += dr - cr;
+        } else if code == "5003" {
+            purchases -= cr - dr;
         } else {
             let amount = dr - cr;
             if amount.abs() >= 0.01 {
-                total_expenses += amount;
+                total_operating_expenses += amount;
                 expenses.push(PLAccount {
                     id,
                     account_name: name,
                     account_code: code,
                     account_group: group_name,
-                    amount,
+                    amount: round2(amount),
                 });
             }
         }
     }
 
-    let net_profit = total_income - total_expenses;
+    let cogs = round2((opening_stock + purchases - closing_stock).max(0.0));
+    let gross_profit = round2(total_income - cogs);
+    let total_expenses = round2(cogs + total_operating_expenses);
+    let net_profit = round2(total_income - total_expenses);
 
     Ok(ProfitLossData {
         groups,
         income,
         expenses,
-        total_income,
-        total_expenses,
+        total_income: round2(total_income),
+        total_expenses: round2(total_expenses),
+        opening_stock: round2(opening_stock),
+        purchases: round2(purchases),
+        closing_stock: round2(closing_stock),
+        cogs,
+        gross_profit,
         net_profit,
     })
 }
@@ -2269,7 +2394,7 @@ pub async fn get_expense_report(
     registry: State<'_, Arc<DbRegistry>>,
     from_date: String,
     to_date: String,
-    group_by: String,        // "day" | "account" | "product"
+    group_by: String,        // "day" | "account" | "group" | "product"
     product_id: Option<String>,
     account_id: Option<String>,
 ) -> Result<Vec<ExpenseReportRow>, String> {
@@ -2298,6 +2423,11 @@ pub async fn get_expense_report(
             "COALESCE(p.id, '__none__')",
             "total_amount DESC",
         ),
+        "group" => (
+            "COALESCE(coa.account_group, 'Other Expenses') AS group_key, COALESCE(coa.account_group, 'Other Expenses') AS group_label",
+            "COALESCE(coa.account_group, 'Other Expenses')",
+            "total_amount DESC",
+        ),
         _ => (
             // default: account
             "coa.account_name AS group_key, coa.account_name AS group_label",
@@ -2320,10 +2450,10 @@ pub async fn get_expense_report(
             CAST(COALESCE(SUM(vi.amount), 0) AS REAL) AS total_amount
          FROM voucher_items vi
          JOIN vouchers v ON vi.voucher_id = v.id
-         JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
+         JOIN chart_of_accounts coa ON COALESCE(vi.ledger_id, v.party_id, v.account_id) = coa.id
          LEFT JOIN products p ON vi.product_id = p.id
          WHERE v.voucher_type = 'payment'
-           AND coa.account_type = 'Expense'
+           AND (coa.account_type = 'Expense' OR coa.account_group IN ('Operating Expenses', 'Financial Expenses', 'Direct Expenses', 'Indirect Expenses', 'Discounts', 'Purchase Accounts'))
            AND v.voucher_date >= ?
            AND v.voucher_date <= ?
            AND v.deleted_at IS NULL
@@ -2373,7 +2503,7 @@ pub async fn get_expense_report_details(
     to_date: String,
     product_id: Option<String>,   // filter to a specific product
     account_id: Option<String>,   // filter to a specific expense ledger
-    group_by: Option<String>,     // when expanding a group row: "day"|"account"|"product"
+    group_by: Option<String>,     // when expanding a group row: "day"|"account"|"group"|"product"
     group_value: Option<String>,  // the group key value to filter on
 ) -> Result<Vec<ExpenseDetail>, String> {
     let pool = registry.active_pool().await?;
@@ -2404,6 +2534,10 @@ pub async fn get_expense_report_details(
                 extra_where.push_str(" AND coa.account_name = ?");
                 params.push(gv.clone());
             }
+            "group" => {
+                extra_where.push_str(" AND COALESCE(coa.account_group, 'Other Expenses') = ?");
+                params.push(gv.clone());
+            }
             "product" => {
                 extra_where.push_str(" AND p.code || ' - ' || p.name = ?");
                 params.push(gv.clone());
@@ -2423,10 +2557,10 @@ pub async fn get_expense_report_details(
                 COALESCE(vi.remarks, v.narration, '') AS narration
              FROM voucher_items vi
              JOIN vouchers v ON vi.voucher_id = v.id
-             JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
+             JOIN chart_of_accounts coa ON COALESCE(vi.ledger_id, v.party_id, v.account_id) = coa.id
              LEFT JOIN products p ON vi.product_id = p.id
              WHERE v.voucher_type = 'payment'
-               AND coa.account_type = 'Expense'
+               AND (coa.account_type = 'Expense' OR coa.account_group IN ('Operating Expenses', 'Financial Expenses', 'Direct Expenses', 'Indirect Expenses', 'Discounts', 'Purchase Accounts'))
                AND v.deleted_at IS NULL
                {extra_where}
              ORDER BY v.voucher_date ASC, v.created_at ASC"
@@ -2442,10 +2576,10 @@ pub async fn get_expense_report_details(
                 COALESCE(vi.remarks, v.narration, '') AS narration
              FROM voucher_items vi
              JOIN vouchers v ON vi.voucher_id = v.id
-             JOIN chart_of_accounts coa ON vi.ledger_id = coa.id
+             JOIN chart_of_accounts coa ON COALESCE(vi.ledger_id, v.party_id, v.account_id) = coa.id
              LEFT JOIN products p ON vi.product_id = p.id
              WHERE v.voucher_type = 'payment'
-               AND coa.account_type = 'Expense'
+               AND (coa.account_type = 'Expense' OR coa.account_group IN ('Operating Expenses', 'Financial Expenses', 'Direct Expenses', 'Indirect Expenses', 'Discounts', 'Purchase Accounts'))
                AND v.voucher_date >= ?
                AND v.voucher_date <= ?
                AND v.deleted_at IS NULL

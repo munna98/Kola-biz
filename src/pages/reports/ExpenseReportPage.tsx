@@ -55,7 +55,7 @@ interface LedgerAccount {
   account_type: string;
 }
 
-type GroupBy = 'day' | 'account' | 'product';
+type GroupBy = 'day' | 'account' | 'group' | 'product';
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -324,13 +324,19 @@ export default function ExpenseReportPage() {
           {!isProductEntryMode && (
             <div className="min-w-[150px]">
               <Label className="text-xs mb-1 block">Group By</Label>
-              <Select value={groupBy} onValueChange={v => setGroupBy(v as GroupBy)}>
+              <Select value={groupBy} onValueChange={v => {
+                setGroupBy(v as GroupBy);
+                setRows([]);
+                setExpandedKeys({});
+                setExpandedDetails({});
+              }}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="day">Day</SelectItem>
                   <SelectItem value="account">Account</SelectItem>
+                  <SelectItem value="group">Account Group</SelectItem>
                   {productCostEnabled && <SelectItem value="product">Product</SelectItem>}
                 </SelectContent>
               </Select>
@@ -443,7 +449,7 @@ export default function ExpenseReportPage() {
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                    {groupBy === 'day' ? 'Days with Expenses' : groupBy === 'product' ? 'Products' : 'Accounts'}
+                    {groupBy === 'day' ? 'Days with Expenses' : groupBy === 'group' ? 'Account Groups' : groupBy === 'product' ? 'Products' : 'Accounts'}
                   </p>
                   <p className="text-xl font-bold font-mono mt-0.5">{rows.length}</p>
                 </div>
@@ -572,7 +578,7 @@ export default function ExpenseReportPage() {
                     <tr>
                       <th className="p-3 w-8" />
                       <th className="p-3 text-left font-semibold">
-                        {groupBy === 'day' ? 'Date' : groupBy === 'product' ? 'Product' : 'Expense Account'}
+                        {groupBy === 'day' ? 'Date' : groupBy === 'group' ? 'Account Group' : groupBy === 'product' ? 'Product' : 'Expense Account'}
                       </th>
                       <th className="p-3 text-right font-semibold">Payments</th>
                       <th className="p-3 text-right font-semibold">Total Amount</th>

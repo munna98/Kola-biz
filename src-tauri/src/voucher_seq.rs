@@ -52,48 +52,7 @@ pub async fn get_next_voucher_number(
     voucher_type: &str,
 ) -> Result<String, String> {
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-
-    let seq = sqlx::query_as::<_, VoucherSeqRow>(
-        "SELECT prefix, COALESCE(suffix, '') as suffix, COALESCE(separator, '-') as separator,
-                next_number, padding, COALESCE(include_financial_year, 0) as include_financial_year
-         FROM voucher_sequences WHERE voucher_type = ?",
-    )
-    .bind(voucher_type)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| format!("No voucher sequence found for type '{}': {}", voucher_type, e))?;
-
-    // Build the padded number part
-    let number = format!("{:0>width$}", seq.next_number, width = seq.padding as usize);
-    let sep = &seq.separator;
-
-    // Assemble parts
-    let mut parts: Vec<String> = Vec::new();
-    if !seq.prefix.is_empty() {
-        parts.push(seq.prefix.clone());
-    }
-    if seq.include_financial_year {
-        parts.push(current_financial_year());
-    }
-    parts.push(number);
-
-    let base = parts.join(sep);
-
-    let voucher_no = if seq.suffix.is_empty() {
-        base
-    } else {
-        format!("{}{}{}", base, sep, seq.suffix)
-    };
-
-    // Increment the sequence
-    sqlx::query(
-        "UPDATE voucher_sequences SET next_number = next_number + 1 WHERE voucher_type = ?",
-    )
-    .bind(voucher_type)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
+    let voucher_no = get_next_voucher_number_in_tx(&mut tx, voucher_type).await?;
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(voucher_no)
 }
@@ -112,26 +71,45 @@ pub async fn get_next_voucher_number_in_tx(
     .await
     .map_err(|e| format!("No voucher sequence found for type '{}': {}", voucher_type, e))?;
 
-    let number = format!("{:0>width$}", seq.next_number, width = seq.padding as usize);
+    let mut curr_num = seq.next_number;
     let sep = &seq.separator;
 
-    let mut parts: Vec<String> = Vec::new();
-    if !seq.prefix.is_empty() {
-        parts.push(seq.prefix.clone());
-    }
-    if seq.include_financial_year {
-        parts.push(current_financial_year());
-    }
-    parts.push(number);
+    let voucher_no = loop {
+        let number = format!("{:0>width$}", curr_num, width = seq.padding as usize);
 
-    let base = parts.join(sep);
-    let voucher_no = if seq.suffix.is_empty() {
-        base
-    } else {
-        format!("{}{}{}", base, sep, seq.suffix)
+        let mut parts: Vec<String> = Vec::new();
+        if !seq.prefix.is_empty() {
+            parts.push(seq.prefix.clone());
+        }
+        if seq.include_financial_year {
+            parts.push(current_financial_year());
+        }
+        parts.push(number);
+
+        let base = parts.join(sep);
+        let candidate = if seq.suffix.is_empty() {
+            base
+        } else {
+            format!("{}{}{}", base, sep, seq.suffix)
+        };
+
+        // Check if candidate voucher_no already exists in vouchers table
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM vouchers WHERE voucher_no = ?)"
+        )
+        .bind(&candidate)
+        .fetch_one(&mut **tx)
+        .await
+        .unwrap_or(false);
+
+        if !exists {
+            break candidate;
+        }
+        curr_num += 1;
     };
 
-    sqlx::query("UPDATE voucher_sequences SET next_number = next_number + 1 WHERE voucher_type = ?")
+    sqlx::query("UPDATE voucher_sequences SET next_number = ? WHERE voucher_type = ?")
+        .bind(curr_num + 1)
         .bind(voucher_type)
         .execute(&mut **tx)
         .await

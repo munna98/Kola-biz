@@ -352,23 +352,7 @@ pub async fn create_quick_payment(
             "receipt"
         }
     };
-    let seq = sqlx::query_as::<_, (String, i64)>(
-        "SELECT prefix, next_number FROM voucher_sequences WHERE voucher_type = ?",
-    )
-    .bind(voucher_type)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    let voucher_no = format!("{}-{:04}", seq.0, seq.1);
-
-    sqlx::query(
-        "UPDATE voucher_sequences SET next_number = next_number + 1 WHERE voucher_type = ?",
-    )
-    .bind(voucher_type)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    let voucher_no = crate::voucher_seq::get_next_voucher_number_in_tx(&mut tx, voucher_type).await?;
 
     let payment_id = Uuid::now_v7().to_string();
 

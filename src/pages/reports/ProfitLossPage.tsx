@@ -31,6 +31,11 @@ interface ProfitLossData {
   expenses: PLAccount[];
   total_income: number;
   total_expenses: number;
+  opening_stock: number;
+  purchases: number;
+  closing_stock: number;
+  cogs: number;
+  gross_profit: number;
   net_profit: number;
 }
 
@@ -358,19 +363,32 @@ export default function ProfitLossPage() {
       // Column Headers
       rows.push(['Account Code', 'Particulars', 'Type / Group', 'Amount']);
 
-      // 1. INCOME SECTION
-      rows.push(['', 'INCOME', 'Section', data.total_income]);
+      // 1. REVENUE SECTION
+      rows.push(['', 'REVENUE FROM OPERATIONS', 'Section', data.total_income]);
       flattenPLTreeForExcel(incomeTree, rows);
-      rows.push(['', 'TOTAL INCOME', 'Total', data.total_income]);
+      rows.push(['', 'TOTAL REVENUE', 'Total', data.total_income]);
       rows.push([]);
 
-      // 2. EXPENSES SECTION
-      rows.push(['', 'EXPENSES', 'Section', data.total_expenses]);
+      // 2. COST OF GOODS SOLD (COGS)
+      rows.push(['', 'COST OF GOODS SOLD (COGS)', 'Section', data.cogs]);
+      rows.push(['', '  Opening Stock Value', 'Stock', data.opening_stock]);
+      rows.push(['', '  Add: Purchases', 'Purchases', data.purchases]);
+      rows.push(['', '  Less: Closing Stock Value', 'Stock', -data.closing_stock]);
+      rows.push(['', 'TOTAL COGS', 'Total', data.cogs]);
+      rows.push([]);
+
+      // 3. GROSS PROFIT
+      rows.push(['', 'GROSS PROFIT', 'Summary', data.gross_profit]);
+      rows.push([]);
+
+      // 4. OPERATING EXPENSES SECTION
+      const operatingExp = data.total_expenses - data.cogs;
+      rows.push(['', 'OPERATING EXPENSES', 'Section', operatingExp]);
       flattenPLTreeForExcel(expenseTree, rows);
-      rows.push(['', 'TOTAL EXPENSES', 'Total', data.total_expenses]);
+      rows.push(['', 'TOTAL OPERATING EXPENSES', 'Total', operatingExp]);
       rows.push([]);
 
-      // 3. NET PROFIT / LOSS
+      // 5. NET PROFIT / LOSS
       rows.push([
         '',
         data.net_profit >= 0 ? 'NET PROFIT' : 'NET LOSS',
@@ -381,10 +399,10 @@ export default function ProfitLossPage() {
       // Sheet 1: Structured P&L
       const wsPL = XLSX.utils.aoa_to_sheet(rows);
       wsPL['!cols'] = [
-        { wch: 18 }, // Account Code
-        { wch: 45 }, // Particulars
-        { wch: 25 }, // Type / Group
-        { wch: 20 }, // Amount
+        { wch: 18 },
+        { wch: 45 },
+        { wch: 25 },
+        { wch: 20 },
       ];
 
       // Sheet 2: Detailed Breakdown
@@ -403,11 +421,11 @@ export default function ProfitLossPage() {
 
       const wsDetailed = XLSX.utils.aoa_to_sheet(detailedRows);
       wsDetailed['!cols'] = [
-        { wch: 18 }, // Account Code
-        { wch: 35 }, // Account Name
-        { wch: 25 }, // Account Group
-        { wch: 15 }, // Section
-        { wch: 20 }, // Amount
+        { wch: 18 },
+        { wch: 35 },
+        { wch: 25 },
+        { wch: 15 },
+        { wch: 20 },
       ];
 
       const wb = XLSX.utils.book_new();
@@ -424,6 +442,8 @@ export default function ProfitLossPage() {
     }
   };
 
+  const operatingExpensesTotal = data ? round2(data.total_expenses - data.cogs) : 0;
+
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
@@ -432,7 +452,7 @@ export default function ProfitLossPage() {
           <div>
             <h1 className="text-xl font-bold">Profit & Loss Statement</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Hierarchical drillable income and expense summary
+              Trading and Profit & Loss statement with Cost of Goods Sold (COGS)
             </p>
           </div>
           <div className="flex gap-2 items-center">
@@ -506,12 +526,52 @@ export default function ProfitLossPage() {
                 <span>💡 Click on any group to expand/collapse. Click on any ledger to drill down to its detailed Ledger Report.</span>
               </p>
 
+              {/* Trading Account Card: COGS Breakdown */}
+              <Card className="border-blue-500/20 bg-blue-500/5">
+                <CardContent className="p-4 space-y-3">
+                  <div className="flex justify-between items-center border-b pb-2">
+                    <h2 className="font-bold text-base text-blue-700 dark:text-blue-300">
+                      Trading Account (Cost of Goods Sold)
+                    </h2>
+                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-700 dark:text-blue-300">
+                      Stock Valuation
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm pt-1">
+                    <div>
+                      <span className="text-xs text-muted-foreground block">Opening Stock</span>
+                      <span className="font-mono font-semibold">{money(data.opening_stock)}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground block">+ Purchases</span>
+                      <span className="font-mono font-semibold">{money(data.purchases)}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground block">− Closing Stock</span>
+                      <span className="font-mono font-semibold text-blue-600">{money(data.closing_stock)}</span>
+                    </div>
+                    <div>
+                      <span className="text-xs text-muted-foreground block font-semibold text-foreground">= Cost of Goods Sold (COGS)</span>
+                      <span className="font-mono font-bold text-red-600">{money(data.cogs)}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-2 border-t font-semibold">
+                    <span>Gross Profit (Revenue {money(data.total_income)} − COGS {money(data.cogs)})</span>
+                    <span className={cn('font-mono font-bold text-base', data.gross_profit >= 0 ? 'text-green-600' : 'text-red-600')}>
+                      {money(data.gross_profit)}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+
               <div className="grid md:grid-cols-2 gap-6 items-start">
                 {/* Income Section */}
                 <Card className="overflow-hidden">
                   <CardContent className="p-0">
                     <div className="bg-green-500/10 border-b p-3 flex justify-between items-center">
-                      <h2 className="font-bold text-base text-green-700 dark:text-green-300">Income</h2>
+                      <h2 className="font-bold text-base text-green-700 dark:text-green-300">Income (Revenue)</h2>
                       <span className="font-mono font-bold text-sm text-green-700 dark:text-green-300">
                         {money(data.total_income)}
                       </span>
@@ -555,13 +615,13 @@ export default function ProfitLossPage() {
                   </CardContent>
                 </Card>
 
-                {/* Expenses Section */}
+                {/* Operating Expenses Section */}
                 <Card className="overflow-hidden">
                   <CardContent className="p-0">
                     <div className="bg-red-500/10 border-b p-3 flex justify-between items-center">
-                      <h2 className="font-bold text-base text-red-700 dark:text-red-300">Expenses</h2>
+                      <h2 className="font-bold text-base text-red-700 dark:text-red-300">Operating Expenses</h2>
                       <span className="font-mono font-bold text-sm text-red-700 dark:text-red-300">
-                        {money(data.total_expenses)}
+                        {money(operatingExpensesTotal)}
                       </span>
                     </div>
                     <table className="w-full">
@@ -575,7 +635,7 @@ export default function ProfitLossPage() {
                         {expenseTree.length === 0 ? (
                           <tr>
                             <td colSpan={2} className="p-6 text-center text-muted-foreground text-sm">
-                              No expense accounts recorded
+                              No operating expense accounts recorded
                             </td>
                           </tr>
                         ) : (
@@ -593,9 +653,9 @@ export default function ProfitLossPage() {
                       </tbody>
                       <tfoot className="bg-muted/30 border-t-2">
                         <tr>
-                          <td className="p-3 font-bold text-sm">Total Expenses</td>
+                          <td className="p-3 font-bold text-sm">Total Operating Expenses</td>
                           <td className="p-3 text-right font-mono font-bold text-sm text-red-600">
-                            {money(data.total_expenses)}
+                            {money(operatingExpensesTotal)}
                           </td>
                         </tr>
                       </tfoot>
@@ -612,7 +672,7 @@ export default function ProfitLossPage() {
                           {data.net_profit >= 0 ? 'Net Profit' : 'Net Loss'}
                         </h2>
                         <p className="text-sm text-muted-foreground mt-1">
-                          Total Income ({money(data.total_income)}) − Total Expenses ({money(data.total_expenses)})
+                          Gross Profit ({money(data.gross_profit)}) − Operating Expenses ({money(operatingExpensesTotal)})
                         </p>
                       </div>
                       <div className={cn(
@@ -632,3 +692,4 @@ export default function ProfitLossPage() {
     </div>
   );
 }
+
