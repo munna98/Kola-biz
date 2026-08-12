@@ -50,6 +50,14 @@ pub struct CreateOpeningStock {
     pub user_id: Option<String>,
 }
 
+#[tauri::command]
+pub async fn create_opening_stock(
+    registry: State<'_, Arc<DbRegistry>>,
+    data: CreateOpeningStock,
+) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
     // Generate voucher number
     let voucher_no = crate::voucher_seq::get_next_voucher_number(&pool, "opening_stock").await?;
 
