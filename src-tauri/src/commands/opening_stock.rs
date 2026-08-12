@@ -1,6 +1,5 @@
 use crate::company_db::DbRegistry;
 use serde::{Deserialize, Serialize};
-use sqlx::SqlitePool;
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
@@ -48,6 +47,87 @@ pub struct CreateOpeningStock {
     pub narration: Option<String>,
     pub items: Vec<CreateOpeningStockItem>,
     pub user_id: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_opening_stocks(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<Vec<OpeningStock>, String> {
+    let pool = registry.active_pool().await?;
+
+    sqlx::query_as::<_, OpeningStock>(
+        "SELECT 
+            v.id,
+            v.voucher_no,
+            v.voucher_date,
+            v.total_amount,
+            v.narration,
+            v.created_at,
+            u.full_name as created_by_name
+        FROM vouchers v
+        LEFT JOIN users u ON v.created_by = u.id
+        WHERE v.voucher_type = 'opening_stock' AND v.deleted_at IS NULL
+        ORDER BY v.voucher_date DESC, v.id DESC"
+    )
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_opening_stock(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<OpeningStock, String> {
+    let pool = registry.active_pool().await?;
+
+    sqlx::query_as::<_, OpeningStock>(
+        "SELECT 
+            v.id,
+            v.voucher_no,
+            v.voucher_date,
+            v.total_amount,
+            v.narration,
+            v.created_at,
+            u.full_name as created_by_name
+        FROM vouchers v
+        LEFT JOIN users u ON v.created_by = u.id
+        WHERE v.id = ? AND v.voucher_type = 'opening_stock' AND v.deleted_at IS NULL"
+    )
+    .bind(&id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Opening stock voucher not found".to_string())
+}
+
+#[tauri::command]
+pub async fn get_opening_stock_items(
+    registry: State<'_, Arc<DbRegistry>>,
+    voucher_id: String,
+) -> Result<Vec<OpeningStockItem>, String> {
+    let pool = registry.active_pool().await?;
+
+    sqlx::query_as::<_, OpeningStockItem>(
+        "SELECT 
+            vi.id,
+            vi.voucher_id,
+            vi.product_id,
+            COALESCE(p.code, '') as product_code,
+            COALESCE(p.name, '') as product_name,
+            vi.description,
+            vi.initial_quantity as quantity,
+            vi.unit_id,
+            vi.rate,
+            vi.amount
+        FROM voucher_items vi
+        LEFT JOIN products p ON vi.product_id = p.id
+        WHERE vi.voucher_id = ?"
+    )
+    .bind(&voucher_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
