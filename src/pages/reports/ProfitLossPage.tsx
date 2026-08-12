@@ -10,7 +10,7 @@ import {
   IconChevronRight, IconFolder, IconFolderFilled, IconExternalLink
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
-import { formatDate } from '@/lib/utils';
+import { formatDate, round2 } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
 import { AccountGroup, AccountGroupNode } from '@/lib/tauri';
 import { useDispatch, useSelector } from 'react-redux';

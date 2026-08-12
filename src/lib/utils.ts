@@ -17,3 +17,8 @@ export function formatDate(date: Date | string): string {
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
 }
+
+export function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
