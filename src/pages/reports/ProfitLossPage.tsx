@@ -463,7 +463,7 @@ export default function ProfitLossPage() {
                 className="h-7 text-xs px-2.5 gap-1.5"
                 onClick={() => setViewMode('horizontal')}
               >
-                <IconLayoutColumns size={14} /> Side-by-Side (Tally)
+                <IconLayoutColumns size={14} /> Side-by-Side
               </Button>
               <Button
                 variant={viewMode === 'vertical' ? 'secondary' : 'ghost'}
@@ -540,26 +540,26 @@ export default function ProfitLossPage() {
               <p className="text-muted-foreground">No data available</p>
             </div>
           ) : viewMode === 'horizontal' ? (
-            /* TALLY CLASSIC SIDE-BY-SIDE (HORIZONTAL T-ACCOUNT) VIEW */
+            /* SIDE-BY-SIDE (HORIZONTAL T-ACCOUNT) VIEW */
             <div className="space-y-4">
               <p className="text-xs text-muted-foreground print:hidden flex items-center gap-1.5">
-                <span>💡 Tally View: Trading Account items top, Profit & Loss Account items bottom. Click on groups to expand or drill down.</span>
+                <span>💡 Side-by-Side View: Trading Account items top, Profit & Loss Account items bottom. Click on groups to expand or drill down.</span>
               </p>
 
               <Card className="overflow-hidden border shadow-sm">
                 <CardContent className="p-0">
                   <table className="w-full text-sm border-collapse">
                     <thead>
-                      <tr className="bg-muted/70 border-b text-xs uppercase tracking-wider font-semibold">
-                        <th className="p-3 text-left w-5/12 border-r">Particulars (Debit / Expenses)</th>
-                        <th className="p-3 text-right w-2/12 border-r">Amount</th>
-                        <th className="p-3 text-left w-5/12 border-r">Particulars (Credit / Income)</th>
-                        <th className="p-3 text-right w-2/12">Amount</th>
+                      <tr className="bg-muted/50 border-b text-xs uppercase tracking-wider font-semibold text-muted-foreground">
+                        <th className="p-2.5 text-left w-5/12 border-r">Particulars (Debit / Expenses)</th>
+                        <th className="p-2.5 text-right w-2/12 border-r">Amount</th>
+                        <th className="p-2.5 text-left w-5/12 border-r">Particulars (Credit / Income)</th>
+                        <th className="p-2.5 text-right w-2/12">Amount</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y">
                       {/* TRADING ACCOUNT SECTION HEADER */}
-                      <tr className="bg-blue-500/10 font-bold text-xs text-blue-900 dark:text-blue-200">
+                      <tr className="bg-muted/30 font-bold text-xs text-foreground/80 border-b">
                         <td colSpan={2} className="p-2 pl-3 border-r tracking-wider uppercase">
                           Trading Account (Direct Expenses)
                         </td>
@@ -583,7 +583,7 @@ export default function ProfitLossPage() {
                                 <td className="p-2.5 text-right font-mono font-semibold">{money(data.purchases)}</td>
                               </tr>
                               {data.gross_profit >= 0 && (
-                                <tr className="bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-bold">
+                                <tr className="border-b font-semibold hover:bg-muted/20">
                                   <td className="p-2.5">Gross Profit c/o</td>
                                   <td className="p-2.5 text-right font-mono">{money(data.gross_profit)}</td>
                                 </tr>
@@ -615,12 +615,12 @@ export default function ProfitLossPage() {
                               )}
                               <tr className="border-b hover:bg-muted/20">
                                 <td className="p-2.5 font-medium">Closing Stock</td>
-                                <td className="p-2.5 text-right font-mono font-semibold text-blue-600 dark:text-blue-400">
+                                <td className="p-2.5 text-right font-mono font-semibold">
                                   {money(data.closing_stock)}
                                 </td>
                               </tr>
                               {data.gross_profit < 0 && (
-                                <tr className="bg-red-500/10 text-red-800 dark:text-red-300 font-bold">
+                                <tr className="border-b font-semibold hover:bg-muted/20">
                                   <td className="p-2.5">Gross Loss c/o</td>
                                   <td className="p-2.5 text-right font-mono">{money(Math.abs(data.gross_profit))}</td>
                                 </tr>
@@ -631,7 +631,7 @@ export default function ProfitLossPage() {
                       </tr>
 
                       {/* TRADING ACCOUNT TOTAL ROW */}
-                      <tr className="bg-muted/50 font-bold text-sm border-t-2 border-b-2">
+                      <tr className="bg-muted/40 font-bold text-sm border-t-2 border-b-2">
                         <td className="p-2.5 text-left border-r">Total Trading Expenses</td>
                         <td className="p-2.5 text-right font-mono border-r">{money(tradingDebitTotal)}</td>
                         <td className="p-2.5 text-left border-r">Total Trading Income</td>
@@ -639,7 +639,7 @@ export default function ProfitLossPage() {
                       </tr>
 
                       {/* PROFIT & LOSS ACCOUNT SECTION HEADER */}
-                      <tr className="bg-purple-500/10 font-bold text-xs text-purple-900 dark:text-purple-200">
+                      <tr className="bg-muted/30 font-bold text-xs text-foreground/80 border-b">
                         <td colSpan={2} className="p-2 pl-3 border-r tracking-wider uppercase">
                           Profit & Loss Account (Indirect Expenses)
                         </td>
@@ -655,7 +655,7 @@ export default function ProfitLossPage() {
                           <table className="w-full">
                             <tbody>
                               {data.gross_profit < 0 && (
-                                <tr className="border-b bg-red-500/10 font-bold text-red-800 dark:text-red-300">
+                                <tr className="border-b font-semibold hover:bg-muted/20">
                                   <td className="p-2.5">Gross Loss b/f</td>
                                   <td className="p-2.5 text-right font-mono">{money(Math.abs(data.gross_profit))}</td>
                                 </tr>
@@ -681,7 +681,7 @@ export default function ProfitLossPage() {
                               )}
 
                               {data.net_profit >= 0 && (
-                                <tr className="bg-emerald-600/15 font-bold text-emerald-700 dark:text-emerald-300 border-t">
+                                <tr className="bg-muted/20 font-bold border-t">
                                   <td className="p-3 text-base">Nett Profit</td>
                                   <td className="p-3 text-right font-mono text-base">{money(data.net_profit)}</td>
                                 </tr>
@@ -695,14 +695,14 @@ export default function ProfitLossPage() {
                           <table className="w-full">
                             <tbody>
                               {data.gross_profit >= 0 && (
-                                <tr className="border-b bg-emerald-500/10 font-bold text-emerald-800 dark:text-emerald-300">
+                                <tr className="border-b font-semibold hover:bg-muted/20">
                                   <td className="p-2.5">Gross Profit b/f</td>
                                   <td className="p-2.5 text-right font-mono">{money(data.gross_profit)}</td>
                                 </tr>
                               )}
 
                               {data.net_profit < 0 && (
-                                <tr className="bg-red-600/15 font-bold text-red-700 dark:text-red-300 border-t">
+                                <tr className="bg-muted/20 font-bold border-t">
                                   <td className="p-3 text-base">Nett Loss</td>
                                   <td className="p-3 text-right font-mono text-base">{money(Math.abs(data.net_profit))}</td>
                                 </tr>
@@ -713,7 +713,7 @@ export default function ProfitLossPage() {
                       </tr>
 
                       {/* PROFIT & LOSS ACCOUNT TOTAL ROW */}
-                      <tr className="bg-muted/80 font-bold text-sm border-t-2">
+                      <tr className="bg-muted/60 font-bold text-sm border-t-2">
                         <td className="p-3 text-left border-r">Total</td>
                         <td className="p-3 text-right font-mono border-r">{money(plDebitTotal)}</td>
                         <td className="p-3 text-left border-r">Total</td>
