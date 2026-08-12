@@ -7,7 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   IconDownload, IconPrinter, IconRefresh, IconChevronDown,
-  IconChevronRight, IconFolder, IconFolderFilled, IconExternalLink
+  IconChevronRight, IconFolder, IconFolderFilled, IconExternalLink,
+  IconLayoutColumns, IconLayoutList
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate, round2 } from '@/lib/utils';
@@ -190,8 +191,8 @@ function PLTRow({ node, onDrilldown, expandedGroups, toggleExpand, money }: PLRo
         )}
         onClick={() => toggleExpand(node.name)}
       >
-        <td className="p-2.5 text-sm">
-          <div className="flex items-center gap-1.5" style={{ paddingLeft: `${node.depth * 16}px` }}>
+        <td className="p-2 text-sm">
+          <div className="flex items-center gap-1.5" style={{ paddingLeft: `${node.depth * 14}px` }}>
             {hasSubItems ? (
               <span className="shrink-0 text-muted-foreground">
                 {isExpanded ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
@@ -204,12 +205,12 @@ function PLTRow({ node, onDrilldown, expandedGroups, toggleExpand, money }: PLRo
               {isExpanded ? <IconFolderFilled size={14} /> : <IconFolder size={14} />}
             </span>
 
-            <span className={cn('truncate', node.depth === 0 ? 'font-bold' : 'font-medium')}>
+            <span className={cn('truncate', node.depth === 0 ? 'font-semibold' : 'font-medium')}>
               {node.name}
             </span>
           </div>
         </td>
-        <td className="p-2.5 text-right font-mono text-sm font-semibold">
+        <td className="p-2 text-right font-mono text-sm font-semibold">
           {money(node.totalAmount)}
         </td>
       </tr>
@@ -233,23 +234,23 @@ function PLTRow({ node, onDrilldown, expandedGroups, toggleExpand, money }: PLRo
               className="border-b hover:bg-primary/5 transition-colors group cursor-pointer"
               onClick={() => onDrilldown(acc)}
             >
-              <td className="p-2 pl-4 text-sm">
+              <td className="p-1.5 pl-4 text-sm">
                 <div
                   className="flex items-center justify-between gap-2"
-                  style={{ paddingLeft: `${(node.depth + 1) * 16 + 10}px` }}
+                  style={{ paddingLeft: `${(node.depth + 1) * 14 + 8}px` }}
                 >
                   <div className="flex items-center gap-2 truncate">
                     <span className="font-mono text-xs text-muted-foreground">{acc.account_code}</span>
-                    <span className="font-medium text-foreground group-hover:text-primary transition-colors">
+                    <span className="font-medium text-foreground group-hover:text-primary transition-colors text-xs">
                       {acc.account_name}
                     </span>
                   </div>
-                  <span className="opacity-0 group-hover:opacity-100 text-xs text-primary flex items-center gap-0.5 shrink-0 transition-opacity">
-                    Ledger <IconExternalLink size={12} />
+                  <span className="opacity-0 group-hover:opacity-100 text-[11px] text-primary flex items-center gap-0.5 shrink-0 transition-opacity">
+                    Ledger <IconExternalLink size={10} />
                   </span>
                 </div>
               </td>
-              <td className="p-2 text-right font-mono text-sm text-foreground/90">
+              <td className="p-1.5 text-right font-mono text-xs text-foreground/90">
                 {money(acc.amount)}
               </td>
             </tr>
@@ -265,6 +266,7 @@ export default function ProfitLossPage() {
   const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
   const [data, setData] = useState<ProfitLossData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<'horizontal' | 'vertical'>('horizontal');
   const [fromDate, setFromDate] = useState(() => {
     const date = new Date();
     date.setMonth(0);
@@ -350,7 +352,7 @@ export default function ProfitLossPage() {
 
     try {
       const companyName = companyProfile?.company_name || 'Company';
-      const reportTitle = `${companyName} - Profit & Loss Statement`;
+      const reportTitle = `${companyName} - Profit & Loss Account`;
       const periodTitle = `Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`;
 
       const rows: any[][] = [];
@@ -360,77 +362,67 @@ export default function ProfitLossPage() {
       rows.push([periodTitle]);
       rows.push([]);
 
-      // Column Headers
+      // 1. TRADING ACCOUNT SECTION
+      rows.push(['TRADING ACCOUNT']);
+      rows.push(['Particulars (Debit / Expenses)', 'Amount', 'Particulars (Credit / Income)', 'Amount']);
+      rows.push(['Opening Stock', data.opening_stock, 'Sales Accounts (Revenue)', data.total_income]);
+      rows.push(['Purchase Accounts', data.purchases, 'Closing Stock', data.closing_stock]);
+
+      if (data.gross_profit >= 0) {
+        rows.push(['Gross Profit c/o', data.gross_profit, '', '']);
+      } else {
+        rows.push(['', '', 'Gross Loss c/o', Math.abs(data.gross_profit)]);
+      }
+
+      const tradingDebitTotal = round2(data.opening_stock + data.purchases + (data.gross_profit >= 0 ? data.gross_profit : 0));
+      const tradingCreditTotal = round2(data.total_income + data.closing_stock + (data.gross_profit < 0 ? Math.abs(data.gross_profit) : 0));
+      rows.push(['Total Trading Debit', tradingDebitTotal, 'Total Trading Credit', tradingCreditTotal]);
+      rows.push([]);
+
+      // 2. PROFIT & LOSS ACCOUNT SECTION
+      const operatingExpensesTotal = round2(data.total_expenses - data.cogs);
+      rows.push(['PROFIT & LOSS ACCOUNT']);
+      rows.push(['Particulars (Debit / Expenses)', 'Amount', 'Particulars (Credit / Income)', 'Amount']);
+
+      if (data.gross_profit >= 0) {
+        rows.push(['Indirect Expenses', operatingExpensesTotal, 'Gross Profit b/f', data.gross_profit]);
+      } else {
+        rows.push(['Gross Loss b/f', Math.abs(data.gross_profit), 'Indirect Incomes', 0]);
+        rows.push(['Indirect Expenses', operatingExpensesTotal, '', '']);
+      }
+
+      if (data.net_profit >= 0) {
+        rows.push(['Nett Profit', data.net_profit, '', '']);
+      } else {
+        rows.push(['', '', 'Nett Loss', Math.abs(data.net_profit)]);
+      }
+
+      const plDebitTotal = round2((data.gross_profit < 0 ? Math.abs(data.gross_profit) : 0) + operatingExpensesTotal + (data.net_profit >= 0 ? data.net_profit : 0));
+      const plCreditTotal = round2((data.gross_profit >= 0 ? data.gross_profit : 0) + (data.net_profit < 0 ? Math.abs(data.net_profit) : 0));
+      rows.push(['Total P&L Debit', plDebitTotal, 'Total P&L Credit', plCreditTotal]);
+      rows.push([]);
+
+      // 3. DETAILED TREES FOR OPERATING EXPENSES & INCOMES
+      rows.push(['DETAILED OPERATING EXPENSES']);
       rows.push(['Account Code', 'Particulars', 'Type / Group', 'Amount']);
-
-      // 1. REVENUE SECTION
-      rows.push(['', 'REVENUE FROM OPERATIONS', 'Section', data.total_income]);
-      flattenPLTreeForExcel(incomeTree, rows);
-      rows.push(['', 'TOTAL REVENUE', 'Total', data.total_income]);
-      rows.push([]);
-
-      // 2. COST OF GOODS SOLD (COGS)
-      rows.push(['', 'COST OF GOODS SOLD (COGS)', 'Section', data.cogs]);
-      rows.push(['', '  Opening Stock Value', 'Stock', data.opening_stock]);
-      rows.push(['', '  Add: Purchases', 'Purchases', data.purchases]);
-      rows.push(['', '  Less: Closing Stock Value', 'Stock', -data.closing_stock]);
-      rows.push(['', 'TOTAL COGS', 'Total', data.cogs]);
-      rows.push([]);
-
-      // 3. GROSS PROFIT
-      rows.push(['', 'GROSS PROFIT', 'Summary', data.gross_profit]);
-      rows.push([]);
-
-      // 4. OPERATING EXPENSES SECTION
-      const operatingExp = data.total_expenses - data.cogs;
-      rows.push(['', 'OPERATING EXPENSES', 'Section', operatingExp]);
       flattenPLTreeForExcel(expenseTree, rows);
-      rows.push(['', 'TOTAL OPERATING EXPENSES', 'Total', operatingExp]);
       rows.push([]);
 
-      // 5. NET PROFIT / LOSS
-      rows.push([
-        '',
-        data.net_profit >= 0 ? 'NET PROFIT' : 'NET LOSS',
-        'Summary',
-        data.net_profit,
-      ]);
+      rows.push(['DETAILED REVENUE / INCOME']);
+      rows.push(['Account Code', 'Particulars', 'Type / Group', 'Amount']);
+      flattenPLTreeForExcel(incomeTree, rows);
 
       // Sheet 1: Structured P&L
       const wsPL = XLSX.utils.aoa_to_sheet(rows);
       wsPL['!cols'] = [
-        { wch: 18 },
-        { wch: 45 },
-        { wch: 25 },
-        { wch: 20 },
-      ];
-
-      // Sheet 2: Detailed Breakdown
-      const detailedRows: any[][] = [];
-      detailedRows.push([reportTitle]);
-      detailedRows.push([periodTitle]);
-      detailedRows.push([]);
-      detailedRows.push(['Account Code', 'Account Name', 'Account Group', 'Section', 'Amount']);
-
-      for (const acc of data.income) {
-        detailedRows.push([acc.account_code, acc.account_name, acc.account_group, 'Income', acc.amount]);
-      }
-      for (const acc of data.expenses) {
-        detailedRows.push([acc.account_code, acc.account_name, acc.account_group, 'Expense', acc.amount]);
-      }
-
-      const wsDetailed = XLSX.utils.aoa_to_sheet(detailedRows);
-      wsDetailed['!cols'] = [
+        { wch: 35 },
         { wch: 18 },
         { wch: 35 },
-        { wch: 25 },
-        { wch: 15 },
-        { wch: 20 },
+        { wch: 18 },
       ];
 
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, wsPL, 'Profit & Loss');
-      XLSX.utils.book_append_sheet(wb, wsDetailed, 'Account Details');
 
       const fileName = `Profit_and_Loss_${fromDate}_to_${toDate}.xlsx`;
       XLSX.writeFile(wb, fileName);
@@ -444,6 +436,14 @@ export default function ProfitLossPage() {
 
   const operatingExpensesTotal = data ? round2(data.total_expenses - data.cogs) : 0;
 
+  // Trading account totals for horizontal T-account view
+  const tradingDebitTotal = data ? round2(data.opening_stock + data.purchases + (data.gross_profit >= 0 ? data.gross_profit : 0)) : 0;
+  const tradingCreditTotal = data ? round2(data.total_income + data.closing_stock + (data.gross_profit < 0 ? Math.abs(data.gross_profit) : 0)) : 0;
+
+  // P&L account totals for horizontal T-account view
+  const plDebitTotal = data ? round2((data.gross_profit < 0 ? Math.abs(data.gross_profit) : 0) + operatingExpensesTotal + (data.net_profit >= 0 ? data.net_profit : 0)) : 0;
+  const plCreditTotal = data ? round2((data.gross_profit >= 0 ? data.gross_profit : 0) + (data.net_profit < 0 ? Math.abs(data.net_profit) : 0)) : 0;
+
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
@@ -451,11 +451,30 @@ export default function ProfitLossPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold">Profit & Loss Statement</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Trading and Profit & Loss statement with Cost of Goods Sold (COGS)
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Trading and Profit & Loss Account for the period
             </p>
           </div>
           <div className="flex gap-2 items-center">
+            <div className="flex items-center bg-muted/60 p-0.5 rounded-md border mr-2">
+              <Button
+                variant={viewMode === 'horizontal' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 text-xs px-2.5 gap-1.5"
+                onClick={() => setViewMode('horizontal')}
+              >
+                <IconLayoutColumns size={14} /> Side-by-Side (Tally)
+              </Button>
+              <Button
+                variant={viewMode === 'vertical' ? 'secondary' : 'ghost'}
+                size="sm"
+                className="h-7 text-xs px-2.5 gap-1.5"
+                onClick={() => setViewMode('vertical')}
+              >
+                <IconLayoutList size={14} /> Vertical
+              </Button>
+            </div>
+
             <Button variant="outline" size="sm" className="h-8 text-xs" onClick={expandAll}>
               Expand All
             </Button>
@@ -502,10 +521,11 @@ export default function ProfitLossPage() {
 
       {/* Report Content */}
       <div className="flex-1 overflow-auto p-6">
-        <div className="max-w-5xl mx-auto space-y-6">
+        <div className="max-w-6xl mx-auto space-y-4">
           {/* Print Header */}
           <div className="hidden print:block mb-6 text-center">
-            <h1 className="text-2xl font-bold">Profit & Loss Statement</h1>
+            <h1 className="text-2xl font-bold">{companyProfile?.company_name || 'Company'}</h1>
+            <h2 className="text-lg font-semibold text-muted-foreground">Profit & Loss Account</h2>
             <p className="text-sm text-muted-foreground mt-1">
               For the period: {formatDate(fromDate)} to {formatDate(toDate)}
             </p>
@@ -519,60 +539,246 @@ export default function ProfitLossPage() {
             <div className="flex items-center justify-center h-64">
               <p className="text-muted-foreground">No data available</p>
             </div>
-          ) : (
-            <>
-              {/* Guidance Tip */}
+          ) : viewMode === 'horizontal' ? (
+            /* TALLY CLASSIC SIDE-BY-SIDE (HORIZONTAL T-ACCOUNT) VIEW */
+            <div className="space-y-4">
               <p className="text-xs text-muted-foreground print:hidden flex items-center gap-1.5">
-                <span>💡 Click on any group to expand/collapse. Click on any ledger to drill down to its detailed Ledger Report.</span>
+                <span>💡 Tally View: Trading Account items top, Profit & Loss Account items bottom. Click on groups to expand or drill down.</span>
               </p>
 
-              {/* Trading Account Card: COGS Breakdown */}
-              <Card className="border-blue-500/20 bg-blue-500/5">
-                <CardContent className="p-4 space-y-3">
-                  <div className="flex justify-between items-center border-b pb-2">
-                    <h2 className="font-bold text-base text-blue-700 dark:text-blue-300">
-                      Trading Account (Cost of Goods Sold)
-                    </h2>
-                    <span className="text-xs font-semibold px-2 py-0.5 rounded bg-blue-500/10 text-blue-700 dark:text-blue-300">
-                      Stock Valuation
+              <Card className="overflow-hidden border shadow-sm">
+                <CardContent className="p-0">
+                  <table className="w-full text-sm border-collapse">
+                    <thead>
+                      <tr className="bg-muted/70 border-b text-xs uppercase tracking-wider font-semibold">
+                        <th className="p-3 text-left w-5/12 border-r">Particulars (Debit / Expenses)</th>
+                        <th className="p-3 text-right w-2/12 border-r">Amount</th>
+                        <th className="p-3 text-left w-5/12 border-r">Particulars (Credit / Income)</th>
+                        <th className="p-3 text-right w-2/12">Amount</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {/* TRADING ACCOUNT SECTION HEADER */}
+                      <tr className="bg-blue-500/10 font-bold text-xs text-blue-900 dark:text-blue-200">
+                        <td colSpan={2} className="p-2 pl-3 border-r tracking-wider uppercase">
+                          Trading Account (Direct Expenses)
+                        </td>
+                        <td colSpan={2} className="p-2 pl-3 tracking-wider uppercase">
+                          Trading Account (Direct Revenue)
+                        </td>
+                      </tr>
+
+                      {/* TRADING ACCOUNT ITEMS */}
+                      <tr>
+                        {/* DEBIT SIDE */}
+                        <td className="p-0 align-top border-r" colSpan={2}>
+                          <table className="w-full">
+                            <tbody>
+                              <tr className="border-b hover:bg-muted/20">
+                                <td className="p-2.5 font-medium">Opening Stock</td>
+                                <td className="p-2.5 text-right font-mono font-semibold">{money(data.opening_stock)}</td>
+                              </tr>
+                              <tr className="border-b hover:bg-muted/20">
+                                <td className="p-2.5 font-medium">Purchase Accounts</td>
+                                <td className="p-2.5 text-right font-mono font-semibold">{money(data.purchases)}</td>
+                              </tr>
+                              {data.gross_profit >= 0 && (
+                                <tr className="bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-bold">
+                                  <td className="p-2.5">Gross Profit c/o</td>
+                                  <td className="p-2.5 text-right font-mono">{money(data.gross_profit)}</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </td>
+
+                        {/* CREDIT SIDE */}
+                        <td className="p-0 align-top" colSpan={2}>
+                          <table className="w-full">
+                            <tbody>
+                              {/* Income tree items (Sales) */}
+                              {incomeTree.map(root => (
+                                <PLTRow
+                                  key={`trading-inc-${root.id}`}
+                                  node={root}
+                                  onDrilldown={handleDrilldown}
+                                  expandedGroups={expandedGroups}
+                                  toggleExpand={toggleExpand}
+                                  money={money}
+                                />
+                              ))}
+                              {incomeTree.length === 0 && (
+                                <tr className="border-b hover:bg-muted/20">
+                                  <td className="p-2.5 font-medium">Sales Accounts</td>
+                                  <td className="p-2.5 text-right font-mono font-semibold">{money(data.total_income)}</td>
+                                </tr>
+                              )}
+                              <tr className="border-b hover:bg-muted/20">
+                                <td className="p-2.5 font-medium">Closing Stock</td>
+                                <td className="p-2.5 text-right font-mono font-semibold text-blue-600 dark:text-blue-400">
+                                  {money(data.closing_stock)}
+                                </td>
+                              </tr>
+                              {data.gross_profit < 0 && (
+                                <tr className="bg-red-500/10 text-red-800 dark:text-red-300 font-bold">
+                                  <td className="p-2.5">Gross Loss c/o</td>
+                                  <td className="p-2.5 text-right font-mono">{money(Math.abs(data.gross_profit))}</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+
+                      {/* TRADING ACCOUNT TOTAL ROW */}
+                      <tr className="bg-muted/50 font-bold text-sm border-t-2 border-b-2">
+                        <td className="p-2.5 text-left border-r">Total Trading Expenses</td>
+                        <td className="p-2.5 text-right font-mono border-r">{money(tradingDebitTotal)}</td>
+                        <td className="p-2.5 text-left border-r">Total Trading Income</td>
+                        <td className="p-2.5 text-right font-mono">{money(tradingCreditTotal)}</td>
+                      </tr>
+
+                      {/* PROFIT & LOSS ACCOUNT SECTION HEADER */}
+                      <tr className="bg-purple-500/10 font-bold text-xs text-purple-900 dark:text-purple-200">
+                        <td colSpan={2} className="p-2 pl-3 border-r tracking-wider uppercase">
+                          Profit & Loss Account (Indirect Expenses)
+                        </td>
+                        <td colSpan={2} className="p-2 pl-3 tracking-wider uppercase">
+                          Profit & Loss Account (Indirect Income)
+                        </td>
+                      </tr>
+
+                      {/* PROFIT & LOSS ITEMS */}
+                      <tr>
+                        {/* DEBIT SIDE (PL) */}
+                        <td className="p-0 align-top border-r" colSpan={2}>
+                          <table className="w-full">
+                            <tbody>
+                              {data.gross_profit < 0 && (
+                                <tr className="border-b bg-red-500/10 font-bold text-red-800 dark:text-red-300">
+                                  <td className="p-2.5">Gross Loss b/f</td>
+                                  <td className="p-2.5 text-right font-mono">{money(Math.abs(data.gross_profit))}</td>
+                                </tr>
+                              )}
+
+                              {/* Indirect Operating Expense Tree */}
+                              {expenseTree.map(root => (
+                                <PLTRow
+                                  key={`pl-exp-${root.id}`}
+                                  node={root}
+                                  onDrilldown={handleDrilldown}
+                                  expandedGroups={expandedGroups}
+                                  toggleExpand={toggleExpand}
+                                  money={money}
+                                />
+                              ))}
+
+                              {expenseTree.length === 0 && (
+                                <tr className="border-b hover:bg-muted/20">
+                                  <td className="p-2.5 font-medium text-muted-foreground">Indirect Expenses</td>
+                                  <td className="p-2.5 text-right font-mono">{money(operatingExpensesTotal)}</td>
+                                </tr>
+                              )}
+
+                              {data.net_profit >= 0 && (
+                                <tr className="bg-emerald-600/15 font-bold text-emerald-700 dark:text-emerald-300 border-t">
+                                  <td className="p-3 text-base">Nett Profit</td>
+                                  <td className="p-3 text-right font-mono text-base">{money(data.net_profit)}</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </td>
+
+                        {/* CREDIT SIDE (PL) */}
+                        <td className="p-0 align-top" colSpan={2}>
+                          <table className="w-full">
+                            <tbody>
+                              {data.gross_profit >= 0 && (
+                                <tr className="border-b bg-emerald-500/10 font-bold text-emerald-800 dark:text-emerald-300">
+                                  <td className="p-2.5">Gross Profit b/f</td>
+                                  <td className="p-2.5 text-right font-mono">{money(data.gross_profit)}</td>
+                                </tr>
+                              )}
+
+                              {data.net_profit < 0 && (
+                                <tr className="bg-red-600/15 font-bold text-red-700 dark:text-red-300 border-t">
+                                  <td className="p-3 text-base">Nett Loss</td>
+                                  <td className="p-3 text-right font-mono text-base">{money(Math.abs(data.net_profit))}</td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </table>
+                        </td>
+                      </tr>
+
+                      {/* PROFIT & LOSS ACCOUNT TOTAL ROW */}
+                      <tr className="bg-muted/80 font-bold text-sm border-t-2">
+                        <td className="p-3 text-left border-r">Total</td>
+                        <td className="p-3 text-right font-mono border-r">{money(plDebitTotal)}</td>
+                        <td className="p-3 text-left border-r">Total</td>
+                        <td className="p-3 text-right font-mono">{money(plCreditTotal)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </CardContent>
+              </Card>
+            </div>
+          ) : (
+            /* VERTICAL STATEMENT VIEW */
+            <div className="space-y-6">
+              {/* Trading Account Card */}
+              <Card className="overflow-hidden">
+                <CardContent className="p-0">
+                  <div className="bg-blue-500/10 border-b p-3 flex justify-between items-center">
+                    <h2 className="font-bold text-base text-blue-700 dark:text-blue-300">1. Trading Account</h2>
+                    <span className="font-mono font-bold text-sm text-blue-700 dark:text-blue-300">
+                      Gross Profit: {money(data.gross_profit)}
                     </span>
                   </div>
-
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm pt-1">
-                    <div>
-                      <span className="text-xs text-muted-foreground block">Opening Stock</span>
-                      <span className="font-mono font-semibold">{money(data.opening_stock)}</span>
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted-foreground block">+ Purchases</span>
-                      <span className="font-mono font-semibold">{money(data.purchases)}</span>
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted-foreground block">− Closing Stock</span>
-                      <span className="font-mono font-semibold text-blue-600">{money(data.closing_stock)}</span>
-                    </div>
-                    <div>
-                      <span className="text-xs text-muted-foreground block font-semibold text-foreground">= Cost of Goods Sold (COGS)</span>
-                      <span className="font-mono font-bold text-red-600">{money(data.cogs)}</span>
-                    </div>
-                  </div>
-
-                  <div className="flex justify-between items-center pt-2 border-t font-semibold">
-                    <span>Gross Profit (Revenue {money(data.total_income)} − COGS {money(data.cogs)})</span>
-                    <span className={cn('font-mono font-bold text-base', data.gross_profit >= 0 ? 'text-green-600' : 'text-red-600')}>
-                      {money(data.gross_profit)}
-                    </span>
-                  </div>
+                  <table className="w-full text-sm">
+                    <tbody className="divide-y">
+                      <tr className="hover:bg-muted/20">
+                        <td className="p-3 font-medium">Opening Stock</td>
+                        <td className="p-3 text-right font-mono font-semibold">{money(data.opening_stock)}</td>
+                      </tr>
+                      <tr className="hover:bg-muted/20">
+                        <td className="p-3 font-medium">Add: Purchases</td>
+                        <td className="p-3 text-right font-mono font-semibold">{money(data.purchases)}</td>
+                      </tr>
+                      <tr className="hover:bg-muted/20 text-blue-600 dark:text-blue-400">
+                        <td className="p-3 font-medium">Less: Closing Stock</td>
+                        <td className="p-3 text-right font-mono font-semibold">−{money(data.closing_stock)}</td>
+                      </tr>
+                      <tr className="bg-muted/40 font-semibold border-t">
+                        <td className="p-3">Cost of Goods Sold (COGS)</td>
+                        <td className="p-3 text-right font-mono font-bold text-red-600">{money(data.cogs)}</td>
+                      </tr>
+                      <tr className="hover:bg-muted/20">
+                        <td className="p-3 font-medium">Revenue from Operations (Sales)</td>
+                        <td className="p-3 text-right font-mono font-semibold text-emerald-600">{money(data.total_income)}</td>
+                      </tr>
+                    </tbody>
+                    <tfoot className="bg-muted/50 border-t-2">
+                      <tr className="font-bold text-base">
+                        <td className="p-3.5">Gross Profit</td>
+                        <td className={cn('p-3.5 text-right font-mono', data.gross_profit >= 0 ? 'text-emerald-600' : 'text-red-600')}>
+                          {money(data.gross_profit)}
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
                 </CardContent>
               </Card>
 
+              {/* Operating Expenses & Net Profit */}
               <div className="grid md:grid-cols-2 gap-6 items-start">
-                {/* Income Section */}
+                {/* Revenue & Income */}
                 <Card className="overflow-hidden">
                   <CardContent className="p-0">
-                    <div className="bg-green-500/10 border-b p-3 flex justify-between items-center">
-                      <h2 className="font-bold text-base text-green-700 dark:text-green-300">Income (Revenue)</h2>
-                      <span className="font-mono font-bold text-sm text-green-700 dark:text-green-300">
+                    <div className="bg-emerald-500/10 border-b p-3 flex justify-between items-center">
+                      <h2 className="font-bold text-base text-emerald-700 dark:text-emerald-300">Income (Revenue)</h2>
+                      <span className="font-mono font-bold text-sm text-emerald-700 dark:text-emerald-300">
                         {money(data.total_income)}
                       </span>
                     </div>
@@ -603,19 +809,11 @@ export default function ProfitLossPage() {
                           ))
                         )}
                       </tbody>
-                      <tfoot className="bg-muted/30 border-t-2">
-                        <tr>
-                          <td className="p-3 font-bold text-sm">Total Income</td>
-                          <td className="p-3 text-right font-mono font-bold text-sm text-green-600">
-                            {money(data.total_income)}
-                          </td>
-                        </tr>
-                      </tfoot>
                     </table>
                   </CardContent>
                 </Card>
 
-                {/* Operating Expenses Section */}
+                {/* Operating Expenses */}
                 <Card className="overflow-hidden">
                   <CardContent className="p-0">
                     <div className="bg-red-500/10 border-b p-3 flex justify-between items-center">
@@ -651,33 +849,25 @@ export default function ProfitLossPage() {
                           ))
                         )}
                       </tbody>
-                      <tfoot className="bg-muted/30 border-t-2">
-                        <tr>
-                          <td className="p-3 font-bold text-sm">Total Operating Expenses</td>
-                          <td className="p-3 text-right font-mono font-bold text-sm text-red-600">
-                            {money(operatingExpensesTotal)}
-                          </td>
-                        </tr>
-                      </tfoot>
                     </table>
                   </CardContent>
                 </Card>
 
-                {/* Net Profit / Loss */}
+                {/* Net Profit Summary Card */}
                 <Card className="md:col-span-2">
                   <CardContent className="p-6">
                     <div className="flex items-center justify-between">
                       <div>
                         <h2 className="text-xl font-bold">
-                          {data.net_profit >= 0 ? 'Net Profit' : 'Net Loss'}
+                          {data.net_profit >= 0 ? 'Nett Profit' : 'Nett Loss'}
                         </h2>
                         <p className="text-sm text-muted-foreground mt-1">
-                          Gross Profit ({money(data.gross_profit)}) − Operating Expenses ({money(operatingExpensesTotal)})
+                          Gross Profit ({money(data.gross_profit)}) − Indirect Operating Expenses ({money(operatingExpensesTotal)})
                         </p>
                       </div>
                       <div className={cn(
                         'text-3xl font-bold font-mono',
-                        data.net_profit >= 0 ? 'text-green-600' : 'text-red-600'
+                        data.net_profit >= 0 ? 'text-emerald-600' : 'text-red-600'
                       )}>
                         {money(Math.abs(data.net_profit))}
                       </div>
@@ -685,11 +875,10 @@ export default function ProfitLossPage() {
                   </CardContent>
                 </Card>
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>
     </div>
   );
 }
-
