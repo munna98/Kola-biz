@@ -304,8 +304,8 @@ pub async fn get_stock_value_as_of_date(
                 0.0
             ) as unit_cost
         FROM products p
-        LEFT JOIN stock_movements sm ON p.id = sm.product_id
-        LEFT JOIN vouchers v ON sm.voucher_id = v.id AND v.deleted_at IS NULL AND ({})
+        JOIN stock_movements sm ON p.id = sm.product_id
+        JOIN vouchers v ON sm.voucher_id = v.id AND v.deleted_at IS NULL AND ({})
         WHERE p.deleted_at IS NULL
         GROUP BY p.id
         HAVING net_qty > 0",
