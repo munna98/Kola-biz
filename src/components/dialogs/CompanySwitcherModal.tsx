@@ -133,7 +133,7 @@ export function CompanySwitcherModal({ open, onClose, onSwitched }: CompanySwitc
     const handleRename = async (id: string) => {
         if (!renameName.trim()) return;
         try {
-            await invoke('rename_company', { companyId: id, name: renameName.trim() });
+            await invoke('rename_company', { companyId: id, newName: renameName.trim() });
             toast.success('Company renamed');
             setRenameTarget(null);
             loadCompanies();
@@ -314,3 +314,4 @@ export function CompanySwitcherModal({ open, onClose, onSwitched }: CompanySwitc
         </>
     );
 }
+

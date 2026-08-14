@@ -242,12 +242,6 @@ function AppContent() {
         </main>
       </div>
 
-      {/* Toast Notifications */}
-      <Toaster />
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="erp-theme">
@@ -255,6 +249,7 @@ export default function App() {
         <LicenseProvider>
           <LicenseGuard>
             <AppContent />
+            <Toaster />
           </LicenseGuard>
         </LicenseProvider>
       </Provider>

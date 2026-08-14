@@ -77,6 +77,14 @@ impl DbRegistry {
         self.active_id.read().await.clone()
     }
 
+    /// Close and evict a company connection pool from memory.
+    pub async fn close_company_pool(&self, company_id: &str) {
+        let mut pools = self.pools.write().await;
+        if let Some(pool) = pools.remove(company_id) {
+            pool.close().await;
+        }
+    }
+
     /// Set the active company by id. Opens pool if not already cached.
     pub async fn set_active_company(
         &self,

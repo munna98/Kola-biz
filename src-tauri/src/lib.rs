@@ -64,6 +64,9 @@ pub fn run() {
             set_primary_company,
             set_secondary_company,
             sync_secondary_to_primary,
+            pick_database_file,
+            import_company_database,
+            restore_active_company_from_backup,
             // Units
             get_units,
             create_unit,
@@ -317,6 +320,12 @@ pub fn run() {
             reset_database_data,
             execute_raw_query,
             create_manual_backup,
+            get_backup_config,
+            save_backup_config,
+            pick_backup_folder,
+            open_backup_folder,
+            list_recent_backups,
+            create_full_manual_backup,
             // Voucher Sequence Management
             list_voucher_sequences,
             update_voucher_sequence,
@@ -363,16 +372,28 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|app_handle, event| {
             if let tauri::RunEvent::ExitRequested { .. } = event {
-                println!("Performing backup on exit...");
                 let registry = app_handle.state::<std::sync::Arc<crate::company_db::DbRegistry>>();
                 let handle = app_handle.clone();
                 
                 // Block the exit process until the backup is completed
                 tauri::async_runtime::block_on(async {
-                    if let Err(e) = crate::commands::run_automated_backup_cycle(&handle, &registry).await {
-                        eprintln!("Failed to backup on exit: {}", e);
+                    let exit_str = sqlx::query_scalar::<_, String>(
+                        "SELECT setting_value FROM app_settings WHERE setting_key = 'auto_backup_on_exit'",
+                    )
+                    .fetch_optional(&registry.master_pool)
+                    .await
+                    .unwrap_or(None);
+
+                    let backup_on_exit = exit_str.map(|v| v != "false").unwrap_or(true);
+                    if backup_on_exit {
+                        println!("Performing backup on exit...");
+                        if let Err(e) = crate::commands::run_automated_backup_cycle(&handle, &registry).await {
+                            eprintln!("Failed to backup on exit: {}", e);
+                        } else {
+                            println!("Exit backup completed successfully.");
+                        }
                     } else {
-                        println!("Exit backup completed successfully.");
+                        println!("Backup on exit is disabled in settings.");
                     }
                 });
             }

@@ -18,6 +18,9 @@ import {
     IconStarFilled,
     IconBookmark,
     IconBookmarkFilled,
+    IconUpload,
+    IconAlertCircle,
+    IconAlertTriangle,
 } from '@tabler/icons-react';
 
 interface Company {
@@ -35,6 +38,10 @@ export default function LoginPage() {
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const passwordRef = useRef<HTMLInputElement>(null);
+
+    // Caps lock & Login Error State
+    const [loginError, setLoginError] = useState<string | null>(null);
+    const [capsLockOn, setCapsLockOn] = useState(false);
 
     // Company state
     const [companies, setCompanies] = useState<Company[]>([]);
@@ -136,6 +143,8 @@ export default function LoginPage() {
         }
     };
 
+    const [importing, setImporting] = useState(false);
+
     const handleCreateCompany = async () => {
         if (!newName.trim()) { toast.error('Name required'); return; }
         setCreating(true);
@@ -152,14 +161,51 @@ export default function LoginPage() {
         }
     };
 
+    const handlePickImportFile = async () => {
+        try {
+            const file = await invoke<string | null>('pick_database_file');
+            if (file) {
+                const filename = file.split('\\').pop()?.split('/').pop()?.replace(/\.db$/i, '') || '';
+                const companyName = filename.replace(/_\d{8}_\d{6}$/, '').replace(/_/g, ' ');
+                setImporting(true);
+                try {
+                    const newCompanyId = await invoke<string>('import_company_database', {
+                        sourceDbPath: file,
+                        customName: companyName || null,
+                    });
+                    toast.success('Backup database imported successfully!');
+                    await loadCompanies();
+                    if (newCompanyId) {
+                        await invoke('switch_company', { companyId: newCompanyId });
+                        setSelectedCompanyId(newCompanyId);
+                        await refreshCompanies();
+                    }
+                } catch (err: any) {
+                    toast.error(`Import failed: ${err}`);
+                } finally {
+                    setImporting(false);
+                }
+            }
+        } catch (e: any) {
+            toast.error(`Failed to pick file: ${e}`);
+        }
+    };
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
         if (e.key === 'Enter') { e.preventDefault(); passwordRef.current?.focus(); }
     };
 
+    const checkCapsLock = (e: React.KeyboardEvent<HTMLInputElement>) => {
+        setCapsLockOn(e.getModifierState('CapsLock'));
+    };
+
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
+        setLoginError(null);
         if (!username.trim() || !password.trim()) {
-            toast.error('Please enter both username and password');
+            const msg = 'Please enter both username and password';
+            setLoginError(msg);
+            toast.error(msg);
             return;
         }
         setIsLoading(true);
@@ -172,11 +218,14 @@ export default function LoginPage() {
                 dispatch(loginSuccess({ user: response.user, token: response.token }));
                 toast.success('Login successful!');
             } else {
-                dispatch(loginFailure(response.message || 'Login failed'));
-                toast.error(response.message || 'Login failed');
+                const msg = response.message || 'Invalid username or password';
+                setLoginError(msg);
+                dispatch(loginFailure(msg));
+                toast.error(msg);
             }
         } catch (error: any) {
-            const msg = error?.message || 'An error occurred during login';
+            const msg = error?.message || 'Invalid username or password';
+            setLoginError(msg);
             dispatch(loginFailure(msg));
             toast.error(msg);
         } finally {
@@ -281,14 +330,25 @@ export default function LoginPage() {
                                             </div>
                                         </div>
                                     ) : (
-                                        <button
-                                            type="button"
-                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm border-t hover:bg-accent transition-colors text-muted-foreground"
-                                            onClick={() => setShowCreate(true)}
-                                        >
-                                            <IconPlus size={14} />
-                                            Add new company
-                                        </button>
+                                        <div className="border-t flex divide-x bg-muted/20">
+                                            <button
+                                                type="button"
+                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs hover:bg-accent transition-colors text-muted-foreground font-medium"
+                                                onClick={handlePickImportFile}
+                                                disabled={importing}
+                                            >
+                                                <IconUpload size={14} className={importing ? 'animate-spin' : ''} />
+                                                {importing ? 'Importing...' : 'Import Backup'}
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs hover:bg-accent transition-colors text-muted-foreground font-medium"
+                                                onClick={() => setShowCreate(true)}
+                                            >
+                                                <IconPlus size={14} />
+                                                New Company
+                                            </button>
+                                        </div>
                                     )}
                                 </div>
                             )}
@@ -297,6 +357,13 @@ export default function LoginPage() {
 
                     {/* Login Form */}
                     <form onSubmit={handleLogin} className="space-y-4">
+                        {loginError && (
+                            <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-xs font-medium flex items-center gap-2">
+                                <IconAlertCircle className="w-4 h-4 shrink-0 text-destructive" />
+                                <span>{loginError}</span>
+                            </div>
+                        )}
+
                         <div className="space-y-2">
                             <Label htmlFor="username">Username</Label>
                             <div className="relative">
@@ -306,7 +373,10 @@ export default function LoginPage() {
                                     type="text"
                                     placeholder="Enter your username"
                                     value={username}
-                                    onChange={(e) => setUsername(e.target.value)}
+                                    onChange={(e) => {
+                                        setUsername(e.target.value);
+                                        if (loginError) setLoginError(null);
+                                    }}
                                     className="pl-10"
                                     autoFocus={!showCompanyPicker}
                                     disabled={isLoading}
@@ -324,12 +394,23 @@ export default function LoginPage() {
                                     type="password"
                                     placeholder="Enter your password"
                                     value={password}
-                                    onChange={(e) => setPassword(e.target.value)}
+                                    onChange={(e) => {
+                                        setPassword(e.target.value);
+                                        if (loginError) setLoginError(null);
+                                    }}
                                     className="pl-10"
                                     disabled={isLoading}
                                     ref={passwordRef}
+                                    onKeyDown={checkCapsLock}
+                                    onKeyUp={checkCapsLock}
                                 />
                             </div>
+                            {capsLockOn && (
+                                <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 font-medium mt-1">
+                                    <IconAlertTriangle size={14} className="shrink-0" />
+                                    <span>Caps Lock is ON</span>
+                                </div>
+                            )}
                         </div>
 
                         <Button type="submit" className="w-full" disabled={isLoading || !activeCompany}>

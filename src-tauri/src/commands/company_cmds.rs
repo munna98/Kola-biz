@@ -164,6 +164,177 @@ pub async fn set_secondary_company(
     registry.set_secondary_company(&company_id).await
 }
 
+/// Pick a .db backup file using native file browser (Windows PowerShell)
+#[tauri::command]
+pub async fn pick_database_file() -> Result<Option<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        use std::process::Command;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+        let script = r#"
+        Add-Type -AssemblyName System.Windows.Forms
+        $dialog = New-Object System.Windows.Forms.OpenFileDialog
+        $dialog.Filter = 'SQLite Database (*.db)|*.db|All Files (*.*)|*.*'
+        $dialog.Title = 'Select Backup Database File'
+        if ($dialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
+            Write-Output $dialog.FileName
+        }
+        "#;
+
+        let output = Command::new("powershell")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(["-NoProfile", "-NonInteractive", "-Command", script])
+            .output()
+            .map_err(|e| format!("Failed to open file dialog: {}", e))?;
+
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if path.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(path))
+            }
+        } else {
+            Ok(None)
+        }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        Ok(None)
+    }
+}
+
+/// Import / Register a .db backup file as a new company.
+#[tauri::command]
+pub async fn import_company_database(
+    registry: State<'_, Arc<DbRegistry>>,
+    app_handle: tauri::AppHandle,
+    source_db_path: String,
+    custom_name: Option<String>,
+) -> Result<String, String> {
+    use tauri::Manager;
+    let source_path = std::path::PathBuf::from(&source_db_path);
+    if !source_path.exists() {
+        return Err(format!("Database file not found at: {}", source_db_path));
+    }
+
+    let company_name = match custom_name {
+        Some(name) if !name.trim().is_empty() => name.trim().to_string(),
+        _ => {
+            let db_url = format!("sqlite:{}?mode=ro", source_db_path);
+            if let Ok(pool) = sqlx::sqlite::SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect(&db_url)
+                .await
+            {
+                let name_row: Option<(String,)> = sqlx::query_as(
+                    "SELECT company_name FROM company_profile LIMIT 1",
+                )
+                .fetch_optional(&pool)
+                .await
+                .unwrap_or(None);
+                pool.close().await;
+
+                name_row
+                    .map(|(n,)| n)
+                    .filter(|n| !n.trim().is_empty())
+                    .unwrap_or_else(|| {
+                        source_path
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().to_string())
+                            .unwrap_or_else(|| "Restored Company".to_string())
+                    })
+            } else {
+                "Restored Company".to_string()
+            }
+        }
+    };
+
+    let id = uuid::Uuid::now_v7().to_string();
+    let slug = source_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "restored".to_string());
+
+    let app_dir = app_handle
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?;
+    let companies_dir = app_dir.join("companies");
+    if !companies_dir.exists() {
+        std::fs::create_dir_all(&companies_dir).map_err(|e| e.to_string())?;
+    }
+
+    let mut dest_path = companies_dir.join(format!("{}.db", slug));
+    let mut counter = 1u32;
+    while dest_path.exists() {
+        dest_path = companies_dir.join(format!("{}_{}.db", slug, counter));
+        counter += 1;
+    }
+
+    std::fs::copy(&source_path, &dest_path)
+        .map_err(|e| format!("Failed to copy database file: {}", e))?;
+
+    let dest_path_str = dest_path.to_string_lossy().to_string();
+
+    // Register in master.db
+    sqlx::query(
+        "INSERT INTO companies (id, name, slug, db_path) VALUES (?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(&company_name)
+    .bind(&slug)
+    .bind(&dest_path_str)
+    .execute(&registry.master_pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    Ok(id)
+}
+
+/// Restore the active company by overwriting its database file with a backup .db snapshot file.
+#[tauri::command]
+pub async fn restore_active_company_from_backup(
+    registry: State<'_, Arc<DbRegistry>>,
+    app_handle: tauri::AppHandle,
+    backup_file_path: String,
+) -> Result<(), String> {
+    let source_path = std::path::PathBuf::from(&backup_file_path);
+    if !source_path.exists() {
+        return Err(format!("Backup file not found at: {}", backup_file_path));
+    }
+
+    let active_info = registry
+        .get_active_company_info()
+        .await?
+        .ok_or_else(|| "No active company selected.".to_string())?;
+
+    let dest_path_str = active_info.db_path.clone();
+    let dest_path = std::path::PathBuf::from(&dest_path_str);
+
+    // 1. Close active company connection pool to release file handles
+    registry.close_company_pool(&active_info.id).await;
+
+    // 2. Remove lingering WAL (-wal) and SHM (-shm) files
+    let wal_path = format!("{}-wal", dest_path_str);
+    let shm_path = format!("{}-shm", dest_path_str);
+    let _ = std::fs::remove_file(&wal_path);
+    let _ = std::fs::remove_file(&shm_path);
+
+    // 3. Overwrite database file with backup snapshot
+    std::fs::copy(&source_path, &dest_path)
+        .map_err(|e| format!("Failed to restore database file: {}", e))?;
+
+    // 4. Re-open connection pool and re-activate company
+    registry
+        .set_active_company(&active_info.id, &app_handle)
+        .await?;
+
+    Ok(())
+}
+
 // ===================== SYNC =====================
 
 #[derive(Serialize)]
