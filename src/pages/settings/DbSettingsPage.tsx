@@ -610,6 +610,7 @@ export default function DbSettingsPage() {
                   <CardTitle className="text-lg flex items-center gap-2">
                     <ShieldCheck className="w-5 h-5 text-primary" />
                     Automated Backup Setup
+                    {loadingConfig && <RefreshCw className="w-4 h-4 animate-spin text-muted-foreground ml-2" />}
                   </CardTitle>
                   <CardDescription>
                     Configure background automated backups and specify your preferred storage path.
