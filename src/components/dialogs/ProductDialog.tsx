@@ -412,7 +412,7 @@ export default function ProductDialog({
     e.preventDefault();
 
     if (!form.code.trim()) {
-      toast.error(isMaster ? 'Master products require a unique code (e.g. SHIRT-M).' : 'Product code is required');
+      toast.error(isMaster ? 'Master products require a unique code (e.g. SH).' : 'Product code is required');
       return;
     }
 
@@ -532,7 +532,7 @@ export default function ProductDialog({
                   value={form.code}
                   onChange={e => setForm({ ...form, code: e.target.value })}
                   onKeyDown={(e) => handleKeyDown(e, 'code')}
-                  placeholder="e.g., PROD001"
+                  placeholder={isMaster ? "e.g., SH" : "e.g., PROD001"}
                   className="h-8 text-sm"
                 />
               </div>
@@ -544,7 +544,7 @@ export default function ProductDialog({
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
                 onKeyDown={(e) => handleKeyDown(e, 'name')}
-                placeholder="e.g., Product Name"
+                placeholder={isMaster ? "e.g., SHIRT" : "e.g., Product Name"}
                 className="h-8 text-sm"
               />
             </div>

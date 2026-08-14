@@ -88,7 +88,7 @@ export default function PurchaseInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean, updateCost?: boolean, updateSupplierOnPurchase?: boolean, showProductInfoOnHover?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean, updateCost?: boolean, updateSupplierOnPurchase?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [gstDisabled, setGstDisabled] = useState(false);

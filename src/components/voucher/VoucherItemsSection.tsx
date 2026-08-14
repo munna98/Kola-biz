@@ -314,7 +314,7 @@ export interface VoucherItemsSectionProps {
     header?: React.ReactNode;
     addItemLabel?: string;
     disableAdd?: boolean;
-    settings?: { columns: ColumnSettings[], skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, updateRatesOnPurchase?: boolean, showProductInfoOnHover?: boolean, masterProductsEnabled?: boolean };
+    settings?: { columns: ColumnSettings[], skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, updateRatesOnPurchase?: boolean, showProductInfoOnHover?: boolean, masterProductsEnabled?: boolean, allowTotalInput?: boolean };
     footerRightContent?: React.ReactNode;
     footerLeftContent?: React.ReactNode;
     onProductCreate?: (name: string, rowIndex: number) => void;
@@ -347,6 +347,43 @@ const DEFAULT_COLUMNS: ColumnSettings[] = [
     { id: 'discount_amount', label: 'Disc', visible: false, order: 9 },
     { id: 'total', label: 'Total', visible: true, order: 10 },
 ];
+
+/**
+ * Given the total a user typed into the Total cell, back-calculate the item rate.
+ *
+ * The entered total is treated as the full line total including GST.
+ *
+ * @param enteredTotal   - Value the user typed (treated as tax-inclusive line total)
+ * @param finalQty       - Resolved qty (initial_quantity - count × deduction_per_unit)
+ * @param gstRate        - Resolved GST % for this line (0 when GST is disabled / not set)
+ * @param taxInclusive   - Whether the voucher is in tax-inclusive mode
+ * @param discountAmount - Item-level flat discount already applied to this row
+ */
+function reverseCalculateRate(
+    enteredTotal: number,
+    finalQty: number,
+    gstRate: number,
+    taxInclusive: boolean,
+    discountAmount: number = 0,
+): number {
+    if (finalQty === 0) return 0;
+
+    if (taxInclusive) {
+        // In taxInclusive mode: total = finalQty × rate − discountAmount
+        // (the /divisor and ×divisor cancel each other in calculateVoucherDiscounts)
+        return (enteredTotal + discountAmount) / finalQty;
+    }
+
+    if (gstRate === 0) {
+        // No GST: total = finalQty × rate − discountAmount
+        return (enteredTotal + discountAmount) / finalQty;
+    }
+
+    // Tax-exclusive with GST:
+    // total = (finalQty × rate − discountAmount) × (1 + gstRate / 100)
+    // → rate = (total / (1 + gstRate / 100) + discountAmount) / finalQty
+    return (enteredTotal / (1 + gstRate / 100) + discountAmount) / finalQty;
+}
 
 export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, VoucherItemsSectionProps>((
     {
@@ -1033,6 +1070,62 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 </div>
                             );
                         case 'total':
+                            if (settings?.allowTotalInput && !isReadOnly) {
+                                // Editable total: reverse-calculate rate on blur/Enter
+                                return (
+                                    <input
+                                        key={col.id}
+                                        type="number"
+                                        min={0}
+                                        step="0.01"
+                                        data-field="total"
+                                        defaultValue={calc.total > 0 ? parseFloat(calc.total.toFixed(2)) : ''}
+                                        placeholder="0.00"
+                                        onFocus={(e) => e.target.select()}
+                                        onBlur={(e) => {
+                                            const enteredTotal = parseFloat(e.target.value);
+                                            if (isNaN(enteredTotal) || enteredTotal < 0) return;
+                                            const newRate = reverseCalculateRate(
+                                                enteredTotal,
+                                                calc.finalQty,
+                                                resolvedGstRate,
+                                                taxInclusive,
+                                                item.discount_amount ?? 0,
+                                            );
+                                            const rounded = Math.round(newRate * 100) / 100;
+                                            if (rounded !== item.rate) {
+                                                onUpdateItem(idx, 'rate', rounded);
+                                            }
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                // Commit the reverse-calculated rate inline,
+                                                // then let the event bubble to handleRowKeyDown
+                                                // which handles all Enter navigation for every input.
+                                                const input = e.target as HTMLInputElement;
+                                                const enteredTotal = parseFloat(input.value);
+                                                if (!isNaN(enteredTotal) && enteredTotal >= 0) {
+                                                    const newRate = reverseCalculateRate(
+                                                        enteredTotal,
+                                                        calc.finalQty,
+                                                        resolvedGstRate,
+                                                        taxInclusive,
+                                                        item.discount_amount ?? 0,
+                                                    );
+                                                    const rounded = Math.round(newRate * 100) / 100;
+                                                    if (rounded !== item.rate) {
+                                                        onUpdateItem(idx, 'rate', rounded);
+                                                    }
+                                                }
+                                                // Do NOT call e.preventDefault() or e.stopPropagation().
+                                                // handleRowKeyDown on the parent row div catches this
+                                                // event via bubbling and moves focus to the next input.
+                                            }
+                                        }}
+                                        className="h-7 w-full text-xs text-right font-mono font-bold px-2 bg-muted/50 border border-input rounded-md focus:outline-none focus:ring-1 focus:ring-primary"
+                                    />
+                                );
+                            }
                             return (
                                 <div key={col.id} className="h-7 text-xs flex items-center justify-end px-3 bg-muted/50 border border-input rounded-md font-bold font-mono">
                                     {money(calc.total)}

@@ -112,7 +112,7 @@ export default function SalesInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost', showShipTo?: boolean, enablePriceCategory?: boolean, priceCategoryFallback?: 'default_sales_rate' | 'show_zero' } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost', showShipTo?: boolean, enablePriceCategory?: boolean, priceCategoryFallback?: 'default_sales_rate' | 'show_zero', allowTotalInput?: boolean } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [partyForeignBalance, setPartyForeignBalance] = useState<number | null>(null);

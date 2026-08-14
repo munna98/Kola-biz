@@ -37,6 +37,7 @@ interface VoucherSettings {
     skipToNextRowAfterProduct?: boolean; // After product selected, set qty=1 and jump to next row
     incrementQtyOnDuplicate?: boolean; // If same product is entered again, add 1 to existing row qty
     taxInclusive?: boolean; // Treat item rates as inclusive of GST
+    allowTotalInput?: boolean; // Allow entering total per row; rate is reverse-calculated
     updateRatesOnPurchase?: boolean; // Update product sales_rate & mrp at master level when saving purchase invoice
     updatePurchaseRate?: boolean;
     updateSalesRate?: boolean;
@@ -114,6 +115,7 @@ export default function VoucherSettingsPage() {
     const [showShipTo, setShowShipTo] = useState(false);
     const [enablePriceCategory, setEnablePriceCategory] = useState(false);
     const [priceCategoryFallback, setPriceCategoryFallback] = useState<'default_sales_rate' | 'show_zero'>('default_sales_rate');
+    const [allowTotalInput, setAllowTotalInput] = useState(false);
     const [loading, setLoading] = useState(false);
 
     // ---- Reassign Voucher Numbers state ----
@@ -168,6 +170,7 @@ export default function VoucherSettingsPage() {
                 setShowShipTo(savedSettings.showShipTo || false);
                 setEnablePriceCategory(savedSettings.enablePriceCategory || false);
                 setPriceCategoryFallback(savedSettings.priceCategoryFallback || 'default_sales_rate');
+                setAllowTotalInput(savedSettings.allowTotalInput || false);
 
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
@@ -220,6 +223,7 @@ export default function VoucherSettingsPage() {
                 setShowShipTo(false);
                 setEnablePriceCategory(false);
                 setPriceCategoryFallback('default_sales_rate');
+                setAllowTotalInput(false);
                 initialColumns = availableCols.map((col, index) => ({
                     id: col.id,
                     label: col.label,
@@ -262,6 +266,7 @@ export default function VoucherSettingsPage() {
                 showShipTo: showShipTo,
                 enablePriceCategory: enablePriceCategory,
                 priceCategoryFallback: priceCategoryFallback,
+                allowTotalInput: allowTotalInput,
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -653,6 +658,25 @@ export default function VoucherSettingsPage() {
                                 </label>
                                 <p className="text-sm text-muted-foreground">
                                     When enabled, item rates are treated as inclusive of tax. The system will reverse-calculate the base price.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 mb-6">
+                            <Checkbox
+                                id="allow-total-input"
+                                checked={allowTotalInput}
+                                onCheckedChange={(checked) => setAllowTotalInput(checked as boolean)}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                                <label
+                                    htmlFor="allow-total-input"
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                    Allow Total Input
+                                </label>
+                                <p className="text-sm text-muted-foreground">
+                                    Makes the Total column editable. Enter a line total and the rate is automatically back-calculated. Useful for invoices that show totals but not individual rates.
                                 </p>
                             </div>
                         </div>
