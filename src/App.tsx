@@ -241,6 +241,9 @@ function AppContent() {
           {renderContent()}
         </main>
       </div>
+    </div>
+  );
+}
 
 export default function App() {
   return (

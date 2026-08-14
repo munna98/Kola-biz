@@ -1,10 +1,11 @@
-import { IconMoon, IconSun, IconSettings, IconBuilding, IconArrowLeft, IconArrowRight } from '@tabler/icons-react';
+import { IconMoon, IconSun, IconSettings, IconBuilding, IconArrowLeft, IconArrowRight, IconDownload } from '@tabler/icons-react';
 import { useTheme } from '../theme-provider';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, logout } from '../../store';
 import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'sonner';
 import { CompanySwitcherModal } from '../dialogs/CompanySwitcherModal';
 import {
     Menubar,
@@ -44,6 +45,26 @@ export default function Topbar() {
     // Active company display
     const [companyName, setCompanyName] = useState<string>('');
     const [switcherOpen, setSwitcherOpen] = useState(false);
+    const [isBackingUp, setIsBackingUp] = useState(false);
+
+    const handleQuickBackup = async () => {
+        setIsBackingUp(true);
+        try {
+            const res: any = await invoke('create_manual_backup', {
+                companyId: null,
+                destPath: null,
+            });
+            if (res.success) {
+                toast.success(res.message || 'Backup snapshot created successfully!');
+            } else {
+                toast.error(res.message || 'Backup failed');
+            }
+        } catch (err: any) {
+            toast.error(typeof err === 'string' ? err : 'Failed to create backup');
+        } finally {
+            setIsBackingUp(false);
+        }
+    };
 
     const fetchCompanyName = () => {
         invoke<any>('get_active_company')
@@ -213,7 +234,18 @@ export default function Topbar() {
                 </MenubarMenu>
             </Menubar>
 
-            <div className="ml-auto flex items-center gap-3">
+            <div className="ml-auto flex items-center gap-2.5">
+                {/* Instant Backup Now button */}
+                <button
+                    onClick={handleQuickBackup}
+                    disabled={isBackingUp}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium bg-emerald-500/10 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                    title="Take Instant Database Backup"
+                >
+                    <IconDownload size={14} className={isBackingUp ? 'animate-spin' : ''} />
+                    <span>{isBackingUp ? 'Backing Up...' : 'Backup Now'}</span>
+                </button>
+
                 {/* Company display */}
                 {companyName && (
                     <div
