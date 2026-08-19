@@ -324,11 +324,13 @@ pub async fn handle_voucher_deletion_in_tx(
                     format!("{}{}{}", base, sep, seq.suffix)
                 };
 
-                // Check if either the active or deleted voucher exists under this expected number
+                // Check if either the active or deleted voucher exists under this expected number.
+                // Deleted vouchers are renamed to __DELETED__{voucher_no}__{voucher_id}__ so we
+                // use LIKE to match any deleted variant of this voucher number.
                 let deleted_exists: bool = sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM vouchers WHERE voucher_no = ?)"
+                    "SELECT EXISTS(SELECT 1 FROM vouchers WHERE voucher_no LIKE ?)"
                 )
-                .bind(format!("__DELETED__{}__", expected_last_no))
+                .bind(format!("__DELETED__{}___%", expected_last_no))
                 .fetch_one(&mut **tx)
                 .await
                 .unwrap_or(false);
