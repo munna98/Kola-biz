@@ -387,14 +387,18 @@ pub async fn reset_database_data(
     if mode == "full" {
         // Defined order: Children first, then Parents
         let deletion_order = [
-            "opening_balances", // Refers accounts
-            "stock_movements", // Refers vouchers/products (should be gone via vouchers cascade, but just in case)
-            "products",        // Refers groups/units
+            "payment_allocations", // Refers vouchers (must go before vouchers cascade)
+            "opening_balances",    // Refers accounts
+            "stock_movements",     // Refers vouchers/products (should be gone via vouchers cascade, but just in case)
+            "custom_orders",       // Custom orders (own table hierarchy)
+            "products",            // Refers groups/units
+            "services",            // Refers units; referenced by voucher_items (cleared via voucher cascade)
             "product_groups",
-            "employees",         // Refers accounts
-            "customers",         // Legacy table
-            "suppliers",         // Legacy table
-            "chart_of_accounts", // Refers nothing (internal self-ref)
+            "employees",           // Refers accounts
+            "customers",           // Legacy table
+            "suppliers",           // Legacy table
+            "chart_of_accounts",   // Refers nothing (internal self-ref)
+            "gst_tax_slabs",       // Independent master table
         ];
 
         for table_key in deletion_order.iter() {
@@ -411,6 +415,14 @@ pub async fn reset_database_data(
                     }
                     "products" => {
                         sqlx::query("DELETE FROM products")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    "services" => {
+                        // Soft-delete so historical voucher descriptions remain intact,
+                        // or hard-delete if the user explicitly chose to wipe them.
+                        sqlx::query("DELETE FROM services")
                             .execute(&mut *tx)
                             .await
                             .map_err(|e| e.to_string())?;
@@ -453,6 +465,45 @@ pub async fn reset_database_data(
                         // Delete all non-system accounts (excluding those we might have just deleted via customers/suppliers)
                         // This wipes the remaining ledger accounts
                         sqlx::query("DELETE FROM chart_of_accounts WHERE is_system = 0")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    "custom_orders" => {
+                        // Delete child tables first (ON DELETE CASCADE may cover these, but be explicit)
+                        sqlx::query("DELETE FROM custom_order_materials")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        sqlx::query("DELETE FROM custom_order_purchases")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        sqlx::query("DELETE FROM custom_order_services")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        sqlx::query("DELETE FROM custom_orders")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                        // Reset the custom_order sequence
+                        if reset_sequences {
+                            sqlx::query("UPDATE voucher_sequences SET next_number = 1 WHERE voucher_type = 'custom_order'")
+                                .execute(&mut *tx)
+                                .await
+                                .map_err(|e| format!("Failed to reset custom_order sequence: {}", e))?;
+                        }
+                    }
+                    "payment_allocations" => {
+                        sqlx::query("DELETE FROM payment_allocations")
+                            .execute(&mut *tx)
+                            .await
+                            .map_err(|e| e.to_string())?;
+                    }
+                    "gst_tax_slabs" => {
+                        // Only delete non-system/user-created slabs to preserve the required defaults
+                        sqlx::query("DELETE FROM gst_tax_slabs WHERE id NOT IN ('gst_0','gst_5','gst_18','gst_28','gst_apparel')")
                             .execute(&mut *tx)
                             .await
                             .map_err(|e| e.to_string())?;

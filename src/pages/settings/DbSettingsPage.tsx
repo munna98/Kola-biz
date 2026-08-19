@@ -70,8 +70,11 @@ interface BackupResult {
 const VOUCHER_TYPES = [
   { id: 'sales_invoice', label: 'Sales Invoice' },
   { id: 'sales_return', label: 'Sales Return' },
+  { id: 'sales_quotation', label: 'Sales Quotation' },
+  { id: 'delivery_note', label: 'Delivery Note' },
   { id: 'purchase_invoice', label: 'Purchase Invoice' },
   { id: 'purchase_return', label: 'Purchase Return' },
+  { id: 'purchase_quotation', label: 'Purchase Quotation' },
   { id: 'payment', label: 'Payment' },
   { id: 'receipt', label: 'Receipt' },
   { id: 'journal', label: 'Journal Entry' },
@@ -82,12 +85,16 @@ const VOUCHER_TYPES = [
 
 const MASTER_TABLES = [
   { id: 'products', label: 'Products' },
+  { id: 'services', label: 'Services' },
   { id: 'product_groups', label: 'Product Groups' },
   { id: 'chart_of_accounts', label: 'Ledgers' },
   { id: 'customers', label: 'Customers (legacy)' },
   { id: 'suppliers', label: 'Suppliers (legacy)' },
   { id: 'opening_balances', label: 'Opening Balances' },
   { id: 'employees', label: 'Employees' },
+  { id: 'custom_orders', label: 'Custom Orders' },
+  { id: 'payment_allocations', label: 'Payment Allocations' },
+  { id: 'gst_tax_slabs', label: 'GST Tax Slabs' },
 ];
 
 export default function DbSettingsPage() {
