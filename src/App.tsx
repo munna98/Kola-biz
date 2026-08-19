@@ -60,6 +60,8 @@ import InvoiceDesigner from './components/settings/invoice-designer/InvoiceDesig
 import { LicenseProvider } from './components/providers/LicenseProvider';
 import { LicenseGuard } from './components/LicenseGuard';
 import LicensePage from './pages/LicensePage';
+import CustomOrdersPage from './pages/CustomOrdersPage';
+import FeaturesSettingsPage from './pages/settings/FeaturesSettingsPage';
 
 
 
@@ -188,6 +190,7 @@ function AppContent() {
       case 'purchase_return': return <PurchaseReturnPage />;
       case 'sales_quotation': return <SalesQuotationPage />;
       case 'delivery_note': return <DeliveryNotePage />;
+      case 'custom_orders': return <CustomOrdersPage />;
       case 'sales': return <SalesInvoicePage />;
       case 'sales_return': return <SalesReturnPage />;
       case 'payments': return <PaymentPage />;
@@ -217,6 +220,7 @@ function AppContent() {
       case 'barcode_settings': return <BarcodeSettingsPage />;
       case 'db_settings': return <DbSettingsPage />;
       case 'sidebar_settings': return <SidebarSettingsPage />;
+      case 'feature_settings': return <FeaturesSettingsPage />;
       case 'product_settings': return <ProductSettingsPage />;
       case 'invoice_designer': return <InvoiceDesigner templateId={activeSectionParams?.templateId} voucherType={activeSectionParams?.voucherType} onBack={() => dispatch(goBack())} />;
 

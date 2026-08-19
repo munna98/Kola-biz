@@ -197,6 +197,9 @@ export default function SalesInvoicePage() {
     dispatch(setSalesHasUnsavedChanges(true));
   };
 
+  // Custom Orders Integration
+  const [customOrdersEnabled, setCustomOrdersEnabled] = useState(false);
+  const [linkedCustomOrder, setLinkedCustomOrder] = useState<{ id: string; order_no: string } | null>(null);
 
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
@@ -208,7 +211,7 @@ export default function SalesInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData, servicesData, masterSettingVal] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData, servicesData, masterSettingVal, customOrdersSettingVal] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -220,6 +223,7 @@ export default function SalesInvoicePage() {
           api.gst.getSlabs().catch(() => [] as GstTaxSlab[]),
           invoke<any[]>('get_services').catch(() => []),
           invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
+          invoke<string | null>('get_app_setting', { key: 'custom_orders_enabled' }).catch(() => null),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
@@ -232,6 +236,7 @@ export default function SalesInvoicePage() {
         setEmployees(employeesData.filter((e: Employee) => e.status === 'active'));
         setServices(servicesData);
         setMasterProductsEnabled(masterSettingVal === 'true');
+        setCustomOrdersEnabled(customOrdersSettingVal === 'true');
         // Only show GST columns if GST is enabled in settings
         if (gstSettings?.gst_enabled) {
           setGstSlabs(slabsData);
@@ -271,6 +276,23 @@ export default function SalesInvoicePage() {
       setIsTaxInclusive(!!voucherSettings?.taxInclusive);
     }
   }, [salesState.mode, salesState.currentVoucherId, voucherSettings?.taxInclusive]);
+
+  // Lookup linked custom order for current sales voucher (if feature enabled)
+  useEffect(() => {
+    if (salesState.mode === 'viewing' && salesState.currentVoucherId && customOrdersEnabled) {
+      invoke<any | null>('get_custom_order_by_invoice', { invoiceId: salesState.currentVoucherId })
+        .then(order => {
+          if (order) {
+            setLinkedCustomOrder({ id: order.id, order_no: order.order_no });
+          } else {
+            setLinkedCustomOrder(null);
+          }
+        })
+        .catch(() => setLinkedCustomOrder(null));
+    } else {
+      setLinkedCustomOrder(null);
+    }
+  }, [salesState.mode, salesState.currentVoucherId, customOrdersEnabled]);
 
   // Clear savedInvoiceId when navigating to a different voucher (so we don't hold onto stale IDs)
   useEffect(() => {
@@ -1526,6 +1548,10 @@ export default function SalesInvoicePage() {
         onNew={handleNewInvoice}
         onListView={() => setShowListView(true)}
         onManagePayments={salesState.mode !== 'new' ? () => setShowQuickPayment(true) : undefined}
+        onViewCustomOrder={customOrdersEnabled && linkedCustomOrder ? () => {
+          dispatch(setActiveSectionWithParams({ section: 'custom_orders', params: { orderId: linkedCustomOrder.id } }));
+        } : undefined}
+        customOrderNo={linkedCustomOrder?.order_no}
         loading={salesState.loading}
         customActionsPrefix={salesState.mode === 'new' ? (
           <div className="flex items-center gap-1 overflow-x-auto max-w-[40vw] pr-2 border-r mr-1">

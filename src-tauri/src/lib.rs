@@ -366,6 +366,15 @@ pub fn run() {
             // Customer Price Category
             set_customer_price_category,
             get_account_price_category,
+            // Custom Orders
+            commands::custom_orders::list_custom_orders,
+            commands::custom_orders::get_custom_order,
+            commands::custom_orders::create_custom_order,
+            commands::custom_orders::update_custom_order,
+            commands::custom_orders::delete_custom_order,
+            commands::custom_orders::finalize_custom_order,
+            commands::custom_orders::record_custom_order_advance,
+            commands::custom_orders::get_custom_order_by_invoice,
         ])
         .plugin(tauri_plugin_opener::init())
         .build(tauri::generate_context!())

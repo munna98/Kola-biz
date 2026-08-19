@@ -996,6 +996,147 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         .await;
     backfill_stock_movement_costs(pool).await?;
 
+    // ==================== CUSTOM ORDERS MODULE ====================
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS custom_orders (
+            id                  TEXT PRIMARY KEY,
+            order_no            TEXT UNIQUE NOT NULL,
+            order_date          DATE NOT NULL,
+            delivery_date       DATE,
+            customer_id         TEXT NOT NULL,
+            status              TEXT DEFAULT 'pending',
+            finished_item_name  TEXT NOT NULL,
+            finished_item_qty   REAL DEFAULT 1,
+            finished_item_unit  TEXT,
+            sale_price          REAL DEFAULT 0,
+            advance_amount      REAL DEFAULT 0,
+            advance_voucher_id  TEXT,
+            total_material_cost REAL DEFAULT 0,
+            total_purchase_cost REAL DEFAULT 0,
+            total_service_cost  REAL DEFAULT 0,
+            total_job_cost      REAL DEFAULT 0,
+            final_invoice_id    TEXT,
+            narration           TEXT,
+            created_by          TEXT,
+            created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at          DATETIME,
+            FOREIGN KEY (customer_id) REFERENCES chart_of_accounts(id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS custom_order_materials (
+            id               TEXT PRIMARY KEY,
+            order_id         TEXT NOT NULL,
+            product_id       TEXT NOT NULL,
+            description      TEXT,
+            quantity         REAL NOT NULL,
+            unit_id          TEXT,
+            rate             REAL NOT NULL,
+            amount           REAL NOT NULL,
+            stock_journal_id TEXT,
+            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (order_id)   REFERENCES custom_orders(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS custom_order_purchases (
+            id              TEXT PRIMARY KEY,
+            order_id        TEXT NOT NULL,
+            description     TEXT NOT NULL,
+            supplier_id     TEXT,
+            quantity        REAL DEFAULT 1,
+            unit_id         TEXT,
+            rate            REAL NOT NULL,
+            amount          REAL NOT NULL,
+            expense_account TEXT,
+            purchase_date   DATE,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (order_id) REFERENCES custom_orders(id) ON DELETE CASCADE
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS custom_order_services (
+            id              TEXT PRIMARY KEY,
+            order_id        TEXT NOT NULL,
+            service_id      TEXT,
+            description     TEXT NOT NULL,
+            quantity        REAL DEFAULT 1,
+            rate            REAL NOT NULL,
+            amount          REAL NOT NULL,
+            expense_account TEXT,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (order_id) REFERENCES custom_orders(id) ON DELETE CASCADE
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_custom_orders_customer ON custom_orders(customer_id)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_custom_orders_status ON custom_orders(status)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_custom_order_materials_order ON custom_order_materials(order_id)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_custom_order_purchases_order ON custom_order_purchases(order_id)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_custom_order_services_order ON custom_order_services(order_id)")
+        .execute(pool).await?;
+
+    // Migration: add voucher_id column to custom_order_purchases if missing
+    let _ = sqlx::query("ALTER TABLE custom_order_purchases ADD COLUMN voucher_id TEXT")
+        .execute(pool)
+        .await;
+
+    // Seed voucher sequence for custom orders (default CO-0001)
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO voucher_sequences (id, voucher_type, prefix, suffix, separator, next_number, padding, include_financial_year, reset_yearly)
+         VALUES (hex(randomblob(16)), 'custom_order', 'CO', '', '-', 1, 4, 0, 0)",
+    )
+    .execute(pool)
+    .await;
+
+    let _ = sqlx::query(
+        "UPDATE voucher_sequences SET include_financial_year = 0 WHERE voucher_type = 'custom_order' AND (include_financial_year = 1 OR include_financial_year IS NULL)",
+    )
+    .execute(pool)
+    .await;
+
+    // Seed Job Material Cost ledger account (for direct-expense order purchases)
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, is_system, is_active)
+         VALUES (hex(randomblob(16)), '6010', 'Job Material Cost', 'Expense', 'Purchase Accounts', 0, 1)",
+    )
+    .execute(pool)
+    .await;
+
+    // Seed Job Work Charges ledger account (for stitching, handwork etc.)
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, is_system, is_active)
+         VALUES (hex(randomblob(16)), '6011', 'Job Work Charges', 'Expense', 'Operating Expenses', 0, 1)",
+    )
+    .execute(pool)
+    .await;
+
+    // Seed Job COGS ledger account
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, is_system, is_active)
+         VALUES (hex(randomblob(16)), '6012', 'Custom Order COGS', 'Expense', 'Purchase Accounts', 0, 1)",
+    )
+    .execute(pool)
+    .await;
+
     // Payment/Receipt Allocations
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS payment_allocations (

@@ -12,7 +12,8 @@ import {
     IconDeviceFloppy,
     IconX,
     IconAlertTriangle,
-    IconCash
+    IconCash,
+    IconEye
 } from '@tabler/icons-react';
 import { Badge } from '@/components/ui/badge';
 
@@ -40,6 +41,8 @@ interface VoucherPageHeaderProps {
     onNew?: () => void;
     onListView?: () => void;
     onManagePayments?: () => void;
+    onViewCustomOrder?: () => void;
+    customOrderNo?: string;
     loading?: boolean;
     editDisabled?: boolean;
     deleteDisabled?: boolean;
@@ -68,6 +71,8 @@ export function VoucherPageHeader({
     onNew,
     onListView,
     onManagePayments,
+    onViewCustomOrder,
+    customOrderNo,
     loading,
     editDisabled,
     deleteDisabled,
@@ -176,6 +181,17 @@ export function VoucherPageHeader({
                                 >
                                     <IconSend size={16} />
                                 </Button>
+                                {onViewCustomOrder && (
+                                    <Button
+                                        variant="outline"
+                                        size="icon"
+                                        className="h-8 w-8 text-primary hover:text-primary hover:bg-primary/10"
+                                        onClick={onViewCustomOrder}
+                                        title={customOrderNo ? `See in Custom Orders (${customOrderNo})` : "See in Custom Orders"}
+                                    >
+                                        <IconEye size={16} />
+                                    </Button>
+                                )}
                                 <Button
                                     variant="outline"
                                     size="icon"
