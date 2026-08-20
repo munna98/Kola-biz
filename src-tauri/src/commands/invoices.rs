@@ -941,15 +941,15 @@ pub async fn create_purchase_invoice(
         .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&party_id).bind(0.0).bind(total_amount + total_tax)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    // Dr 5001 Purchases for product lines
+    // Dr 1004 Inventory for product lines (Perpetual Inventory)
     if product_subtotal > 0.0 {
-        let purchases_acc: String =
-            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5001'")
+        let inventory_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
-            .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(purchases_acc).bind(product_subtotal).bind(0.0)
+            .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(inventory_acc).bind(product_subtotal).bind(0.0)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
@@ -1444,14 +1444,15 @@ pub async fn update_purchase_invoice(
         .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&party_id).bind(0.0).bind(total_amount + total_tax)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
+    // Dr 1004 Inventory for product lines (Perpetual Inventory)
     if product_subtotal > 0.0 {
-        let purchases_acc: String =
-            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5001'")
+        let inventory_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
                 .fetch_one(&mut *tx)
                 .await
                 .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
-            .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(purchases_acc).bind(product_subtotal).bind(0.0)
+            .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(inventory_acc).bind(product_subtotal).bind(0.0)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
     if service_subtotal > 0.0 {
@@ -2114,6 +2115,38 @@ pub async fn create_sales_invoice(
         }
     }
 
+    // ============= PERPETUAL INVENTORY: COGS & INVENTORY =============
+    let total_cogs: f64 = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(cost_amount), 0.0) AS REAL) FROM stock_movements WHERE voucher_id = ? AND movement_type = 'OUT'"
+    )
+    .bind(&voucher_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if total_cogs > 0.0 {
+        let cogs_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5002'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        let inventory_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+        // Dr 5002 Cost of Goods Sold
+        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, ?, 0, 'Cost of Goods Sold')")
+            .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&cogs_acc).bind(total_cogs)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        // Cr 1004 Inventory
+        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, 'Inventory reduction at cost')")
+            .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&inventory_acc).bind(total_cogs)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+
     if is_foreign_currency {
         if let Some(ref cid) = invoice.currency_id {
             let _ = sqlx::query(
@@ -2650,6 +2683,38 @@ pub async fn update_sales_invoice(
                 .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(0.0).bind(amt)
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
         }
+    }
+
+    // ============= PERPETUAL INVENTORY: COGS & INVENTORY =============
+    let total_cogs: f64 = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(cost_amount), 0.0) AS REAL) FROM stock_movements WHERE voucher_id = ? AND movement_type = 'OUT'"
+    )
+    .bind(&voucher_id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if total_cogs > 0.0 {
+        let cogs_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5002'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        let inventory_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+        // Dr 5002 Cost of Goods Sold
+        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, ?, 0, 'Cost of Goods Sold')")
+            .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&cogs_acc).bind(total_cogs)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        // Cr 1004 Inventory
+        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, 'Inventory reduction at cost')")
+            .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&inventory_acc).bind(total_cogs)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
     if is_foreign_currency {

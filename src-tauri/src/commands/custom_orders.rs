@@ -251,6 +251,48 @@ async fn insert_material_with_stock_journal(
     .await
     .map_err(|e| e.to_string())?;
 
+    // Post perpetual inventory GL entries for material consumption
+    let cogs_acc: Option<String> =
+        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5002'")
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?;
+    let inv_acc: Option<String> =
+        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if let (Some(c_acc), Some(i_acc)) = (cogs_acc, inv_acc) {
+        if mat.amount > 0.0 {
+            let je1 = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, ?, 0, ?)",
+            )
+            .bind(&je1)
+            .bind(&sj_voucher_id)
+            .bind(&c_acc)
+            .bind(mat.amount)
+            .bind(&sj_narration)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let je2 = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)",
+            )
+            .bind(&je2)
+            .bind(&sj_voucher_id)
+            .bind(&i_acc)
+            .bind(mat.amount)
+            .bind(&sj_narration)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
     Ok(())
 }
 
@@ -273,6 +315,11 @@ async fn reverse_stock_journals_for_order(
             .await
             .map_err(|e| e.to_string())?;
         sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+            .bind(sj_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
             .bind(sj_id)
             .execute(&mut **tx)
             .await

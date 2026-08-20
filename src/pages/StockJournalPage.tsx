@@ -58,6 +58,7 @@ interface StockJournalItemRow {
 export default function StockJournalPage() {
     const dispatch = useDispatch();
     const stockJournalState = useSelector((state: RootState) => state.stockJournal);
+    const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
     const { user } = useSelector((state: RootState) => state.auth);
     const money = useMoney();
 
@@ -248,6 +249,12 @@ export default function StockJournalPage() {
             dispatch(setStockJournalLoading(false));
         }
     };
+
+    useEffect(() => {
+        if (activeSectionParams?.voucherId) {
+            handleLoadVoucher(String(activeSectionParams.voucherId));
+        }
+    }, [activeSectionParams?.voucherId]);
 
     const nav = useVoucherNavigation({
         voucherType: 'stock_journal',

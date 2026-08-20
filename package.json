@@ -1,7 +1,7 @@
 {
   "name": "kola_biz",
   "private": true,
-  "version": "1.2.83",
+  "version": "1.2.85",
   "type": "module",
   "scripts": {
     "dev": "vite",

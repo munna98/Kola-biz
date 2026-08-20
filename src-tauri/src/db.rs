@@ -1,4 +1,5 @@
 use sqlx::sqlite::SqlitePool;
+use uuid::Uuid;
 
 async fn backfill_stock_movement_costs(
     pool: &SqlitePool,
@@ -188,6 +189,361 @@ async fn migrate_purchase_discounts_and_stock_valuation(
     )
     .execute(pool)
     .await?;
+
+    Ok(())
+}
+
+async fn backfill_perpetual_inventory_gl(
+    pool: &SqlitePool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Ensure required accounts exist in chart_of_accounts: 1004 (Inventory), 5002 (Cost of Goods Sold), 3004 (Opening Balance Adjustment)
+    let inv_id: Option<String> = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
+        .fetch_optional(pool)
+        .await?;
+    let inv_id = match inv_id {
+        Some(id) => id,
+        None => {
+            let id = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, is_system, is_active)
+                 VALUES (?, '1004', 'Inventory', 'Asset', 'Inventory', 'Stock of goods for sale', 1, 1)"
+            )
+            .bind(&id)
+            .execute(pool)
+            .await?;
+            id
+        }
+    };
+
+    let cogs_id: Option<String> = sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5002'")
+        .fetch_optional(pool)
+        .await?;
+    let cogs_id = match cogs_id {
+        Some(id) => id,
+        None => {
+            let id = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, is_system, is_active)
+                 VALUES (?, '5002', 'Cost of Goods Sold', 'Expense', 'Purchase Accounts', 'Cost of products sold', 1, 1)"
+            )
+            .bind(&id)
+            .execute(pool)
+            .await?;
+            id
+        }
+    };
+
+    // 2. Migrate Purchase Invoices:
+    // Update any existing journal_entries for 5001 Purchases on purchase invoices to point to 1004 Inventory
+    sqlx::query(
+        "UPDATE journal_entries
+         SET account_id = ?
+         WHERE account_id IN (SELECT id FROM chart_of_accounts WHERE account_code = '5001')
+           AND voucher_id IN (SELECT id FROM vouchers WHERE voucher_type = 'purchase_invoice')"
+    )
+    .bind(&inv_id)
+    .execute(pool)
+    .await?;
+
+    // In case a purchase invoice is missing a 1004 journal entry, insert it for the product lines subtotal
+    let missing_pi: Vec<(String, f64)> = sqlx::query_as(
+        "SELECT v.id,
+                COALESCE(SUM(vi.net_amount), 0.0) as product_subtotal
+         FROM vouchers v
+         JOIN voucher_items vi ON v.id = vi.voucher_id AND vi.item_type != 'service'
+         WHERE v.voucher_type = 'purchase_invoice'
+           AND v.deleted_at IS NULL
+           AND v.id NOT IN (
+               SELECT DISTINCT je.voucher_id FROM journal_entries je WHERE je.account_id = ?
+           )
+         GROUP BY v.id
+         HAVING product_subtotal > 0.0"
+    )
+    .bind(&inv_id)
+    .fetch_all(pool)
+    .await?;
+
+    for (v_id, prod_subtotal) in missing_pi {
+        let je_id = Uuid::now_v7().to_string();
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit)
+             VALUES (?, ?, ?, ?, 0.0)"
+        )
+        .bind(&je_id)
+        .bind(&v_id)
+        .bind(&inv_id)
+        .bind(prod_subtotal)
+        .execute(pool)
+        .await?;
+    }
+
+    // 3. Migrate Purchase Returns:
+    // Update any existing journal_entries for 5003 Purchase Returns on purchase returns to point to 1004 Inventory
+    sqlx::query(
+        "UPDATE journal_entries
+         SET account_id = ?
+         WHERE account_id IN (SELECT id FROM chart_of_accounts WHERE account_code = '5003')
+           AND voucher_id IN (SELECT id FROM vouchers WHERE voucher_type = 'purchase_return')"
+    )
+    .bind(&inv_id)
+    .execute(pool)
+    .await?;
+
+    // 4. Backfill Sales Invoices:
+    // Remove existing 5002/1004 secondary journal entries on sales invoices to ensure idempotency
+    sqlx::query(
+        "DELETE FROM journal_entries
+         WHERE account_id IN (?, ?)
+           AND voucher_id IN (SELECT id FROM vouchers WHERE voucher_type = 'sales_invoice')"
+    )
+    .bind(&cogs_id)
+    .bind(&inv_id)
+    .execute(pool)
+    .await?;
+
+    // For all active sales invoices with product items, insert Dr 5002 COGS and Cr 1004 Inventory
+    let sales_invoices: Vec<(String, f64, Option<String>, Option<f64>)> = sqlx::query_as(
+        "SELECT v.id,
+                COALESCE(SUM(sm.cost_amount), 0.0) as total_cogs,
+                v.currency_id,
+                v.exchange_rate
+         FROM vouchers v
+         JOIN stock_movements sm ON v.id = sm.voucher_id AND sm.movement_type = 'OUT'
+         WHERE v.voucher_type = 'sales_invoice'
+           AND v.deleted_at IS NULL
+         GROUP BY v.id
+         HAVING total_cogs > 0.0"
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for (v_id, cogs, cur_id, ex_rate) in sales_invoices {
+        let (f_debit, f_credit, ex_r) = if let (Some(_), Some(rate)) = (&cur_id, ex_rate) {
+            if rate > 0.0 {
+                ((cogs / rate * 1000000.0).round() / 1000000.0, (cogs / rate * 1000000.0).round() / 1000000.0, rate)
+            } else {
+                (0.0, 0.0, 1.0)
+            }
+        } else {
+            (0.0, 0.0, 1.0)
+        };
+
+        // Dr 5002 COGS
+        let je_cogs = Uuid::now_v7().to_string();
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration, foreign_debit, foreign_credit, currency_id, exchange_rate)
+             VALUES (?, ?, ?, ?, 0.0, 'Cost of Goods Sold', ?, 0.0, ?, ?)"
+        )
+        .bind(&je_cogs)
+        .bind(&v_id)
+        .bind(&cogs_id)
+        .bind(cogs)
+        .bind(if cur_id.is_some() { f_debit } else { 0.0 })
+        .bind(&cur_id)
+        .bind(ex_r)
+        .execute(pool)
+        .await?;
+
+        // Cr 1004 Inventory
+        let je_inv = Uuid::now_v7().to_string();
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration, foreign_debit, foreign_credit, currency_id, exchange_rate)
+             VALUES (?, ?, ?, 0.0, ?, 'Inventory reduction at cost', 0.0, ?, ?, ?)"
+        )
+        .bind(&je_inv)
+        .bind(&v_id)
+        .bind(&inv_id)
+        .bind(cogs)
+        .bind(if cur_id.is_some() { f_credit } else { 0.0 })
+        .bind(&cur_id)
+        .bind(ex_r)
+        .execute(pool)
+        .await?;
+    }
+
+    // 5. Backfill Sales Returns:
+    // Remove existing 5002/1004 secondary journal entries on sales returns to ensure idempotency
+    sqlx::query(
+        "DELETE FROM journal_entries
+         WHERE account_id IN (?, ?)
+           AND voucher_id IN (SELECT id FROM vouchers WHERE voucher_type = 'sales_return')
+           AND narration IN ('Inventory return at cost', 'COGS reversal on Sales Return')"
+    )
+    .bind(&cogs_id)
+    .bind(&inv_id)
+    .execute(pool)
+    .await?;
+
+    // For all active sales returns with product items, insert Dr 1004 Inventory and Cr 5002 COGS
+    let sales_returns: Vec<(String, f64, Option<String>, Option<f64>)> = sqlx::query_as(
+        "SELECT v.id,
+                COALESCE(SUM(sm.cost_amount), 0.0) as total_return_cost,
+                v.currency_id,
+                v.exchange_rate
+         FROM vouchers v
+         JOIN stock_movements sm ON v.id = sm.voucher_id AND sm.movement_type = 'IN'
+         WHERE v.voucher_type = 'sales_return'
+           AND v.deleted_at IS NULL
+         GROUP BY v.id
+         HAVING total_return_cost > 0.0"
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for (v_id, return_cogs, cur_id, ex_rate) in sales_returns {
+        let (f_debit, f_credit, ex_r) = if let (Some(_), Some(rate)) = (&cur_id, ex_rate) {
+            if rate > 0.0 {
+                ((return_cogs / rate * 1000000.0).round() / 1000000.0, (return_cogs / rate * 1000000.0).round() / 1000000.0, rate)
+            } else {
+                (0.0, 0.0, 1.0)
+            }
+        } else {
+            (0.0, 0.0, 1.0)
+        };
+
+        // Dr 1004 Inventory
+        let je_inv = Uuid::now_v7().to_string();
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration, foreign_debit, foreign_credit, currency_id, exchange_rate)
+             VALUES (?, ?, ?, ?, 0.0, 'Inventory return at cost', ?, 0.0, ?, ?)"
+        )
+        .bind(&je_inv)
+        .bind(&v_id)
+        .bind(&inv_id)
+        .bind(return_cogs)
+        .bind(if cur_id.is_some() { f_debit } else { 0.0 })
+        .bind(&cur_id)
+        .bind(ex_r)
+        .execute(pool)
+        .await?;
+
+        // Cr 5002 COGS
+        let je_cogs = Uuid::now_v7().to_string();
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration, foreign_debit, foreign_credit, currency_id, exchange_rate)
+             VALUES (?, ?, ?, 0.0, ?, 'COGS reversal on Sales Return', 0.0, ?, ?, ?)"
+        )
+        .bind(&je_cogs)
+        .bind(&v_id)
+        .bind(&cogs_id)
+        .bind(return_cogs)
+        .bind(if cur_id.is_some() { f_credit } else { 0.0 })
+        .bind(&cur_id)
+        .bind(ex_r)
+        .execute(pool)
+        .await?;
+    }
+
+    // 6. Backfill Stock Journals:
+    // Ensure all active stock journals have Dr 1004 Inventory and Cr 1004 Inventory entries
+    sqlx::query(
+        "DELETE FROM journal_entries
+         WHERE account_id IN (?, ?)
+           AND voucher_id IN (SELECT id FROM vouchers WHERE voucher_type = 'stock_journal')"
+    )
+    .bind(&inv_id)
+    .bind(&cogs_id)
+    .execute(pool)
+    .await?;
+
+    let stock_journals: Vec<(String, f64, f64, Option<String>)> = sqlx::query_as(
+        "SELECT v.id,
+                COALESCE(SUM(CASE WHEN sm.movement_type = 'IN' THEN sm.cost_amount ELSE 0.0 END), 0.0) as in_amount,
+                COALESCE(SUM(CASE WHEN sm.movement_type = 'OUT' THEN sm.cost_amount ELSE 0.0 END), 0.0) as out_amount,
+                v.narration
+         FROM vouchers v
+         JOIN stock_movements sm ON v.id = sm.voucher_id
+         WHERE v.voucher_type = 'stock_journal'
+           AND v.deleted_at IS NULL
+         GROUP BY v.id
+         HAVING in_amount > 0.0 OR out_amount > 0.0"
+    )
+    .fetch_all(pool)
+    .await?;
+
+    for (v_id, in_amt, out_amt, narr) in stock_journals {
+        let default_narr = narr.unwrap_or_else(|| "Stock Journal".to_string());
+        if in_amt > 0.0 && out_amt > 0.0 {
+            // Transfer: Dr 1004 Inventory, Cr 1004 Inventory
+            let je_in = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, ?, 0.0, 'Stock Journal - Destination Items (Inward)')"
+            )
+            .bind(&je_in)
+            .bind(&v_id)
+            .bind(&inv_id)
+            .bind(in_amt)
+            .execute(pool)
+            .await?;
+
+            let je_out = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0.0, ?, 'Stock Journal - Source Items (Outward)')"
+            )
+            .bind(&je_out)
+            .bind(&v_id)
+            .bind(&inv_id)
+            .bind(out_amt)
+            .execute(pool)
+            .await?;
+        } else if out_amt > 0.0 && in_amt == 0.0 {
+            // Material consumption / Stock reduction: Dr 5002 COGS, Cr 1004 Inventory
+            let je_cogs = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, ?, 0.0, ?)"
+            )
+            .bind(&je_cogs)
+            .bind(&v_id)
+            .bind(&cogs_id)
+            .bind(out_amt)
+            .bind(&default_narr)
+            .execute(pool)
+            .await?;
+
+            let je_inv = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0.0, ?, ?)"
+            )
+            .bind(&je_inv)
+            .bind(&v_id)
+            .bind(&inv_id)
+            .bind(out_amt)
+            .bind(&default_narr)
+            .execute(pool)
+            .await?;
+        } else if in_amt > 0.0 && out_amt == 0.0 {
+            // Stock addition: Dr 1004 Inventory, Cr 5002 COGS
+            let je_inv = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, ?, 0.0, ?)"
+            )
+            .bind(&je_inv)
+            .bind(&v_id)
+            .bind(&inv_id)
+            .bind(in_amt)
+            .bind(&default_narr)
+            .execute(pool)
+            .await?;
+
+            let je_cogs = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0.0, ?, ?)"
+            )
+            .bind(&je_cogs)
+            .bind(&v_id)
+            .bind(&cogs_id)
+            .bind(in_amt)
+            .bind(&default_narr)
+            .execute(pool)
+            .await?;
+        }
+    }
 
     Ok(())
 }
@@ -948,6 +1304,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         .await;
     backfill_stock_movement_costs(pool).await?;
     migrate_purchase_discounts_and_stock_valuation(pool).await?;
+    backfill_perpetual_inventory_gl(pool).await?;
 
     // Payment/Receipt Allocations
     sqlx::query(

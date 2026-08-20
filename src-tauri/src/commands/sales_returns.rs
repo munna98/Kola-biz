@@ -647,6 +647,54 @@ pub(crate) async fn create_sales_return_in_tx(
         .map_err(|e| e.to_string())?;
     }
 
+    // ============= PERPETUAL INVENTORY: RESTOCK COGS REVERSAL =============
+    let total_return_cost: f64 = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(cost_amount), 0.0) AS REAL) FROM stock_movements WHERE voucher_id = ? AND movement_type = 'IN'"
+    )
+    .bind(&voucher_id)
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if total_return_cost > 0.0 {
+        let inventory_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        let cogs_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5002'")
+                .fetch_one(&mut **tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+        // Dr 1004 Inventory
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, ?, 0, 'Inventory return at cost')",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(&voucher_id)
+        .bind(&inventory_acc)
+        .bind(total_return_cost)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Cr 5002 Cost of Goods Sold
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, 0, ?, 'COGS reversal on Sales Return')",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(&voucher_id)
+        .bind(&cogs_acc)
+        .bind(total_return_cost)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
     sync_sales_invoice_link_for_return(tx, &voucher_id, invoice.reference.as_deref()).await?;
 
     Ok(voucher_id)
@@ -964,6 +1012,54 @@ pub async fn update_sales_return(
         .bind(base_qty * rate_per_base)
         .bind(cost_rate)
         .bind(cost_amount)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    // ============= PERPETUAL INVENTORY: RESTOCK COGS REVERSAL =============
+    let total_return_cost: f64 = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(cost_amount), 0.0) AS REAL) FROM stock_movements WHERE voucher_id = ? AND movement_type = 'IN'"
+    )
+    .bind(&id)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if total_return_cost > 0.0 {
+        let inventory_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        let cogs_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5002'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+
+        // Dr 1004 Inventory
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, ?, 0, 'Inventory return at cost')",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(&id)
+        .bind(&inventory_acc)
+        .bind(total_return_cost)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Cr 5002 Cost of Goods Sold
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, 0, ?, 'COGS reversal on Sales Return')",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(&id)
+        .bind(&cogs_acc)
+        .bind(total_return_cost)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;

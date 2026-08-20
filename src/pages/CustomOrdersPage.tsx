@@ -40,7 +40,6 @@ import {
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
-    AlertDialogFooter as AlertDialogFooterAlias,
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -532,6 +531,14 @@ export default function CustomOrdersPage() {
                 const newId = await invoke<string>('create_custom_order', { data: payload }); toast.success('Order created');
                 const detail = await invoke<CustomOrderDetail>('get_custom_order', { id: newId });
                 setCurrentOrder(detail.order); setCurrentDetail(detail); setMode('viewing'); setHasUnsavedChanges(false); await checkNavigation(newId);
+                // Prompt advance payment dialog for the newly created order
+                setAdvanceOrder(detail.order);
+                setAdvanceAmount('');
+                setAdvanceDate(today());
+                setAdvanceNarration('');
+                if (cashBankAccounts.length > 0 && !advanceCashBank) {
+                    setAdvanceCashBank(cashBankAccounts[0].id);
+                }
             }
             loadOrders();
         } catch (err) { toast.error(String(err)); }
@@ -581,6 +588,145 @@ export default function CustomOrdersPage() {
     const isFormMode = mode==='new'||mode==='editing';
     const isViewMode = mode==='viewing';
 
+    const renderDialogs = () => (
+        <>
+            <AlertDialog open={!!deleteId} onOpenChange={open=>!open&&setDeleteId(null)}>
+                <AlertDialogContent>
+                    <AlertDialogHeader>
+                        <AlertDialogTitle>Delete Custom Order?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                            This will delete order <strong>{deleteOrderNo}</strong> and reverse all stock deductions. This cannot be undone.
+                        </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction>
+                    </AlertDialogFooter>
+                </AlertDialogContent>
+            </AlertDialog>
+
+            <Dialog open={!!advanceOrder} onOpenChange={open=>!open&&setAdvanceOrder(null)}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Record Advance Payment</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <p className="text-sm text-muted-foreground">
+                            Customer: <strong>{advanceOrder?.customer_name}</strong><br/>
+                            Order: <strong>{advanceOrder?.order_no}</strong>
+                        </p>
+                        <div className="space-y-1">
+                            <Label>Advance Amount (₹) *</Label>
+                            <Input type="number" value={advanceAmount} onChange={e=>setAdvanceAmount(e.target.value)} placeholder="0.00"/>
+                        </div>
+                        <div className="space-y-1">
+                            <Label>Payment Date *</Label>
+                            <Input type="date" value={advanceDate} onChange={e=>setAdvanceDate(e.target.value)}/>
+                        </div>
+                        <div className="space-y-1">
+                            <Label>Cash / Bank Account *</Label>
+                            <Select value={advanceCashBank} onValueChange={setAdvanceCashBank}>
+                                <SelectTrigger>
+                                    <SelectValue placeholder="Select account..."/>
+                                </SelectTrigger>
+                                <SelectContent>
+                                    {cashBankAccounts.map(a=>(
+                                        <SelectItem key={a.id} value={a.id}>{a.name||a.account_name}</SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
+                        </div>
+                        <div className="space-y-1">
+                            <Label>Narration</Label>
+                            <Input value={advanceNarration} onChange={e=>setAdvanceNarration(e.target.value)} placeholder="Optional note..."/>
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={()=>setAdvanceOrder(null)}>Cancel</Button>
+                        <Button onClick={handleSaveAdvance} disabled={savingAdvance}>{savingAdvance?'Saving...':'Record Advance'}</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            <Dialog open={!!finalizeOrder} onOpenChange={open=>!open&&setFinalizeOrder(null)}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Finalize Order & Create Invoice</DialogTitle>
+                    </DialogHeader>
+                    {finalizeOrder && (
+                        <div className="space-y-4 py-2">
+                            <div className="bg-muted/40 rounded-md p-3 text-sm space-y-1">
+                                <p><span className="text-muted-foreground">Customer:</span> <strong>{finalizeOrder.customer_name}</strong></p>
+                                <p><span className="text-muted-foreground">Item:</span> <strong>{finalizeOrder.finished_item_name}</strong></p>
+                                <p><span className="text-muted-foreground">Total Job Cost:</span> <strong>₹{fmt(finalizeOrder.total_job_cost)}</strong></p>
+                                {finalizeOrder.advance_amount > 0 && (
+                                    <p><span className="text-muted-foreground">Advance Paid:</span> <strong>₹{fmt(finalizeOrder.advance_amount)}</strong></p>
+                                )}
+                            </div>
+                            <div className="space-y-1">
+                                <Label>Invoice Date *</Label>
+                                <Input type="date" value={finalizeDate} onChange={e=>setFinalizeDate(e.target.value)}/>
+                            </div>
+                            <div className="space-y-1">
+                                <Label>Sale Price (₹) *</Label>
+                                <Input type="number" value={finalizeSalePrice} onChange={e=>setFinalizeSalePrice(Number(e.target.value))}/>
+                            </div>
+                            {finalizeOrder.advance_amount > 0 && (
+                                <div className="bg-blue-50 dark:bg-blue-950/30 rounded p-2 text-sm">
+                                    Balance due after advance: <strong>₹{fmt(finalizeSalePrice-finalizeOrder.advance_amount)}</strong>
+                                </div>
+                            )}
+                            <div className="space-y-1">
+                                <Label>Narration</Label>
+                                <Input value={finalizeNarration} onChange={e=>setFinalizeNarration(e.target.value)} placeholder="Optional..."/>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                                This will create a Sales Invoice with one line item: "{finalizeOrder.finished_item_name}". The job cost (₹{fmt(finalizeOrder.total_job_cost)}) will be posted as COGS automatically.
+                            </p>
+                        </div>
+                    )}
+                    <DialogFooter>
+                        <Button variant="outline" onClick={()=>setFinalizeOrder(null)}>Cancel</Button>
+                        <Button onClick={handleFinalize} disabled={finalizing}>{finalizing?'Creating Invoice...':'Finalize & Create Invoice'}</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {paymentInvoice && (
+                <PaymentManagementDialog
+                    mode="receipt"
+                    open={!!paymentInvoice}
+                    onOpenChange={open=>!open&&setPaymentInvoice(null)}
+                    invoiceId={paymentInvoice.id}
+                    invoiceNo={paymentInvoice.no}
+                    invoiceAmount={paymentInvoice.amount}
+                    invoiceDate={paymentInvoice.date}
+                    partyName={paymentInvoice.partyName}
+                    onSuccess={async () => {
+                        toast.success('Payment recorded successfully');
+                        setPaymentInvoice(null);
+                        loadOrders();
+                        if (currentOrder) {
+                            try {
+                                const d = await invoke<CustomOrderDetail>('get_custom_order', { id: currentOrder.id });
+                                setCurrentOrder(d.order);
+                                setCurrentDetail(d);
+                            } catch {}
+                        }
+                    }}
+                />
+            )}
+
+            <CustomerDialog
+                open={showCreateCustomer}
+                onOpenChange={setShowCreateCustomer}
+                customerToEdit={null}
+                onSave={handleCreateCustomerSave}
+                initialName={newCustomerName}
+            />
+        </>
+    );
+
     const renderHeader = () => (
         <div className="border-b bg-card/50 px-5 py-3 backdrop-blur-sm shrink-0 h-[65px] flex items-center z-0">
             <div className="flex items-center justify-between w-full">
@@ -625,7 +771,7 @@ export default function CustomOrdersPage() {
                                 <Button variant="outline" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={()=>{setDeleteId(currentOrder.id);setDeleteOrderNo(currentOrder.order_no);}} title="Delete" disabled={currentOrder.status==='delivered'}><IconTrash size={16}/></Button>
                             </div>
                             {currentOrder.status==='pending'&&!currentOrder.advance_voucher_id&&<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={()=>{setAdvanceOrder(currentOrder);setAdvanceAmount('');setAdvanceDate(today());setAdvanceNarration('');}}><IconCash size={14}/> Advance</Button>}
-                            {currentOrder.status==='pending'&&<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={()=>openFinalize(currentOrder)}><IconFileInvoice size={14}/> Finalize</Button>}
+                            {currentOrder.status==='pending'&&<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={()=>openFinalize(currentOrder)}><IconCheck size={14}/> Finalize</Button>}
                             {currentOrder.status==='delivered'&&(currentOrder.balance_due??0)>0&&currentOrder.final_invoice_id&&<Button size="sm" className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={()=>openCollectPayment(currentOrder)}><IconCurrencyRupee size={14}/> Collect (₹{fmt(currentOrder.balance_due||0)})</Button>}
                             <Button variant="default" size="sm" className="h-8 text-xs gap-1.5" onClick={openNew}><IconPlus size={14}/> New</Button>
                         </>
@@ -676,7 +822,7 @@ export default function CustomOrdersPage() {
                     {currentDetail.services.length>0&&(<div className="space-y-2"><h3 className="font-semibold text-sm flex items-center gap-2"><IconTools size={16} className="text-primary"/>Services & Labour Charges ({currentDetail.services.length})</h3><div className="border rounded-lg overflow-hidden"><table className="w-full text-sm"><thead className="bg-muted/50"><tr><th className="text-left p-3 font-medium">Description</th><th className="text-right p-3 font-medium">Qty</th><th className="text-right p-3 font-medium">Rate</th><th className="text-right p-3 font-medium">Amount</th></tr></thead><tbody>{currentDetail.services.map((s,idx)=>(<tr key={idx} className="border-t hover:bg-muted/10"><td className="p-3 font-medium">{s.description}</td><td className="p-3 text-right">{s.quantity}</td><td className="p-3 text-right">₹{fmt(s.rate)}</td><td className="p-3 text-right font-medium">₹{fmt(s.amount)}</td></tr>))}</tbody></table></div></div>)}
                     {o.narration&&<div className="bg-muted/20 p-4 rounded-lg border text-sm"><span className="text-xs text-muted-foreground font-medium uppercase tracking-wider block mb-1">Notes / Instructions</span><p>{o.narration}</p></div>}
                 </div>
-                {paymentInvoice&&<PaymentManagementDialog mode="receipt" open={!!paymentInvoice} onOpenChange={open=>!open&&setPaymentInvoice(null)} invoiceId={paymentInvoice.id} invoiceNo={paymentInvoice.no} invoiceAmount={paymentInvoice.amount} invoiceDate={paymentInvoice.date} partyName={paymentInvoice.partyName} onSuccess={async()=>{ toast.success('Payment recorded'); setPaymentInvoice(null); loadOrders(); const d=await invoke<CustomOrderDetail>('get_custom_order',{id:o.id}); setCurrentOrder(d.order); setCurrentDetail(d); }}/>}
+                {renderDialogs()}
             </div>
         );
     }
@@ -1331,13 +1477,7 @@ export default function CustomOrdersPage() {
 
                     </div>
                 </div>
-                <CustomerDialog
-                    open={showCreateCustomer}
-                    onOpenChange={setShowCreateCustomer}
-                    customerToEdit={null}
-                    onSave={handleCreateCustomerSave}
-                    initialName={newCustomerName}
-                />
+                {renderDialogs()}
             </div>
         );
     }
@@ -1380,17 +1520,7 @@ export default function CustomOrdersPage() {
                     </table>
                 )}
             </div>
-            <AlertDialog open={!!deleteId} onOpenChange={open=>!open&&setDeleteId(null)}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Delete Custom Order?</AlertDialogTitle><AlertDialogDescription>This will delete order <strong>{deleteOrderNo}</strong> and reverse all stock deductions. This cannot be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={handleDelete} className="bg-destructive text-destructive-foreground">Delete</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
-            <Dialog open={!!advanceOrder} onOpenChange={open=>!open&&setAdvanceOrder(null)}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Record Advance Payment</DialogTitle></DialogHeader><div className="space-y-4 py-2"><p className="text-sm text-muted-foreground">Customer: <strong>{advanceOrder?.customer_name}</strong><br/>Order: <strong>{advanceOrder?.order_no}</strong></p><div className="space-y-1"><Label>Advance Amount (₹) *</Label><Input type="number" value={advanceAmount} onChange={e=>setAdvanceAmount(e.target.value)} placeholder="0.00"/></div><div className="space-y-1"><Label>Payment Date *</Label><Input type="date" value={advanceDate} onChange={e=>setAdvanceDate(e.target.value)}/></div><div className="space-y-1"><Label>Cash / Bank Account *</Label><Select value={advanceCashBank} onValueChange={setAdvanceCashBank}><SelectTrigger><SelectValue placeholder="Select account..."/></SelectTrigger><SelectContent>{cashBankAccounts.map(a=>(<SelectItem key={a.id} value={a.id}>{a.name||a.account_name}</SelectItem>))}</SelectContent></Select></div><div className="space-y-1"><Label>Narration</Label><Input value={advanceNarration} onChange={e=>setAdvanceNarration(e.target.value)} placeholder="Optional note..."/></div></div><DialogFooter><Button variant="outline" onClick={()=>setAdvanceOrder(null)}>Cancel</Button><Button onClick={handleSaveAdvance} disabled={savingAdvance}>{savingAdvance?'Saving...':'Record Advance'}</Button></DialogFooter></DialogContent></Dialog>
-            <Dialog open={!!finalizeOrder} onOpenChange={open=>!open&&setFinalizeOrder(null)}><DialogContent className="max-w-md"><DialogHeader><DialogTitle>Finalize Order & Create Invoice</DialogTitle></DialogHeader>{finalizeOrder&&(<div className="space-y-4 py-2"><div className="bg-muted/40 rounded-md p-3 text-sm space-y-1"><p><span className="text-muted-foreground">Customer:</span> <strong>{finalizeOrder.customer_name}</strong></p><p><span className="text-muted-foreground">Item:</span> <strong>{finalizeOrder.finished_item_name}</strong></p><p><span className="text-muted-foreground">Total Job Cost:</span> <strong>₹{fmt(finalizeOrder.total_job_cost)}</strong></p>{finalizeOrder.advance_amount>0&&<p><span className="text-muted-foreground">Advance Paid:</span> <strong>₹{fmt(finalizeOrder.advance_amount)}</strong></p>}</div><div className="space-y-1"><Label>Invoice Date *</Label><Input type="date" value={finalizeDate} onChange={e=>setFinalizeDate(e.target.value)}/></div><div className="space-y-1"><Label>Sale Price (₹) *</Label><Input type="number" value={finalizeSalePrice} onChange={e=>setFinalizeSalePrice(Number(e.target.value))}/></div>{finalizeOrder.advance_amount>0&&<div className="bg-blue-50 dark:bg-blue-950/30 rounded p-2 text-sm">Balance due after advance: <strong>₹{fmt(finalizeSalePrice-finalizeOrder.advance_amount)}</strong></div>}<div className="space-y-1"><Label>Narration</Label><Input value={finalizeNarration} onChange={e=>setFinalizeNarration(e.target.value)} placeholder="Optional..."/></div><p className="text-xs text-muted-foreground">This will create a Sales Invoice with one line item: "{finalizeOrder.finished_item_name}". The job cost (₹{fmt(finalizeOrder.total_job_cost)}) will be posted as COGS automatically.</p></div>)}<DialogFooter><Button variant="outline" onClick={()=>setFinalizeOrder(null)}>Cancel</Button><Button onClick={handleFinalize} disabled={finalizing}>{finalizing?'Creating Invoice...':'Finalize & Create Invoice'}</Button></DialogFooter></DialogContent></Dialog>
-            {paymentInvoice&&<PaymentManagementDialog mode="receipt" open={!!paymentInvoice} onOpenChange={open=>!open&&setPaymentInvoice(null)} invoiceId={paymentInvoice.id} invoiceNo={paymentInvoice.no} invoiceAmount={paymentInvoice.amount} invoiceDate={paymentInvoice.date} partyName={paymentInvoice.partyName} onSuccess={()=>{toast.success('Payment recorded successfully');setPaymentInvoice(null);loadOrders();}}/>}
-            <CustomerDialog
-                open={showCreateCustomer}
-                onOpenChange={setShowCreateCustomer}
-                customerToEdit={null}
-                onSave={handleCreateCustomerSave}
-                initialName={newCustomerName}
-            />
+            {renderDialogs()}
         </div>
     );
 }

@@ -243,6 +243,43 @@ pub async fn create_stock_journal(
     )
     .await?;
 
+    // Post to 1004 Inventory Ledger
+    let inventory_acc: Option<String> =
+        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if let Some(inv_id) = inventory_acc {
+        if destination_total > 0.0 {
+            let je_in_id = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, ?, 0, 'Stock Journal - Destination Items (Inward)')",
+            )
+            .bind(&je_in_id)
+            .bind(&voucher_id)
+            .bind(&inv_id)
+            .bind(destination_total)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let je_out_id = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0, ?, 'Stock Journal - Source Items (Outward)')",
+            )
+            .bind(&je_out_id)
+            .bind(&voucher_id)
+            .bind(&inv_id)
+            .bind(source_total)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(voucher_id)
 }
@@ -292,6 +329,12 @@ pub async fn update_stock_journal(
         .await
         .map_err(|e| e.to_string())?;
 
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+        .bind(&id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
     insert_stock_journal_items(&mut tx, &id, &data.source_items, "source", "OUT").await?;
     insert_stock_journal_items(
         &mut tx,
@@ -301,6 +344,43 @@ pub async fn update_stock_journal(
         "IN",
     )
     .await?;
+
+    // Post to 1004 Inventory Ledger
+    let inventory_acc: Option<String> =
+        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+    if let Some(inv_id) = inventory_acc {
+        if destination_total > 0.0 {
+            let je_in_id = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, ?, 0, 'Stock Journal - Destination Items (Inward)')",
+            )
+            .bind(&je_in_id)
+            .bind(&id)
+            .bind(&inv_id)
+            .bind(destination_total)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+
+            let je_out_id = Uuid::now_v7().to_string();
+            sqlx::query(
+                "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+                 VALUES (?, ?, ?, 0, ?, 'Stock Journal - Source Items (Outward)')",
+            )
+            .bind(&je_out_id)
+            .bind(&id)
+            .bind(&inv_id)
+            .bind(source_total)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
+    }
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
@@ -318,6 +398,12 @@ pub async fn delete_stock_journal(registry: State<'_, Arc<DbRegistry>>, id: Stri
         .map_err(|e| e.to_string())?;
 
     sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+        .bind(&id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
         .bind(&id)
         .execute(&mut *tx)
         .await

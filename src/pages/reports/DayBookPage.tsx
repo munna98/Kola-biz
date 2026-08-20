@@ -96,7 +96,14 @@ export default function DayBookPage() {
         section = 'delivery_note';
         break;
       case 'sales_quotation':
+      case 'quotation':
         section = 'sales_quotation';
+        break;
+      case 'stock_journal':
+        section = 'stock_journal';
+        break;
+      case 'opening_stock':
+        section = 'opening_stock';
         break;
       default:
         toast.error(`Unknown voucher type: ${type}`);
@@ -119,6 +126,13 @@ export default function DayBookPage() {
       'receipt': 'Receipt',
       'journal': 'Journal',
       'opening_balance': 'Opening',
+      'sales_return': 'Sales Return',
+      'purchase_return': 'Purchase Return',
+      'stock_journal': 'Stock Journal',
+      'opening_stock': 'Opening Stock',
+      'delivery_note': 'Delivery Note',
+      'sales_quotation': 'Quotation',
+      'quotation': 'Quotation',
     };
     return labels[type] || type;
   };

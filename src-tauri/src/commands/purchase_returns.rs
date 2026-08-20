@@ -359,7 +359,7 @@ pub async fn create_purchase_return(
 
     let party_id = invoice.supplier_id;
     let purchase_return_account: String =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5003'")
+        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
@@ -642,7 +642,7 @@ pub async fn update_purchase_return(
     }
 
     let purchase_return_account: String =
-        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5003'")
+        sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
             .fetch_one(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;

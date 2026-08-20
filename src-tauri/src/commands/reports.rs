@@ -308,7 +308,7 @@ pub async fn get_stock_value_as_of_date(
         JOIN vouchers v ON sm.voucher_id = v.id AND v.deleted_at IS NULL AND ({})
         WHERE p.deleted_at IS NULL
         GROUP BY p.id
-        HAVING net_qty > 0",
+        HAVING net_qty != 0",
         date_condition, date_condition
     );
 
@@ -505,12 +505,15 @@ pub async fn get_balance_sheet(
         .map_err(|e| e.to_string())?;
 
     let mut total_income = 0.0;
+    let mut cogs = 0.0;
     let mut purchases = 0.0;
     let mut operating_expenses = 0.0;
 
     for (code, acc_type, dr, cr) in pl_rows {
         if acc_type == "Income" {
             total_income += cr - dr;
+        } else if code == "5002" {
+            cogs += dr - cr;
         } else if code == "5001" {
             purchases += dr - cr;
         } else if code == "5003" {
@@ -520,7 +523,9 @@ pub async fn get_balance_sheet(
         }
     }
 
-    let cogs = (opening_stock_val + purchases - closing_stock_val).max(0.0);
+    if cogs == 0.0 && purchases > 0.0 {
+        cogs = (opening_stock_val + purchases - closing_stock_val).max(0.0);
+    }
     let net_profit = round2(total_income - cogs - operating_expenses);
 
     if net_profit.abs() >= 0.01 {
@@ -613,10 +618,27 @@ pub async fn get_profit_loss(
         .await
         .map_err(|e| e.to_string())?;
 
+    let purchases_query = "
+        SELECT CAST(COALESCE(SUM(sm.cost_amount), 0.0) AS REAL)
+        FROM stock_movements sm
+        JOIN vouchers v ON sm.voucher_id = v.id
+        WHERE v.voucher_type = 'purchase_invoice'
+          AND sm.movement_type = 'IN'
+          AND v.voucher_date >= ? AND v.voucher_date <= ?
+          AND v.deleted_at IS NULL
+    ";
+    let period_purchases: f64 = sqlx::query_scalar(purchases_query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0.0);
+
     let mut income = Vec::new();
     let mut expenses = Vec::new();
     let mut total_income = 0.0;
     let mut purchases = 0.0;
+    let mut cogs_from_gl = 0.0;
     let mut total_operating_expenses = 0.0;
 
     for (id, name, code, acc_type, group_name, dr, cr) in rows {
@@ -632,6 +654,8 @@ pub async fn get_profit_loss(
                     amount: round2(amount),
                 });
             }
+        } else if code == "5002" {
+            cogs_from_gl += dr - cr;
         } else if code == "5001" {
             purchases += dr - cr;
         } else if code == "5003" {
@@ -651,7 +675,12 @@ pub async fn get_profit_loss(
         }
     }
 
-    let cogs = round2((opening_stock + purchases - closing_stock).max(0.0));
+    let total_purchases = if period_purchases > 0.0 { period_purchases } else { purchases };
+    let cogs = if cogs_from_gl > 0.0 {
+        round2(cogs_from_gl)
+    } else {
+        round2((opening_stock + total_purchases - closing_stock).max(0.0))
+    };
     let gross_profit = round2(total_income - cogs);
     let total_expenses = round2(cogs + total_operating_expenses);
     let net_profit = round2(total_income - total_expenses);
@@ -663,7 +692,7 @@ pub async fn get_profit_loss(
         total_income: round2(total_income),
         total_expenses: round2(total_expenses),
         opening_stock: round2(opening_stock),
-        purchases: round2(purchases),
+        purchases: round2(total_purchases),
         closing_stock: round2(closing_stock),
         cogs,
         gross_profit,
@@ -1541,6 +1570,7 @@ pub async fn get_stock_report(
 
 #[derive(Serialize, Deserialize)]
 pub struct StockMovement {
+    pub voucher_id: String,
     pub date: String,
     pub voucher_no: String,
     pub voucher_type: String,
@@ -1595,6 +1625,7 @@ pub async fn get_stock_movements(
 
     let query = format!(
         "SELECT 
+            v.id as voucher_id,
             v.voucher_date as date,
             v.voucher_no,
             v.voucher_type,
@@ -1616,6 +1647,7 @@ pub async fn get_stock_movements(
         String,
         String,
         String,
+        String,
         f64,
         f64,
         f64,
@@ -1630,7 +1662,7 @@ pub async fn get_stock_movements(
     let result = movements
         .into_iter()
         .map(
-            |(date, voucher_no, voucher_type, movement_type, qty, rate, amt, party)| {
+            |(voucher_id, date, voucher_no, voucher_type, movement_type, qty, rate, amt, party)| {
                 if movement_type == "IN" {
                     running_balance += qty;
                 } else {
@@ -1638,6 +1670,7 @@ pub async fn get_stock_movements(
                 }
 
                 StockMovement {
+                    voucher_id,
                     date,
                     voucher_no,
                     voucher_type,

@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useDispatch } from 'react-redux';
+import { setActiveSectionWithParams } from '@/store';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -38,6 +40,7 @@ interface StockSummary {
 }
 
 interface StockMovement {
+    voucher_id: string;
     date: string;
     voucher_no: string;
     voucher_type: string;
@@ -55,6 +58,7 @@ interface ProductGroup {
 }
 
 export default function StockReportPage() {
+    const dispatch = useDispatch();
     const [stockData, setStockData] = useState<StockSummary[]>([]);
     const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
     const [loading, setLoading] = useState(false);
@@ -121,6 +125,59 @@ export default function StockReportPage() {
             setExpandedProduct(productId);
             loadMovements(productId);
         }
+    };
+
+    const handleVoucherClick = (id: string, type: string) => {
+        let section = '';
+        switch (type) {
+            case 'sales_invoice':
+                section = 'sales';
+                break;
+            case 'sales_return':
+                section = 'sales_return';
+                break;
+            case 'purchase_invoice':
+                section = 'purchase';
+                break;
+            case 'purchase_return':
+                section = 'purchase_return';
+                break;
+            case 'payment':
+                section = 'payments';
+                break;
+            case 'receipt':
+                section = 'receipts';
+                break;
+            case 'journal':
+                section = 'journal';
+                break;
+            case 'opening_balance':
+                section = 'opening';
+                break;
+            case 'opening_stock':
+                section = 'opening_stock';
+                break;
+            case 'stock_journal':
+                section = 'stock_journal';
+                break;
+            case 'delivery_note':
+                section = 'delivery_note';
+                break;
+            case 'sales_quotation':
+            case 'quotation':
+                section = 'sales_quotation';
+                break;
+            default:
+                toast.error(`Unknown voucher type: ${type}`);
+                return;
+        }
+
+        dispatch(
+            setActiveSectionWithParams({
+                section,
+                params: { voucherId: id },
+            })
+        );
     };
 
     const handlePrint = () => {
@@ -333,9 +390,16 @@ export default function StockReportPage() {
                                                                             </thead>
                                                                             <tbody>
                                                                                 {movements.map((movement, idx) => (
-                                                                                    <tr key={idx} className="border-b hover:bg-muted/20">
+                                                                                    <tr
+                                                                                        key={idx}
+                                                                                        onClick={() => handleVoucherClick(movement.voucher_id, movement.voucher_type)}
+                                                                                        className="border-b hover:bg-muted/40 cursor-pointer transition-colors group"
+                                                                                        title="Click to view voucher"
+                                                                                    >
                                                                                         <td className="p-2 text-xs">{formatDate(movement.date)}</td>
-                                                                                        <td className="p-2 text-xs font-mono">{movement.voucher_no}</td>
+                                                                                        <td className="p-2 text-xs font-mono font-medium text-primary group-hover:underline">
+                                                                                            {movement.voucher_no}
+                                                                                        </td>
                                                                                         <td className="p-2 text-xs text-muted-foreground">
                                                                                             {movement.voucher_type.replace('_', ' ')}
                                                                                         </td>

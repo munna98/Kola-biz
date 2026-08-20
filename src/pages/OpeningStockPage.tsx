@@ -38,6 +38,7 @@ import { useMoney } from '@/hooks/useMoney';
 export default function OpeningStockPage() {
     const dispatch = useDispatch();
     const openingStockState = useSelector((state: RootState) => state.openingStock);
+    const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
     const { user } = useSelector((state: RootState) => state.auth);
     const money = useMoney();
 
@@ -145,6 +146,12 @@ export default function OpeningStockPage() {
             dispatch(setOpeningStockLoading(false));
         }
     };
+
+    useEffect(() => {
+        if (activeSectionParams?.voucherId) {
+            handleLoadVoucher(String(activeSectionParams.voucherId));
+        }
+    }, [activeSectionParams?.voucherId]);
 
     // Use the voucher navigation hook
     const nav = useVoucherNavigation({
