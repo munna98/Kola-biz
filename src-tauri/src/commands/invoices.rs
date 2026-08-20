@@ -881,11 +881,11 @@ pub async fn create_purchase_invoice(
         let sm_id = Uuid::now_v7().to_string();
         let qty = item.base_quantity;
         let rate_per_base = if qty > 0.0 {
-            item.amount / qty
+            item.net_amount / qty
         } else {
             item.rate
         };
-        let amount = qty * rate_per_base;
+        let amount = item.net_amount;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?, ?)"
         )
@@ -962,18 +962,6 @@ pub async fn create_purchase_invoice(
                 .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(svc_exp_acc).bind(service_subtotal).bind(0.0)
-            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    }
-
-    // Discount entry
-    if discount_amount > 0.0 {
-        let dis_acc: String =
-            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'")
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
-            .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(dis_acc).bind(0.0).bind(discount_amount)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
@@ -1390,11 +1378,11 @@ pub async fn update_purchase_invoice(
         let sm_id = Uuid::now_v7().to_string();
         let qty = item.base_quantity;
         let rate_per_base = if qty > 0.0 {
-            item.amount / qty
+            item.net_amount / qty
         } else {
             item.rate
         };
-        let amount = qty * rate_per_base;
+        let amount = item.net_amount;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount) VALUES (?, ?, ?, 'IN', ?, ?, ?, ?, ?, ?)"
         )
@@ -1474,17 +1462,6 @@ pub async fn update_purchase_invoice(
                 .map_err(|e| e.to_string())?;
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(svc_exp_acc).bind(service_subtotal).bind(0.0)
-            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-    }
-
-    if discount_amount > 0.0 {
-        let dis_acc: String =
-            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'")
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
-            .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(dis_acc).bind(0.0).bind(discount_amount)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 

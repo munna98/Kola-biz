@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,21 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Combobox } from "@/components/ui/combobox";
 import { useVoucherRowNavigation } from '@/hooks/useVoucherRowNavigation';
+import {
+    buildProductComboboxOption,
+    getProductComboboxHeaderColumns,
+    getProductComboboxWidthClass,
+    type ProductComboboxDisplaySettings,
+    DEFAULT_COMBOBOX_DISPLAY_SETTINGS,
+    type ProductComboboxColumnWidths,
+    DEFAULT_COMBOBOX_COLUMN_WIDTHS,
+} from '@/lib/combobox-helpers';
+import {
+    buildProductUnitMap,
+    getDefaultProductUnitId,
+    getProductUnitRate,
+} from '@/lib/product-units';
+import type { ProductUnitConversion, Unit } from '@/lib/tauri';
 import {
     Dialog,
     DialogContent,
@@ -25,6 +40,7 @@ import {
     AlertDialogFooter,
     AlertDialogHeader,
     AlertDialogTitle,
+    AlertDialogFooter as AlertDialogFooterAlias,
 } from "@/components/ui/alert-dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -54,7 +70,11 @@ interface CustomOrderDetail { order: CustomOrder; materials: MaterialRow[]; purc
 interface MaterialRow { id?: string; product_id: string; product_name?: string; product_code?: string; description?: string; quantity: number; unit_id?: string; unit_name?: string; rate: number; amount: number; }
 interface PurchaseRow { id?: string; description: string; supplier_id?: string; supplier_name?: string; quantity: number; unit_id?: string; rate: number; amount: number; expense_account?: string; purchase_date?: string; }
 interface ServiceRow { id?: string; service_id?: string; description: string; quantity: number; rate: number; amount: number; expense_account?: string; }
-interface Product { id: string; code: string; name: string; purchase_rate: number; unit_id: string; unit_name?: string; }
+interface Product {
+    id: string; code: string; name: string; purchase_rate: number; unit_id: string; unit_name?: string;
+    group_id?: string; brand_id?: string; barcode?: string; hsn_code?: string; sku?: string;
+    part_number?: string; sales_rate?: number; min_sales_rate?: number; description?: string;
+}
 interface PartyOption { id: string; name: string; code?: string; }
 interface CashBankAccount { id: string; name: string; account_name?: string; account_group?: string; }
 type PageMode = 'list' | 'new' | 'editing' | 'viewing';
@@ -84,6 +104,13 @@ export default function CustomOrdersPage() {
     const [customers, setCustomers] = useState<PartyOption[]>([]);
     const [suppliers, setSuppliers] = useState<PartyOption[]>([]);
     const [cashBankAccounts, setCashBankAccounts] = useState<CashBankAccount[]>([]);
+    const [units, setUnits] = useState<Unit[]>([]);
+    const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
+    const [groups, setGroups] = useState<any[]>([]);
+    const [brands, setBrands] = useState<any[]>([]);
+    const [stockMap, setStockMap] = useState<Record<string, number>>({});
+    const [comboboxDisplaySettings, setComboboxDisplaySettings] = useState<ProductComboboxDisplaySettings>(DEFAULT_COMBOBOX_DISPLAY_SETTINGS);
+    const [columnWidths, setColumnWidths] = useState<ProductComboboxColumnWidths>(DEFAULT_COMBOBOX_COLUMN_WIDTHS);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
     const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -233,9 +260,43 @@ export default function CustomOrdersPage() {
 
     const loadReferenceData = useCallback(async () => {
         try {
-            const prodData = await invoke<any[]>('get_products');
-            setProducts(prodData.map((p: any) => ({ id: p.id, code: p.code || '', name: p.name || '', purchase_rate: Number(p.purchase_rate) || 0, unit_id: p.unit_id || '' })));
+            const [prodData, unitsData, conversionsData, groupsData, brandsData] = await Promise.all([
+                invoke<any[]>('get_products').catch(() => []),
+                invoke<Unit[]>('get_units').catch(() => []),
+                invoke<ProductUnitConversion[]>('get_all_product_unit_conversions').catch(() => []),
+                invoke<any[]>('get_product_groups').catch(() => []),
+                invoke<any[]>('get_product_brands').catch(() => []),
+            ]);
+            setProducts((prodData || []).map((p: any) => ({
+                id: p.id,
+                code: p.code || '',
+                name: p.name || '',
+                purchase_rate: Number(p.purchase_rate) || 0,
+                unit_id: p.unit_id || '',
+                group_id: p.group_id,
+                brand_id: p.brand_id,
+                barcode: p.barcode,
+                hsn_code: p.hsn_code,
+                sku: p.sku,
+                part_number: p.part_number,
+                sales_rate: p.sales_rate,
+                min_sales_rate: p.min_sales_rate,
+                description: p.description,
+            })));
+            setUnits(unitsData || []);
+            setProductUnitConversions(conversionsData || []);
+            setGroups(groupsData || []);
+            setBrands(brandsData || []);
         } catch (e) { console.error('products', e); }
+
+        invoke<string | null>('get_app_setting', { key: 'product_combobox_display_settings' })
+            .then(v => { if (v) { try { setComboboxDisplaySettings(JSON.parse(v)); } catch {} } })
+            .catch(console.error);
+
+        invoke<string | null>('get_app_setting', { key: 'product_combobox_column_widths' })
+            .then(v => { if (v) { try { setColumnWidths(JSON.parse(v)); } catch {} } })
+            .catch(console.error);
+
         try {
             const list: PartyOption[] = []; const seenCodes = new Set<string>();
             const accounts = await invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable'] }).catch(() => []);
@@ -265,6 +326,45 @@ export default function CustomOrdersPage() {
             if (mappedCb.length > 0) setAdvanceCashBank(mappedCb[0].id);
         } catch (e) { console.error('cash/bank', e); }
     }, []);
+
+    useEffect(() => {
+        if (comboboxDisplaySettings.show_stock) {
+            invoke<any[]>('get_stock_report', { groupId: null, asOnDate: new Date().toISOString().split('T')[0] })
+                .then(summary => {
+                    const map: Record<string, number> = {};
+                    for (const item of summary || []) {
+                        map[item.product_id] = item.current_stock;
+                    }
+                    setStockMap(map);
+                })
+                .catch(console.error);
+        }
+    }, [comboboxDisplaySettings.show_stock]);
+
+    const productUnitsByProduct = useMemo(
+        () => buildProductUnitMap(productUnitConversions),
+        [productUnitConversions]
+    );
+
+    const productOptions = useMemo(() => {
+        return products.map(p => {
+            const opt = buildProductComboboxOption({
+                product: p as any,
+                groups,
+                brands,
+                displaySettings: comboboxDisplaySettings,
+                stockMap,
+                moneyFormatter: (amt) => (amt !== undefined && amt !== null ? `₹${fmt(amt)}` : ''),
+            });
+            return {
+                ...opt,
+                value: p.id,
+            };
+        });
+    }, [products, groups, brands, comboboxDisplaySettings, stockMap]);
+
+    const cbHeaderCols = useMemo(() => getProductComboboxHeaderColumns(comboboxDisplaySettings, columnWidths), [comboboxDisplaySettings, columnWidths]);
+    const cbWidthClass = useMemo(() => getProductComboboxWidthClass(comboboxDisplaySettings, columnWidths), [comboboxDisplaySettings, columnWidths]);
 
     const handleCreateCustomerSave = async (newCustomer?: any) => {
         try {
@@ -358,9 +458,34 @@ export default function CustomOrdersPage() {
             const rows = [...prev]; const numF: (keyof MaterialRow)[] = ['quantity','rate','amount'];
             const val = numF.includes(field) ? (Number(value)||0) : value;
             rows[i] = { ...rows[i], [field]: val };
-            if (field==='quantity'||field==='rate') { const q=field==='quantity'?Number(value)||0:Number(rows[i].quantity)||0; const r=field==='rate'?Number(value)||0:Number(rows[i].rate)||0; rows[i].amount=Math.round(q*r*100)/100; }
-            if (field==='product_id') { const prod=products.find(p=>p.id===value); if(prod){rows[i].rate=Number(prod.purchase_rate)||0;rows[i].unit_id=prod.unit_id;rows[i].amount=Math.round((Number(rows[i].quantity)||0)*(Number(prod.purchase_rate)||0)*100)/100;rows[i].product_name=prod.name;rows[i].product_code=prod.code;} }
-            setHasUnsavedChanges(true); return rows;
+            if (field === 'product_id') {
+                const prod = products.find(p => p.id === value);
+                if (prod) {
+                    const defaultUnitId = getDefaultProductUnitId(productUnitsByProduct[prod.id], 'report', prod.unit_id) || prod.unit_id;
+                    const defaultRate = getProductUnitRate(productUnitsByProduct[prod.id], defaultUnitId, 'purchase', prod.purchase_rate);
+                    rows[i].unit_id = defaultUnitId;
+                    rows[i].rate = defaultRate;
+                    rows[i].product_name = prod.name;
+                    rows[i].product_code = prod.code;
+                    const q = Number(rows[i].quantity) || 0;
+                    rows[i].amount = Math.round(q * defaultRate * 100) / 100;
+                }
+            } else if (field === 'unit_id') {
+                const prod = products.find(p => p.id === rows[i].product_id);
+                if (prod) {
+                    const unitRate = getProductUnitRate(productUnitsByProduct[prod.id], value, 'purchase', prod.purchase_rate);
+                    rows[i].rate = unitRate;
+                    const q = Number(rows[i].quantity) || 0;
+                    rows[i].amount = Math.round(q * unitRate * 100) / 100;
+                }
+            }
+            if (field === 'quantity' || field === 'rate') {
+                const q = field === 'quantity' ? Number(value) || 0 : Number(rows[i].quantity) || 0;
+                const r = field === 'rate' ? Number(value) || 0 : Number(rows[i].rate) || 0;
+                rows[i].amount = Math.round(q * r * 100) / 100;
+            }
+            setHasUnsavedChanges(true);
+            return rows;
         });
     };
 
@@ -795,8 +920,8 @@ export default function CustomOrdersPage() {
 
                                 {/* Stock Used */}
                                 <TabsContent value="materials" className="flex-1 min-h-0 flex flex-col overflow-hidden mt-0">
-                                    <div className="bg-muted/40 border-b px-3 py-1.5 shrink-0 grid grid-cols-[2.5fr_0.8fr_0.9fr_0.9fr_68px] gap-2 text-xs font-medium text-muted-foreground">
-                                        <span>Product</span><span>Qty</span><span className="text-right">Rate (₹)</span><span className="text-right">Amount (₹)</span><span className="text-right">Actions</span>
+                                    <div className="bg-muted/40 border-b px-3 py-1.5 shrink-0 grid grid-cols-[2.2fr_0.7fr_0.8fr_0.9fr_0.9fr_68px] gap-2 text-xs font-medium text-muted-foreground">
+                                        <span>Product</span><span>Qty</span><span>Unit</span><span className="text-right">Rate (₹)</span><span className="text-right">Amount (₹)</span><span className="text-right">Actions</span>
                                     </div>
                                     <div className="flex-1 overflow-auto p-3 space-y-1.5 min-h-0">
                                         {materials.map((row, i) => (
@@ -805,11 +930,13 @@ export default function CustomOrdersPage() {
                                                 data-row-index={i}
                                                 data-material-row={i}
                                                 onKeyDown={e => handleMaterialKeyDown(e, i)}
-                                                className="grid grid-cols-[2.5fr_0.8fr_0.9fr_0.9fr_68px] gap-2 items-center"
+                                                className="grid grid-cols-[2.2fr_0.7fr_0.8fr_0.9fr_0.9fr_68px] gap-2 items-center"
                                             >
                                                 <Combobox
-                                                    options={products.map(p => ({ value: p.id, label: `${p.code} — ${p.name}`, searchString: `${p.code} ${p.name}` }))}
-                                                    value={row.product_id}
+                                                    headerColumns={cbHeaderCols}
+                                                    popoverClassName={cbWidthClass}
+                                                    options={productOptions}
+                                                    value={row.product_id || undefined}
                                                     onChange={v => updateMaterial(i, 'product_id', String(v))}
                                                     onAfterSelect={() => {
                                                         const rowEl = document.querySelector(`[data-material-row="${i}"]`);
@@ -832,6 +959,57 @@ export default function CustomOrdersPage() {
                                                     onFocus={e => e.target.select()}
                                                     className="h-8 text-sm"
                                                 />
+                                                <Select
+                                                    value={row.unit_id || ''}
+                                                    onValueChange={(val) => updateMaterial(i, 'unit_id', val)}
+                                                    disabled={!row.product_id}
+                                                >
+                                                    <SelectTrigger
+                                                        className="h-8 w-full text-xs font-medium"
+                                                        data-field="unit"
+                                                        data-unit-trigger="true"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                e.preventDefault();
+                                                                const rowEl = document.querySelector(`[data-material-row="${i}"]`);
+                                                                const rateInput = rowEl?.querySelector('[data-field="rate"]') as HTMLInputElement | null;
+                                                                rateInput?.focus();
+                                                                rateInput?.select();
+                                                            }
+                                                        }}
+                                                    >
+                                                        <SelectValue placeholder="Unit" />
+                                                    </SelectTrigger>
+                                                    <SelectContent>
+                                                        {(() => {
+                                                            const p = products.find(prod => prod.id === row.product_id);
+                                                            const convs = p ? (productUnitsByProduct[p.id] || []) : [];
+                                                            if (convs.length > 0) {
+                                                                return convs.map((conversion) => {
+                                                                    const unit = units.find(u => u.id === conversion.unit_id);
+                                                                    return (
+                                                                        <SelectItem key={conversion.id || conversion.unit_id} value={String(conversion.unit_id)}>
+                                                                            {unit ? (unit.symbol || unit.name) : (conversion.unit_symbol || conversion.unit_name || conversion.unit_id)}
+                                                                        </SelectItem>
+                                                                    );
+                                                                });
+                                                            }
+                                                            if (p && p.unit_id) {
+                                                                const unit = units.find(u => u.id === p.unit_id);
+                                                                return (
+                                                                    <SelectItem key={p.unit_id} value={String(p.unit_id)}>
+                                                                        {unit ? (unit.symbol || unit.name) : (p.unit_name || 'Unit')}
+                                                                    </SelectItem>
+                                                                );
+                                                            }
+                                                            return (
+                                                                <SelectItem value="none" disabled>
+                                                                    —
+                                                                </SelectItem>
+                                                            );
+                                                        })()}
+                                                    </SelectContent>
+                                                </Select>
                                                 <Input
                                                     data-field="rate"
                                                     type="number"

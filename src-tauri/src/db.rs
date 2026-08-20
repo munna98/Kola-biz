@@ -73,6 +73,125 @@ async fn backfill_stock_movement_costs(
     Ok(())
 }
 
+async fn migrate_purchase_discounts_and_stock_valuation(
+    pool: &SqlitePool,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Sync stock_movements rates and cost amounts to net landed amounts for purchase invoices
+    sqlx::query(
+        "UPDATE stock_movements
+         SET rate = COALESCE((
+                 SELECT CASE WHEN vi.base_quantity > 0 THEN vi.net_amount / vi.base_quantity ELSE stock_movements.rate END
+                 FROM voucher_items vi
+                 WHERE vi.voucher_id = stock_movements.voucher_id
+                   AND vi.product_id = stock_movements.product_id
+                   AND vi.item_type != 'service'
+                 LIMIT 1
+             ), rate),
+             amount = COALESCE((
+                 SELECT vi.net_amount
+                 FROM voucher_items vi
+                 WHERE vi.voucher_id = stock_movements.voucher_id
+                   AND vi.product_id = stock_movements.product_id
+                   AND vi.item_type != 'service'
+                 LIMIT 1
+             ), amount),
+             cost_rate = COALESCE((
+                 SELECT CASE WHEN vi.base_quantity > 0 THEN vi.net_amount / vi.base_quantity ELSE stock_movements.cost_rate END
+                 FROM voucher_items vi
+                 WHERE vi.voucher_id = stock_movements.voucher_id
+                   AND vi.product_id = stock_movements.product_id
+                   AND vi.item_type != 'service'
+                 LIMIT 1
+             ), cost_rate),
+             cost_amount = COALESCE((
+                 SELECT vi.net_amount
+                 FROM voucher_items vi
+                 WHERE vi.voucher_id = stock_movements.voucher_id
+                   AND vi.product_id = stock_movements.product_id
+                   AND vi.item_type != 'service'
+                 LIMIT 1
+             ), cost_amount)
+         WHERE voucher_id IN (
+             SELECT id FROM vouchers WHERE voucher_type = 'purchase_invoice'
+         )",
+    )
+    .execute(pool)
+    .await?;
+
+    // 2. Sync stock_movements rates and cost amounts to net landed amounts for purchase returns
+    sqlx::query(
+        "UPDATE stock_movements
+         SET rate = COALESCE((
+                 SELECT CASE WHEN vi.base_quantity > 0 THEN vi.net_amount / vi.base_quantity ELSE stock_movements.rate END
+                 FROM voucher_items vi
+                 WHERE vi.voucher_id = stock_movements.voucher_id
+                   AND vi.product_id = stock_movements.product_id
+                   AND vi.item_type != 'service'
+                 LIMIT 1
+             ), rate),
+             amount = COALESCE((
+                 SELECT vi.net_amount
+                 FROM voucher_items vi
+                 WHERE vi.voucher_id = stock_movements.voucher_id
+                   AND vi.product_id = stock_movements.product_id
+                   AND vi.item_type != 'service'
+                 LIMIT 1
+             ), amount),
+             cost_rate = COALESCE((
+                 SELECT CASE WHEN vi.base_quantity > 0 THEN vi.net_amount / vi.base_quantity ELSE stock_movements.cost_rate END
+                 FROM voucher_items vi
+                 WHERE vi.voucher_id = stock_movements.voucher_id
+                   AND vi.product_id = stock_movements.product_id
+                   AND vi.item_type != 'service'
+                 LIMIT 1
+             ), cost_rate),
+             cost_amount = COALESCE((
+                 SELECT vi.net_amount
+                 FROM voucher_items vi
+                 WHERE vi.voucher_id = stock_movements.voucher_id
+                   AND vi.product_id = stock_movements.product_id
+                   AND vi.item_type != 'service'
+                 LIMIT 1
+             ), cost_amount)
+         WHERE voucher_id IN (
+             SELECT id FROM vouchers WHERE voucher_type = 'purchase_return'
+         )",
+    )
+    .execute(pool)
+    .await?;
+
+    // 3. Remove redundant Discount Received (4004) entries from purchase invoices and purchase returns
+    sqlx::query(
+        "DELETE FROM journal_entries
+         WHERE account_id IN (SELECT id FROM chart_of_accounts WHERE account_code = '4004')
+           AND voucher_id IN (
+               SELECT id FROM vouchers WHERE voucher_type IN ('purchase_invoice', 'purchase_return')
+           )",
+    )
+    .execute(pool)
+    .await?;
+
+    // 4. Correct Purchase Return (5003) credit amounts to net total in journal_entries if previously posted at gross
+    sqlx::query(
+        "UPDATE journal_entries
+         SET credit = (
+             SELECT v.total_amount
+             FROM vouchers v
+             WHERE v.id = journal_entries.voucher_id
+         )
+         WHERE account_id IN (SELECT id FROM chart_of_accounts WHERE account_code = '5003')
+           AND voucher_id IN (
+               SELECT id FROM vouchers
+               WHERE voucher_type = 'purchase_return'
+                 AND COALESCE(discount_amount, 0) > 0
+           )",
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 /// Initialize the schema (tables + migrations) on an already-connected pool.
 /// Called by DbRegistry when opening or creating a company database.
 pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Error>> {
@@ -828,6 +947,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         .execute(pool)
         .await;
     backfill_stock_movement_costs(pool).await?;
+    migrate_purchase_discounts_and_stock_valuation(pool).await?;
 
     // Payment/Receipt Allocations
     sqlx::query(
@@ -995,6 +1115,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         .execute(pool)
         .await;
     backfill_stock_movement_costs(pool).await?;
+    migrate_purchase_discounts_and_stock_valuation(pool).await?;
 
     // ==================== CUSTOM ORDERS MODULE ====================
 

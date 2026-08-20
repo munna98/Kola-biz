@@ -5,7 +5,10 @@ use tauri::State;
 use uuid::Uuid;
 
 use super::invoices::{finalize_processed_items, prepare_voucher_line};
-use super::resolve_voucher_line_unit;
+
+fn round2(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
 
 // ============= PURCHASE RETURN =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -371,17 +374,53 @@ pub async fn create_purchase_return(
         .await
         .map_err(|e| format!("Party account not found: {}", e))?;
 
-    sqlx::query(
-        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, 0, ?, 'Purchase Return (Goods returned)')",
-    )
-    .bind(Uuid::now_v7().to_string())
-    .bind(&voucher_id)
-    .bind(&purchase_return_account)
-    .bind(subtotal)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    let product_net_subtotal = round2(
+        processed_items
+            .iter()
+            .filter(|i| i.item_type != "service")
+            .map(|i| i.net_amount)
+            .sum::<f64>(),
+    );
+    let service_net_subtotal = round2(
+        processed_items
+            .iter()
+            .filter(|i| i.item_type == "service")
+            .map(|i| i.net_amount)
+            .sum::<f64>(),
+    );
+
+    if product_net_subtotal > 0.0 {
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, 0, ?, 'Purchase Return (Goods returned)')",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(&voucher_id)
+        .bind(&purchase_return_account)
+        .bind(product_net_subtotal)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    if service_net_subtotal > 0.0 {
+        let svc_exp_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5011'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, 0, ?, 'Purchase Return (Service reversal)')",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(&voucher_id)
+        .bind(&svc_exp_acc)
+        .bind(service_net_subtotal)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
 
     if total_tax > 0.0 {
         sqlx::query(
@@ -404,59 +443,31 @@ pub async fn create_purchase_return(
     .bind(Uuid::now_v7().to_string())
     .bind(&voucher_id)
     .bind(&party_account)
-    .bind(subtotal - discount_amount + total_tax)
+    .bind(total_amount + total_tax)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    if discount_amount > 0.0 {
-        let discount_received_account: String =
-            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'")
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-
-        sqlx::query(
-            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, 'Reversal of Discount Received')",
-        )
-        .bind(Uuid::now_v7().to_string())
-        .bind(&voucher_id)
-        .bind(&discount_received_account)
-        .bind(discount_amount)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    }
-
-    let items_for_stock: Vec<(Option<String>, Option<String>, f64, i64, f64, f64)> = sqlx::query_as(
-        "SELECT item_type, product_id, base_quantity, count, rate, amount FROM voucher_items WHERE voucher_id = ?",
-    )
-    .bind(&voucher_id)
-    .fetch_all(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
-
-    for item in items_for_stock {
-        if item.0.as_deref() == Some("service") {
+    for item in &processed_items {
+        if item.item_type == "service" {
             continue;
         } // skip services
-        let base_qty = item.2;
+        let base_qty = item.base_quantity;
         let rate_per_base = if base_qty > 0.0 {
-            item.5 / base_qty
+            item.net_amount / base_qty
         } else {
-            item.4
+            item.rate
         };
-        let amount = base_qty * rate_per_base;
+        let amount = item.net_amount;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount)
              VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?, ?)",
         )
         .bind(Uuid::now_v7().to_string())
         .bind(&voucher_id)
-        .bind(&item.1)
+        .bind(&item.product_id)
         .bind(base_qty)
-        .bind(item.3)
+        .bind(item.count)
         .bind(rate_per_base)
         .bind(amount)
         .bind(rate_per_base)
@@ -646,17 +657,53 @@ pub async fn update_purchase_return(
         .await
         .map_err(|e| e.to_string())?;
 
-    sqlx::query(
-        "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, 0, ?, 'Purchase Return (Goods returned)')",
-    )
-    .bind(Uuid::now_v7().to_string())
-    .bind(&id)
-    .bind(&purchase_return_account)
-    .bind(subtotal)
-    .execute(&mut *tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    let product_net_subtotal = round2(
+        processed_items
+            .iter()
+            .filter(|i| i.item_type != "service")
+            .map(|i| i.net_amount)
+            .sum::<f64>(),
+    );
+    let service_net_subtotal = round2(
+        processed_items
+            .iter()
+            .filter(|i| i.item_type == "service")
+            .map(|i| i.net_amount)
+            .sum::<f64>(),
+    );
+
+    if product_net_subtotal > 0.0 {
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, 0, ?, 'Purchase Return (Goods returned)')",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(&id)
+        .bind(&purchase_return_account)
+        .bind(product_net_subtotal)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
+
+    if service_net_subtotal > 0.0 {
+        let svc_exp_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5011'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        sqlx::query(
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
+             VALUES (?, ?, ?, 0, ?, 'Purchase Return (Service reversal)')",
+        )
+        .bind(Uuid::now_v7().to_string())
+        .bind(&id)
+        .bind(&svc_exp_acc)
+        .bind(service_net_subtotal)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
 
     if total_tax > 0.0 {
         sqlx::query(
@@ -679,54 +726,22 @@ pub async fn update_purchase_return(
     .bind(Uuid::now_v7().to_string())
     .bind(&id)
     .bind(&party_account)
-    .bind(subtotal - discount_amount + total_tax)
+    .bind(total_amount + total_tax)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    if discount_amount > 0.0 {
-        let discount_received_account: String =
-            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4004'")
-                .fetch_one(&mut *tx)
-                .await
-                .map_err(|e| e.to_string())?;
-
-        sqlx::query(
-            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, 'Reversal of Discount Received')",
-        )
-        .bind(Uuid::now_v7().to_string())
-        .bind(&id)
-        .bind(&discount_received_account)
-        .bind(discount_amount)
-        .execute(&mut *tx)
-        .await
-        .map_err(|e| e.to_string())?;
-    }
-
-    for item in &invoice.items {
+    for item in &processed_items {
         if item.item_type == "service" {
             continue;
         } // Services have no stock
-        let final_qty = item.initial_quantity - (item.count as f64 * item.deduction_per_unit);
-        let item_id = item.product_id.as_deref().unwrap_or("");
-        let unit_snapshot = resolve_voucher_line_unit(
-            &mut tx,
-            item_id,
-            item.unit_id.as_deref(),
-            "purchase",
-            final_qty,
-        )
-        .await?;
-
-        let base_qty = unit_snapshot.base_quantity;
-        let amount_for_item = final_qty * item.rate;
+        let base_qty = item.base_quantity;
         let rate_per_base = if base_qty > 0.0 {
-            amount_for_item / base_qty
+            item.net_amount / base_qty
         } else {
             item.rate
         };
-        let amount = base_qty * rate_per_base;
+        let amount = item.net_amount;
         sqlx::query(
             "INSERT INTO stock_movements (id, voucher_id, product_id, movement_type, quantity, count, rate, amount, cost_rate, cost_amount)
              VALUES (?, ?, ?, 'OUT', ?, ?, ?, ?, ?, ?)",
