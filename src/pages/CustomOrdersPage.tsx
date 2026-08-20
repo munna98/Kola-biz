@@ -47,7 +47,7 @@ import {
     IconScissors, IconPackage, IconShoppingBag, IconTools,
     IconRefresh, IconCurrencyRupee, IconEye, IconClock,
     IconChevronLeft, IconChevronRight, IconList, IconDeviceFloppy,
-    IconX, IconFileInvoice, IconCash,
+    IconX, IconCash,
 } from "@tabler/icons-react";
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
