@@ -28,6 +28,7 @@ pub struct CustomOrder {
     pub total_job_cost: f64,
     pub final_invoice_id: Option<String>,
     pub final_invoice_no: Option<String>,
+    pub reference: Option<String>,
     pub payment_status: String,
     pub total_paid: f64,
     pub balance_due: f64,
@@ -129,6 +130,7 @@ pub struct CreateCustomOrder {
     pub finished_item_qty: f64,
     pub finished_item_unit: Option<String>,
     pub sale_price: f64,
+    pub reference: Option<String>,
     pub narration: Option<String>,
     pub materials: Vec<CreateCustomOrderMaterial>,
     pub purchases: Vec<CreateCustomOrderPurchase>,
@@ -480,6 +482,7 @@ pub async fn list_custom_orders(
             co.total_material_cost, co.total_purchase_cost, co.total_service_cost, co.total_job_cost,
             co.final_invoice_id,
             inv.voucher_no as final_invoice_no,
+            co.reference,
             CASE
                 WHEN (
                     CASE
@@ -544,6 +547,7 @@ pub async fn get_custom_order(
             co.total_material_cost, co.total_purchase_cost, co.total_service_cost, co.total_job_cost,
             co.final_invoice_id,
             inv.voucher_no as final_invoice_no,
+            co.reference,
             CASE
                 WHEN (
                     CASE
@@ -602,7 +606,7 @@ pub async fn get_custom_order(
         "SELECT
             cop.id, cop.order_id, cop.description,
             cop.supplier_id,
-            COALESCE(coa.account_name, s.name, 'Cash (Paid Spot)') as supplier_name,
+            COALESCE(coa.account_name, s.name, 'Cash') as supplier_name,
             cop.quantity, cop.unit_id, cop.rate, cop.amount,
             cop.expense_account, cop.purchase_date
          FROM custom_order_purchases cop
@@ -648,6 +652,7 @@ pub async fn get_custom_order_by_invoice(
             co.total_material_cost, co.total_purchase_cost, co.total_service_cost, co.total_job_cost,
             co.final_invoice_id,
             inv.voucher_no as final_invoice_no,
+            co.reference,
             CASE
                 WHEN (
                     CASE
@@ -710,9 +715,9 @@ pub async fn create_custom_order(
         "INSERT INTO custom_orders
          (id, order_no, order_date, delivery_date, customer_id, status,
           finished_item_name, finished_item_qty, finished_item_unit,
-          sale_price, total_material_cost, total_purchase_cost, total_service_cost, total_job_cost,
+          sale_price, reference, total_material_cost, total_purchase_cost, total_service_cost, total_job_cost,
           narration, created_by)
-         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&order_id)
     .bind(&order_no)
@@ -723,6 +728,7 @@ pub async fn create_custom_order(
     .bind(data.finished_item_qty)
     .bind(&data.finished_item_unit)
     .bind(data.sale_price)
+    .bind(&data.reference)
     .bind(mat_cost)
     .bind(pur_cost)
     .bind(svc_cost)
@@ -802,13 +808,13 @@ pub async fn update_custom_order(
         "UPDATE custom_orders SET
          order_date=?, delivery_date=?, customer_id=?,
          finished_item_name=?, finished_item_qty=?, finished_item_unit=?,
-         sale_price=?,
+         sale_price=?, reference=?,
          total_material_cost=?, total_purchase_cost=?, total_service_cost=?, total_job_cost=?,
          narration=?, updated_at=CURRENT_TIMESTAMP WHERE id=?",
     )
     .bind(&data.order_date).bind(&data.delivery_date).bind(&data.customer_id)
     .bind(&data.finished_item_name).bind(data.finished_item_qty).bind(&data.finished_item_unit)
-    .bind(data.sale_price)
+    .bind(data.sale_price).bind(&data.reference)
     .bind(mat_cost).bind(pur_cost).bind(svc_cost).bind(total_cost)
     .bind(&data.narration).bind(&id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;

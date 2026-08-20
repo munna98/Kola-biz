@@ -1017,6 +1017,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             total_service_cost  REAL DEFAULT 0,
             total_job_cost      REAL DEFAULT 0,
             final_invoice_id    TEXT,
+            reference           TEXT,
             narration           TEXT,
             created_by          TEXT,
             created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1096,6 +1097,11 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
 
     // Migration: add voucher_id column to custom_order_purchases if missing
     let _ = sqlx::query("ALTER TABLE custom_order_purchases ADD COLUMN voucher_id TEXT")
+        .execute(pool)
+        .await;
+
+    // Migration: add reference column to custom_orders if missing
+    let _ = sqlx::query("ALTER TABLE custom_orders ADD COLUMN reference TEXT")
         .execute(pool)
         .await;
 
