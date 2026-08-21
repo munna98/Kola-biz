@@ -967,8 +967,6 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
 
     // Vouchers (Master Transaction Table)
     sqlx::query(
-    // Vouchers (Master Transaction Table)
-    sqlx::query(
         "CREATE TABLE IF NOT EXISTS vouchers (
             id TEXT PRIMARY KEY,
             voucher_no TEXT UNIQUE NOT NULL,
