@@ -676,7 +676,22 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             sales_rate REAL NOT NULL,
             mrp REAL NOT NULL,
             barcode TEXT,
+            brand_id TEXT REFERENCES product_brands(id),
             part_number TEXT,
+            supplier_id TEXT REFERENCES chart_of_accounts(id),
+            is_master INTEGER NOT NULL DEFAULT 0,
+            parent_product_id TEXT REFERENCES products(id),
+            vehicle_make TEXT,
+            vehicle_odometer REAL,
+            vehicle_fuel_type TEXT,
+            vehicle_transmission TEXT,
+            vehicle_owner TEXT,
+            vehicle_color TEXT,
+            vehicle_manufacturer TEXT,
+            vehicle_model TEXT,
+            vehicle_year INTEGER,
+            cost REAL,
+            is_margin_scheme_default INTEGER DEFAULT 0,
             is_active INTEGER DEFAULT 1,
             deleted_at DATETIME,
             deleted_by TEXT,
@@ -738,6 +753,9 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             id TEXT PRIMARY KEY,
             name TEXT UNIQUE NOT NULL,
             account_type TEXT NOT NULL,
+            parent_group_id TEXT REFERENCES account_groups(id),
+            is_system INTEGER DEFAULT 0,
+            base_type TEXT,
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -874,6 +892,13 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             opening_balance_type TEXT DEFAULT 'Dr',
             party_id TEXT,
             party_type TEXT,
+            gstin TEXT,
+            address_line_1 TEXT,
+            address_line_2 TEXT,
+            state TEXT,
+            city TEXT,
+            postal_code TEXT,
+            price_category_id TEXT REFERENCES price_categories(id),
             is_active INTEGER DEFAULT 1,
             is_system INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -942,6 +967,8 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
 
     // Vouchers (Master Transaction Table)
     sqlx::query(
+    // Vouchers (Master Transaction Table)
+    sqlx::query(
         "CREATE TABLE IF NOT EXISTS vouchers (
             id TEXT PRIMARY KEY,
             voucher_no TEXT UNIQUE NOT NULL,
@@ -950,16 +977,32 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             reference TEXT,
             party_id TEXT,
             party_type TEXT,
+            salesperson_id TEXT,
+            account_id TEXT,
             subtotal REAL DEFAULT 0,
             discount_rate REAL DEFAULT 0,
             discount_amount REAL DEFAULT 0,
             tax_amount REAL DEFAULT 0,
             total_amount REAL DEFAULT 0,
+            cgst_amount REAL DEFAULT 0,
+            sgst_amount REAL DEFAULT 0,
+            igst_amount REAL DEFAULT 0,
+            grand_total REAL DEFAULT 0,
+            tax_inclusive INTEGER NOT NULL DEFAULT 0,
+            gst_disabled INTEGER DEFAULT 0,
             narration TEXT,
             status TEXT DEFAULT 'posted',
             payment_status TEXT DEFAULT 'unpaid',
             created_from_invoice_id TEXT,
-            account_id TEXT,
+            linked_return_id TEXT,
+            irn TEXT,
+            ack_no TEXT,
+            ack_date DATE,
+            is_margin_scheme_invoice INTEGER DEFAULT 0,
+            currency_id TEXT REFERENCES currencies(id),
+            exchange_rate REAL DEFAULT 1.0,
+            foreign_total REAL DEFAULT 0,
+            price_category_id TEXT REFERENCES price_categories(id),
             metadata TEXT,
             created_by TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -969,6 +1012,25 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     )
     .execute(pool)
     .await?;
+
+    // Migration: Add columns to vouchers if missing
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN salesperson_id TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN created_by TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN tax_inclusive INTEGER NOT NULL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN cgst_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN sgst_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN igst_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN grand_total REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN linked_return_id TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN gst_disabled INTEGER DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN irn TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN ack_no TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN ack_date DATE").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN is_margin_scheme_invoice INTEGER DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN currency_id TEXT REFERENCES currencies(id)").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN exchange_rate REAL DEFAULT 1.0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN foreign_total REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN price_category_id TEXT REFERENCES price_categories(id)").execute(pool).await;
 
     // Migration: Add show_less_column if not exists
     let _ =
@@ -1006,47 +1068,6 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             .execute(pool)
             .await;
 
-    // Migration: Add salesperson_id to vouchers if not exists
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN salesperson_id TEXT")
-        .execute(pool)
-        .await;
-
-    // Migration: Add created_by to vouchers if not exists
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN created_by TEXT")
-        .execute(pool)
-        .await;
-
-    // Migration: Add tax_inclusive to vouchers if not exists
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN tax_inclusive INTEGER NOT NULL DEFAULT 0")
-        .execute(pool)
-        .await;
-
-    // Migration: Add GST split columns to vouchers if not exists
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN cgst_amount REAL DEFAULT 0")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN sgst_amount REAL DEFAULT 0")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN igst_amount REAL DEFAULT 0")
-        .execute(pool)
-        .await;
-
-    // Migration: Add grand_total to vouchers if not exists
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN grand_total REAL DEFAULT 0")
-        .execute(pool)
-        .await;
-
-    // Inline sales returns: links a sales invoice to the silently-created return voucher.
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN linked_return_id TEXT")
-        .execute(pool)
-        .await;
-
-    // Migration: Add gst_disabled to vouchers if not exists
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN gst_disabled INTEGER DEFAULT 0")
-        .execute(pool)
-        .await;
-
     // Data fix: Backfill grand_total for payment/receipt vouchers where it was never stored (still 0).
     // We derive grand_total from the journal credit (payment) or debit (receipt) side which was
     // always correctly recorded. Falls back to total_amount if no journal entries exist.
@@ -1056,7 +1077,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
              SELECT COALESCE(SUM(je.credit), vouchers.total_amount, 0)
              FROM journal_entries je
              WHERE je.voucher_id = vouchers.id AND je.credit > 0
-         )
+          )
          WHERE voucher_type = 'payment'
            AND grand_total = 0
            AND total_amount > 0
@@ -1073,7 +1094,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
              WHERE je.voucher_id = vouchers.id AND je.debit > 0
              -- Only the single cash/bank debit entry represents the total received
              LIMIT 1
-         )
+          )
          WHERE voucher_type = 'receipt'
            AND grand_total = 0
            AND total_amount > 0
@@ -1283,6 +1304,10 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             account_id TEXT NOT NULL,
             debit REAL DEFAULT 0,
             credit REAL DEFAULT 0,
+            foreign_debit REAL DEFAULT 0,
+            foreign_credit REAL DEFAULT 0,
+            currency_id TEXT,
+            exchange_rate REAL DEFAULT 1.0,
             is_manual INTEGER DEFAULT 0,
             narration TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1292,6 +1317,11 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     )
     .execute(pool)
     .await?;
+
+    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN foreign_debit REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN foreign_credit REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN currency_id TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN exchange_rate REAL DEFAULT 1.0").execute(pool).await;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_voucher ON journal_entries(voucher_id)")
         .execute(pool)
