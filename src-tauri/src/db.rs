@@ -1114,7 +1114,9 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             id TEXT PRIMARY KEY,
             voucher_id TEXT NOT NULL,
             product_id TEXT,
+            service_id TEXT,
             ledger_id TEXT,
+            item_type TEXT DEFAULT 'product',
             description TEXT,
             initial_quantity REAL NOT NULL,
             count INTEGER NOT NULL,
@@ -1124,12 +1126,30 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             base_quantity REAL,
             rate REAL NOT NULL,
             amount REAL NOT NULL,
+            net_amount REAL DEFAULT 0,
+            original_amount REAL DEFAULT 0,
+            discount_percent REAL DEFAULT 0,
+            discount_amount REAL DEFAULT 0,
+            invoice_discount_amount REAL DEFAULT 0,
             tax_rate REAL DEFAULT 0,
             tax_amount REAL DEFAULT 0,
+            cgst_rate REAL DEFAULT 0,
+            sgst_rate REAL DEFAULT 0,
+            igst_rate REAL DEFAULT 0,
+            cgst_amount REAL DEFAULT 0,
+            sgst_amount REAL DEFAULT 0,
+            igst_amount REAL DEFAULT 0,
+            hsn_sac_code TEXT,
+            gst_slab_id TEXT,
+            resolved_gst_rate REAL DEFAULT 0,
+            is_margin_scheme INTEGER DEFAULT 0,
+            purchase_cost REAL DEFAULT 0,
+            margin_amount REAL DEFAULT 0,
             remarks TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
-            FOREIGN KEY (product_id) REFERENCES products(id)
+            FOREIGN KEY (product_id) REFERENCES products(id),
+            FOREIGN KEY (service_id) REFERENCES services(id)
         )",
     )
     .execute(pool)
@@ -1239,6 +1259,21 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN service_id TEXT REFERENCES services(id)")
         .execute(pool)
         .await;
+
+    // Migration: Add GST split & net_amount columns to voucher_items if missing
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN cgst_rate REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN sgst_rate REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN igst_rate REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN cgst_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN sgst_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN igst_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN hsn_sac_code TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN gst_slab_id TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN resolved_gst_rate REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN original_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN invoice_discount_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN net_amount REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("UPDATE voucher_items SET net_amount = amount WHERE COALESCE(net_amount, 0) = 0").execute(pool).await;
 
     // Journal Entries (Ledger Postings)
     sqlx::query(
@@ -1387,92 +1422,6 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_discount_column INTEGER DEFAULT 0")
             .execute(pool)
             .await;
-
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_voucher_items_voucher ON voucher_items(voucher_id)",
-    )
-    .execute(pool)
-    .await?;
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_voucher_items_product ON voucher_items(product_id)",
-    )
-    .execute(pool)
-    .await?;
-
-    // Migration: Add discount_percent to voucher_items if not exists
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN discount_percent REAL DEFAULT 0")
-        .execute(pool)
-        .await;
-
-    // Migration: Add discount_amount to voucher_items if not exists
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN discount_amount REAL DEFAULT 0")
-        .execute(pool)
-        .await;
-
-    // Journal Entries (Ledger Postings)
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS journal_entries (
-            id TEXT PRIMARY KEY,
-            voucher_id TEXT NOT NULL,
-            account_id TEXT NOT NULL,
-            debit REAL DEFAULT 0,
-            credit REAL DEFAULT 0,
-            is_manual INTEGER DEFAULT 0,
-            narration TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
-            FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_voucher ON journal_entries(voucher_id)")
-        .execute(pool)
-        .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_account ON journal_entries(account_id)")
-        .execute(pool)
-        .await?;
-
-    // Stock Movements
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS stock_movements (
-            id TEXT PRIMARY KEY,
-            voucher_id TEXT NOT NULL,
-            product_id TEXT NOT NULL,
-            movement_type TEXT NOT NULL,
-            quantity REAL NOT NULL,
-            count INTEGER DEFAULT 0,
-            rate REAL NOT NULL,
-            amount REAL NOT NULL,
-            cost_rate REAL DEFAULT 0,
-            cost_amount REAL DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
-            FOREIGN KEY (product_id) REFERENCES products(id)
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_stock_movements_voucher ON stock_movements(voucher_id)",
-    )
-    .execute(pool)
-    .await?;
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id)",
-    )
-    .execute(pool)
-    .await?;
-    let _ = sqlx::query("ALTER TABLE stock_movements ADD COLUMN cost_rate REAL DEFAULT 0")
-        .execute(pool)
-        .await;
-    let _ = sqlx::query("ALTER TABLE stock_movements ADD COLUMN cost_amount REAL DEFAULT 0")
-        .execute(pool)
-        .await;
-    backfill_stock_movement_costs(pool).await?;
-    migrate_purchase_discounts_and_stock_valuation(pool).await?;
 
     // ==================== CUSTOM ORDERS MODULE ====================
 
@@ -2101,26 +2050,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
            AND chart_of_accounts.account_group = 'Accounts Payable'"
     ).execute(pool).await;
 
-    // Migration: Add GST split columns to voucher_items
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN cgst_rate REAL DEFAULT 0").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN sgst_rate REAL DEFAULT 0").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN igst_rate REAL DEFAULT 0").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN cgst_amount REAL DEFAULT 0").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN sgst_amount REAL DEFAULT 0").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN igst_amount REAL DEFAULT 0").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN hsn_sac_code TEXT").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN gst_slab_id TEXT").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN resolved_gst_rate REAL DEFAULT 0").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN original_amount REAL DEFAULT 0").execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN invoice_discount_amount REAL DEFAULT 0").execute(pool).await;
     let _ = sqlx::query("UPDATE voucher_items SET original_amount = amount WHERE COALESCE(original_amount, 0) = 0").execute(pool).await;
-
-    // Migration: Add net_amount column (new semantic - amount after invoice discount)
-    // amount now stores the gross (original) amount; net_amount stores amount minus invoice discount
-    let _ = sqlx::query("ALTER TABLE voucher_items ADD COLUMN net_amount REAL DEFAULT 0").execute(pool).await;
-    // Backfill: net_amount gets the old "amount" value (which was the net-after-discount)
-    let _ = sqlx::query("UPDATE voucher_items SET net_amount = amount WHERE COALESCE(net_amount, 0) = 0").execute(pool).await;
-    // Promote original_amount into amount so amount = gross; only where original_amount has meaningful data
     let _ = sqlx::query("UPDATE voucher_items SET amount = original_amount WHERE original_amount > 0").execute(pool).await;
 
     // Migration: Add e-Invoice columns to vouchers

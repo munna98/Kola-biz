@@ -40,6 +40,7 @@ pub struct CompanyListItem {
 
 pub struct DbRegistry {
     pub master_pool: SqlitePool,
+    pub companies_dir: PathBuf,
     // keyed by company id
     pools: RwLock<HashMap<String, SqlitePool>>,
     // in-memory per app instance, not persisted to master.db
@@ -47,12 +48,92 @@ pub struct DbRegistry {
 }
 
 impl DbRegistry {
-    pub fn new(master_pool: SqlitePool) -> Arc<Self> {
+    pub fn new(master_pool: SqlitePool, companies_dir: PathBuf) -> Arc<Self> {
         Arc::new(Self {
             master_pool,
+            companies_dir,
             pools: RwLock::new(HashMap::new()),
             active_id: RwLock::new(None),
         })
+    }
+
+    /// Automatically discover and register any .db files found in the companies directory
+    /// that are not yet recorded in master.db.
+    pub async fn auto_discover_companies(&self) {
+        if !self.companies_dir.exists() {
+            let _ = std::fs::create_dir_all(&self.companies_dir);
+            return;
+        }
+
+        let entries = match std::fs::read_dir(&self.companies_dir) {
+            Ok(rd) => rd,
+            Err(_) => return,
+        };
+
+        // Fetch existing db_paths from master.db
+        let existing_paths: Vec<String> = sqlx::query_scalar("SELECT db_path FROM companies")
+            .fetch_all(&self.master_pool)
+            .await
+            .unwrap_or_default();
+
+        let normalized_existing: std::collections::HashSet<String> = existing_paths
+            .into_iter()
+            .map(|p| normalize_path_str(&p))
+            .collect();
+
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if ext.to_lowercase() != "db" {
+                continue;
+            }
+
+            let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if file_name.starts_with("master")
+                || file_name.ends_with("-wal")
+                || file_name.ends_with("-shm")
+            {
+                continue;
+            }
+
+            let db_path_str = path.to_string_lossy().to_string();
+            let norm_path = normalize_path_str(&db_path_str);
+
+            if normalized_existing.contains(&norm_path) {
+                continue;
+            }
+
+            // Unregistered .db file found! Read actual company name from company_profile inside this db
+            let company_name = read_company_name_from_db(&db_path_str)
+                .await
+                .unwrap_or_else(|| {
+                    path.file_stem()
+                        .map(|s| format_stem_to_title(&s.to_string_lossy()))
+                        .unwrap_or_else(|| "Restored Company".to_string())
+                });
+
+            let id = uuid::Uuid::now_v7().to_string();
+            let slug = slugify(&company_name);
+
+            println!(
+                "REGISTRY: Auto-discovered external database file '{}' as company '{}'",
+                db_path_str, company_name
+            );
+
+            let _ = sqlx::query(
+                "INSERT INTO companies (id, name, slug, db_path) VALUES (?, ?, ?, ?)",
+            )
+            .bind(&id)
+            .bind(&company_name)
+            .bind(&slug)
+            .bind(&db_path_str)
+            .execute(&self.master_pool)
+            .await;
+        }
     }
 
     /// Returns the pool for the currently active company.
@@ -146,6 +227,9 @@ impl DbRegistry {
 
     /// List all non-deleted companies whose DB file actually exists.
     pub async fn list_companies(&self) -> Result<Vec<CompanyListItem>, String> {
+        // Auto-discover any .db files added directly to the companies directory
+        self.auto_discover_companies().await;
+
         let all: Vec<CompanyInfo> = sqlx::query_as::<_, CompanyInfo>(
             "SELECT id, name, slug, db_path, is_deleted, is_primary, is_secondary, created_at, last_opened
              FROM companies WHERE is_deleted = 0 ORDER BY is_primary DESC, last_opened DESC, name ASC",
@@ -178,7 +262,7 @@ impl DbRegistry {
         &self,
         name: &str,
         custom_path: Option<String>,
-        app_handle: &tauri::AppHandle,
+        _app_handle: &tauri::AppHandle,
     ) -> Result<String, String> {
         let id = uuid::Uuid::now_v7().to_string();
         let slug = slugify(name);
@@ -193,12 +277,8 @@ impl DbRegistry {
                 dir.join(format!("{}.db", slug))
             }
             None => {
-                let app_dir = app_handle
-                    .path()
-                    .app_data_dir()
-                    .map_err(|e| e.to_string())?;
-                let companies_dir = app_dir.join("companies");
-                std::fs::create_dir_all(&companies_dir).map_err(|e| e.to_string())?;
+                let companies_dir = &self.companies_dir;
+                std::fs::create_dir_all(companies_dir).map_err(|e| e.to_string())?;
                 // Handle slug collisions
                 let mut candidate = companies_dir.join(format!("{}.db", slug));
                 let mut counter = 1u32;
@@ -485,7 +565,10 @@ pub async fn init_registry(
         .execute(&master_pool)
         .await;
 
-    let registry = DbRegistry::new(master_pool);
+    let companies_dir = app_dir.join("companies");
+    std::fs::create_dir_all(&companies_dir)?;
+
+    let registry = DbRegistry::new(master_pool, companies_dir.clone());
 
     // ---- Migration: adopt existing erp.db as "Default Company" if no companies registered ----
     let count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM companies")
@@ -495,9 +578,6 @@ pub async fn init_registry(
     if count.0 == 0 {
         let legacy_path = app_dir.join("erp.db");
         if legacy_path.exists() {
-            let companies_dir = app_dir.join("companies");
-            std::fs::create_dir_all(&companies_dir)?;
-
             // ── Read actual company name from erp.db's company_profile ────────
             let company_name: String = {
                 let legacy_url = format!(
@@ -562,5 +642,56 @@ pub async fn init_registry(
         }
     }
 
+    // Auto-discover any pre-existing or copied .db files in companies directory
+    registry.auto_discover_companies().await;
+
     Ok(registry)
+}
+
+fn normalize_path_str(p: &str) -> String {
+    std::path::Path::new(p)
+        .canonicalize()
+        .map(|cp| cp.to_string_lossy().to_string())
+        .unwrap_or_else(|_| p.to_string())
+        .replace('\\', "/")
+        .to_lowercase()
+}
+
+fn format_stem_to_title(stem: &str) -> String {
+    stem.replace(['_', '-'], " ")
+        .split_whitespace()
+        .map(|word| {
+            let mut c = word.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+async fn read_company_name_from_db(db_path: &str) -> Option<String> {
+    let db_url = format!("sqlite:{}?mode=ro", db_path);
+    let opts = match SqliteConnectOptions::from_str(&db_url) {
+        Ok(o) => o.disable_statement_logging(),
+        Err(_) => return None,
+    };
+
+    let pool = SqlitePoolOptions::new()
+        .max_connections(1)
+        .connect_with(opts)
+        .await
+        .ok()?;
+
+    let row: Option<(String,)> = sqlx::query_as(
+        "SELECT company_name FROM company_profile LIMIT 1",
+    )
+    .fetch_optional(&pool)
+    .await
+    .unwrap_or(None);
+
+    pool.close().await;
+
+    row.map(|(n,)| n).filter(|n| !n.trim().is_empty())
 }
