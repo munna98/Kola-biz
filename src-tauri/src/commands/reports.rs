@@ -2215,9 +2215,7 @@ pub async fn get_product_profit_report(
 ) -> Result<Vec<ProductProfitRow>, String> {
     let pool = registry.active_pool().await?;
     
-    // 1. Build and execute main profit query using WAC (Weighted Average Cost from IN movements)
-    // WAC per unit = SUM(cost_amount from purchase IN movements) / SUM(quantity from purchase IN movements)
-    // Actual cost for the period = WAC * net_qty_sold
+    // 1. Build and execute main profit query using product cost (p.cost) when set/updated, falling back to sm.cost_amount
     let mut query_str = String::from("
         SELECT
             p.id as product_id,
@@ -2241,11 +2239,11 @@ pub async fn get_product_profit_report(
                     ELSE 0
                 END
             ), 0) AS REAL) as total_revenue,
-            -- Total cost (sum of cost_amount from sales OUT minus returns IN)
+            -- Total cost (using p.cost when set/updated via payment/master, falling back to sm.cost_rate/cost_amount)
             CAST(COALESCE(SUM(
                 CASE
-                    WHEN sm.movement_type = 'OUT' THEN COALESCE(sm.cost_amount, 0)
-                    WHEN sm.movement_type = 'IN' THEN -COALESCE(sm.cost_amount, 0)
+                    WHEN sm.movement_type = 'OUT' THEN sm.quantity * COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0)
+                    WHEN sm.movement_type = 'IN' THEN -sm.quantity * COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0)
                     ELSE 0
                 END
             ), 0) AS REAL) as total_cost
@@ -2334,8 +2332,8 @@ pub async fn get_product_profit_invoices(
             u.symbol as unit_symbol,
             CAST(sm.rate AS REAL) as rate,
             CAST(CASE WHEN sm.movement_type = 'OUT' THEN sm.amount ELSE -sm.amount END AS REAL) as total_revenue,
-            CAST(COALESCE(sm.cost_rate, 0) AS REAL) as cost_rate,
-            CAST(CASE WHEN sm.movement_type = 'OUT' THEN COALESCE(sm.cost_amount, 0) ELSE -COALESCE(sm.cost_amount, 0) END AS REAL) as total_cost
+            CAST(COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0) AS REAL) as cost_rate,
+            CAST(CASE WHEN sm.movement_type = 'OUT' THEN sm.quantity * COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0) ELSE -sm.quantity * COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0) END AS REAL) as total_cost
         FROM stock_movements sm
         JOIN vouchers v ON sm.voucher_id = v.id
         JOIN products p ON sm.product_id = p.id
