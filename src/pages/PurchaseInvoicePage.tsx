@@ -285,8 +285,11 @@ export default function PurchaseInvoicePage() {
 
       // Add items
       const mappedItems = items.map(item => ({
-        product_id: item.product_id,
-        product_name: item.product_name,
+        item_type: item.item_type || (item.service_id ? 'service' : 'product'),
+        service_id: item.service_id || null,
+        product_id: item.product_id || 0,
+        product_code: item.product_code,
+        product_name: item.product_name || item.description,
         unit_id: item.unit_id,
         base_quantity: item.base_quantity,
         hsn_sac_code: item.hsn_sac_code,
@@ -482,7 +485,9 @@ export default function PurchaseInvoicePage() {
           product_id: 0,
           product_name: service.name,
           unit_id: service.unit_id || null,
-          rate: 0,
+          hsn_sac_code: service.hsn_sac_code || '',
+          gst_slab_id: service.gst_slab_id || '',
+          rate: service.purchase_rate || 0,
         };
         dispatch(
           updateItem({
@@ -493,7 +498,9 @@ export default function PurchaseInvoicePage() {
               product_id: 0,
               product_name: service.name,
               unit_id: service.unit_id || null,
-              rate: 0,
+              hsn_sac_code: service.hsn_sac_code || '',
+              gst_slab_id: service.gst_slab_id || '',
+              rate: service.purchase_rate || 0,
             },
           })
         );

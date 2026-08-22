@@ -157,6 +157,9 @@ pub struct FinalizeCustomOrderPayload {
     pub gst_disabled: bool,
     pub narration: Option<String>,
     pub user_id: Option<String>,
+    pub collect_payment: Option<bool>,
+    pub payment_amount: Option<f64>,
+    pub payment_account_id: Option<String>,
 }
 
 // ==================== HELPERS ====================
@@ -179,25 +182,47 @@ async fn insert_material_with_stock_journal(
     order_date: &str,
     user_id: Option<&str>,
     mat: &CreateCustomOrderMaterial,
+    existing_voucher: Option<(&str, &str)>,
 ) -> Result<(), String> {
     let mat_id = Uuid::now_v7().to_string();
-    let sj_voucher_no = get_next_voucher_number_in_tx(tx, "stock_journal").await?;
-    let sj_voucher_id = Uuid::now_v7().to_string();
+    let (sj_voucher_id, sj_voucher_no) = match existing_voucher {
+        Some((id, no)) => (id.to_string(), no.to_string()),
+        None => {
+            let no = get_next_voucher_number_in_tx(tx, "stock_journal").await?;
+            let id = Uuid::now_v7().to_string();
+            (id, no)
+        }
+    };
     let sj_narration = format!("Material used for custom order {}", order_no);
 
-    sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, total_amount, narration, status, created_by)
-         VALUES (?, ?, 'stock_journal', ?, ?, ?, 'posted', ?)",
-    )
-    .bind(&sj_voucher_id)
-    .bind(&sj_voucher_no)
-    .bind(order_date)
-    .bind(mat.amount)
-    .bind(&sj_narration)
-    .bind(user_id)
-    .execute(&mut **tx)
-    .await
-    .map_err(|e| e.to_string())?;
+    if existing_voucher.is_some() {
+        sqlx::query(
+            "UPDATE vouchers SET voucher_date = ?, total_amount = ?, grand_total = ?, narration = ?, status = 'posted', deleted_at = NULL WHERE id = ?"
+        )
+        .bind(order_date)
+        .bind(mat.amount)
+        .bind(mat.amount)
+        .bind(&sj_narration)
+        .bind(&sj_voucher_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    } else {
+        sqlx::query(
+            "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, total_amount, grand_total, narration, status, created_by)
+             VALUES (?, ?, 'stock_journal', ?, ?, ?, ?, 'posted', ?)",
+        )
+        .bind(&sj_voucher_id)
+        .bind(&sj_voucher_no)
+        .bind(order_date)
+        .bind(mat.amount)
+        .bind(mat.amount)
+        .bind(&sj_narration)
+        .bind(user_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(|e| e.to_string())?;
+    }
 
     let vi_id = Uuid::now_v7().to_string();
     sqlx::query(
@@ -341,6 +366,7 @@ async fn insert_purchase_with_journal_entry(
     order_date: &str,
     user_id: Option<&str>,
     pur: &CreateCustomOrderPurchase,
+    existing_voucher: Option<(&str, &str)>,
 ) -> Result<(), String> {
     let pur_id = Uuid::now_v7().to_string();
     let purchase_date = pur.purchase_date.as_deref().unwrap_or(order_date);
@@ -401,33 +427,55 @@ async fn insert_purchase_with_journal_entry(
                 .ok_or_else(|| "Job Material Cost account (6010) not found in Chart of Accounts".to_string())?
         };
 
-        // 3. Create journal voucher
-        let j_no = get_next_voucher_number_in_tx(&mut *tx, "journal").await?;
-        let j_id = Uuid::now_v7().to_string();
-        let narration = format!("Direct material for custom order {}: {}", order_no, pur.description);
+        // 3. Obtain or reuse journal voucher ID & number
+        let (j_id, j_no) = match existing_voucher {
+            Some((id, no)) => (id.to_string(), no.to_string()),
+            None => {
+                let no = get_next_voucher_number_in_tx(&mut *tx, "journal").await?;
+                let id = Uuid::now_v7().to_string();
+                (id, no)
+            }
+        };
+        let narration = format!("Material purchase in {}: {}", order_no, pur.description);
 
-        sqlx::query(
-            "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, total_amount, grand_total, narration, status, created_by)
-             VALUES (?, ?, 'journal', ?, ?, ?, ?, ?, ?, 'posted', ?)"
-        )
-        .bind(&j_id)
-        .bind(&j_no)
-        .bind(purchase_date)
-        .bind(&party_id)
-        .bind(&party_type)
-        .bind(pur.amount)
-        .bind(pur.amount)
-        .bind(&narration)
-        .bind(user_id)
-        .execute(&mut **tx)
-        .await
-        .map_err(|e| e.to_string())?;
+        if existing_voucher.is_some() {
+            sqlx::query(
+                "UPDATE vouchers SET voucher_date = ?, party_id = ?, party_type = ?, total_amount = ?, grand_total = ?, narration = ?, status = 'posted', deleted_at = NULL WHERE id = ?"
+            )
+            .bind(purchase_date)
+            .bind(&party_id)
+            .bind(&party_type)
+            .bind(pur.amount)
+            .bind(pur.amount)
+            .bind(&narration)
+            .bind(&j_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        } else {
+            sqlx::query(
+                "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, total_amount, grand_total, narration, status, created_by)
+                 VALUES (?, ?, 'journal', ?, ?, ?, ?, ?, ?, 'posted', ?)"
+            )
+            .bind(&j_id)
+            .bind(&j_no)
+            .bind(purchase_date)
+            .bind(&party_id)
+            .bind(&party_type)
+            .bind(pur.amount)
+            .bind(pur.amount)
+            .bind(&narration)
+            .bind(user_id)
+            .execute(&mut **tx)
+            .await
+            .map_err(|e| e.to_string())?;
+        }
 
         // 4. Debit: Job Material Cost
         let je_dr = Uuid::now_v7().to_string();
         sqlx::query(
-            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, ?)"
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration, is_manual)
+             VALUES (?, ?, ?, ?, 0, ?, 1)"
         )
         .bind(&je_dr)
         .bind(&j_id)
@@ -441,8 +489,8 @@ async fn insert_purchase_with_journal_entry(
         // 5. Credit: Supplier AP or Cash
         let je_cr = Uuid::now_v7().to_string();
         sqlx::query(
-            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, ?, ?)"
+            "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration, is_manual)
+             VALUES (?, ?, ?, 0, ?, ?, 1)"
         )
         .bind(&je_cr)
         .bind(&j_id)
@@ -454,6 +502,11 @@ async fn insert_purchase_with_journal_entry(
         .map_err(|e| e.to_string())?;
 
         journal_voucher_id = Some(j_id);
+    } else if let Some((existing_id, _)) = existing_voucher {
+        let _ = sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
+            .bind(existing_id)
+            .execute(&mut **tx)
+            .await;
     }
 
     // 6. Insert into custom_order_purchases with voucher_id
@@ -790,6 +843,7 @@ pub async fn create_custom_order(
         insert_material_with_stock_journal(
             &mut tx, &order_id, &order_no,
             &data.order_date, data.user_id.as_deref(), mat,
+            None,
         ).await?;
     }
 
@@ -797,6 +851,7 @@ pub async fn create_custom_order(
         insert_purchase_with_journal_entry(
             &mut tx, &order_id, &order_no,
             &data.order_date, data.user_id.as_deref(), pur,
+            None,
         ).await?;
     }
 
@@ -823,23 +878,61 @@ pub async fn update_custom_order(
 ) -> Result<(), String> {
     let pool = registry.active_pool().await?;
 
-    let status: Option<String> =
-        sqlx::query_scalar("SELECT status FROM custom_orders WHERE id = ? AND deleted_at IS NULL")
+    let row: Option<(String, Option<String>)> =
+        sqlx::query_as("SELECT status, final_invoice_id FROM custom_orders WHERE id = ? AND deleted_at IS NULL")
             .bind(&id).fetch_optional(&pool).await.map_err(|e| e.to_string())?;
 
-    match status.as_deref() {
-        Some("delivered") => return Err("Cannot edit a delivered order".to_string()),
+    let (_status, final_invoice_id) = match row {
+        Some(r) => r,
         None => return Err("Custom order not found".to_string()),
-        _ => {}
-    }
+    };
 
     let order_no: String = sqlx::query_scalar("SELECT order_no FROM custom_orders WHERE id = ?")
         .bind(&id).fetch_one(&pool).await.map_err(|e| e.to_string())?;
 
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-    reverse_stock_journals_for_order(&mut tx, &id).await?;
-    reverse_order_purchases_journals(&mut tx, &id).await?;
+    // Collect existing material stock journal vouchers (id, voucher_no) to reuse them on edit
+    let existing_material_vouchers: Vec<(String, String)> = sqlx::query_as(
+        "SELECT v.id, v.voucher_no
+         FROM custom_order_materials com
+         JOIN vouchers v ON com.stock_journal_id = v.id
+         WHERE com.order_id = ?
+         ORDER BY com.created_at ASC",
+    )
+    .bind(&id)
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap_or_default();
+
+    // Collect existing purchase journal vouchers (id, voucher_no) to reuse them on edit
+    let existing_purchase_vouchers: Vec<(String, String)> = sqlx::query_as(
+        "SELECT v.id, v.voucher_no
+         FROM custom_order_purchases cop
+         JOIN vouchers v ON cop.voucher_id = v.id
+         WHERE cop.order_id = ?
+         ORDER BY cop.created_at ASC",
+    )
+    .bind(&id)
+    .fetch_all(&mut *tx)
+    .await
+    .unwrap_or_default();
+
+    // Clean up child entries for existing material vouchers
+    for (v_id, _) in &existing_material_vouchers {
+        sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
+            .bind(v_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+            .bind(v_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+            .bind(v_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+
+    // Clean up child entries for existing purchase vouchers
+    for (v_id, _) in &existing_purchase_vouchers {
+        sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+            .bind(v_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
 
     sqlx::query("DELETE FROM custom_order_materials WHERE order_id = ?")
         .bind(&id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -866,18 +959,46 @@ pub async fn update_custom_order(
     .bind(&data.narration).bind(&id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    for mat in &data.materials {
+    for (idx, mat) in data.materials.iter().enumerate() {
+        let existing_v = existing_material_vouchers
+            .get(idx)
+            .map(|(v_id, v_no)| (v_id.as_str(), v_no.as_str()));
         insert_material_with_stock_journal(
             &mut tx, &id, &order_no,
             &data.order_date, data.user_id.as_deref(), mat,
+            existing_v,
         ).await?;
     }
+    // Delete any excess existing material vouchers if material count was reduced
+    if existing_material_vouchers.len() > data.materials.len() {
+        for (unused_id, _) in &existing_material_vouchers[data.materials.len()..] {
+            sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
+                .bind(unused_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+    }
 
-    for pur in &data.purchases {
+    for (idx, pur) in data.purchases.iter().enumerate() {
+        let existing_v = existing_purchase_vouchers
+            .get(idx)
+            .map(|(v_id, v_no)| (v_id.as_str(), v_no.as_str()));
         insert_purchase_with_journal_entry(
             &mut tx, &id, &order_no,
             &data.order_date, data.user_id.as_deref(), pur,
+            existing_v,
         ).await?;
+    }
+    // Delete any excess existing purchase vouchers if purchase count was reduced
+    if existing_purchase_vouchers.len() > data.purchases.len() {
+        for (unused_id, _) in &existing_purchase_vouchers[data.purchases.len()..] {
+            sqlx::query("UPDATE vouchers SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
+                .bind(unused_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
     }
 
     for svc in &data.services {
@@ -889,6 +1010,176 @@ pub async fn update_custom_order(
         .bind(&svc_id).bind(&id).bind(&svc.service_id).bind(&svc.description)
         .bind(svc.quantity).bind(svc.rate).bind(svc.amount).bind(&svc.expense_account)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+
+    // If order was already finalized/delivered, synchronize the linked sales invoice and entries
+    if let Some(inv_id) = &final_invoice_id {
+        let customer_account_id: String = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE id = ? OR party_id = ? LIMIT 1",
+        )
+        .bind(&data.customer_id)
+        .bind(&data.customer_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| data.customer_id.clone());
+
+        let sales_account_id: String = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_code = '4001' LIMIT 1",
+        )
+        .fetch_one(&mut *tx).await.map_err(|e| format!("Sales account (4001) not found: {}", e))?;
+
+        let cogs_account_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_code = '6012' LIMIT 1",
+        ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        let inventory_account_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_name LIKE '%Inventory%' OR account_name LIKE '%Stock%' ORDER BY account_code LIMIT 1",
+        ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        let job_mat_account_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_code = '6010' LIMIT 1",
+        ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        let job_svc_account_id: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_group = 'Job Work Expenses' AND deleted_at IS NULL LIMIT 1",
+        ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        let narration = format!("Custom order {} - final invoice", order_no);
+
+        sqlx::query(
+            "UPDATE vouchers SET
+             party_id=?, subtotal=?, total_amount=?, grand_total=?, updated_at=CURRENT_TIMESTAMP
+             WHERE id=?"
+        )
+        .bind(&customer_account_id)
+        .bind(data.sale_price).bind(data.sale_price).bind(data.sale_price)
+        .bind(inv_id)
+        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        let unit_id: Option<String> = if let Some(ref u_name) = data.finished_item_unit {
+            sqlx::query_scalar("SELECT id FROM units WHERE name = ? OR symbol = ? LIMIT 1")
+                .bind(u_name)
+                .bind(u_name)
+                .fetch_optional(&mut *tx)
+                .await
+                .unwrap_or(None)
+        } else {
+            None
+        };
+
+        let qty = if data.finished_item_qty > 0.0 { data.finished_item_qty } else { 1.0 };
+        let line_rate = if data.finished_item_qty > 0.0 { data.sale_price / data.finished_item_qty } else { data.sale_price };
+
+        sqlx::query(
+            "UPDATE voucher_items SET item_type='product', description=?, initial_quantity=?, count=0, deduction_per_unit=0.0, final_quantity=?, unit_id=?, base_quantity=?, rate=?, amount=?, net_amount=? WHERE voucher_id=?"
+        )
+        .bind(&data.finished_item_name)
+        .bind(qty).bind(qty).bind(&unit_id).bind(qty)
+        .bind(line_rate).bind(data.sale_price).bind(data.sale_price)
+        .bind(inv_id)
+        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+            .bind(inv_id).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        // Dr Customer A/c
+        let je_cust = Uuid::now_v7().to_string();
+        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, ?, 0, ?)")
+            .bind(&je_cust).bind(inv_id).bind(&customer_account_id).bind(data.sale_price).bind(&narration)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        // Cr Sales A/c
+        let je_sales = Uuid::now_v7().to_string();
+        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
+            .bind(&je_sales).bind(inv_id).bind(&sales_account_id).bind(data.sale_price).bind(&narration)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        if total_cost > 0.0 {
+            if let Some(cogs_acc) = &cogs_account_id {
+                let je_cogs = Uuid::now_v7().to_string();
+                sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, ?, 0, ?)")
+                    .bind(&je_cogs).bind(inv_id).bind(cogs_acc).bind(total_cost).bind(&narration)
+                    .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+                if mat_cost > 0.0 {
+                    if let Some(inv_acc) = &inventory_account_id {
+                        let je_inv = Uuid::now_v7().to_string();
+                        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
+                            .bind(&je_inv).bind(inv_id).bind(inv_acc).bind(mat_cost).bind(&narration)
+                            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+                    }
+                }
+
+                if pur_cost > 0.0 {
+                    if let Some(jm_acc) = &job_mat_account_id {
+                        let je_jm = Uuid::now_v7().to_string();
+                        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
+                            .bind(&je_jm).bind(inv_id).bind(jm_acc).bind(pur_cost).bind(&narration)
+                            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+                    }
+                }
+
+                if svc_cost > 0.0 {
+                    let svc_rows: Vec<(Option<String>, f64, String)> = sqlx::query_as(
+                        "SELECT expense_account, amount, description FROM custom_order_services WHERE order_id = ?"
+                    )
+                    .bind(&id)
+                    .fetch_all(&mut *tx)
+                    .await
+                    .unwrap_or_default();
+
+                    let mut posted_service_total = 0.0;
+                    for (exp_acc, amt, desc) in svc_rows {
+                        if amt > 0.0 {
+                            let target_acc = exp_acc.as_deref().or(job_svc_account_id.as_deref());
+                            if let Some(acc_id) = target_acc {
+                                let line_narration = if desc.is_empty() {
+                                    narration.clone()
+                                } else {
+                                    format!("{}: {}", narration, desc)
+                                };
+                                let je_js = Uuid::now_v7().to_string();
+                                sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
+                                    .bind(&je_js).bind(inv_id).bind(acc_id).bind(amt).bind(&line_narration)
+                                    .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+                                posted_service_total += amt;
+                            }
+                        }
+                    }
+
+                    if (svc_cost - posted_service_total).abs() > 0.001 {
+                        let remainder = svc_cost - posted_service_total;
+                        if let Some(fallback_acc) = &job_svc_account_id {
+                            let je_js = Uuid::now_v7().to_string();
+                            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
+                                .bind(&je_js).bind(inv_id).bind(fallback_acc).bind(remainder).bind(&narration)
+                                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+                        }
+                    }
+                }
+            }
+        }
+
+        let total_allocated: f64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
+        )
+        .bind(inv_id)
+        .fetch_one(&mut *tx)
+        .await
+        .unwrap_or(0.0);
+
+        let inv_payment_status = if total_allocated >= data.sale_price && data.sale_price > 0.0 {
+            "paid"
+        } else if total_allocated > 0.0 {
+            "partially_paid"
+        } else {
+            "unpaid"
+        };
+
+        sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
+            .bind(inv_payment_status).bind(inv_id)
+            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
     tx.commit().await.map_err(|e| e.to_string())?;
@@ -965,6 +1256,23 @@ pub async fn record_custom_order_advance(
     .bind(&payload.cash_bank_account_id).bind(&payload.user_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
+    let voucher_item_id = Uuid::now_v7().to_string();
+    let item_desc = format!("Advance for custom order {}", order_no);
+    sqlx::query(
+        "INSERT INTO voucher_items (id, voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
+         VALUES (?, ?, ?, ?, 0.0, 0.0, ?, 1.0, 1.0, ?, ?)"
+    )
+    .bind(&voucher_item_id)
+    .bind(&receipt_id)
+    .bind(&item_desc)
+    .bind(payload.amount)
+    .bind(&narration)
+    .bind(payload.amount)
+    .bind(&customer_account_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
     let je1_id = Uuid::now_v7().to_string();
     sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, ?, 0, ?)")
         .bind(&je1_id).bind(&receipt_id).bind(&payload.cash_bank_account_id)
@@ -977,7 +1285,7 @@ pub async fn record_custom_order_advance(
         .bind(payload.amount).bind(&narration)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    sqlx::query("UPDATE custom_orders SET advance_amount=?, advance_voucher_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
+    sqlx::query("UPDATE custom_orders SET advance_amount = advance_amount + ?, advance_voucher_id = COALESCE(advance_voucher_id, ?), updated_at=CURRENT_TIMESTAMP WHERE id=?")
         .bind(payload.amount).bind(&receipt_id).bind(&payload.order_id)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
@@ -1004,8 +1312,9 @@ pub async fn finalize_custom_order(
         .bind(&payload.order_id).fetch_one(&pool).await.map_err(|e| e.to_string())?;
     let order_no: String = sqlx::query_scalar("SELECT order_no FROM custom_orders WHERE id = ?")
         .bind(&payload.order_id).fetch_one(&pool).await.map_err(|e| e.to_string())?;
-    let finished_item_name: String = sqlx::query_scalar("SELECT finished_item_name FROM custom_orders WHERE id = ?")
-        .bind(&payload.order_id).fetch_one(&pool).await.map_err(|e| e.to_string())?;
+    let (finished_item_name, finished_item_qty, finished_item_unit): (String, f64, Option<String>) =
+        sqlx::query_as("SELECT finished_item_name, finished_item_qty, finished_item_unit FROM custom_orders WHERE id = ?")
+            .bind(&payload.order_id).fetch_one(&pool).await.map_err(|e| e.to_string())?;
     let advance_amount: f64 = sqlx::query_scalar("SELECT COALESCE(advance_amount, 0) FROM custom_orders WHERE id = ?")
         .bind(&payload.order_id).fetch_one(&pool).await.map_err(|e| e.to_string())?;
     let advance_voucher_id: Option<String> = sqlx::query_scalar("SELECT advance_voucher_id FROM custom_orders WHERE id = ?")
@@ -1055,7 +1364,7 @@ pub async fn finalize_custom_order(
     ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
 
     let job_svc_account_id: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM chart_of_accounts WHERE account_code = '6011' LIMIT 1",
+        "SELECT id FROM chart_of_accounts WHERE account_group = 'Job Work Expenses' AND deleted_at IS NULL LIMIT 1",
     ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
 
     let inv_no = get_next_voucher_number_in_tx(&mut tx, "sales_invoice").await?;
@@ -1074,13 +1383,27 @@ pub async fn finalize_custom_order(
     .bind(if payload.gst_disabled { 1i64 } else { 0i64 })
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
+    let unit_id: Option<String> = if let Some(ref u_name) = finished_item_unit {
+        sqlx::query_scalar("SELECT id FROM units WHERE name = ? OR symbol = ? LIMIT 1")
+            .bind(u_name)
+            .bind(u_name)
+            .fetch_optional(&mut *tx)
+            .await
+            .unwrap_or(None)
+    } else {
+        None
+    };
+
     let vi_id = Uuid::now_v7().to_string();
+    let qty = if finished_item_qty > 0.0 { finished_item_qty } else { 1.0 };
+    let line_rate = if finished_item_qty > 0.0 { sale_price / finished_item_qty } else { sale_price };
     sqlx::query(
-        "INSERT INTO voucher_items (id, voucher_id, item_type, description, initial_quantity, count, final_quantity, base_quantity, rate, amount, tax_rate, tax_amount)
-         VALUES (?, ?, 'service', ?, 1.0, 1, 1.0, 1.0, ?, ?, ?, ?)",
+        "INSERT INTO voucher_items (id, voucher_id, item_type, description, initial_quantity, count, deduction_per_unit, final_quantity, unit_id, base_quantity, rate, amount, net_amount, tax_rate, tax_amount)
+         VALUES (?, ?, 'product', ?, ?, 0, 0.0, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&vi_id).bind(&inv_id).bind(&finished_item_name)
-    .bind(sale_price).bind(sale_price).bind(tax_rate).bind(tax_amount)
+    .bind(qty).bind(qty).bind(&unit_id).bind(qty)
+    .bind(line_rate).bind(sale_price).bind(sale_price).bind(tax_rate).bind(tax_amount)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Dr Customer A/c
@@ -1121,34 +1444,153 @@ pub async fn finalize_custom_order(
             }
 
             if total_service_cost > 0.0 {
-                if let Some(js_acc) = &job_svc_account_id {
-                    let je_js = Uuid::now_v7().to_string();
-                    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
-                        .bind(&je_js).bind(&inv_id).bind(js_acc).bind(total_service_cost).bind(&narration)
-                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+                let svc_rows: Vec<(Option<String>, f64, String)> = sqlx::query_as(
+                    "SELECT expense_account, amount, description FROM custom_order_services WHERE order_id = ?"
+                )
+                .bind(&payload.order_id)
+                .fetch_all(&mut *tx)
+                .await
+                .unwrap_or_default();
+
+                let mut posted_service_total = 0.0;
+                for (exp_acc, amt, desc) in svc_rows {
+                    if amt > 0.0 {
+                        let target_acc = exp_acc.as_deref().or(job_svc_account_id.as_deref());
+                        if let Some(acc_id) = target_acc {
+                            let line_narration = if desc.is_empty() {
+                                narration.clone()
+                            } else {
+                                format!("{}: {}", narration, desc)
+                            };
+                            let je_js = Uuid::now_v7().to_string();
+                            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
+                                .bind(&je_js).bind(&inv_id).bind(acc_id).bind(amt).bind(&line_narration)
+                                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+                            posted_service_total += amt;
+                        }
+                    }
+                }
+
+                if (total_service_cost - posted_service_total).abs() > 0.001 {
+                    let rem = total_service_cost - posted_service_total;
+                    if let Some(js_acc) = &job_svc_account_id {
+                        let je_js = Uuid::now_v7().to_string();
+                        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
+                            .bind(&je_js).bind(&inv_id).bind(js_acc).bind(rem).bind(&narration)
+                            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+                    }
                 }
             }
         }
     }
 
-    if advance_amount > 0.0 {
-        if let Some(adv_voucher_id) = &advance_voucher_id {
-            let apply_amount = advance_amount.min(grand_total);
-            let alloc_id = Uuid::now_v7().to_string();
-            sqlx::query(
-                "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, party_id, party_type)
-                 VALUES (?, ?, ?, ?, ?, ?, 'customer')",
-            )
-            .bind(&alloc_id).bind(adv_voucher_id).bind(&inv_id)
-            .bind(apply_amount).bind(&payload.voucher_date).bind(&customer_id)
-            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    let mut total_allocated = 0.0;
 
-            let payment_status = if apply_amount >= grand_total { "paid" } else { "partially_paid" };
-            sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
-                .bind(payment_status).bind(&inv_id)
+    if advance_amount > 0.0 {
+        let mut advance_receipts: Vec<(String, f64)> = sqlx::query_as(
+            "SELECT id, total_amount FROM vouchers WHERE voucher_type = 'receipt' AND narration LIKE ? AND deleted_at IS NULL"
+        )
+        .bind(format!("%custom order {}%", order_no))
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap_or_default();
+
+        if advance_receipts.is_empty() {
+            if let Some(adv_voucher_id) = &advance_voucher_id {
+                advance_receipts.push((adv_voucher_id.clone(), advance_amount));
+            }
+        }
+
+        for (adv_v_id, adv_v_amt) in advance_receipts {
+            if total_allocated < grand_total && adv_v_amt > 0.0 {
+                let apply_amount = adv_v_amt.min(grand_total - total_allocated);
+                let alloc_id = Uuid::now_v7().to_string();
+                sqlx::query(
+                    "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, party_id, party_type)
+                     VALUES (?, ?, ?, ?, ?, ?, 'customer')",
+                )
+                .bind(&alloc_id).bind(&adv_v_id).bind(&inv_id)
+                .bind(apply_amount).bind(&payload.voucher_date).bind(&customer_id)
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+                total_allocated += apply_amount;
+            }
         }
     }
+
+    if payload.collect_payment.unwrap_or(false) {
+        let pay_amt = payload.payment_amount.unwrap_or(grand_total - total_allocated);
+        if pay_amt > 0.0 {
+            if let Some(cash_bank_acc_id) = &payload.payment_account_id {
+                if !cash_bank_acc_id.trim().is_empty() {
+                    let receipt_no = get_next_voucher_number_in_tx(&mut tx, "receipt").await?;
+                    let receipt_id = Uuid::now_v7().to_string();
+                    let rcpt_narration = format!("Final payment for custom order {}", order_no);
+
+                    sqlx::query(
+                        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type,
+                          total_amount, grand_total, narration, status, payment_status, account_id, created_by, created_from_invoice_id)
+                         VALUES (?, ?, 'receipt', ?, ?, 'customer', ?, ?, ?, 'posted', 'paid', ?, ?, ?)",
+                    )
+                    .bind(&receipt_id).bind(&receipt_no).bind(&payload.voucher_date).bind(&customer_account_id)
+                    .bind(pay_amt).bind(pay_amt).bind(&rcpt_narration)
+                    .bind(cash_bank_acc_id).bind(&payload.user_id).bind(&inv_id)
+                    .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+                    let voucher_item_id = Uuid::now_v7().to_string();
+                    let item_desc = format!("Final payment for custom order {}", order_no);
+                    sqlx::query(
+                        "INSERT INTO voucher_items (id, voucher_id, description, amount, tax_rate, tax_amount, remarks, initial_quantity, count, rate, ledger_id)
+                         VALUES (?, ?, ?, ?, 0.0, 0.0, ?, 1.0, 1.0, ?, ?)"
+                    )
+                    .bind(&voucher_item_id)
+                    .bind(&receipt_id)
+                    .bind(&item_desc)
+                    .bind(pay_amt)
+                    .bind(&rcpt_narration)
+                    .bind(pay_amt)
+                    .bind(&customer_account_id)
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| e.to_string())?;
+
+                    let je1_id = Uuid::now_v7().to_string();
+                    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, ?, 0, ?)")
+                        .bind(&je1_id).bind(&receipt_id).bind(cash_bank_acc_id)
+                        .bind(pay_amt).bind(&rcpt_narration)
+                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+                    let je2_id = Uuid::now_v7().to_string();
+                    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
+                        .bind(&je2_id).bind(&receipt_id).bind(&customer_account_id)
+                        .bind(pay_amt).bind(&rcpt_narration)
+                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+                    let alloc_id = Uuid::now_v7().to_string();
+                    sqlx::query(
+                        "INSERT INTO payment_allocations (id, payment_voucher_id, invoice_voucher_id, allocated_amount, allocation_date, party_id, party_type)
+                         VALUES (?, ?, ?, ?, ?, ?, 'customer')",
+                    )
+                    .bind(&alloc_id).bind(&receipt_id).bind(&inv_id)
+                    .bind(pay_amt).bind(&payload.voucher_date).bind(&customer_id)
+                    .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+
+                    total_allocated += pay_amt;
+                }
+            }
+        }
+    }
+
+    let payment_status = if total_allocated >= grand_total && grand_total > 0.0 {
+        "paid"
+    } else if total_allocated > 0.0 {
+        "partially_paid"
+    } else {
+        "unpaid"
+    };
+    sqlx::query("UPDATE vouchers SET payment_status = ? WHERE id = ?")
+        .bind(payment_status).bind(&inv_id)
+        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     sqlx::query("UPDATE custom_orders SET status='delivered', final_invoice_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=?")
         .bind(&inv_id).bind(&payload.order_id)
@@ -1156,4 +1598,98 @@ pub async fn finalize_custom_order(
 
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(inv_id)
+}
+
+#[derive(Debug, serde::Serialize, sqlx::FromRow)]
+pub struct CustomOrderPaymentRecord {
+    pub voucher_id: String,
+    pub voucher_no: String,
+    pub voucher_date: String,
+    pub amount: f64,
+    pub account_id: Option<String>,
+    pub account_name: Option<String>,
+    pub narration: Option<String>,
+    pub payment_type: String,
+}
+
+#[tauri::command]
+pub async fn get_custom_order_payments(
+    registry: State<'_, Arc<DbRegistry>>,
+    order_id: String,
+) -> Result<Vec<CustomOrderPaymentRecord>, String> {
+    let pool = registry.active_pool().await?;
+
+    let row: Option<(String, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT order_no, advance_voucher_id, final_invoice_id FROM custom_orders WHERE id = ? AND deleted_at IS NULL"
+    )
+    .bind(&order_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let (order_no, advance_voucher_id, final_invoice_id) = match row {
+        Some(r) => r,
+        None => return Ok(Vec::new()),
+    };
+
+    let mut list = Vec::new();
+
+    // 1. Advance receipts
+    let advances: Vec<CustomOrderPaymentRecord> = sqlx::query_as(
+        "SELECT
+            v.id as voucher_id,
+            v.voucher_no,
+            v.voucher_date,
+            v.total_amount as amount,
+            v.account_id,
+            COALESCE(coa.account_name, 'Cash') as account_name,
+            v.narration,
+            'advance' as payment_type
+         FROM vouchers v
+         LEFT JOIN chart_of_accounts coa ON v.account_id = coa.id
+         WHERE (v.id = ?1 OR v.narration LIKE ?2)
+           AND v.voucher_type = 'receipt'
+           AND v.deleted_at IS NULL
+         ORDER BY v.voucher_date ASC, v.created_at ASC"
+    )
+    .bind(&advance_voucher_id)
+    .bind(format!("%custom order {}%", order_no))
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    list.extend(advances);
+
+    // 2. Invoice payment allocations (for payments after invoice creation)
+    if let Some(inv_id) = final_invoice_id {
+        let inv_payments: Vec<CustomOrderPaymentRecord> = sqlx::query_as(
+            "SELECT
+                v.id as voucher_id,
+                v.voucher_no,
+                pa.allocation_date as voucher_date,
+                pa.allocated_amount as amount,
+                v.account_id,
+                COALESCE(coa.account_name, 'Cash') as account_name,
+                v.narration,
+                'invoice_payment' as payment_type
+             FROM payment_allocations pa
+             JOIN vouchers v ON pa.payment_voucher_id = v.id
+             LEFT JOIN chart_of_accounts coa ON v.account_id = coa.id
+             WHERE pa.invoice_voucher_id = ?1
+               AND v.id != ?2
+               AND v.narration NOT LIKE ?3
+               AND v.deleted_at IS NULL
+             ORDER BY pa.allocation_date ASC"
+        )
+        .bind(&inv_id)
+        .bind(advance_voucher_id.as_deref().unwrap_or(""))
+        .bind(format!("%custom order {}%", order_no))
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default();
+
+        list.extend(inv_payments);
+    }
+
+    Ok(list)
 }

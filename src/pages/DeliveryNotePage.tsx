@@ -267,8 +267,32 @@ export default function DeliveryNotePage() {
       if (service) {
         finalValue = value;
         const updatedItems = [...noteState.items];
-        updatedItems[index] = { ...updatedItems[index], item_type: 'service', service_id: value, product_id: 0, product_name: service.name, unit_id: service.unit_id || null, rate: 0 };
-        dispatch(updateDeliveryNoteItem({ index, data: { item_type: 'service', service_id: value, product_id: 0, product_name: service.name, unit_id: service.unit_id || null, rate: 0 } }));
+        updatedItems[index] = {
+          ...updatedItems[index],
+          item_type: 'service',
+          service_id: value,
+          product_id: 0,
+          product_name: service.name,
+          unit_id: service.unit_id || null,
+          hsn_sac_code: service.hsn_sac_code || '',
+          gst_slab_id: service.gst_slab_id || '',
+          rate: service.sales_rate || 0,
+        };
+        dispatch(
+          updateDeliveryNoteItem({
+            index,
+            data: {
+              item_type: 'service',
+              service_id: value,
+              product_id: 0,
+              product_name: service.name,
+              unit_id: service.unit_id || null,
+              hsn_sac_code: service.hsn_sac_code || '',
+              gst_slab_id: service.gst_slab_id || '',
+              rate: service.sales_rate || 0,
+            },
+          })
+        );
         updateTotalsWithItems(updatedItems);
         dispatch(setDeliveryNoteHasUnsavedChanges(true));
         return;
@@ -471,9 +495,11 @@ export default function DeliveryNotePage() {
         const storedGstRate = item.resolved_gst_rate || item.tax_rate || 0;
         const displayRate = loadedTaxInclusive ? item.rate * (1 + (storedGstRate / 100)) : item.rate;
         dispatch(addDeliveryNoteItem({
+          item_type: item.item_type || (item.service_id ? 'service' : 'product'),
           product_id: item.product_id || 0,
+          service_id: item.service_id || null,
           product_code: item.product_code,
-          product_name: item.description,
+          product_name: item.product_name || item.description,
           unit_id: item.unit_id,
           hsn_sac_code: item.hsn_sac_code,
           gst_slab_id: item.gst_slab_id,
@@ -498,9 +524,11 @@ export default function DeliveryNotePage() {
 
       const loadedItems = items.map(item => ({
         id: `loaded-${item.id}`,
+        item_type: item.item_type || (item.service_id ? 'service' : 'product'),
         product_id: item.product_id || 0,
+        service_id: item.service_id || null,
         product_code: item.product_code,
-        product_name: item.description,
+        product_name: item.product_name || item.description,
         unit_id: item.unit_id,
         hsn_sac_code: item.hsn_sac_code,
         gst_slab_id: item.gst_slab_id,

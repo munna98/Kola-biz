@@ -691,12 +691,23 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 searchString: `${s.code || ''} ${s.name}`,
                                 keywords: [s.code, s.name].filter(Boolean) as string[],
                             }));
-                            const allOptions = [...productOptions, ...serviceOptions];
+                            const itemDescOrName = item.product_name || item.description || '';
+                            const hasCatalogItem = (item.item_type === 'service' && item.service_id) || Boolean(item.product_id);
+                            const customOption = (!hasCatalogItem && itemDescOrName) ? [{
+                                value: `custom:${item.id || idx}`,
+                                label: itemDescOrName,
+                                itemLabel: itemDescOrName,
+                                searchString: itemDescOrName,
+                                keywords: [itemDescOrName],
+                            }] : [];
+                            const allOptions = [...productOptions, ...serviceOptions, ...customOption];
                             const currentValue = item.item_type === 'service' && item.service_id
                                 ? `s:${item.service_id}`
                                 : item.product_id
                                     ? `p:${item.product_id}`
-                                    : null;
+                                    : itemDescOrName
+                                        ? `custom:${item.id || idx}`
+                                        : null;
                             const cbHeaderCols = getProductComboboxHeaderColumns(comboboxDisplaySettings, columnWidths);
                             const cbWidthClass = getProductComboboxWidthClass(comboboxDisplaySettings, columnWidths);
                             return (

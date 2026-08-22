@@ -51,24 +51,40 @@ import {
 } from "@tabler/icons-react";
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
-import { useSelector } from "react-redux";
-import { RootState } from "../store";
+import { useDispatch, useSelector } from "react-redux";
+import {
+    RootState,
+    AppDispatch,
+    CustomOrderRecord as CustomOrder,
+    CustomOrderDetailRecord as CustomOrderDetail,
+    CustomOrderMaterialRow as MaterialRow,
+    CustomOrderPurchaseRow as PurchaseRow,
+    CustomOrderServiceRow as ServiceRow,
+    setCustomOrderMode,
+    setCustomOrderCurrentOrder,
+    setCustomOrderCurrentDetail,
+    setCustomOrderNavigationData,
+    setCustomOrderNextOrderNo,
+    setCustomOrderLastOrderInfo,
+    setCustomOrderFilterStatus,
+    setCustomOrderActiveTab,
+    setCustomOrderHasUnsavedChanges,
+    setCustomOrderOrderDate,
+    setCustomOrderDeliveryDate,
+    setCustomOrderCustomerId,
+    setCustomOrderReference,
+    setCustomOrderFinishedItemName,
+    setCustomOrderFinishedItemQty,
+    setCustomOrderFinishedItemRate,
+    setCustomOrderSalePrice,
+    setCustomOrderNarration,
+    setCustomOrderMaterials,
+    setCustomOrderPurchases,
+    setCustomOrderServices,
+    populateCustomOrderForm,
+    resetCustomOrderForm,
+} from "../store";
 
-interface CustomOrder {
-    id: string; order_no: string; order_date: string; delivery_date?: string;
-    customer_id: string; customer_name: string; status: string;
-    finished_item_name: string; finished_item_qty: number; finished_item_unit?: string;
-    sale_price: number; advance_amount: number; advance_voucher_id?: string;
-    total_material_cost: number; total_purchase_cost: number; total_service_cost: number;
-    total_job_cost: number; final_invoice_id?: string; final_invoice_no?: string;
-    reference?: string;
-    payment_status: string; total_paid: number; balance_due: number;
-    narration?: string; created_at: string;
-}
-interface CustomOrderDetail { order: CustomOrder; materials: MaterialRow[]; purchases: PurchaseRow[]; services: ServiceRow[]; }
-interface MaterialRow { id?: string; product_id: string; product_name?: string; product_code?: string; description?: string; quantity: number; unit_id?: string; unit_name?: string; rate: number; amount: number; }
-interface PurchaseRow { id?: string; description: string; supplier_id?: string; supplier_name?: string; quantity: number; unit_id?: string; rate: number; amount: number; expense_account?: string; purchase_date?: string; }
-interface ServiceRow { id?: string; service_id?: string; description: string; quantity: number; rate: number; amount: number; expense_account?: string; }
 interface Product {
     id: string; code: string; name: string; purchase_rate: number; unit_id: string; unit_name?: string;
     group_id?: string; brand_id?: string; barcode?: string; hsn_code?: string; sku?: string;
@@ -76,7 +92,16 @@ interface Product {
 }
 interface PartyOption { id: string; name: string; code?: string; }
 interface CashBankAccount { id: string; name: string; account_name?: string; account_group?: string; }
-type PageMode = 'list' | 'new' | 'editing' | 'viewing';
+interface CustomOrderPaymentRecord {
+    voucher_id: string;
+    voucher_no: string;
+    voucher_date: string;
+    amount: number;
+    account_id?: string;
+    account_name?: string;
+    narration?: string;
+    payment_type: string;
+}
 
 const fmt = (n: number) => new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const today = () => new Date().toISOString().slice(0, 10);
@@ -85,23 +110,45 @@ const emptyPurchase = (): PurchaseRow => ({ description: '', supplier_id: '', qu
 const emptyService = (): ServiceRow => ({ description: '', quantity: 1, rate: 0, amount: 0 });
 
 export default function CustomOrdersPage() {
+    const dispatch = useDispatch<AppDispatch>();
     const { user } = useSelector((state: RootState) => state.auth);
     const { activeSectionParams } = useSelector((state: RootState) => state.app);
+    const customOrderState = useSelector((state: RootState) => state.customOrder);
 
-    const [mode, setMode] = useState<PageMode>('list');
-    const [currentOrder, setCurrentOrder] = useState<CustomOrder | null>(null);
-    const [currentDetail, setCurrentDetail] = useState<CustomOrderDetail | null>(null);
-    const [hasPrevious, setHasPrevious] = useState(false);
-    const [hasNext, setHasNext] = useState(false);
-    const [previousId, setPreviousId] = useState<string | null>(null);
-    const [nextId, setNextId] = useState<string | null>(null);
-    const [nextOrderNo, setNextOrderNo] = useState<string | undefined>(undefined);
-    const [hasLastOrder, setHasLastOrder] = useState(false);
-    const [lastOrderId, setLastOrderId] = useState<string | null>(null);
+    const {
+        mode,
+        currentOrder,
+        currentDetail,
+        navigationData,
+        nextOrderNo,
+        hasLastOrder,
+        lastOrderId,
+        filterStatus,
+        activeTab,
+        hasUnsavedChanges,
+        form: {
+            orderDate,
+            deliveryDate,
+            customerId,
+            reference,
+            finishedItemName,
+            finishedItemQty,
+            finishedItemRate,
+            salePrice,
+            narration,
+            materials,
+            purchases,
+            services,
+        },
+    } = customOrderState;
+
+    const { hasPrevious, hasNext, previousId, nextId } = navigationData;
+
     const [orders, setOrders] = useState<CustomOrder[]>([]);
     const [products, setProducts] = useState<Product[]>([]);
     const [customers, setCustomers] = useState<PartyOption[]>([]);
     const [suppliers, setSuppliers] = useState<PartyOption[]>([]);
+    const [serviceAccounts, setServiceAccounts] = useState<PartyOption[]>([]);
     const [cashBankAccounts, setCashBankAccounts] = useState<CashBankAccount[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
     const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
@@ -112,21 +159,6 @@ export default function CustomOrdersPage() {
     const [columnWidths, setColumnWidths] = useState<ProductComboboxColumnWidths>(DEFAULT_COMBOBOX_COLUMN_WIDTHS);
     const [loading, setLoading] = useState(false);
     const [saving, setSaving] = useState(false);
-    const [filterStatus, setFilterStatus] = useState<string>('all');
-    const [activeTab, setActiveTab] = useState('details');
-    const [orderDate, setOrderDate] = useState(today());
-    const [deliveryDate, setDeliveryDate] = useState('');
-    const [customerId, setCustomerId] = useState('');
-    const [reference, setReference] = useState('');
-    const [finishedItemName, setFinishedItemName] = useState('');
-    const [finishedItemQty, setFinishedItemQty] = useState(1);
-    const [finishedItemRate, setFinishedItemRate] = useState<number>(0);
-    const [salePrice, setSalePrice] = useState(0);
-    const [narration, setNarration] = useState('');
-    const [materials, setMaterials] = useState<MaterialRow[]>([emptyMaterial()]);
-    const [purchases, setPurchases] = useState<PurchaseRow[]>([emptyPurchase()]);
-    const [services, setServices] = useState<ServiceRow[]>([emptyService()]);
-    const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
     const [deleteId, setDeleteId] = useState<string | null>(null);
     const [deleteOrderNo, setDeleteOrderNo] = useState('');
     const [advanceOrder, setAdvanceOrder] = useState<CustomOrder | null>(null);
@@ -134,15 +166,22 @@ export default function CustomOrdersPage() {
     const [advanceDate, setAdvanceDate] = useState(today());
     const [advanceCashBank, setAdvanceCashBank] = useState('');
     const [advanceNarration, setAdvanceNarration] = useState('');
+    const [orderPayments, setOrderPayments] = useState<CustomOrderPaymentRecord[]>([]);
+    const [loadingPayments, setLoadingPayments] = useState(false);
     const [savingAdvance, setSavingAdvance] = useState(false);
     const [finalizeOrder, setFinalizeOrder] = useState<CustomOrder | null>(null);
     const [finalizeDate, setFinalizeDate] = useState(today());
     const [finalizeSalePrice, setFinalizeSalePrice] = useState(0);
     const [finalizeNarration, setFinalizeNarration] = useState('');
+    const [finalizeCollectPayment, setFinalizeCollectPayment] = useState(true);
+    const [finalizePaymentAccount, setFinalizePaymentAccount] = useState('');
     const [finalizing, setFinalizing] = useState(false);
     const [paymentInvoice, setPaymentInvoice] = useState<{ id: string; no: string; amount: number; date: string; partyName: string; } | null>(null);
     const [showCreateCustomer, setShowCreateCustomer] = useState(false);
     const [newCustomerName, setNewCustomerName] = useState('');
+    const [showCreateServiceLedger, setShowCreateServiceLedger] = useState(false);
+    const [newServiceLedgerName, setNewServiceLedgerName] = useState('');
+    const [targetServiceRowIndex, setTargetServiceRowIndex] = useState<number | null>(null);
 
     const matTotal = materials.filter(m => m.product_id).reduce((s, m) => s + m.amount, 0);
     const purTotal = purchases.filter(p => p.description).reduce((s, p) => s + p.amount, 0);
@@ -160,20 +199,19 @@ export default function CustomOrdersPage() {
     const narrationRef = useRef<HTMLTextAreaElement>(null);
 
     const addMaterial = (index?: number) => {
-        setMaterials(prev => {
-            if (typeof index === 'number') {
-                const next = [...prev];
-                next.splice(index, 0, emptyMaterial());
-                return next;
-            }
-            return [...prev, emptyMaterial()];
-        });
-        setHasUnsavedChanges(true);
+        let next: MaterialRow[];
+        if (typeof index === 'number') {
+            next = [...materials];
+            next.splice(index, 0, emptyMaterial());
+        } else {
+            next = [...materials, emptyMaterial()];
+        }
+        dispatch(setCustomOrderMaterials(next));
     };
 
     const removeMaterial = (index: number) => {
-        setMaterials(prev => (prev.length > 1 ? prev.filter((_, j) => j !== index) : [emptyMaterial()]));
-        setHasUnsavedChanges(true);
+        const next = materials.length > 1 ? materials.filter((_, j) => j !== index) : [emptyMaterial()];
+        dispatch(setCustomOrderMaterials(next));
     };
 
     const { handleRowKeyDown: handleMaterialKeyDown } = useVoucherRowNavigation({
@@ -182,20 +220,19 @@ export default function CustomOrdersPage() {
     });
 
     const addPurchase = (index?: number) => {
-        setPurchases(prev => {
-            if (typeof index === 'number') {
-                const next = [...prev];
-                next.splice(index, 0, emptyPurchase());
-                return next;
-            }
-            return [...prev, emptyPurchase()];
-        });
-        setHasUnsavedChanges(true);
+        let next: PurchaseRow[];
+        if (typeof index === 'number') {
+            next = [...purchases];
+            next.splice(index, 0, emptyPurchase());
+        } else {
+            next = [...purchases, emptyPurchase()];
+        }
+        dispatch(setCustomOrderPurchases(next));
     };
 
     const removePurchase = (index: number) => {
-        setPurchases(prev => (prev.length > 1 ? prev.filter((_, j) => j !== index) : [emptyPurchase()]));
-        setHasUnsavedChanges(true);
+        const next = purchases.length > 1 ? purchases.filter((_, j) => j !== index) : [emptyPurchase()];
+        dispatch(setCustomOrderPurchases(next));
     };
 
     const { handleRowKeyDown: handlePurchaseKeyDown } = useVoucherRowNavigation({
@@ -204,20 +241,19 @@ export default function CustomOrdersPage() {
     });
 
     const addService = (index?: number) => {
-        setServices(prev => {
-            if (typeof index === 'number') {
-                const next = [...prev];
-                next.splice(index, 0, emptyService());
-                return next;
-            }
-            return [...prev, emptyService()];
-        });
-        setHasUnsavedChanges(true);
+        let next: ServiceRow[];
+        if (typeof index === 'number') {
+            next = [...services];
+            next.splice(index, 0, emptyService());
+        } else {
+            next = [...services, emptyService()];
+        }
+        dispatch(setCustomOrderServices(next));
     };
 
     const removeService = (index: number) => {
-        setServices(prev => (prev.length > 1 ? prev.filter((_, j) => j !== index) : [emptyService()]));
-        setHasUnsavedChanges(true);
+        const next = services.length > 1 ? services.filter((_, j) => j !== index) : [emptyService()];
+        dispatch(setCustomOrderServices(next));
     };
 
     const { handleRowKeyDown: handleServiceKeyDown } = useVoucherRowNavigation({
@@ -243,9 +279,10 @@ export default function CustomOrdersPage() {
                 invoke<string>('get_next_voucher_number_preview', { voucherType: 'custom_order' }),
                 invoke<string | null>('get_last_voucher_id', { voucherType: 'custom_order' }),
             ]);
-            setNextOrderNo(previewNo); setLastOrderId(lastId); setHasLastOrder(lastId !== null);
+            dispatch(setCustomOrderNextOrderNo(previewNo));
+            dispatch(setCustomOrderLastOrderInfo({ hasLastOrder: lastId !== null, lastOrderId: lastId }));
         } catch { /**/ }
-    }, []);
+    }, [dispatch]);
 
     const checkNavigation = useCallback(async (id: string) => {
         try {
@@ -253,9 +290,14 @@ export default function CustomOrdersPage() {
                 invoke<string | null>('get_previous_voucher_id', { voucherType: 'custom_order', currentId: id }),
                 invoke<string | null>('get_next_voucher_id', { voucherType: 'custom_order', currentId: id }),
             ]);
-            setHasPrevious(prevId !== null); setHasNext(nxtId !== null); setPreviousId(prevId); setNextId(nxtId);
+            dispatch(setCustomOrderNavigationData({
+                hasPrevious: prevId !== null,
+                hasNext: nxtId !== null,
+                previousId: prevId,
+                nextId: nxtId,
+            }));
         } catch { /**/ }
-    }, []);
+    }, [dispatch]);
 
     const loadReferenceData = useCallback(async () => {
         try {
@@ -319,12 +361,20 @@ export default function CustomOrdersPage() {
             setSuppliers(suppList);
         } catch (e) { console.error('suppliers', e); }
         try {
+            const svcAccounts = await invoke<any[]>('get_accounts_by_groups', { groups: ['Job Work Expenses'] }).catch(() => []);
+            setServiceAccounts((svcAccounts || []).map((acc: any) => ({
+                id: acc.id,
+                name: acc.account_name || acc.name || 'Unnamed',
+                code: acc.account_code || '',
+            })));
+        } catch (e) { console.error('job work expenses', e); }
+        try {
             const cb = await invoke<any[]>('get_cash_bank_accounts').catch(() => []);
             const mappedCb: CashBankAccount[] = (cb || []).map((a: any) => ({ id: a.id, name: a.name || a.account_name || 'Cash', account_group: a.account_group || '' }));
             setCashBankAccounts(mappedCb);
-            if (mappedCb.length > 0) setAdvanceCashBank(mappedCb[0].id);
+            if (mappedCb.length > 0 && !advanceCashBank) setAdvanceCashBank(mappedCb[0].id);
         } catch (e) { console.error('cash/bank', e); }
-    }, []);
+    }, [advanceCashBank]);
 
     useEffect(() => {
         if (comboboxDisplaySettings.show_stock) {
@@ -372,11 +422,10 @@ export default function CustomOrdersPage() {
                 const accounts = await invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable'] }).catch(() => []);
                 const found = accounts.find((acc: any) => acc.account_name === newCustomer.name || acc.name === newCustomer.name);
                 if (found) {
-                    setCustomerId(found.id);
+                    dispatch(setCustomOrderCustomerId(found.id));
                 } else if (newCustomer.id) {
-                    setCustomerId(newCustomer.id);
+                    dispatch(setCustomOrderCustomerId(newCustomer.id));
                 }
-                setHasUnsavedChanges(true);
             }
         } catch (e) {
             console.error("Failed to refresh parties after create", e);
@@ -384,161 +433,265 @@ export default function CustomOrdersPage() {
         setShowCreateCustomer(false);
     };
 
+    const handleCreateServiceLedgerSave = async () => {
+        if (!newServiceLedgerName.trim()) {
+            toast.error('Please enter a ledger name');
+            return;
+        }
+        try {
+            const newAcc = await invoke<any>('create_chart_of_account', {
+                account: {
+                    account_code: '',
+                    account_name: newServiceLedgerName.trim(),
+                    account_type: 'Expense',
+                    account_group: 'Job Work Expenses',
+                    description: null,
+                    opening_balance: 0,
+                    opening_balance_type: 'Dr',
+                }
+            });
+            toast.success(`Created "${newServiceLedgerName.trim()}" under Job Work Expenses`);
+            await loadReferenceData();
+            if (targetServiceRowIndex !== null && targetServiceRowIndex < services.length) {
+                const rows = [...services];
+                rows[targetServiceRowIndex] = {
+                    ...rows[targetServiceRowIndex],
+                    expense_account: newAcc.id,
+                    description: newAcc.account_name || newServiceLedgerName.trim(),
+                };
+                dispatch(setCustomOrderServices(rows));
+                dispatch(setCustomOrderHasUnsavedChanges(true));
+                const rowEl = document.querySelector(`[data-service-row="${targetServiceRowIndex}"]`);
+                const qtyInput = rowEl?.querySelector('[data-field="quantity"]') as HTMLInputElement | null;
+                requestAnimationFrame(() => {
+                    qtyInput?.focus();
+                    qtyInput?.select();
+                });
+            }
+            setShowCreateServiceLedger(false);
+            setNewServiceLedgerName('');
+        } catch (e) {
+            toast.error(`Failed to create ledger: ${e}`);
+        }
+    };
+
     useEffect(() => { loadReferenceData(); }, [loadReferenceData]);
 
+    const lastLoadedOrderIdRef = useRef<string | null>(null);
     useEffect(() => {
-        if (activeSectionParams?.orderId) {
+        if (activeSectionParams?.orderId && activeSectionParams.orderId !== lastLoadedOrderIdRef.current) {
+            lastLoadedOrderIdRef.current = activeSectionParams.orderId;
             invoke<CustomOrderDetail>('get_custom_order', { id: activeSectionParams.orderId })
-                .then(async detail => { setCurrentOrder(detail.order); setCurrentDetail(detail); setMode('viewing'); await checkNavigation(detail.order.id); })
+                .then(async detail => {
+                    dispatch(setCustomOrderCurrentOrder(detail.order));
+                    dispatch(setCustomOrderCurrentDetail(detail));
+                    dispatch(setCustomOrderMode('viewing'));
+                    await checkNavigation(detail.order.id);
+                })
                 .catch(err => console.error('order from params:', err));
         }
-    }, [activeSectionParams, checkNavigation]);
-
-    const resetForm = () => {
-        setOrderDate(today()); setDeliveryDate(''); setCustomerId(''); setReference(''); setFinishedItemName('');
-        setFinishedItemQty(1); setFinishedItemRate(0); setSalePrice(0); setNarration('');
-        setMaterials([emptyMaterial()]); setPurchases([emptyPurchase()]); setServices([emptyService()]);
-        setActiveTab('details'); setHasUnsavedChanges(false);
-    };
-
-    const populateFormFromOrder = (order: CustomOrder, detail: CustomOrderDetail) => {
-        setOrderDate(order.order_date); setDeliveryDate(order.delivery_date || ''); setCustomerId(order.customer_id);
-        setReference(order.reference || '');
-        setFinishedItemName(order.finished_item_name); setFinishedItemQty(order.finished_item_qty || 1);
-        const r = (order.finished_item_qty && order.finished_item_qty > 0)
-            ? Math.round((order.sale_price / order.finished_item_qty) * 100) / 100
-            : order.sale_price;
-        setFinishedItemRate(r);
-        setSalePrice(order.sale_price); setNarration(order.narration || '');
-        setMaterials(detail.materials.length ? detail.materials : [emptyMaterial()]);
-        setPurchases(detail.purchases.length ? detail.purchases : [emptyPurchase()]);
-        setServices(detail.services.length ? detail.services : [emptyService()]);
-        setActiveTab('details'); setHasUnsavedChanges(false);
-    };
+    }, [activeSectionParams, checkNavigation, dispatch]);
 
     const openNew = async () => {
-        resetForm(); setCurrentOrder(null); setCurrentDetail(null); setMode('new');
-        setHasPrevious(false); setHasNext(false); setPreviousId(null); setNextId(null);
+        dispatch(resetCustomOrderForm());
+        dispatch(setCustomOrderCurrentOrder(null));
+        dispatch(setCustomOrderCurrentDetail(null));
+        dispatch(setCustomOrderMode('new'));
+        dispatch(setCustomOrderNavigationData({ hasPrevious: false, hasNext: false, previousId: null, nextId: null }));
         await fetchNewModeData();
     };
 
     const openViewOrder = async (order: CustomOrder) => {
         try {
             const detail = await invoke<CustomOrderDetail>('get_custom_order', { id: order.id });
-            setCurrentOrder(detail.order); setCurrentDetail(detail); setMode('viewing'); await checkNavigation(order.id);
+            dispatch(setCustomOrderCurrentOrder(detail.order));
+            dispatch(setCustomOrderCurrentDetail(detail));
+            dispatch(setCustomOrderMode('viewing'));
+            await checkNavigation(order.id);
         } catch (err) { toast.error(String(err)); }
     };
 
     const openEditFromView = () => {
         if (!currentOrder || !currentDetail) return;
         if (currentOrder.status === 'delivered') { toast.error('Delivered orders cannot be edited'); return; }
-        populateFormFromOrder(currentOrder, currentDetail); setMode('editing');
+        dispatch(populateCustomOrderForm({ order: currentOrder, detail: currentDetail }));
+        dispatch(setCustomOrderMode('editing'));
     };
 
     const handleCancelEdit = () => {
-        if (currentOrder && currentDetail) { setMode('viewing'); setHasUnsavedChanges(false); }
-        else { setMode('list'); }
+        if (currentOrder && currentDetail) {
+            dispatch(setCustomOrderMode('viewing'));
+            dispatch(setCustomOrderHasUnsavedChanges(false));
+        } else {
+            dispatch(setCustomOrderMode('list'));
+        }
     };
 
     const handleNavigatePrevious = async () => {
         if (mode === 'new' && hasLastOrder && lastOrderId) {
-            try { const d = await invoke<CustomOrderDetail>('get_custom_order', { id: lastOrderId }); setCurrentOrder(d.order); setCurrentDetail(d); setMode('viewing'); await checkNavigation(d.order.id); } catch { /**/ } return;
+            try {
+                const d = await invoke<CustomOrderDetail>('get_custom_order', { id: lastOrderId });
+                dispatch(setCustomOrderCurrentOrder(d.order));
+                dispatch(setCustomOrderCurrentDetail(d));
+                dispatch(setCustomOrderMode('viewing'));
+                await checkNavigation(d.order.id);
+            } catch { /**/ }
+            return;
         }
-        if (previousId) { try { const d = await invoke<CustomOrderDetail>('get_custom_order', { id: previousId }); setCurrentOrder(d.order); setCurrentDetail(d); setMode('viewing'); await checkNavigation(d.order.id); } catch { /**/ } }
+        if (previousId) {
+            try {
+                const d = await invoke<CustomOrderDetail>('get_custom_order', { id: previousId });
+                dispatch(setCustomOrderCurrentOrder(d.order));
+                dispatch(setCustomOrderCurrentDetail(d));
+                dispatch(setCustomOrderMode('viewing'));
+                await checkNavigation(d.order.id);
+            } catch { /**/ }
+        }
     };
 
     const handleNavigateNext = async () => {
-        if (nextId) { try { const d = await invoke<CustomOrderDetail>('get_custom_order', { id: nextId }); setCurrentOrder(d.order); setCurrentDetail(d); setMode('viewing'); await checkNavigation(d.order.id); } catch { /**/ } }
-        else if (mode === 'viewing') { await openNew(); }
+        if (nextId) {
+            try {
+                const d = await invoke<CustomOrderDetail>('get_custom_order', { id: nextId });
+                dispatch(setCustomOrderCurrentOrder(d.order));
+                dispatch(setCustomOrderCurrentDetail(d));
+                dispatch(setCustomOrderMode('viewing'));
+                await checkNavigation(d.order.id);
+            } catch { /**/ }
+        } else if (mode === 'viewing') {
+            await openNew();
+        }
     };
 
     const updateMaterial = (i: number, field: keyof MaterialRow, value: any) => {
-        setMaterials(prev => {
-            const rows = [...prev]; const numF: (keyof MaterialRow)[] = ['quantity','rate','amount'];
-            const val = numF.includes(field) ? (Number(value)||0) : value;
-            rows[i] = { ...rows[i], [field]: val };
-            if (field === 'product_id') {
-                const prod = products.find(p => p.id === value);
-                if (prod) {
-                    const defaultUnitId = getDefaultProductUnitId(productUnitsByProduct[prod.id], 'report', prod.unit_id) || prod.unit_id;
-                    const defaultRate = getProductUnitRate(productUnitsByProduct[prod.id], defaultUnitId, 'purchase', prod.purchase_rate);
-                    rows[i].unit_id = defaultUnitId;
-                    rows[i].rate = defaultRate;
-                    rows[i].product_name = prod.name;
-                    rows[i].product_code = prod.code;
-                    const q = Number(rows[i].quantity) || 0;
-                    rows[i].amount = Math.round(q * defaultRate * 100) / 100;
-                }
-            } else if (field === 'unit_id') {
-                const prod = products.find(p => p.id === rows[i].product_id);
-                if (prod) {
-                    const unitRate = getProductUnitRate(productUnitsByProduct[prod.id], value, 'purchase', prod.purchase_rate);
-                    rows[i].rate = unitRate;
-                    const q = Number(rows[i].quantity) || 0;
-                    rows[i].amount = Math.round(q * unitRate * 100) / 100;
-                }
+        const rows = [...materials];
+        const numF: (keyof MaterialRow)[] = ['quantity', 'rate', 'amount'];
+        const val = numF.includes(field) ? (Number(value) || 0) : value;
+        rows[i] = { ...rows[i], [field]: val };
+        if (field === 'product_id') {
+            const prod = products.find(p => p.id === value);
+            if (prod) {
+                const defaultUnitId = getDefaultProductUnitId(productUnitsByProduct[prod.id], 'report', prod.unit_id) || prod.unit_id;
+                const defaultRate = getProductUnitRate(productUnitsByProduct[prod.id], defaultUnitId, 'purchase', prod.purchase_rate);
+                rows[i] = {
+                    ...rows[i],
+                    unit_id: defaultUnitId,
+                    rate: defaultRate,
+                    product_name: prod.name,
+                    product_code: prod.code,
+                };
+                const q = Number(rows[i].quantity) || 0;
+                rows[i].amount = Math.round(q * defaultRate * 100) / 100;
             }
-            if (field === 'quantity' || field === 'rate') {
-                const q = field === 'quantity' ? Number(value) || 0 : Number(rows[i].quantity) || 0;
-                const r = field === 'rate' ? Number(value) || 0 : Number(rows[i].rate) || 0;
-                rows[i].amount = Math.round(q * r * 100) / 100;
+        } else if (field === 'unit_id') {
+            const prod = products.find(p => p.id === rows[i].product_id);
+            if (prod) {
+                const unitRate = getProductUnitRate(productUnitsByProduct[prod.id], value, 'purchase', prod.purchase_rate);
+                rows[i] = {
+                    ...rows[i],
+                    rate: unitRate,
+                };
+                const q = Number(rows[i].quantity) || 0;
+                rows[i].amount = Math.round(q * unitRate * 100) / 100;
             }
-            setHasUnsavedChanges(true);
-            return rows;
-        });
+        }
+        if (field === 'quantity' || field === 'rate') {
+            const q = field === 'quantity' ? Number(value) || 0 : Number(rows[i].quantity) || 0;
+            const r = field === 'rate' ? Number(value) || 0 : Number(rows[i].rate) || 0;
+            rows[i].amount = Math.round(q * r * 100) / 100;
+        }
+        dispatch(setCustomOrderMaterials(rows));
     };
 
     const updatePurchase = (i: number, field: keyof PurchaseRow, value: any) => {
-        setPurchases(prev => {
-            const rows = [...prev]; const numF: (keyof PurchaseRow)[] = ['quantity','rate','amount'];
-            const val = numF.includes(field) ? (Number(value)||0) : value;
-            rows[i] = { ...rows[i], [field]: val };
-            if (field==='quantity'||field==='rate') { const q=field==='quantity'?Number(value)||0:Number(rows[i].quantity)||0; const r=field==='rate'?Number(value)||0:Number(rows[i].rate)||0; rows[i].amount=Math.round(q*r*100)/100; }
-            setHasUnsavedChanges(true); return rows;
-        });
+        const rows = [...purchases];
+        const numF: (keyof PurchaseRow)[] = ['quantity', 'rate', 'amount'];
+        const val = numF.includes(field) ? (Number(value) || 0) : value;
+        rows[i] = { ...rows[i], [field]: val };
+        if (field === 'quantity' || field === 'rate') {
+            const q = field === 'quantity' ? Number(value) || 0 : Number(rows[i].quantity) || 0;
+            const r = field === 'rate' ? Number(value) || 0 : Number(rows[i].rate) || 0;
+            rows[i].amount = Math.round(q * r * 100) / 100;
+        }
+        dispatch(setCustomOrderPurchases(rows));
     };
 
     const updateService = (i: number, field: keyof ServiceRow, value: any) => {
-        setServices(prev => {
-            const rows = [...prev]; const numF: (keyof ServiceRow)[] = ['quantity','rate','amount'];
-            const val = numF.includes(field) ? (Number(value)||0) : value;
-            rows[i] = { ...rows[i], [field]: val };
-            if (field==='quantity'||field==='rate') { const q=field==='quantity'?Number(value)||0:Number(rows[i].quantity)||0; const r=field==='rate'?Number(value)||0:Number(rows[i].rate)||0; rows[i].amount=Math.round(q*r*100)/100; }
-            setHasUnsavedChanges(true); return rows;
-        });
+        const rows = [...services];
+        const numF: (keyof ServiceRow)[] = ['quantity', 'rate', 'amount'];
+        const val = numF.includes(field) ? (Number(value) || 0) : value;
+        rows[i] = { ...rows[i], [field]: val };
+        if (field === 'quantity' || field === 'rate') {
+            const q = field === 'quantity' ? Number(value) || 0 : Number(rows[i].quantity) || 0;
+            const r = field === 'rate' ? Number(value) || 0 : Number(rows[i].rate) || 0;
+            rows[i].amount = Math.round(q * r * 100) / 100;
+        }
+        dispatch(setCustomOrderServices(rows));
     };
 
     const handleSave = async () => {
         if (!customerId) { toast.error('Please select a customer'); return; }
         if (!finishedItemName.trim()) { toast.error('Finished item name is required'); return; }
         const payload = {
-            order_date: orderDate, delivery_date: deliveryDate||null, customer_id: customerId,
+            order_date: orderDate,
+            delivery_date: deliveryDate || null,
+            customer_id: customerId,
             reference: reference || null,
-            finished_item_name: finishedItemName, finished_item_qty: Number(finishedItemQty)||1,
-            finished_item_unit: null, sale_price: Number(salePrice)||0, narration: narration||null,
-            materials: materials.filter(m=>m.product_id).map(m=>({ product_id:m.product_id, description:m.description||null, quantity:Number(m.quantity)||0, unit_id:m.unit_id||null, rate:Number(m.rate)||0, amount:Number(m.amount)||0 })),
-            purchases: purchases.filter(p=>p.description&&p.description.trim()).map(p=>({ description:p.description.trim(), supplier_id:p.supplier_id||null, quantity:Number(p.quantity)||0, unit_id:null, rate:Number(p.rate)||0, amount:Number(p.amount)||0, expense_account:null, purchase_date:p.purchase_date||null })),
-            services: services.filter(s=>s.description&&s.description.trim()).map(s=>({ service_id:s.service_id||null, description:s.description.trim(), quantity:Number(s.quantity)||0, rate:Number(s.rate)||0, amount:Number(s.amount)||0, expense_account:null })),
-            user_id: user?.id||null,
+            finished_item_name: finishedItemName,
+            finished_item_qty: Number(finishedItemQty) || 1,
+            finished_item_unit: null,
+            sale_price: Number(salePrice) || 0,
+            narration: narration || null,
+            materials: materials.filter(m => m.product_id).map(m => ({
+                product_id: m.product_id,
+                description: m.description || null,
+                quantity: Number(m.quantity) || 0,
+                unit_id: m.unit_id || null,
+                rate: Number(m.rate) || 0,
+                amount: Number(m.amount) || 0,
+            })),
+            purchases: purchases.filter(p => p.description && p.description.trim()).map(p => ({
+                description: p.description.trim(),
+                supplier_id: p.supplier_id || null,
+                quantity: Number(p.quantity) || 0,
+                unit_id: null,
+                rate: Number(p.rate) || 0,
+                amount: Number(p.amount) || 0,
+                expense_account: null,
+                purchase_date: p.purchase_date || null,
+            })),
+            services: services.filter(s => s.description && s.description.trim()).map(s => ({
+                service_id: s.service_id || null,
+                description: s.description.trim(),
+                quantity: Number(s.quantity) || 0,
+                rate: Number(s.rate) || 0,
+                amount: Number(s.amount) || 0,
+                expense_account: s.expense_account || null,
+            })),
+            user_id: user?.id || null,
         };
         setSaving(true);
         try {
-            if (mode==='editing'&&currentOrder) {
-                await invoke('update_custom_order', { id: currentOrder.id, data: payload }); toast.success('Order updated');
+            if (mode === 'editing' && currentOrder) {
+                await invoke('update_custom_order', { id: currentOrder.id, data: payload });
+                toast.success('Order updated');
                 const detail = await invoke<CustomOrderDetail>('get_custom_order', { id: currentOrder.id });
-                setCurrentOrder(detail.order); setCurrentDetail(detail); setMode('viewing'); setHasUnsavedChanges(false); await checkNavigation(detail.order.id);
+                dispatch(setCustomOrderCurrentOrder(detail.order));
+                dispatch(setCustomOrderCurrentDetail(detail));
+                dispatch(setCustomOrderMode('viewing'));
+                dispatch(setCustomOrderHasUnsavedChanges(false));
+                await checkNavigation(detail.order.id);
             } else {
-                const newId = await invoke<string>('create_custom_order', { data: payload }); toast.success('Order created');
+                const newId = await invoke<string>('create_custom_order', { data: payload });
+                toast.success('Order created');
                 const detail = await invoke<CustomOrderDetail>('get_custom_order', { id: newId });
-                setCurrentOrder(detail.order); setCurrentDetail(detail); setMode('viewing'); setHasUnsavedChanges(false); await checkNavigation(newId);
+                dispatch(setCustomOrderCurrentOrder(detail.order));
+                dispatch(setCustomOrderCurrentDetail(detail));
+                dispatch(setCustomOrderMode('viewing'));
+                dispatch(setCustomOrderHasUnsavedChanges(false));
+                await checkNavigation(newId);
                 // Prompt advance payment dialog for the newly created order
-                setAdvanceOrder(detail.order);
-                setAdvanceAmount('');
-                setAdvanceDate(today());
-                setAdvanceNarration('');
-                if (cashBankAccounts.length > 0 && !advanceCashBank) {
-                    setAdvanceCashBank(cashBankAccounts[0].id);
-                }
+                openAdvanceDialog(detail.order);
             }
             loadOrders();
         } catch (err) { toast.error(String(err)); }
@@ -547,46 +700,134 @@ export default function CustomOrdersPage() {
 
     const handleDelete = async () => {
         if (!deleteId) return;
-        try { await invoke('delete_custom_order', { id: deleteId }); toast.success('Order deleted'); if (currentOrder?.id===deleteId) { setCurrentOrder(null); setCurrentDetail(null); setMode('list'); } setDeleteId(null); loadOrders(); }
-        catch (err) { toast.error(String(err)); setDeleteId(null); }
+        try {
+            await invoke('delete_custom_order', { id: deleteId });
+            toast.success('Order deleted');
+            if (currentOrder?.id === deleteId) {
+                dispatch(setCustomOrderCurrentOrder(null));
+                dispatch(setCustomOrderCurrentDetail(null));
+                dispatch(setCustomOrderMode('list'));
+            }
+            setDeleteId(null);
+            loadOrders();
+        } catch (err) {
+            toast.error(String(err));
+            setDeleteId(null);
+        }
+    };
+
+    const openAdvanceDialog = async (order: CustomOrder) => {
+        setAdvanceOrder(order);
+        setAdvanceDate(today());
+        const totalPaid = order.advance_amount || order.total_paid || 0;
+        const balance = Math.max(0, order.sale_price - totalPaid);
+        setAdvanceAmount(balance > 0 ? String(balance) : '');
+        setAdvanceNarration('');
+        if (cashBankAccounts.length > 0 && !advanceCashBank) {
+            setAdvanceCashBank(cashBankAccounts[0].id);
+        }
+        setLoadingPayments(true);
+        try {
+            const payments = await invoke<CustomOrderPaymentRecord[]>('get_custom_order_payments', { orderId: order.id });
+            setOrderPayments(payments || []);
+        } catch (e) {
+            console.error('Failed to load order payments', e);
+            setOrderPayments([]);
+        } finally {
+            setLoadingPayments(false);
+        }
     };
 
     const handleSaveAdvance = async () => {
         if (!advanceOrder) return;
-        if (!advanceAmount||Number(advanceAmount)<=0) { toast.error('Enter a valid amount'); return; }
+        if (!advanceAmount || Number(advanceAmount) <= 0) { toast.error('Enter a valid amount'); return; }
         if (!advanceCashBank) { toast.error('Select a cash/bank account'); return; }
         setSavingAdvance(true);
         try {
-            await invoke('record_custom_order_advance', { payload: { order_id:advanceOrder.id, amount:Number(advanceAmount), payment_date:advanceDate, cash_bank_account_id:advanceCashBank, narration:advanceNarration||null, user_id:user?.id||null } });
-            toast.success('Advance recorded'); setAdvanceOrder(null); loadOrders();
-            if (currentOrder?.id===advanceOrder.id) { const d=await invoke<CustomOrderDetail>('get_custom_order',{id:advanceOrder.id}); setCurrentOrder(d.order); setCurrentDetail(d); }
+            await invoke('record_custom_order_advance', {
+                payload: {
+                    order_id: advanceOrder.id,
+                    amount: Number(advanceAmount),
+                    payment_date: advanceDate,
+                    cash_bank_account_id: advanceCashBank,
+                    narration: advanceNarration || null,
+                    user_id: user?.id || null
+                }
+            });
+            toast.success(`Payment of ₹${fmt(Number(advanceAmount))} recorded successfully`);
+            setAdvanceAmount('');
+            setAdvanceNarration('');
+            loadOrders();
+            const d = await invoke<CustomOrderDetail>('get_custom_order', { id: advanceOrder.id });
+            setAdvanceOrder(d.order);
+            if (currentOrder?.id === advanceOrder.id) {
+                dispatch(setCustomOrderCurrentOrder(d.order));
+                dispatch(setCustomOrderCurrentDetail(d));
+            }
+            const payments = await invoke<CustomOrderPaymentRecord[]>('get_custom_order_payments', { orderId: advanceOrder.id });
+            setOrderPayments(payments || []);
         } catch (err) { toast.error(String(err)); }
         finally { setSavingAdvance(false); }
     };
 
-    const openFinalize = (order: CustomOrder) => { setFinalizeOrder(order); setFinalizeDate(today()); setFinalizeSalePrice(order.sale_price); setFinalizeNarration(''); };
+    const openFinalize = (order: CustomOrder) => {
+        setFinalizeOrder(order);
+        setFinalizeDate(today());
+        setFinalizeSalePrice(order.sale_price);
+        setFinalizeNarration('');
+        setFinalizeCollectPayment(true);
+        setFinalizePaymentAccount(cashBankAccounts[0]?.id || '');
+    };
 
     const handleFinalize = async () => {
         if (!finalizeOrder) return;
-        if (!finalizeSalePrice||finalizeSalePrice<=0) { toast.error('Enter a valid sale price'); return; }
+        if (!finalizeSalePrice || finalizeSalePrice <= 0) { toast.error('Enter a valid sale price'); return; }
+        const balanceRemaining = Math.max(0, finalizeSalePrice - (finalizeOrder.advance_amount || 0));
+        if (finalizeCollectPayment && balanceRemaining > 0 && !finalizePaymentAccount) {
+            toast.error('Please select a payment account');
+            return;
+        }
         setFinalizing(true);
         try {
-            await invoke('finalize_custom_order', { payload: { order_id:finalizeOrder.id, voucher_date:finalizeDate, sale_price:Number(finalizeSalePrice)||0, tax_rate:0, gst_disabled:true, narration:finalizeNarration||null, user_id:user?.id||null } });
-            toast.success('Order finalized! Invoice created.'); setFinalizeOrder(null); loadOrders();
-            if (currentOrder?.id===finalizeOrder.id) { const d=await invoke<CustomOrderDetail>('get_custom_order',{id:finalizeOrder.id}); setCurrentOrder(d.order); setCurrentDetail(d); }
+            await invoke('finalize_custom_order', {
+                payload: {
+                    order_id: finalizeOrder.id,
+                    voucher_date: finalizeDate,
+                    sale_price: Number(finalizeSalePrice) || 0,
+                    tax_rate: 0,
+                    gst_disabled: true,
+                    narration: finalizeNarration || null,
+                    user_id: user?.id || null,
+                    collect_payment: finalizeCollectPayment && balanceRemaining > 0,
+                    payment_amount: balanceRemaining,
+                    payment_account_id: finalizePaymentAccount || null,
+                }
+            });
+            toast.success(
+                finalizeCollectPayment && balanceRemaining > 0
+                    ? `Order finalized and payment of ₹${fmt(balanceRemaining)} collected!`
+                    : 'Order finalized! Invoice created.'
+            );
+            setFinalizeOrder(null);
+            loadOrders();
+            if (currentOrder?.id === finalizeOrder.id) {
+                const d = await invoke<CustomOrderDetail>('get_custom_order', { id: finalizeOrder.id });
+                dispatch(setCustomOrderCurrentOrder(d.order));
+                dispatch(setCustomOrderCurrentDetail(d));
+            }
         } catch (err) { toast.error(String(err)); }
         finally { setFinalizing(false); }
     };
 
     const openCollectPayment = (order: CustomOrder) => {
         if (!order.final_invoice_id) { toast.error('No invoice generated for this order yet.'); return; }
-        setPaymentInvoice({ id:order.final_invoice_id, no:order.final_invoice_no||order.order_no, amount:order.sale_price, date:order.delivery_date||order.order_date, partyName:order.customer_name });
+        setPaymentInvoice({ id: order.final_invoice_id, no: order.final_invoice_no || order.order_no, amount: order.sale_price, date: order.delivery_date || order.order_date, partyName: order.customer_name });
     };
 
-    const filteredOrders = orders.filter(o => filterStatus==='all'||o.status===filterStatus);
-    const displayOrderNo = mode==='new' ? nextOrderNo : currentOrder?.order_no;
-    const isFormMode = mode==='new'||mode==='editing';
-    const isViewMode = mode==='viewing';
+    const filteredOrders = orders.filter(o => filterStatus === 'all' || o.status === filterStatus);
+    const displayOrderNo = mode === 'new' ? nextOrderNo : currentOrder?.order_no;
+    const isFormMode = mode === 'new' || mode === 'editing';
+    const isViewMode = mode === 'viewing';
 
     const renderDialogs = () => (
         <>
@@ -606,44 +847,141 @@ export default function CustomOrdersPage() {
             </AlertDialog>
 
             <Dialog open={!!advanceOrder} onOpenChange={open=>!open&&setAdvanceOrder(null)}>
-                <DialogContent className="max-w-md">
+                <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
                     <DialogHeader>
-                        <DialogTitle>Record Advance Payment</DialogTitle>
+                        <DialogTitle className="flex items-center justify-between pr-6">
+                            <span>Manage Payments & Advances - {advanceOrder?.order_no}</span>
+                            <Badge variant={advanceOrder?.status === 'delivered' ? 'default' : 'secondary'}>
+                                {advanceOrder?.status === 'delivered' ? 'Delivered' : 'Pending'}
+                            </Badge>
+                        </DialogTitle>
+                        {advanceOrder && (
+                            <div className="text-sm space-y-1 pt-1">
+                                <div className="text-muted-foreground">
+                                    Customer: <strong className="text-foreground">{advanceOrder.customer_name}</strong> • Item: <strong className="text-foreground">{advanceOrder.finished_item_name}</strong>
+                                </div>
+                                <div className="flex flex-wrap gap-4 pt-1 text-xs">
+                                    <div>Sale Price: <strong className="font-mono text-sm">₹{fmt(advanceOrder.sale_price)}</strong></div>
+                                    <div>Total Paid: <strong className="font-mono text-sm text-emerald-600">₹{fmt(advanceOrder.advance_amount || advanceOrder.total_paid || 0)}</strong></div>
+                                    <div>Balance Due: <strong className="font-mono text-sm text-orange-600">₹{fmt(Math.max(0, advanceOrder.sale_price - (advanceOrder.advance_amount || advanceOrder.total_paid || 0)))}</strong></div>
+                                </div>
+                            </div>
+                        )}
                     </DialogHeader>
+
                     <div className="space-y-4 py-2">
-                        <p className="text-sm text-muted-foreground">
-                            Customer: <strong>{advanceOrder?.customer_name}</strong><br/>
-                            Order: <strong>{advanceOrder?.order_no}</strong>
-                        </p>
-                        <div className="space-y-1">
-                            <Label>Advance Amount (₹) *</Label>
-                            <Input type="number" value={advanceAmount} onChange={e=>setAdvanceAmount(e.target.value)} placeholder="0.00"/>
+                        {/* Payment & Advance History List */}
+                        <div className="border rounded-lg overflow-hidden">
+                            <div className="bg-muted/50 border-b px-3 py-2 flex items-center justify-between text-xs font-medium">
+                                <span>Payment & Advance History ({orderPayments.length})</span>
+                                <span className="font-mono font-semibold">Total: ₹{fmt(orderPayments.reduce((s, p) => s + p.amount, 0))}</span>
+                            </div>
+                            {loadingPayments ? (
+                                <div className="p-4 text-center text-xs text-muted-foreground">Loading payment history...</div>
+                            ) : orderPayments.length === 0 ? (
+                                <div className="p-4 text-center text-xs text-muted-foreground">No advances or payments recorded yet.</div>
+                            ) : (
+                                <table className="w-full text-xs">
+                                    <thead className="bg-muted/30 border-b text-muted-foreground">
+                                        <tr>
+                                            <th className="p-2 text-left">Date</th>
+                                            <th className="p-2 text-left">Receipt No</th>
+                                            <th className="p-2 text-left">Account</th>
+                                            <th className="p-2 text-left">Type</th>
+                                            <th className="p-2 text-right">Amount (₹)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y">
+                                        {orderPayments.map((p, idx) => (
+                                            <tr key={p.voucher_id || idx} className="hover:bg-muted/20">
+                                                <td className="p-2">{p.voucher_date}</td>
+                                                <td className="p-2 font-mono font-medium">{p.voucher_no}</td>
+                                                <td className="p-2">{p.account_name || 'Cash'}</td>
+                                                <td className="p-2">
+                                                    <Badge variant="outline" className="text-[10px] uppercase">
+                                                        {p.payment_type === 'advance' ? 'Advance' : 'Invoice Payment'}
+                                                    </Badge>
+                                                </td>
+                                                <td className="p-2 text-right font-mono font-semibold text-emerald-600">₹{fmt(p.amount)}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
                         </div>
-                        <div className="space-y-1">
-                            <Label>Payment Date *</Label>
-                            <Input type="date" value={advanceDate} onChange={e=>setAdvanceDate(e.target.value)}/>
-                        </div>
-                        <div className="space-y-1">
-                            <Label>Cash / Bank Account *</Label>
-                            <Select value={advanceCashBank} onValueChange={setAdvanceCashBank}>
-                                <SelectTrigger>
-                                    <SelectValue placeholder="Select account..."/>
-                                </SelectTrigger>
-                                <SelectContent>
-                                    {cashBankAccounts.map(a=>(
-                                        <SelectItem key={a.id} value={a.id}>{a.name||a.account_name}</SelectItem>
-                                    ))}
-                                </SelectContent>
-                            </Select>
-                        </div>
-                        <div className="space-y-1">
-                            <Label>Narration</Label>
-                            <Input value={advanceNarration} onChange={e=>setAdvanceNarration(e.target.value)} placeholder="Optional note..."/>
-                        </div>
+
+                        {/* Record New Payment Section */}
+                        {advanceOrder && (advanceOrder.sale_price - (advanceOrder.advance_amount || 0) > 0 || advanceOrder.advance_amount === 0) && (
+                            <div className="border rounded-lg p-3.5 space-y-3 bg-card">
+                                <div className="flex items-center justify-between">
+                                    <h4 className="text-xs font-semibold text-foreground">
+                                        Record {advanceOrder.status === 'delivered' ? 'Payment' : 'Advance'}
+                                    </h4>
+                                    {advanceOrder.sale_price - (advanceOrder.advance_amount || 0) > 0 && (
+                                        <Button
+                                            type="button"
+                                            variant="ghost"
+                                            size="sm"
+                                            className="h-6 text-[11px] px-2 text-primary hover:text-primary"
+                                            onClick={() => setAdvanceAmount(String(Math.max(0, advanceOrder.sale_price - (advanceOrder.advance_amount || 0))))}
+                                        >
+                                            Use Remaining (₹{fmt(Math.max(0, advanceOrder.sale_price - (advanceOrder.advance_amount || 0)))})
+                                        </Button>
+                                    )}
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">Amount (₹) *</Label>
+                                        <Input
+                                            type="number"
+                                            value={advanceAmount}
+                                            onChange={e => setAdvanceAmount(e.target.value)}
+                                            placeholder="0.00"
+                                            className="h-8 text-sm font-mono"
+                                        />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <Label className="text-xs">Payment Date *</Label>
+                                        <Input
+                                            type="date"
+                                            value={advanceDate}
+                                            onChange={e => setAdvanceDate(e.target.value)}
+                                            className="h-8 text-sm"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Cash / Bank Account *</Label>
+                                    <Select value={advanceCashBank} onValueChange={setAdvanceCashBank}>
+                                        <SelectTrigger className="h-8 text-xs">
+                                            <SelectValue placeholder="Select account..."/>
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                            {cashBankAccounts.map(a => (
+                                                <SelectItem key={a.id} value={a.id}>{a.name || a.account_name}</SelectItem>
+                                            ))}
+                                        </SelectContent>
+                                    </Select>
+                                </div>
+                                <div className="space-y-1">
+                                    <Label className="text-xs">Narration / Note</Label>
+                                    <Input
+                                        value={advanceNarration}
+                                        onChange={e => setAdvanceNarration(e.target.value)}
+                                        placeholder="Optional note..."
+                                        className="h-8 text-xs"
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={()=>setAdvanceOrder(null)}>Cancel</Button>
-                        <Button onClick={handleSaveAdvance} disabled={savingAdvance}>{savingAdvance?'Saving...':'Record Advance'}</Button>
+                        <Button variant="outline" onClick={()=>setAdvanceOrder(null)}>Close</Button>
+                        {advanceOrder && (advanceOrder.sale_price - (advanceOrder.advance_amount || 0) > 0 || advanceOrder.advance_amount === 0) && (
+                            <Button onClick={handleSaveAdvance} disabled={savingAdvance}>
+                                {savingAdvance ? 'Saving...' : `Save ${advanceOrder.status === 'delivered' ? 'Payment' : 'Advance'}`}
+                            </Button>
+                        )}
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -673,21 +1011,55 @@ export default function CustomOrdersPage() {
                             </div>
                             {finalizeOrder.advance_amount > 0 && (
                                 <div className="bg-blue-50 dark:bg-blue-950/30 rounded p-2 text-sm">
-                                    Balance due after advance: <strong>₹{fmt(finalizeSalePrice-finalizeOrder.advance_amount)}</strong>
+                                    Balance due after advance: <strong>₹{fmt(finalizeSalePrice - finalizeOrder.advance_amount)}</strong>
+                                </div>
+                            )}
+                            {finalizeSalePrice - (finalizeOrder.advance_amount || 0) > 0 && (
+                                <div className="border rounded-md p-3 space-y-3 bg-muted/20">
+                                    <div className="flex items-center space-x-2">
+                                        <input
+                                            type="checkbox"
+                                            id="collectPayment"
+                                            checked={finalizeCollectPayment}
+                                            onChange={e => setFinalizeCollectPayment(e.target.checked)}
+                                            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                                        />
+                                        <label htmlFor="collectPayment" className="text-sm font-medium leading-none cursor-pointer">
+                                            Collect remaining balance (₹{fmt(finalizeSalePrice - finalizeOrder.advance_amount)}) now
+                                        </label>
+                                    </div>
+                                    {finalizeCollectPayment && (
+                                        <div className="space-y-1 pl-6">
+                                            <Label className="text-xs">Payment Account (Cash / Bank) *</Label>
+                                            <Select value={finalizePaymentAccount} onValueChange={setFinalizePaymentAccount}>
+                                                <SelectTrigger className="h-8 text-xs">
+                                                    <SelectValue placeholder="Select account" />
+                                                </SelectTrigger>
+                                                <SelectContent>
+                                                    {cashBankAccounts.map(cb => (
+                                                        <SelectItem key={cb.id} value={cb.id}>{cb.name}</SelectItem>
+                                                    ))}
+                                                </SelectContent>
+                                            </Select>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                             <div className="space-y-1">
                                 <Label>Narration</Label>
                                 <Input value={finalizeNarration} onChange={e=>setFinalizeNarration(e.target.value)} placeholder="Optional..."/>
                             </div>
-                            <p className="text-xs text-muted-foreground">
-                                This will create a Sales Invoice with one line item: "{finalizeOrder.finished_item_name}". The job cost (₹{fmt(finalizeOrder.total_job_cost)}) will be posted as COGS automatically.
-                            </p>
                         </div>
                     )}
                     <DialogFooter>
                         <Button variant="outline" onClick={()=>setFinalizeOrder(null)}>Cancel</Button>
-                        <Button onClick={handleFinalize} disabled={finalizing}>{finalizing?'Creating Invoice...':'Finalize & Create Invoice'}</Button>
+                        <Button onClick={handleFinalize} disabled={finalizing}>
+                            {finalizing
+                                ? 'Processing...'
+                                : finalizeCollectPayment && (finalizeSalePrice - (finalizeOrder?.advance_amount || 0) > 0)
+                                    ? 'Finalize & Collect Payment'
+                                    : 'Finalize & Create Invoice'}
+                        </Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -709,8 +1081,8 @@ export default function CustomOrdersPage() {
                         if (currentOrder) {
                             try {
                                 const d = await invoke<CustomOrderDetail>('get_custom_order', { id: currentOrder.id });
-                                setCurrentOrder(d.order);
-                                setCurrentDetail(d);
+                                dispatch(setCustomOrderCurrentOrder(d.order));
+                                dispatch(setCustomOrderCurrentDetail(d));
                             } catch {}
                         }
                     }}
@@ -724,6 +1096,39 @@ export default function CustomOrdersPage() {
                 onSave={handleCreateCustomerSave}
                 initialName={newCustomerName}
             />
+
+            <Dialog open={showCreateServiceLedger} onOpenChange={setShowCreateServiceLedger}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>New Service / Labour Ledger</DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                        <div className="space-y-1">
+                            <Label>Ledger Name *</Label>
+                            <Input
+                                autoFocus
+                                value={newServiceLedgerName}
+                                onChange={e => setNewServiceLedgerName(e.target.value)}
+                                placeholder="e.g. Stitching Charges, Embroidery"
+                                onKeyDown={e => {
+                                    if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleCreateServiceLedgerSave();
+                                    }
+                                }}
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <Label className="text-muted-foreground text-xs">Account Group</Label>
+                            <Input value="Job Work Expenses (Direct Expenses)" disabled className="bg-muted text-xs text-muted-foreground" />
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowCreateServiceLedger(false)}>Cancel</Button>
+                        <Button onClick={handleCreateServiceLedgerSave}>Create Ledger</Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </>
     );
 
@@ -763,14 +1168,14 @@ export default function CustomOrdersPage() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    {mode!=='list'&&<Button variant="outline" size="icon" className="h-8 w-8" onClick={()=>{setMode('list');setCurrentOrder(null);setCurrentDetail(null);}} title="Back to list"><IconList size={16}/></Button>}
+                    {mode!=='list'&&<Button variant="outline" size="icon" className="h-8 w-8" onClick={()=>{dispatch(setCustomOrderMode('list'));dispatch(setCustomOrderCurrentOrder(null));dispatch(setCustomOrderCurrentDetail(null));}} title="Back to list"><IconList size={16}/></Button>}
                     {isViewMode&&currentOrder&&(
                         <>
                             <div className="flex items-center gap-1 border-r pr-2 mr-1">
-                                {currentOrder.status!=='delivered'&&<Button variant="outline" size="icon" className="h-8 w-8" onClick={openEditFromView} title="Edit"><IconEdit size={16}/></Button>}
+                                <Button variant="outline" size="icon" className="h-8 w-8" onClick={openEditFromView} title="Edit"><IconEdit size={16}/></Button>
                                 <Button variant="outline" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={()=>{setDeleteId(currentOrder.id);setDeleteOrderNo(currentOrder.order_no);}} title="Delete" disabled={currentOrder.status==='delivered'}><IconTrash size={16}/></Button>
                             </div>
-                            {currentOrder.status==='pending'&&!currentOrder.advance_voucher_id&&<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={()=>{setAdvanceOrder(currentOrder);setAdvanceAmount('');setAdvanceDate(today());setAdvanceNarration('');}}><IconCash size={14}/> Advance</Button>}
+                            {currentOrder.status==='pending'&&<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={()=>openAdvanceDialog(currentOrder)}><IconCash size={14}/> {currentOrder.advance_amount > 0 ? 'Collect Payment' : 'Advance'}</Button>}
                             {currentOrder.status==='pending'&&<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={()=>openFinalize(currentOrder)}><IconCheck size={14}/> Finalize</Button>}
                             {currentOrder.status==='delivered'&&(currentOrder.balance_due??0)>0&&currentOrder.final_invoice_id&&<Button size="sm" className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={()=>openCollectPayment(currentOrder)}><IconCurrencyRupee size={14}/> Collect (₹{fmt(currentOrder.balance_due||0)})</Button>}
                             <Button variant="default" size="sm" className="h-8 text-xs gap-1.5" onClick={openNew}><IconPlus size={14}/> New</Button>
@@ -784,7 +1189,7 @@ export default function CustomOrdersPage() {
                     )}
                     {mode==='list'&&(
                         <>
-                            <Select value={filterStatus} onValueChange={setFilterStatus}><SelectTrigger className="w-36 h-8 text-xs"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All Orders</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="delivered">Delivered</SelectItem></SelectContent></Select>
+                            <Select value={filterStatus} onValueChange={val=>dispatch(setCustomOrderFilterStatus(val))}><SelectTrigger className="w-36 h-8 text-xs"><SelectValue/></SelectTrigger><SelectContent><SelectItem value="all">All Orders</SelectItem><SelectItem value="pending">Pending</SelectItem><SelectItem value="delivered">Delivered</SelectItem></SelectContent></Select>
                             <Button variant="outline" size="icon" className="h-8 w-8" onClick={loadOrders}><IconRefresh size={16}/></Button>
                             <Button size="sm" className="h-8 text-xs gap-1.5" onClick={openNew}><IconPlus size={14}/> New Order</Button>
                         </>
@@ -819,7 +1224,7 @@ export default function CustomOrdersPage() {
                     </div>
                     {currentDetail.materials.length>0&&(<div className="space-y-2"><h3 className="font-semibold text-sm flex items-center gap-2"><IconPackage size={16} className="text-primary"/>Stock Materials Consumed ({currentDetail.materials.length})</h3><div className="border rounded-lg overflow-hidden"><table className="w-full text-sm"><thead className="bg-muted/50"><tr><th className="text-left p-3 font-medium">Product</th><th className="text-left p-3 font-medium">Unit</th><th className="text-right p-3 font-medium">Qty</th><th className="text-right p-3 font-medium">Rate</th><th className="text-right p-3 font-medium">Amount</th></tr></thead><tbody>{currentDetail.materials.map((m,idx)=>(<tr key={idx} className="border-t hover:bg-muted/10"><td className="p-3"><span className="font-medium">{m.product_name||m.product_code}</span>{m.description&&<span className="text-xs text-muted-foreground block">{m.description}</span>}</td><td className="p-3 text-muted-foreground">{m.unit_name||'—'}</td><td className="p-3 text-right">{m.quantity}</td><td className="p-3 text-right">₹{fmt(m.rate)}</td><td className="p-3 text-right font-medium">₹{fmt(m.amount)}</td></tr>))}</tbody></table></div></div>)}
                     {currentDetail.purchases.length>0&&(<div className="space-y-2"><h3 className="font-semibold text-sm flex items-center gap-2"><IconShoppingBag size={16} className="text-primary"/>Direct Purchases ({currentDetail.purchases.length})</h3><div className="border rounded-lg overflow-hidden"><table className="w-full text-sm"><thead className="bg-muted/50"><tr><th className="text-left p-3 font-medium">Description</th><th className="text-left p-3 font-medium">Supplier / Paid Via</th><th className="text-right p-3 font-medium">Qty</th><th className="text-right p-3 font-medium">Rate</th><th className="text-right p-3 font-medium">Amount</th></tr></thead><tbody>{currentDetail.purchases.map((p,idx)=>(<tr key={idx} className="border-t hover:bg-muted/10"><td className="p-3 font-medium">{p.description}</td><td className="p-3 text-muted-foreground">{p.supplier_name||'Cash'}</td><td className="p-3 text-right">{p.quantity}</td><td className="p-3 text-right">₹{fmt(p.rate)}</td><td className="p-3 text-right font-medium">₹{fmt(p.amount)}</td></tr>))}</tbody></table></div></div>)}
-                    {currentDetail.services.length>0&&(<div className="space-y-2"><h3 className="font-semibold text-sm flex items-center gap-2"><IconTools size={16} className="text-primary"/>Services & Labour Charges ({currentDetail.services.length})</h3><div className="border rounded-lg overflow-hidden"><table className="w-full text-sm"><thead className="bg-muted/50"><tr><th className="text-left p-3 font-medium">Description</th><th className="text-right p-3 font-medium">Qty</th><th className="text-right p-3 font-medium">Rate</th><th className="text-right p-3 font-medium">Amount</th></tr></thead><tbody>{currentDetail.services.map((s,idx)=>(<tr key={idx} className="border-t hover:bg-muted/10"><td className="p-3 font-medium">{s.description}</td><td className="p-3 text-right">{s.quantity}</td><td className="p-3 text-right">₹{fmt(s.rate)}</td><td className="p-3 text-right font-medium">₹{fmt(s.amount)}</td></tr>))}</tbody></table></div></div>)}
+                    {currentDetail.services.length>0&&(<div className="space-y-2"><h3 className="font-semibold text-sm flex items-center gap-2"><IconTools size={16} className="text-primary"/>Services & Labour Charges ({currentDetail.services.length})</h3><div className="border rounded-lg overflow-hidden"><table className="w-full text-sm"><thead className="bg-muted/50"><tr><th className="text-left p-3 font-medium">Service / Ledger</th><th className="text-right p-3 font-medium">Qty</th><th className="text-right p-3 font-medium">Rate</th><th className="text-right p-3 font-medium">Amount</th></tr></thead><tbody>{currentDetail.services.map((s,idx)=>(<tr key={idx} className="border-t hover:bg-muted/10"><td className="p-3 font-medium">{s.description}</td><td className="p-3 text-right">{s.quantity}</td><td className="p-3 text-right">₹{fmt(s.rate)}</td><td className="p-3 text-right font-medium">₹{fmt(s.amount)}</td></tr>))}</tbody></table></div></div>)}
                     {o.narration&&<div className="bg-muted/20 p-4 rounded-lg border text-sm"><span className="text-xs text-muted-foreground font-medium uppercase tracking-wider block mb-1">Notes / Instructions</span><p>{o.narration}</p></div>}
                 </div>
                 {renderDialogs()}
@@ -845,7 +1250,7 @@ export default function CustomOrdersPage() {
                                     <Combobox
                                         options={customers.map(c=>({value:c.id,label:c.code?`${c.code} - ${c.name}`:c.name,searchString:`${c.code||''} ${c.name}`}))}
                                         value={customerId}
-                                        onChange={val=>{setCustomerId(String(val));setHasUnsavedChanges(true);}}
+                                        onChange={val=>{dispatch(setCustomOrderCustomerId(String(val)));}}
                                         onAfterSelect={() => {
                                             requestAnimationFrame(() => {
                                                 orderDateRef.current?.focus();
@@ -865,7 +1270,7 @@ export default function CustomOrdersPage() {
                                     <Input
                                         ref={orderDateRef}
                                         type="date" value={orderDate}
-                                        onChange={e=>{setOrderDate(e.target.value);setHasUnsavedChanges(true);}}
+                                        onChange={e=>{dispatch(setCustomOrderOrderDate(e.target.value));}}
                                         onKeyDown={e => {
                                             if (e.key === 'Enter') {
                                                 e.preventDefault();
@@ -882,7 +1287,7 @@ export default function CustomOrdersPage() {
                                     <Input
                                         ref={deliveryDateRef}
                                         type="date" value={deliveryDate}
-                                        onChange={e=>{setDeliveryDate(e.target.value);setHasUnsavedChanges(true);}}
+                                        onChange={e=>{dispatch(setCustomOrderDeliveryDate(e.target.value));}}
                                         onKeyDown={e => {
                                             if (e.key === 'Enter') {
                                                 e.preventDefault();
@@ -899,7 +1304,7 @@ export default function CustomOrdersPage() {
                                     <Input
                                         ref={referenceRef}
                                         value={reference}
-                                        onChange={e=>{setReference(e.target.value);setHasUnsavedChanges(true);}}
+                                        onChange={e=>{dispatch(setCustomOrderReference(e.target.value));}}
                                         onKeyDown={e => {
                                             if (e.key === 'Enter') {
                                                 e.preventDefault();
@@ -932,7 +1337,7 @@ export default function CustomOrdersPage() {
 
                         {/* ── Items Section (tabs) ── */}
                         <div className="bg-card border rounded-lg flex-1 min-h-0 flex flex-col overflow-hidden">
-                            <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col h-full">
+                            <Tabs value={activeTab} onValueChange={val=>dispatch(setCustomOrderActiveTab(val))} className="flex flex-col h-full">
                                 <div className="px-3 py-2 shrink-0 border-b bg-muted/20">
                                     <TabsList className="mb-0 h-8">
                                         <TabsTrigger value="details" className="text-xs h-7">
@@ -982,7 +1387,7 @@ export default function CustomOrdersPage() {
                                             <Input
                                                 ref={finishedItemNameRef}
                                                 value={finishedItemName}
-                                                onChange={e => { setFinishedItemName(e.target.value); setHasUnsavedChanges(true); }}
+                                                onChange={e => { dispatch(setCustomOrderFinishedItemName(e.target.value)); }}
                                                 onKeyDown={e => {
                                                     if (e.key === 'Enter') {
                                                         e.preventDefault();
@@ -1000,11 +1405,10 @@ export default function CustomOrdersPage() {
                                                 value={finishedItemQty}
                                                 onChange={e => {
                                                     const q = Number(e.target.value);
-                                                    setFinishedItemQty(q);
+                                                    dispatch(setCustomOrderFinishedItemQty(q));
                                                     if (finishedItemRate > 0) {
-                                                        setSalePrice(Math.round(q * finishedItemRate * 100) / 100);
+                                                        dispatch(setCustomOrderSalePrice(Math.round(q * finishedItemRate * 100) / 100));
                                                     }
-                                                    setHasUnsavedChanges(true);
                                                 }}
                                                 onKeyDown={e => {
                                                     if (e.key === 'Enter') {
@@ -1022,9 +1426,8 @@ export default function CustomOrdersPage() {
                                                 value={finishedItemRate || ''}
                                                 onChange={e => {
                                                     const r = Number(e.target.value) || 0;
-                                                    setFinishedItemRate(r);
-                                                    setSalePrice(Math.round((finishedItemQty || 1) * r * 100) / 100);
-                                                    setHasUnsavedChanges(true);
+                                                    dispatch(setCustomOrderFinishedItemRate(r));
+                                                    dispatch(setCustomOrderSalePrice(Math.round((finishedItemQty || 1) * r * 100) / 100));
                                                 }}
                                                 onKeyDown={e => {
                                                     if (e.key === 'Enter') {
@@ -1043,12 +1446,11 @@ export default function CustomOrdersPage() {
                                                 value={salePrice || ''}
                                                 onChange={e => {
                                                     const amt = Number(e.target.value) || 0;
-                                                    setSalePrice(amt);
+                                                    dispatch(setCustomOrderSalePrice(amt));
                                                     const q = finishedItemQty || 1;
                                                     if (q > 0) {
-                                                        setFinishedItemRate(Math.round((amt / q) * 100) / 100);
+                                                        dispatch(setCustomOrderFinishedItemRate(Math.round((amt / q) * 100) / 100));
                                                     }
-                                                    setHasUnsavedChanges(true);
                                                 }}
                                                 onKeyDown={e => {
                                                     if (e.key === 'Enter') {
@@ -1310,7 +1712,7 @@ export default function CustomOrdersPage() {
                                 {/* Services */}
                                 <TabsContent value="services" className="flex-1 min-h-0 flex flex-col overflow-hidden mt-0">
                                     <div className="bg-muted/40 border-b px-3 py-1.5 shrink-0 grid grid-cols-[2fr_0.7fr_0.9fr_0.9fr_68px] gap-2 text-xs font-medium text-muted-foreground">
-                                        <span>Description</span><span>Qty</span><span className="text-right">Rate (₹)</span><span className="text-right">Amount (₹)</span><span className="text-right">Actions</span>
+                                        <span>Service / Ledger *</span><span>Qty</span><span className="text-right">Rate (₹)</span><span className="text-right">Amount (₹)</span><span className="text-right">Actions</span>
                                     </div>
                                     <div className="flex-1 overflow-auto p-3 space-y-1.5 min-h-0">
                                         {services.map((row, i) => (
@@ -1321,13 +1723,47 @@ export default function CustomOrdersPage() {
                                                 onKeyDown={e => handleServiceKeyDown(e, i)}
                                                 className="grid grid-cols-[2fr_0.7fr_0.9fr_0.9fr_68px] gap-2 items-center"
                                             >
-                                                <Input
-                                                    data-field="description"
-                                                    value={row.description}
-                                                    onChange={e => updateService(i, 'description', e.target.value)}
-                                                    onFocus={e => e.target.select()}
-                                                    placeholder="e.g. Stitching Charges"
-                                                    className="h-8 text-sm"
+                                                <Combobox
+                                                    options={serviceAccounts.map(a => ({
+                                                        value: a.id,
+                                                        label: a.code ? `${a.code} - ${a.name}` : a.name,
+                                                        searchString: `${a.code || ''} ${a.name}`,
+                                                    }))}
+                                                    value={row.expense_account || (serviceAccounts.find(a => a.name.toLowerCase() === (row.description || '').toLowerCase())?.id) || ''}
+                                                    onChange={val => {
+                                                        const acc = serviceAccounts.find(a => a.id === val);
+                                                        if (acc) {
+                                                            const rows = [...services];
+                                                            rows[i] = {
+                                                                ...rows[i],
+                                                                expense_account: acc.id,
+                                                                description: acc.name,
+                                                            };
+                                                            dispatch(setCustomOrderServices(rows));
+                                                            dispatch(setCustomOrderHasUnsavedChanges(true));
+                                                        }
+                                                    }}
+                                                    onAfterSelect={() => {
+                                                        const rowEl = document.querySelector(`[data-service-row="${i}"]`);
+                                                        const qtyInput = rowEl?.querySelector('[data-field="quantity"]') as HTMLInputElement | null;
+                                                        requestAnimationFrame(() => {
+                                                            qtyInput?.focus();
+                                                            qtyInput?.select();
+                                                        });
+                                                    }}
+                                                    onActionClick={() => {
+                                                        setTargetServiceRowIndex(i);
+                                                        setNewServiceLedgerName('');
+                                                        setShowCreateServiceLedger(true);
+                                                    }}
+                                                    onCreate={(name) => {
+                                                        setTargetServiceRowIndex(i);
+                                                        setNewServiceLedgerName(name);
+                                                        setShowCreateServiceLedger(true);
+                                                    }}
+                                                    placeholder="Select service ledger..."
+                                                    searchPlaceholder="Search or create service ledger..."
+                                                    className="w-full"
                                                 />
                                                 <Input
                                                     data-field="quantity"
@@ -1401,7 +1837,7 @@ export default function CustomOrdersPage() {
                                 <Textarea
                                     ref={narrationRef}
                                     value={narration}
-                                    onChange={e=>{setNarration(e.target.value);setHasUnsavedChanges(true);}}
+                                    onChange={e=>{dispatch(setCustomOrderNarration(e.target.value));}}
                                     placeholder="Special instructions, measurements, notes..."
                                     className="min-h-[60px] text-xs resize-none"
                                     rows={3}
@@ -1505,9 +1941,9 @@ export default function CustomOrdersPage() {
                                     <td className="p-3" onClick={e=>e.stopPropagation()}>
                                         <div className="flex items-center justify-center gap-1">
                                             <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" title="View" onClick={()=>openViewOrder(order)}><IconEye size={14}/></Button>
+                                            <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={()=>{ invoke<CustomOrderDetail>('get_custom_order',{id:order.id}).then(d=>{dispatch(setCustomOrderCurrentOrder(d.order));dispatch(setCustomOrderCurrentDetail(d));dispatch(populateCustomOrderForm({order:d.order,detail:d}));dispatch(setCustomOrderMode('editing'));}).catch(err=>toast.error(String(err))); }}><IconEdit size={14}/></Button>
                                             {order.status==='pending'&&(<>
-                                                <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={()=>{ invoke<CustomOrderDetail>('get_custom_order',{id:order.id}).then(d=>{setCurrentOrder(d.order);setCurrentDetail(d);populateFormFromOrder(d.order,d);setMode('editing');}).catch(err=>toast.error(String(err))); }}><IconEdit size={14}/></Button>
-                                                {!order.advance_voucher_id&&<Button variant="ghost" size="icon" className="h-7 w-7" title="Record Advance" onClick={()=>{setAdvanceOrder(order);setAdvanceAmount('');setAdvanceDate(today());setAdvanceNarration('');}}><IconCurrencyRupee size={14}/></Button>}
+                                                <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:text-amber-700" title={order.advance_amount > 0 ? `Collect Payment (Paid: ₹${fmt(order.advance_amount)})` : "Record Advance"} onClick={()=>openAdvanceDialog(order)}><IconCurrencyRupee size={14}/></Button>
                                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" title="Finalize & Invoice" onClick={()=>openFinalize(order)}><IconCheck size={14}/></Button>
                                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" title="Delete" onClick={()=>{setDeleteId(order.id);setDeleteOrderNo(order.order_no);}}><IconTrash size={14}/></Button>
                                             </>)}

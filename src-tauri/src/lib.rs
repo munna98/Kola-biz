@@ -375,6 +375,7 @@ pub fn run() {
             commands::custom_orders::finalize_custom_order,
             commands::custom_orders::record_custom_order_advance,
             commands::custom_orders::get_custom_order_by_invoice,
+            commands::custom_orders::get_custom_order_payments,
         ])
         .plugin(tauri_plugin_opener::init())
         .build(tauri::generate_context!())

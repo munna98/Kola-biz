@@ -314,9 +314,11 @@ fn format_currency_helper(
 ) -> HelperResult {
     // Handle null/undefined values gracefully
     let value = h.param(0).and_then(|v| v.value().as_f64()).unwrap_or(0.0);
+    let is_negative = value < -0.001;
+    let abs_val = value.abs();
 
     // Indian number format: 1,23,456.78
-    let formatted = format_indian_currency(value);
+    let formatted = format_indian_currency(abs_val);
     let data = ctx.data();
     let display = data
         .get("currency_display")
@@ -332,10 +334,12 @@ fn format_currency_helper(
         .filter(|s| !s.trim().is_empty())
         .unwrap_or("\u{20B9}");
 
+    let prefix = if is_negative { "-" } else { "" };
+
     match display {
-        "code" => out.write(&format!("{} {}", code, formatted))?,
-        "none" => out.write(&formatted)?,
-        _ => out.write(&format!("{}{}", symbol, formatted))?,
+        "code" => out.write(&format!("{}{} {}", prefix, code, formatted))?,
+        "none" => out.write(&format!("{}{}", prefix, formatted))?,
+        _ => out.write(&format!("{}{}{}", prefix, symbol, formatted))?,
     }
     Ok(())
 }

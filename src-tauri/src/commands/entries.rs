@@ -1570,11 +1570,12 @@ pub async fn get_receipts(
             v.voucher_no,
             v.voucher_date,
             CASE 
-                WHEN v.created_from_invoice_id IS NOT NULL THEN COALESCE(v.account_id, je.account_id)
+                WHEN v.account_id IS NOT NULL THEN v.account_id
+                WHEN je.account_id IS NOT NULL THEN je.account_id
                 ELSE v.party_id
             END as account_id,
             CASE 
-                WHEN v.created_from_invoice_id IS NOT NULL THEN coa_payment.account_name
+                WHEN coa_payment.account_name IS NOT NULL THEN coa_payment.account_name
                 ELSE coa.account_name
             END as account_name,
             COALESCE(v.metadata, '') as receipt_method,
@@ -1627,11 +1628,12 @@ pub async fn get_receipt(
             v.voucher_no,
             v.voucher_date,
             CASE 
-                WHEN v.created_from_invoice_id IS NOT NULL THEN COALESCE(v.account_id, je.account_id)
+                WHEN v.account_id IS NOT NULL THEN v.account_id
+                WHEN je.account_id IS NOT NULL THEN je.account_id
                 ELSE v.party_id
             END as account_id,
             CASE 
-                WHEN v.created_from_invoice_id IS NOT NULL THEN coa_payment.account_name
+                WHEN coa_payment.account_name IS NOT NULL THEN coa_payment.account_name
                 ELSE coa.account_name
             END as account_name,
             COALESCE(v.metadata, '') as receipt_method,
@@ -1692,7 +1694,7 @@ pub(crate) async fn get_receipt_items_with_pool(
     pool: &SqlitePool,
     voucher_id: &str,
 ) -> Result<Vec<ReceiptItem>, String> {
-    let items = sqlx::query_as::<_, ReceiptItem>(
+    let mut items = sqlx::query_as::<_, ReceiptItem>(
         "SELECT 
             vi.id,
             vi.voucher_id,
@@ -1714,6 +1716,30 @@ pub(crate) async fn get_receipt_items_with_pool(
     .fetch_all(pool)
     .await
     .map_err(|e| e.to_string())?;
+
+    if items.is_empty() {
+        let fallback_items = sqlx::query_as::<_, ReceiptItem>(
+            "SELECT 
+                je.id as id,
+                je.voucher_id,
+                COALESCE(coa.account_name, v.narration, 'Receipt') as description,
+                je.credit as amount,
+                0.0 as tax_rate,
+                0.0 as tax_amount,
+                je.narration as remarks,
+                je.account_id as ledger_id
+             FROM journal_entries je
+             JOIN vouchers v ON je.voucher_id = v.id
+             LEFT JOIN chart_of_accounts coa ON je.account_id = coa.id
+             WHERE je.voucher_id = ? AND je.credit > 0",
+        )
+        .bind(voucher_id)
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default();
+
+        items = fallback_items;
+    }
 
     Ok(items)
 }
@@ -2389,7 +2415,7 @@ pub async fn get_journal_entry_lines(
             je.narration
         FROM journal_entries je
         LEFT JOIN chart_of_accounts coa ON je.account_id = coa.id
-        WHERE je.voucher_id = ? AND je.is_manual = 1
+        WHERE je.voucher_id = ?
         ORDER BY je.id ASC",
     )
     .bind(voucher_id)

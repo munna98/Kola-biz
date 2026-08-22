@@ -857,6 +857,33 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("UPDATE account_groups SET name = 'Purchase Accounts' WHERE name = 'Cost of Sales'").execute(pool).await;
     let _ = sqlx::query("UPDATE chart_of_accounts SET account_group = 'Purchase Accounts' WHERE account_group = 'Cost of Sales'").execute(pool).await;
 
+    // Migration: Seed / ensure 'Job Work Expenses' subgroup under 'Direct Expenses'
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO account_groups (id, name, account_type, parent_group_id, is_system, base_type)
+         VALUES (
+             hex(randomblob(16)),
+             'Job Work Expenses',
+             'Expense',
+             (SELECT id FROM account_groups WHERE name = 'Direct Expenses'),
+             1,
+             'Expense'
+         )"
+    ).execute(pool).await;
+
+    let _ = sqlx::query(
+        "UPDATE account_groups
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Direct Expenses'),
+             base_type = 'Expense'
+         WHERE name = 'Job Work Expenses' AND (parent_group_id IS NULL OR parent_group_id = '')"
+    ).execute(pool).await;
+
+    // Migration: Remove legacy 6011 Job Work Charges ledger if unused
+    let _ = sqlx::query(
+        "DELETE FROM chart_of_accounts
+         WHERE account_code = '6011'
+           AND id NOT IN (SELECT DISTINCT account_id FROM journal_entries WHERE account_id IS NOT NULL)"
+    ).execute(pool).await;
+
     // Migration: Legacy GST Slab Ledgers Clean-up
     // 1. Delete zero-balance / unused legacy tax slab ledgers
     let _ = sqlx::query(
@@ -1320,6 +1347,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN foreign_credit REAL DEFAULT 0").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN currency_id TEXT").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN exchange_rate REAL DEFAULT 1.0").execute(pool).await;
+    let _ = sqlx::query("UPDATE journal_entries SET is_manual = 1 WHERE voucher_id IN (SELECT id FROM vouchers WHERE voucher_type = 'journal') AND is_manual = 0").execute(pool).await;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_journal_voucher ON journal_entries(voucher_id)")
         .execute(pool)
@@ -1578,14 +1606,6 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query(
         "INSERT OR IGNORE INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, is_system, is_active)
          VALUES (hex(randomblob(16)), '6010', 'Job Material Cost', 'Expense', 'Purchase Accounts', 0, 1)",
-    )
-    .execute(pool)
-    .await;
-
-    // Seed Job Work Charges ledger account (for stitching, handwork etc.)
-    let _ = sqlx::query(
-        "INSERT OR IGNORE INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, is_system, is_active)
-         VALUES (hex(randomblob(16)), '6011', 'Job Work Charges', 'Expense', 'Operating Expenses', 0, 1)",
     )
     .execute(pool)
     .await;

@@ -2964,6 +2964,288 @@ export const {
   clearLedgerReport,
 } = ledgerReportSlice.actions;
 
+// ========== CUSTOM ORDER SLICE ==========
+export interface CustomOrderMaterialRow {
+  id?: string;
+  product_id: string;
+  product_name?: string;
+  product_code?: string;
+  description?: string;
+  quantity: number;
+  unit_id?: string;
+  unit_name?: string;
+  rate: number;
+  amount: number;
+}
+
+export interface CustomOrderPurchaseRow {
+  id?: string;
+  description: string;
+  supplier_id?: string;
+  supplier_name?: string;
+  quantity: number;
+  unit_id?: string;
+  rate: number;
+  amount: number;
+  expense_account?: string;
+  purchase_date?: string;
+}
+
+export interface CustomOrderServiceRow {
+  id?: string;
+  service_id?: string;
+  description: string;
+  quantity: number;
+  rate: number;
+  amount: number;
+  expense_account?: string;
+}
+
+export interface CustomOrderRecord {
+  id: string;
+  order_no: string;
+  order_date: string;
+  delivery_date?: string;
+  customer_id: string;
+  customer_name: string;
+  status: string;
+  finished_item_name: string;
+  finished_item_qty: number;
+  finished_item_unit?: string;
+  sale_price: number;
+  advance_amount: number;
+  advance_voucher_id?: string;
+  total_material_cost: number;
+  total_purchase_cost: number;
+  total_service_cost: number;
+  total_job_cost: number;
+  final_invoice_id?: string;
+  final_invoice_no?: string;
+  reference?: string;
+  payment_status: string;
+  total_paid: number;
+  balance_due: number;
+  narration?: string;
+  created_at: string;
+}
+
+export interface CustomOrderDetailRecord {
+  order: CustomOrderRecord;
+  materials: CustomOrderMaterialRow[];
+  purchases: CustomOrderPurchaseRow[];
+  services: CustomOrderServiceRow[];
+}
+
+export interface CustomOrderState {
+  mode: 'list' | 'new' | 'editing' | 'viewing';
+  currentOrder: CustomOrderRecord | null;
+  currentDetail: CustomOrderDetailRecord | null;
+  navigationData: {
+    hasPrevious: boolean;
+    hasNext: boolean;
+    previousId: string | null;
+    nextId: string | null;
+  };
+  nextOrderNo?: string;
+  hasLastOrder: boolean;
+  lastOrderId: string | null;
+  filterStatus: string;
+  activeTab: string;
+  hasUnsavedChanges: boolean;
+  form: {
+    orderDate: string;
+    deliveryDate: string;
+    customerId: string;
+    reference: string;
+    finishedItemName: string;
+    finishedItemQty: number;
+    finishedItemRate: number;
+    salePrice: number;
+    narration: string;
+    materials: CustomOrderMaterialRow[];
+    purchases: CustomOrderPurchaseRow[];
+    services: CustomOrderServiceRow[];
+  };
+}
+
+const customOrderInitialState: CustomOrderState = {
+  mode: 'list',
+  currentOrder: null,
+  currentDetail: null,
+  navigationData: {
+    hasPrevious: false,
+    hasNext: false,
+    previousId: null,
+    nextId: null,
+  },
+  nextOrderNo: undefined,
+  hasLastOrder: false,
+  lastOrderId: null,
+  filterStatus: 'all',
+  activeTab: 'details',
+  hasUnsavedChanges: false,
+  form: {
+    orderDate: new Date().toISOString().slice(0, 10),
+    deliveryDate: '',
+    customerId: '',
+    reference: '',
+    finishedItemName: '',
+    finishedItemQty: 1,
+    finishedItemRate: 0,
+    salePrice: 0,
+    narration: '',
+    materials: [{ product_id: '', quantity: 1, rate: 0, amount: 0 }],
+    purchases: [{ description: '', supplier_id: '', quantity: 1, rate: 0, amount: 0 }],
+    services: [{ description: '', quantity: 1, rate: 0, amount: 0 }],
+  },
+};
+
+const customOrderSlice = createSlice({
+  name: 'customOrder',
+  initialState: customOrderInitialState,
+  reducers: {
+    setCustomOrderMode: (state, action: PayloadAction<'list' | 'new' | 'editing' | 'viewing'>) => {
+      state.mode = action.payload;
+    },
+    setCustomOrderCurrentOrder: (state, action: PayloadAction<CustomOrderRecord | null>) => {
+      state.currentOrder = action.payload;
+    },
+    setCustomOrderCurrentDetail: (state, action: PayloadAction<CustomOrderDetailRecord | null>) => {
+      state.currentDetail = action.payload;
+    },
+    setCustomOrderNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
+      state.navigationData = action.payload;
+    },
+    setCustomOrderNextOrderNo: (state, action: PayloadAction<string | undefined>) => {
+      state.nextOrderNo = action.payload;
+    },
+    setCustomOrderLastOrderInfo: (state, action: PayloadAction<{ hasLastOrder: boolean; lastOrderId: string | null }>) => {
+      state.hasLastOrder = action.payload.hasLastOrder;
+      state.lastOrderId = action.payload.lastOrderId;
+    },
+    setCustomOrderFilterStatus: (state, action: PayloadAction<string>) => {
+      state.filterStatus = action.payload;
+    },
+    setCustomOrderActiveTab: (state, action: PayloadAction<string>) => {
+      state.activeTab = action.payload;
+    },
+    setCustomOrderHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setCustomOrderOrderDate: (state, action: PayloadAction<string>) => {
+      state.form.orderDate = action.payload;
+      state.hasUnsavedChanges = true;
+    },
+    setCustomOrderDeliveryDate: (state, action: PayloadAction<string>) => {
+      state.form.deliveryDate = action.payload;
+      state.hasUnsavedChanges = true;
+    },
+    setCustomOrderCustomerId: (state, action: PayloadAction<string>) => {
+      state.form.customerId = action.payload;
+      state.hasUnsavedChanges = true;
+    },
+    setCustomOrderReference: (state, action: PayloadAction<string>) => {
+      state.form.reference = action.payload;
+      state.hasUnsavedChanges = true;
+    },
+    setCustomOrderFinishedItemName: (state, action: PayloadAction<string>) => {
+      state.form.finishedItemName = action.payload;
+      state.hasUnsavedChanges = true;
+    },
+    setCustomOrderFinishedItemQty: (state, action: PayloadAction<number>) => {
+      state.form.finishedItemQty = action.payload;
+      state.hasUnsavedChanges = true;
+    },
+    setCustomOrderFinishedItemRate: (state, action: PayloadAction<number>) => {
+      state.form.finishedItemRate = action.payload;
+      state.hasUnsavedChanges = true;
+    },
+    setCustomOrderSalePrice: (state, action: PayloadAction<number>) => {
+      state.form.salePrice = action.payload;
+      state.hasUnsavedChanges = true;
+    },
+    setCustomOrderNarration: (state, action: PayloadAction<string>) => {
+      state.form.narration = action.payload;
+      state.hasUnsavedChanges = true;
+    },
+    setCustomOrderMaterials: (state, action: PayloadAction<CustomOrderMaterialRow[]>) => {
+      state.form.materials = action.payload;
+      state.hasUnsavedChanges = true;
+    },
+    setCustomOrderPurchases: (state, action: PayloadAction<CustomOrderPurchaseRow[]>) => {
+      state.form.purchases = action.payload;
+      state.hasUnsavedChanges = true;
+    },
+    setCustomOrderServices: (state, action: PayloadAction<CustomOrderServiceRow[]>) => {
+      state.form.services = action.payload;
+      state.hasUnsavedChanges = true;
+    },
+    populateCustomOrderForm: (state, action: PayloadAction<{ order: CustomOrderRecord; detail: CustomOrderDetailRecord }>) => {
+      const { order, detail } = action.payload;
+      state.form.orderDate = order.order_date;
+      state.form.deliveryDate = order.delivery_date || '';
+      state.form.customerId = order.customer_id;
+      state.form.reference = order.reference || '';
+      state.form.finishedItemName = order.finished_item_name;
+      state.form.finishedItemQty = order.finished_item_qty || 1;
+      const r = (order.finished_item_qty && order.finished_item_qty > 0)
+        ? Math.round((order.sale_price / order.finished_item_qty) * 100) / 100
+        : order.sale_price;
+      state.form.finishedItemRate = r;
+      state.form.salePrice = order.sale_price;
+      state.form.narration = order.narration || '';
+      state.form.materials = detail.materials.length ? detail.materials : [{ product_id: '', quantity: 1, rate: 0, amount: 0 }];
+      state.form.purchases = detail.purchases.length ? detail.purchases : [{ description: '', supplier_id: '', quantity: 1, rate: 0, amount: 0 }];
+      state.form.services = detail.services.length ? detail.services : [{ description: '', quantity: 1, rate: 0, amount: 0 }];
+      state.activeTab = 'details';
+      state.hasUnsavedChanges = false;
+    },
+    resetCustomOrderForm: (state) => {
+      state.form = {
+        orderDate: new Date().toISOString().slice(0, 10),
+        deliveryDate: '',
+        customerId: '',
+        reference: '',
+        finishedItemName: '',
+        finishedItemQty: 1,
+        finishedItemRate: 0,
+        salePrice: 0,
+        narration: '',
+        materials: [{ product_id: '', quantity: 1, rate: 0, amount: 0 }],
+        purchases: [{ description: '', supplier_id: '', quantity: 1, rate: 0, amount: 0 }],
+        services: [{ description: '', quantity: 1, rate: 0, amount: 0 }],
+      };
+      state.activeTab = 'details';
+      state.hasUnsavedChanges = false;
+    },
+  },
+});
+
+export const {
+  setCustomOrderMode,
+  setCustomOrderCurrentOrder,
+  setCustomOrderCurrentDetail,
+  setCustomOrderNavigationData,
+  setCustomOrderNextOrderNo,
+  setCustomOrderLastOrderInfo,
+  setCustomOrderFilterStatus,
+  setCustomOrderActiveTab,
+  setCustomOrderHasUnsavedChanges,
+  setCustomOrderOrderDate,
+  setCustomOrderDeliveryDate,
+  setCustomOrderCustomerId,
+  setCustomOrderReference,
+  setCustomOrderFinishedItemName,
+  setCustomOrderFinishedItemQty,
+  setCustomOrderFinishedItemRate,
+  setCustomOrderSalePrice,
+  setCustomOrderNarration,
+  setCustomOrderMaterials,
+  setCustomOrderPurchases,
+  setCustomOrderServices,
+  populateCustomOrderForm,
+  resetCustomOrderForm,
+} = customOrderSlice.actions;
 
 export const store = configureStore({
   reducer: {
@@ -2983,6 +3265,7 @@ export const store = configureStore({
     stockJournal: stockJournalSlice.reducer,
     companyProfile: companyProfileSlice.reducer,
     ledgerReport: ledgerReportSlice.reducer,
+    customOrder: customOrderSlice.reducer,
   },
 });
 

@@ -1744,8 +1744,8 @@ pub(crate) async fn get_sales_invoice_items_with_pool(
 ) -> Result<Vec<SalesInvoiceItem>, String> {
     sqlx::query_as::<_, SalesInvoiceItem>(
         "SELECT vi.*,
-                COALESCE(p.code, s.code) as product_code,
-                COALESCE(p.name, s.name) as product_name
+                COALESCE(p.code, s.code, '') as product_code,
+                COALESCE(p.name, s.name, vi.description, '') as product_name
          FROM voucher_items vi
          LEFT JOIN products p ON vi.product_id = p.id
          LEFT JOIN services s ON vi.service_id = s.id

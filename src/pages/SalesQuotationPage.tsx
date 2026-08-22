@@ -317,7 +317,9 @@ export default function SalesQuotationPage() {
           product_id: 0,
           product_name: service.name,
           unit_id: service.unit_id || null,
-          rate: 0,
+          hsn_sac_code: service.hsn_sac_code || '',
+          gst_slab_id: service.gst_slab_id || '',
+          rate: service.sales_rate || 0,
         };
         dispatch(
           updateQuotationItem({
@@ -328,7 +330,9 @@ export default function SalesQuotationPage() {
               product_id: 0,
               product_name: service.name,
               unit_id: service.unit_id || null,
-              rate: 0,
+              hsn_sac_code: service.hsn_sac_code || '',
+              gst_slab_id: service.gst_slab_id || '',
+              rate: service.sales_rate || 0,
             },
           })
         );
@@ -613,10 +617,12 @@ export default function SalesQuotationPage() {
           ? item.rate * (1 + (storedGstRate / 100))
           : item.rate;
         dispatch(addQuotationItem({
-        product_id: item.product_id || 0, // Using product_id from item if available, else need map
-        product_code: item.product_code,
-        product_name: item.description, // Fallback
-        unit_id: item.unit_id,
+          item_type: item.item_type || (item.service_id ? 'service' : 'product'),
+          product_id: item.product_id || 0,
+          service_id: item.service_id || null,
+          product_code: item.product_code,
+          product_name: item.product_name || item.description,
+          unit_id: item.unit_id,
           hsn_sac_code: item.hsn_sac_code,
           gst_slab_id: item.gst_slab_id,
           resolved_gst_rate: item.resolved_gst_rate,
@@ -643,9 +649,11 @@ export default function SalesQuotationPage() {
       // Construct items array locally for total calculation
       const loadedItems = items.map(item => ({
         id: `loaded-${item.id}`,
+        item_type: item.item_type || (item.service_id ? 'service' : 'product'),
         product_id: item.product_id || 0,
+        service_id: item.service_id || null,
         product_code: item.product_code,
-        product_name: item.description,
+        product_name: item.product_name || item.description,
         unit_id: item.unit_id,
         hsn_sac_code: item.hsn_sac_code,
         gst_slab_id: item.gst_slab_id,

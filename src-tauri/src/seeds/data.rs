@@ -104,6 +104,22 @@ pub async fn seed_initial_data(pool: &SqlitePool) -> Result<(), Box<dyn std::err
          WHERE name = 'Other Income'"
     ).execute(pool).await;
 
+    // Job Work Expenses → Direct Expenses
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO account_groups (id, name, account_type, is_system, base_type, parent_group_id)
+         VALUES (?, 'Job Work Expenses', 'Expense', 1, 'Expense', (SELECT id FROM account_groups WHERE name = 'Direct Expenses'))"
+    )
+    .bind(Uuid::now_v7().to_string())
+    .execute(pool)
+    .await;
+
+    let _ = sqlx::query(
+        "UPDATE account_groups
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Direct Expenses'),
+             base_type = 'Expense'
+         WHERE name = 'Job Work Expenses' AND (parent_group_id IS NULL OR parent_group_id = '')"
+    ).execute(pool).await;
+
     // Set base_type on the new primary groups (idempotent - safe to run multiple times)
     let _ = sqlx::query(
         "UPDATE account_groups SET base_type = account_type

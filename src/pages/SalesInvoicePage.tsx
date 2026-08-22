@@ -601,7 +601,9 @@ export default function SalesInvoicePage() {
           product_id: 0,
           product_name: service.name,
           unit_id: service.unit_id || null,
-          rate: 0,
+          hsn_sac_code: service.hsn_sac_code || '',
+          gst_slab_id: service.gst_slab_id || '',
+          rate: service.sales_rate || 0,
         };
         dispatch(
           updateSalesItem({
@@ -612,7 +614,9 @@ export default function SalesInvoicePage() {
               product_id: 0,
               product_name: service.name,
               unit_id: service.unit_id || null,
-              rate: 0,
+              hsn_sac_code: service.hsn_sac_code || '',
+              gst_slab_id: service.gst_slab_id || '',
+              rate: service.sales_rate || 0,
             },
           })
         );
@@ -965,12 +969,15 @@ export default function SalesInvoicePage() {
           ? item.rate * (1 + (storedGstRate / 100))
           : item.rate;
         dispatch(addSalesItem({
+          item_type: item.item_type || (item.service_id ? 'service' : 'product'),
           product_id: item.product_id || 0,
+          service_id: item.service_id || null,
           product_code: item.product_code,
-          product_name: item.description || item.product_name,
+          product_name: item.product_name || item.description,
           description: item.description || item.product_name || '',
           unit_id: item.unit_id,
           hsn_sac_code: item.hsn_sac_code,
+          gst_slab_id: item.gst_slab_id,
           tax_rate: storedGstRate,
           rate: displayRate,
           initial_quantity: item.initial_quantity,
@@ -1087,9 +1094,11 @@ export default function SalesInvoicePage() {
           ? item.rate * (1 + (storedGstRate / 100))
           : item.rate;
         dispatch(addSalesItem({
-          product_id: item.product_id || 0, // Using product_id from item if available, else need map
+          item_type: item.item_type || (item.service_id ? 'service' : 'product'),
+          product_id: item.product_id || 0,
+          service_id: item.service_id || null,
           product_code: item.product_code,
-          product_name: item.description, // Fallback
+          product_name: item.product_name || item.description,
           unit_id: item.unit_id,
           hsn_sac_code: item.hsn_sac_code,
           gst_slab_id: item.gst_slab_id,
@@ -1118,9 +1127,11 @@ export default function SalesInvoicePage() {
       // Construct items array locally for total calculation
       const loadedItems = items.map(item => ({
         id: `loaded-${item.id}`,
+        item_type: item.item_type || (item.service_id ? 'service' : 'product'),
         product_id: item.product_id || 0,
+        service_id: item.service_id || null,
         product_code: item.product_code,
-        product_name: item.description,
+        product_name: item.product_name || item.description,
         unit_id: item.unit_id,
         hsn_sac_code: item.hsn_sac_code,
         gst_slab_id: item.gst_slab_id,

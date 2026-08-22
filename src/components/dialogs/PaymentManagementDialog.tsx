@@ -229,19 +229,30 @@ export default function PaymentManagementDialog({
     // Only run this ONCE after loading is done and we have no lines
     useEffect(() => {
         if (!loadingAllocations && cashBankAccounts.length > 0 && invoiceId && !hasInitialized.current) {
+            const cashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];
+            const existingSum = paymentLines.filter(l => l.payment_voucher_id).reduce((sum, l) => sum + (l.amount || 0), 0);
+            const remaining = Math.max(0, invoiceAmount - existingSum);
+
             if (paymentLines.length === 0) {
-                const cashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];
                 const newLine: PaymentLine = {
                     id: `line-${Date.now()}-${Math.random()}`,
                     account_id: cashAccount.id,
-                    amount: 0,
+                    amount: invoiceAmount > 0 ? invoiceAmount : 0,
                     method: 'cash',
                 };
                 setPaymentLines([newLine]);
+            } else if (remaining > 0.01 && !paymentLines.some(l => !l.payment_voucher_id)) {
+                const newLine: PaymentLine = {
+                    id: `line-${Date.now()}-${Math.random()}`,
+                    account_id: cashAccount.id,
+                    amount: remaining,
+                    method: 'cash',
+                };
+                setPaymentLines(prev => [...prev, newLine]);
             }
             hasInitialized.current = true;
         }
-    }, [loadingAllocations, cashBankAccounts, invoiceId]); // Removed paymentLines.length to prevent re-adding
+    }, [loadingAllocations, cashBankAccounts, invoiceId, invoiceAmount, paymentLines]);
 
     const addPaymentLine = () => {
         const cashAccount = cashBankAccounts.find(a => a.name.toLowerCase().includes('cash')) || cashBankAccounts[0];

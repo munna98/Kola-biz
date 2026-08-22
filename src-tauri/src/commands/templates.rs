@@ -1074,14 +1074,34 @@ async fn get_sales_invoice_data(
 
     let old_balance = balance_res.0 - balance_res.1;
 
-    // Calculate Paid Amount for this specific invoice
-    let paid_amount: f64 = sqlx::query_scalar(
+    // Calculate total allocations for this specific invoice
+    let total_allocated: f64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
     .bind(&id)
     .fetch_one(pool)
     .await
     .unwrap_or(0.0);
+
+    // Any payment vouchers created BEFORE this invoice are already part of old_balance.
+    let advance_in_old_bal: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(pa.allocated_amount), 0.0)
+         FROM payment_allocations pa
+         JOIN vouchers v ON pa.payment_voucher_id = v.id
+         WHERE pa.invoice_voucher_id = ?
+           AND (v.voucher_date < ? OR (v.voucher_date = ? AND v.id < ?))
+           AND v.deleted_at IS NULL",
+    )
+    .bind(&id)
+    .bind(&invoice.voucher_date)
+    .bind(&invoice.voucher_date)
+    .bind(&id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0.0);
+
+    // Paid amount for this invoice's transaction (collected at/after invoice time)
+    let paid_amount = (total_allocated - advance_in_old_bal).max(0.0);
 
     // Read tax_inclusive from the voucher record itself (set at save time for historical accuracy)
     let tax_inclusive: bool = invoice.tax_inclusive != 0;
@@ -1112,6 +1132,15 @@ async fn get_sales_invoice_data(
         .map(|item| {
             let mut item_val = serde_json::to_value(&item).unwrap_or(json!({}));
             if let Some(obj) = item_val.as_object_mut() {
+                let resolved_name = item.product_name.as_deref()
+                    .filter(|s| !s.trim().is_empty())
+                    .or(item.description.as_deref())
+                    .unwrap_or("Custom Item");
+                obj.insert("product_name".to_string(), json!(resolved_name));
+                obj.insert("name".to_string(), json!(resolved_name));
+                obj.insert("item_name".to_string(), json!(resolved_name));
+                obj.insert("description".to_string(), json!(resolved_name));
+
                 // item.amount = gross (original, before invoice discount)
                 // item.net_amount = net after invoice discount (taxable base for tax calc)
                 let taxable_amt = item.net_amount;
@@ -1420,14 +1449,34 @@ async fn get_sales_quotation_data(
 
     let old_balance = balance_res.0 - balance_res.1;
 
-    // Calculate Paid Amount for this specific invoice
-    let paid_amount: f64 = sqlx::query_scalar(
+    // Calculate total allocations for this specific invoice
+    let total_allocated: f64 = sqlx::query_scalar(
         "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
     )
     .bind(&id)
     .fetch_one(pool)
     .await
     .unwrap_or(0.0);
+
+    // Any payment vouchers created BEFORE this invoice are already part of old_balance.
+    let advance_in_old_bal: f64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(pa.allocated_amount), 0.0)
+         FROM payment_allocations pa
+         JOIN vouchers v ON pa.payment_voucher_id = v.id
+         WHERE pa.invoice_voucher_id = ?
+           AND (v.voucher_date < ? OR (v.voucher_date = ? AND v.id < ?))
+           AND v.deleted_at IS NULL",
+    )
+    .bind(&id)
+    .bind(&invoice.voucher_date)
+    .bind(&invoice.voucher_date)
+    .bind(&id)
+    .fetch_one(pool)
+    .await
+    .unwrap_or(0.0);
+
+    // Paid amount for this invoice's transaction (collected at/after invoice time)
+    let paid_amount = (total_allocated - advance_in_old_bal).max(0.0);
 
     // Read tax_inclusive from the voucher record itself (set at save time for historical accuracy)
     let tax_inclusive: bool = invoice.tax_inclusive != 0;
