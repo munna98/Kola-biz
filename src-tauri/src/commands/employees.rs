@@ -1,9 +1,21 @@
 use crate::company_db::DbRegistry;
 use serde::{Deserialize, Serialize};
-use sqlx::Row;
+use sqlx::{Row, SqlitePool};
 use std::sync::Arc;
 use tauri::State;
 use uuid::Uuid;
+
+pub(crate) async fn generate_employee_code(pool: &SqlitePool) -> Result<String, String> {
+    crate::commands::parties::get_next_party_code(pool, "employees", "code", "E").await
+}
+
+#[tauri::command]
+pub async fn get_next_employee_code(
+    registry: State<'_, Arc<DbRegistry>>,
+) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
+    generate_employee_code(&pool).await
+}
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Employee {
@@ -68,22 +80,24 @@ pub async fn create_employee(
     let employee_id = Uuid::now_v7().to_string();
     let account_id = Uuid::now_v7().to_string();
 
-    // 1. Create Ledger Account (in Current Liabilities -> Employees)
-    // First check if 'Employees' group exists, if not use 'Current Liabilities'
-    // For simplicity, we'll put them directly under 'Current Liabilities' with account_group='Current Liabilities'
-    // In a real app we might want a specific 'Employees' group.
-    // Let's create an "Employees" group if it doesn't exist?
-    // Actually, `seeds/data.rs` doesn't have "Employees" group.
-    // We'll use "Current Liabilities" as the group.
+    let code = if let Some(c) = &data.code {
+        if c.trim().is_empty() {
+            generate_employee_code(&pool).await?
+        } else {
+            c.clone()
+        }
+    } else {
+        generate_employee_code(&pool).await?
+    };
 
-    // We ideally want a 'Employees' group but for now 'Current Liabilities' is safe.
+    // 1. Create Ledger Account (in Current Liabilities -> Employees)
     let account_group = "Current Liabilities";
     let account_type = "Liability";
 
     // Create Ledger
     sqlx::query("INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, is_system, party_id, party_type) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'Employee')")
         .bind(&account_id)
-        .bind(format!("EMP-{}", &employee_id[0..6])) // Temp code, user should probably set this or we auto-gen better
+        .bind(&code)
         .bind(&data.name)
         .bind(account_type)
         .bind(account_group)
@@ -123,7 +137,7 @@ pub async fn create_employee(
     .bind(&employee_id)
     .bind(user_id)
     .bind(&account_id)
-    .bind(data.code)
+    .bind(&code)
     .bind(&data.name)
     .bind(data.designation)
     .bind(data.phone)
@@ -164,13 +178,14 @@ pub async fn update_employee(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // 1. Update Employee
+    let code_to_update = data.code.clone();
     sqlx::query(
         "UPDATE employees SET 
             code = ?, name = ?, designation = ?, phone = ?, email = ?, 
             address = ?, joining_date = ?, status = ?
          WHERE id = ?",
     )
-    .bind(data.code)
+    .bind(&data.code)
     .bind(&data.name)
     .bind(data.designation)
     .bind(data.phone)
@@ -183,8 +198,7 @@ pub async fn update_employee(
     .await
     .map_err(|e| format!("Failed to update employee: {}", e))?;
 
-    // 2. Update Linked Ledger Name
-    // We first need to get account_id
+    // 2. Update Linked Ledger Name and Account Code
     let account_id: Option<String> = sqlx::query("SELECT account_id FROM employees WHERE id = ?")
         .bind(&data.id)
         .fetch_optional(&mut *tx)
@@ -193,8 +207,9 @@ pub async fn update_employee(
         .map(|row| row.get(0));
 
     if let Some(acc_id) = account_id {
-        sqlx::query("UPDATE chart_of_accounts SET account_name = ? WHERE id = ?")
+        sqlx::query("UPDATE chart_of_accounts SET account_name = ?, account_code = COALESCE(NULLIF(?, ''), account_code) WHERE id = ?")
             .bind(&data.name)
+            .bind(code_to_update)
             .bind(acc_id)
             .execute(&mut *tx)
             .await

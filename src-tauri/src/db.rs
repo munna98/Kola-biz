@@ -1883,6 +1883,51 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         .execute(pool)
         .await?;
 
+    // Migration: Backfill code for existing employees missing code or having temp EMP- account codes
+    if let Ok(unassigned_employees) = sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
+        "SELECT id, code, account_id FROM employees WHERE code IS NULL OR code = '' OR account_id IN (SELECT id FROM chart_of_accounts WHERE account_code LIKE 'EMP-%') ORDER BY created_at ASC"
+    )
+    .fetch_all(pool)
+    .await
+    {
+        if !unassigned_employees.is_empty() {
+            let mut next_num: i64 = sqlx::query_scalar(
+                "SELECT MAX(CAST(SUBSTR(code_value, 2) AS INTEGER)) FROM (
+                    SELECT code AS code_value FROM employees WHERE code GLOB 'E[0-9]*'
+                    UNION ALL
+                    SELECT account_code AS code_value FROM chart_of_accounts WHERE account_code GLOB 'E[0-9]*'
+                )"
+            )
+            .fetch_one(pool)
+            .await
+            .unwrap_or(None)
+            .unwrap_or(100);
+
+            for (emp_id, emp_code, account_id) in unassigned_employees {
+                let final_code = match emp_code {
+                    Some(c) if !c.trim().is_empty() => c,
+                    _ => {
+                        next_num += 1;
+                        format!("E{}", next_num)
+                    }
+                };
+                let _ = sqlx::query("UPDATE employees SET code = ? WHERE id = ?")
+                    .bind(&final_code)
+                    .bind(&emp_id)
+                    .execute(pool)
+                    .await;
+
+                if let Some(acc_id) = account_id {
+                    let _ = sqlx::query("UPDATE chart_of_accounts SET account_code = ? WHERE id = ?")
+                        .bind(&final_code)
+                        .bind(&acc_id)
+                        .execute(pool)
+                        .await;
+                }
+            }
+        }
+    }
+
     // ==================== GST MODULE ====================
 
     // GST Tax Slabs table

@@ -612,6 +612,7 @@ export const api = {
   },
   employees: {
     list: () => invoke<Employee[]>('get_employees'),
+    getNextCode: () => invoke<string>('get_next_employee_code'),
     create: (data: CreateEmployee) => invoke<void>('create_employee', { data }),
     update: (data: UpdateEmployee) => invoke<void>('update_employee', { data }),
     delete: (id: string) => invoke<void>('delete_employee', { id }),

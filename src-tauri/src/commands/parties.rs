@@ -13,7 +13,7 @@ pub struct PartyCurrencyInfo {
     pub symbol: String,
 }
 
-async fn get_next_party_code(
+pub(crate) async fn get_next_party_code(
     pool: &SqlitePool,
     party_table: &str,
     code_column: &str,

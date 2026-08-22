@@ -411,10 +411,23 @@ pub async fn get_balance_sheet(
     let mut total_liabilities = 0.0;
     let mut total_equity = 0.0;
 
+    let mut gl_inventory_balance = 0.0;
+    let mut gl_net_profit = 0.0;
+
     for (id, name, code, acc_type, group_name, op_bal, op_type, dr, cr, ob_voucher_count) in rows {
         // If an OB voucher exists in journal_entries for this account, dr/cr already includes the opening balance.
         // So effective op_bal is 0 to avoid double counting coa.opening_balance.
         let effective_op_bal = if ob_voucher_count > 0 { 0.0 } else { op_bal };
+
+        if acc_type == "Income" {
+            let inc_op = if op_type == "Cr" { effective_op_bal } else { -effective_op_bal };
+            gl_net_profit += cr - dr + inc_op;
+            continue;
+        } else if acc_type == "Expense" {
+            let exp_op = if op_type == "Dr" { effective_op_bal } else { -effective_op_bal };
+            gl_net_profit -= dr - cr + exp_op;
+            continue;
+        }
 
         let mut balance = if acc_type == "Asset" {
             if op_type == "Dr" {
@@ -432,8 +445,9 @@ pub async fn get_balance_sheet(
             0.0
         };
 
-        // Override Inventory (1004) asset balance with dynamic closing stock asset value
+        // Capture GL Inventory balance before overriding with physical stock value
         if code == "1004" || (acc_type == "Asset" && name == "Inventory") {
+            gl_inventory_balance = balance;
             balance = closing_stock_asset;
         }
 
@@ -479,54 +493,10 @@ pub async fn get_balance_sheet(
         });
     }
 
-    // Calculate Net Profit for Balance Sheet (COGS-based)
-    let opening_stock_val = 0.0;
-    let closing_stock_val = closing_stock_asset;
-
-    let pl_query = "
-        SELECT 
-            coa.account_code,
-            coa.account_type,
-            CAST(COALESCE(SUM(je.debit), 0) AS REAL) as dr,
-            CAST(COALESCE(SUM(je.credit), 0) AS REAL) as cr
-        FROM chart_of_accounts coa
-        JOIN journal_entries je ON coa.id = je.account_id
-        JOIN vouchers v ON je.voucher_id = v.id
-        WHERE v.voucher_date <= ? AND v.deleted_at IS NULL
-        AND v.voucher_type != 'opening_balance'
-        AND coa.account_type IN ('Income', 'Expense')
-        GROUP BY coa.id, coa.account_code, coa.account_type
-    ";
-
-    let pl_rows = sqlx::query_as::<_, (String, String, f64, f64)>(pl_query)
-        .bind(&as_on_date)
-        .fetch_all(&pool)
-        .await
-        .map_err(|e| e.to_string())?;
-
-    let mut total_income = 0.0;
-    let mut cogs = 0.0;
-    let mut purchases = 0.0;
-    let mut operating_expenses = 0.0;
-
-    for (code, acc_type, dr, cr) in pl_rows {
-        if acc_type == "Income" {
-            total_income += cr - dr;
-        } else if code == "5002" {
-            cogs += dr - cr;
-        } else if code == "5001" {
-            purchases += dr - cr;
-        } else if code == "5003" {
-            purchases -= cr - dr;
-        } else {
-            operating_expenses += dr - cr;
-        }
-    }
-
-    if cogs == 0.0 && purchases > 0.0 {
-        cogs = (opening_stock_val + purchases - closing_stock_val).max(0.0);
-    }
-    let net_profit = round2(total_income - cogs - operating_expenses);
+    // Calculate Inventory Valuation Delta: delta = closing_stock_asset - gl_inventory_balance
+    // Adjust GL Net Profit by delta so Total Assets = Total Liabilities + Total Equity holds mathematically
+    let inventory_delta = closing_stock_asset - gl_inventory_balance;
+    let net_profit = round2(gl_net_profit + inventory_delta);
 
     if net_profit.abs() >= 0.01 {
         total_equity += net_profit;

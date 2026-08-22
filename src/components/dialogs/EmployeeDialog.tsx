@@ -33,6 +33,7 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
     });
 
     useEffect(() => {
+        if (!open) return;
         if (employeeToEdit) {
             setFormData({
                 name: employeeToEdit.name,
@@ -61,6 +62,7 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                 password: '',
                 role: 'user',
             });
+            api.employees.getNextCode().then(code => setFormData(prev => ({ ...prev, code }))).catch(console.error);
         }
     }, [employeeToEdit, open]);
 
@@ -123,7 +125,7 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                             <Label htmlFor="code">Employee Code</Label>
                             <Input
                                 id="code"
-                                placeholder="e.g. EMP-001"
+                                placeholder="Auto-generated (e.g. E101)"
                                 value={formData.code}
                                 onChange={(e) => setFormData({ ...formData, code: e.target.value })}
                             />

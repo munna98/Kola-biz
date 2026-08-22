@@ -295,6 +295,7 @@ pub fn run() {
             get_employees,
             update_employee,
             delete_employee,
+            get_next_employee_code,
             // Authentication
             check_if_users_exist,
             create_initial_user,
