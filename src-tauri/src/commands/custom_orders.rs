@@ -1029,21 +1029,10 @@ pub async fn update_custom_order(
         )
         .fetch_one(&mut *tx).await.map_err(|e| format!("Sales account (4001) not found: {}", e))?;
 
-        let cogs_account_id: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM chart_of_accounts WHERE account_code = '6012' LIMIT 1",
-        ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
-
-        let inventory_account_id: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM chart_of_accounts WHERE account_name LIKE '%Inventory%' OR account_name LIKE '%Stock%' ORDER BY account_code LIMIT 1",
-        ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
-
-        let job_mat_account_id: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM chart_of_accounts WHERE account_code = '6010' LIMIT 1",
-        ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
-
-        let job_svc_account_id: Option<String> = sqlx::query_scalar(
-            "SELECT id FROM chart_of_accounts WHERE account_group = 'Job Work Expenses' AND deleted_at IS NULL LIMIT 1",
-        ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
+        // Note: costs are already fully captured by individual GL entries created during the order:
+        //   - Stock materials: Dr 5002 COGS / Cr 1004 Inventory (via stock journal)
+        //   - External purchases: Dr 6010 Job Material Cost / Cr Supplier/Cash (via purchase journal)
+        // No further COGS rollup is needed here.
 
         let narration = format!("Custom order {} - final invoice", order_no);
 
@@ -1095,71 +1084,8 @@ pub async fn update_custom_order(
             .bind(&je_sales).bind(inv_id).bind(&sales_account_id).bind(data.sale_price).bind(&narration)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-        if total_cost > 0.0 {
-            if let Some(cogs_acc) = &cogs_account_id {
-                let je_cogs = Uuid::now_v7().to_string();
-                sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, ?, 0, ?)")
-                    .bind(&je_cogs).bind(inv_id).bind(cogs_acc).bind(total_cost).bind(&narration)
-                    .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-
-                if mat_cost > 0.0 {
-                    if let Some(inv_acc) = &inventory_account_id {
-                        let je_inv = Uuid::now_v7().to_string();
-                        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
-                            .bind(&je_inv).bind(inv_id).bind(inv_acc).bind(mat_cost).bind(&narration)
-                            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-                    }
-                }
-
-                if pur_cost > 0.0 {
-                    if let Some(jm_acc) = &job_mat_account_id {
-                        let je_jm = Uuid::now_v7().to_string();
-                        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
-                            .bind(&je_jm).bind(inv_id).bind(jm_acc).bind(pur_cost).bind(&narration)
-                            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-                    }
-                }
-
-                if svc_cost > 0.0 {
-                    let svc_rows: Vec<(Option<String>, f64, String)> = sqlx::query_as(
-                        "SELECT expense_account, amount, description FROM custom_order_services WHERE order_id = ?"
-                    )
-                    .bind(&id)
-                    .fetch_all(&mut *tx)
-                    .await
-                    .unwrap_or_default();
-
-                    let mut posted_service_total = 0.0;
-                    for (exp_acc, amt, desc) in svc_rows {
-                        if amt > 0.0 {
-                            let target_acc = exp_acc.as_deref().or(job_svc_account_id.as_deref());
-                            if let Some(acc_id) = target_acc {
-                                let line_narration = if desc.is_empty() {
-                                    narration.clone()
-                                } else {
-                                    format!("{}: {}", narration, desc)
-                                };
-                                let je_js = Uuid::now_v7().to_string();
-                                sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
-                                    .bind(&je_js).bind(inv_id).bind(acc_id).bind(amt).bind(&line_narration)
-                                    .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-                                posted_service_total += amt;
-                            }
-                        }
-                    }
-
-                    if (svc_cost - posted_service_total).abs() > 0.001 {
-                        let remainder = svc_cost - posted_service_total;
-                        if let Some(fallback_acc) = &job_svc_account_id {
-                            let je_js = Uuid::now_v7().to_string();
-                            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
-                                .bind(&je_js).bind(inv_id).bind(fallback_acc).bind(remainder).bind(&narration)
-                                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-                        }
-                    }
-                }
-            }
-        }
+        // Costs are already recorded by individual entries during the order (5002 COGS, 6010 Job Material Cost).
+        // No double-counting rollup needed here.
 
         let total_allocated: f64 = sqlx::query_scalar(
             "SELECT COALESCE(SUM(allocated_amount), 0.0) FROM payment_allocations WHERE invoice_voucher_id = ?"
@@ -1351,21 +1277,8 @@ pub async fn finalize_custom_order(
     )
     .fetch_one(&mut *tx).await.map_err(|e| format!("Sales account (4001) not found: {}", e))?;
 
-    let cogs_account_id: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM chart_of_accounts WHERE account_code = '6012' LIMIT 1",
-    ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
-
-    let inventory_account_id: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM chart_of_accounts WHERE account_name LIKE '%Inventory%' OR account_name LIKE '%Stock%' ORDER BY account_code LIMIT 1",
-    ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
-
-    let job_mat_account_id: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM chart_of_accounts WHERE account_code = '6010' LIMIT 1",
-    ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
-
-    let job_svc_account_id: Option<String> = sqlx::query_scalar(
-        "SELECT id FROM chart_of_accounts WHERE account_group = 'Job Work Expenses' AND deleted_at IS NULL LIMIT 1",
-    ).fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
+    // Note: costs are already fully captured by individual GL entries created during the order.
+    // No 6012 COGS rollup needed.
 
     let inv_no = get_next_voucher_number_in_tx(&mut tx, "sales_invoice").await?;
     let inv_id = Uuid::now_v7().to_string();
@@ -1418,71 +1331,8 @@ pub async fn finalize_custom_order(
         .bind(&je_sales).bind(&inv_id).bind(&sales_account_id).bind(sale_price).bind(&narration)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    if total_job_cost > 0.0 {
-        if let Some(cogs_acc) = &cogs_account_id {
-            let je_cogs = Uuid::now_v7().to_string();
-            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, ?, 0, ?)")
-                .bind(&je_cogs).bind(&inv_id).bind(cogs_acc).bind(total_job_cost).bind(&narration)
-                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-
-            if total_material_cost > 0.0 {
-                if let Some(inv_acc) = &inventory_account_id {
-                    let je_inv = Uuid::now_v7().to_string();
-                    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
-                        .bind(&je_inv).bind(&inv_id).bind(inv_acc).bind(total_material_cost).bind(&narration)
-                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-                }
-            }
-
-            if total_purchase_cost > 0.0 {
-                if let Some(jm_acc) = &job_mat_account_id {
-                    let je_jm = Uuid::now_v7().to_string();
-                    sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
-                        .bind(&je_jm).bind(&inv_id).bind(jm_acc).bind(total_purchase_cost).bind(&narration)
-                        .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-                }
-            }
-
-            if total_service_cost > 0.0 {
-                let svc_rows: Vec<(Option<String>, f64, String)> = sqlx::query_as(
-                    "SELECT expense_account, amount, description FROM custom_order_services WHERE order_id = ?"
-                )
-                .bind(&payload.order_id)
-                .fetch_all(&mut *tx)
-                .await
-                .unwrap_or_default();
-
-                let mut posted_service_total = 0.0;
-                for (exp_acc, amt, desc) in svc_rows {
-                    if amt > 0.0 {
-                        let target_acc = exp_acc.as_deref().or(job_svc_account_id.as_deref());
-                        if let Some(acc_id) = target_acc {
-                            let line_narration = if desc.is_empty() {
-                                narration.clone()
-                            } else {
-                                format!("{}: {}", narration, desc)
-                            };
-                            let je_js = Uuid::now_v7().to_string();
-                            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
-                                .bind(&je_js).bind(&inv_id).bind(acc_id).bind(amt).bind(&line_narration)
-                                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-                            posted_service_total += amt;
-                        }
-                    }
-                }
-
-                if (total_service_cost - posted_service_total).abs() > 0.001 {
-                    let rem = total_service_cost - posted_service_total;
-                    if let Some(js_acc) = &job_svc_account_id {
-                        let je_js = Uuid::now_v7().to_string();
-                        sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
-                            .bind(&je_js).bind(&inv_id).bind(js_acc).bind(rem).bind(&narration)
-                            .execute(&mut *tx).await.map_err(|e| e.to_string())?;
-                    }
-                }
-            }
-        }
-    }
+    // Costs are already recorded by individual entries during the order (5002 COGS, 6010 Job Material Cost).
+    // No double-counting rollup needed here.
 
     let mut total_allocated = 0.0;
 

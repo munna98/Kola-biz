@@ -1610,10 +1610,21 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await;
 
-    // Seed Job COGS ledger account
+    // Migrate: Remove 6012 (Custom Order COGS) — it caused double-counting with 5002 COGS.
+    // Reclassify any existing 6012 journal entries to 5002 (Cost of Goods Sold), then soft-delete 6012.
     let _ = sqlx::query(
-        "INSERT OR IGNORE INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, is_system, is_active)
-         VALUES (hex(randomblob(16)), '6012', 'Custom Order COGS', 'Expense', 'Purchase Accounts', 0, 1)",
+        "UPDATE journal_entries
+         SET account_id = (SELECT id FROM chart_of_accounts WHERE account_code = '5002' LIMIT 1)
+         WHERE account_id IN (SELECT id FROM chart_of_accounts WHERE account_code = '6012')
+           AND (SELECT id FROM chart_of_accounts WHERE account_code = '5002' LIMIT 1) IS NOT NULL"
+    )
+    .execute(pool)
+    .await;
+
+    let _ = sqlx::query(
+        "UPDATE chart_of_accounts
+         SET is_active = 0, deleted_at = CURRENT_TIMESTAMP
+         WHERE account_code = '6012' AND deleted_at IS NULL"
     )
     .execute(pool)
     .await;

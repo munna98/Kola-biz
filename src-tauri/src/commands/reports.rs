@@ -652,7 +652,7 @@ pub async fn get_profit_loss(
             purchases += dr - cr;
         } else if code == "5003" {
             purchases -= cr - dr;
-        } else if is_direct_expense_group(&group_name, &groups) || code == "6010" || code == "6012" {
+        } else if is_direct_expense_group(&group_name, &groups) || code == "6010" {
             let amount = dr - cr;
             purchases += amount;
         } else {
@@ -677,10 +677,11 @@ pub async fn get_profit_loss(
     };
 
     let cogs = if cogs_from_gl > 0.0 {
-        round2(cogs_from_gl)
+        round2(cogs_from_gl + total_purchases)
     } else {
         round2((opening_stock + total_purchases - closing_stock).max(0.0))
     };
+
     let gross_profit = round2(total_income - cogs);
     let total_expenses = round2(cogs + total_operating_expenses);
     let net_profit = round2(total_income - total_expenses);
