@@ -1,0 +1,104 @@
+<!-- [HEADER] -->
+<style>
+    body, p, span, div, td, th, h1, h2, h3, h4, h5, h6 {
+        font-weight: bold !important;
+    }
+</style>
+<div class="thermal-header">
+    {{#if company.has_logo}}
+    <div class="logo-wrap">
+        <img src="{{company.logo}}" alt="Logo" class="logo" />
+    </div>
+    {{/if}}
+    <h1>{{company.name}}</h1>
+    {{#if show_company_address}}
+    <p>{{company.address}}</p>
+    {{/if}}
+    <p>Ph: {{company.phone}}</p>
+    {{#if company.gstin}}
+    <p>GSTIN: {{company.gstin}}</p>
+    {{/if}}
+</div>
+<div class="separator"></div>
+<div style="text-align:center; font-size:12pt; font-weight:bold; margin:4px 0; letter-spacing:1px;">
+    * JOB ORDER SLIP *
+</div>
+<div class="separator"></div>
+<div class="invoice-info">
+    <div class="row">
+        <span>Order No:</span>
+        <span><strong>{{order_no}}</strong></span>
+    </div>
+    <div class="row">
+        <span>Order Date:</span>
+        <span>{{format_date order_date}}</span>
+    </div>
+    {{#if delivery_date}}
+    <div class="row">
+        <span>Delivery Date:</span>
+        <span>{{format_date delivery_date}}</span>
+    </div>
+    {{/if}}
+    {{#if party.name}}
+    <div class="row">
+        <span>Customer:</span>
+        <span>{{party.name}}</span>
+    </div>
+    {{/if}}
+    {{#if party.phone}}
+    <div class="row">
+        <span>Phone:</span>
+        <span>{{party.phone}}</span>
+    </div>
+    {{/if}}
+</div>
+<div class="separator"></div>
+
+<!-- [BODY] -->
+<div style="margin: 6px 0;">
+    <div style="font-size:10pt; font-weight:bold; text-decoration:underline; margin-bottom:4px;">
+        Item Details
+    </div>
+    <div class="row" style="display:flex; justify-content:space-between; margin:3px 0;">
+        <span>Item Name:</span>
+        <span>{{finished_item_name}}</span>
+    </div>
+    <div class="row" style="display:flex; justify-content:space-between; margin:3px 0;">
+        <span>Qty:</span>
+        <span>{{format_number finished_item_qty 2}}{{#if finished_item_unit}} {{finished_item_unit}}{{/if}}</span>
+    </div>
+</div>
+
+<div class="separator"></div>
+<div class="totals">
+    <div class="row total">
+        <span>Price:</span>
+        <span>{{format_currency sale_price}}</span>
+    </div>
+    {{#if advance_amount}}
+    <div class="row" style="margin-top:4px;">
+        <span>Advance Paid:</span>
+        <span>{{format_currency advance_amount}}</span>
+    </div>
+    <div class="row" style="border-top:1px dotted #000; padding-top:3px; margin-top:3px;">
+        <span>Bal on Delivery:</span>
+        <span>{{format_currency balance_due}}</span>
+    </div>
+    {{/if}}
+</div>
+
+{{#if narration}}
+<div class="separator"></div>
+<div style="font-size:9pt; margin:4px 0;">
+    <span style="text-decoration:underline;">Notes:</span> {{narration}}
+</div>
+{{/if}}
+
+<!-- [FOOTER] -->
+<div class="separator"></div>
+<div class="footer">
+    {{#if company.website}}
+    <p class="center small">{{company.website}}</p>
+    {{/if}}
+    <p class="center small">Thank You!</p>
+</div>

@@ -376,6 +376,7 @@ pub fn run() {
             commands::custom_orders::record_custom_order_advance,
             commands::custom_orders::get_custom_order_by_invoice,
             commands::custom_orders::get_custom_order_payments,
+            commands::templates::render_custom_order_slip,
         ])
         .plugin(tauri_plugin_opener::init())
         .build(tauri::generate_context!())

@@ -2715,6 +2715,168 @@ fn number_to_words_indian(amount: f64) -> String {
     result
 }
 
+// ============= CUSTOM ORDER SLIP =============
+
+/// Embedded HTML for the custom order job slip (thermal 80mm layout)
+const CUSTOM_ORDER_SLIP_HTML: &str = include_str!("../../resources/templates/custom_order_slip.html");
+/// Reuse the standard thermal 80mm CSS
+const THERMAL_80MM_CSS: &str = include_str!("../../resources/templates/thermal_80mm.css");
+
+/// Render a pre-delivery Job Order Slip for a custom order.
+/// This command is called from the frontend when the user wants to print
+/// an order confirmation slip BEFORE the order is finalized.
+#[tauri::command]
+pub async fn render_custom_order_slip(
+    registry: State<'_, Arc<DbRegistry>>,
+    order_id: String,
+) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
+
+    // 1. Fetch the custom order details
+    let order = sqlx::query(
+        "SELECT
+            co.order_no, co.order_date, co.delivery_date,
+            co.finished_item_name, co.finished_item_qty, co.finished_item_unit,
+            co.sale_price, co.advance_amount, co.narration, co.status,
+            COALESCE(coa.account_name, c.name, '') as customer_name,
+            c.phone as customer_phone
+         FROM custom_orders co
+         LEFT JOIN chart_of_accounts coa ON co.customer_id = coa.id OR co.customer_id = coa.party_id
+         LEFT JOIN customers c ON co.customer_id = c.id OR coa.party_id = c.id
+         WHERE co.id = ? AND co.deleted_at IS NULL"
+    )
+    .bind(&order_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .ok_or_else(|| "Custom order not found".to_string())?;
+
+    use sqlx::Row;
+    let order_no: String = order.try_get("order_no").unwrap_or_default();
+    let order_date: String = order.try_get("order_date").unwrap_or_default();
+    let delivery_date: Option<String> = order.try_get("delivery_date").ok().flatten();
+    let finished_item_name: String = order.try_get("finished_item_name").unwrap_or_default();
+    let finished_item_qty: f64 = order.try_get("finished_item_qty").unwrap_or(1.0);
+    let finished_item_unit: Option<String> = order.try_get("finished_item_unit").ok().flatten();
+    let sale_price: f64 = order.try_get("sale_price").unwrap_or(0.0);
+    let advance_amount: f64 = order.try_get("advance_amount").unwrap_or(0.0);
+    let narration: Option<String> = order.try_get("narration").ok().flatten();
+    let customer_name: String = order.try_get("customer_name").unwrap_or_default();
+    let customer_phone: Option<String> = order.try_get("customer_phone").ok().flatten();
+
+    let balance_due = (sale_price - advance_amount).max(0.0);
+
+    // 2. Fetch services for this order
+    let services_rows = sqlx::query(
+        "SELECT description, amount FROM custom_order_services WHERE order_id = ? ORDER BY created_at ASC"
+    )
+    .bind(&order_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let services: Vec<serde_json::Value> = services_rows
+        .iter()
+        .map(|r| {
+            let desc: String = r.try_get("description").unwrap_or_default();
+            let amt: f64 = r.try_get("amount").unwrap_or(0.0);
+            json!({"description": desc, "amount": amt})
+        })
+        .collect();
+
+    // 3. Build voucher data for the template
+    let voucher_data = json!({
+        "order_no": order_no,
+        "order_date": order_date,
+        "delivery_date": delivery_date,
+        "finished_item_name": finished_item_name,
+        "finished_item_qty": finished_item_qty,
+        "finished_item_unit": finished_item_unit,
+        "sale_price": sale_price,
+        "advance_amount": if advance_amount > 0.0 { json!(advance_amount) } else { json!(null) },
+        "balance_due": balance_due,
+        "narration": narration,
+        "party": {
+            "name": customer_name,
+            "phone": customer_phone
+        },
+        "services": if services.is_empty() { json!(null) } else { json!(services) },
+        // Expose grand_total so the template engine can compute words (optional)
+        "grand_total": sale_price,
+        "voucher_no": order_no,
+        "voucher_date": order_date,
+    });
+
+    // 4. Get company profile
+    let company = crate::commands::company::get_company_profile_with_pool(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 5. Parse the embedded template into header/body/footer sections
+    let sections: Vec<&str> = CUSTOM_ORDER_SLIP_HTML.split("<!-- [").collect();
+    let mut header = String::new();
+    let mut body = String::new();
+    let mut footer = String::new();
+    for section in &sections {
+        if section.starts_with("HEADER] -->") {
+            header = section.replacen("HEADER] -->", "", 1).trim().to_string();
+        } else if section.starts_with("BODY] -->") {
+            body = section.replacen("BODY] -->", "", 1).trim().to_string();
+        } else if section.starts_with("FOOTER] -->") {
+            footer = section.replacen("FOOTER] -->", "", 1).trim().to_string();
+        }
+    }
+
+    // 6. Build a synthetic InvoiceTemplate struct to pass to the engine
+    let template = InvoiceTemplate {
+        id: "custom_order_slip".to_string(),
+        template_number: "CO-SLIP-001".to_string(),
+        name: "Custom Order Slip".to_string(),
+        description: None,
+        voucher_type: "custom_order".to_string(),
+        template_format: "thermal_80mm".to_string(),
+        design_mode: Some("compact".to_string()),
+        layout_config: None,
+        header_html: header,
+        body_html: body,
+        footer_html: footer,
+        styles_css: THERMAL_80MM_CSS.to_string(),
+        show_logo: Some(1),
+        show_company_address: Some(1),
+        show_party_name: Some(1),
+        show_party_address: Some(0),
+        table_row_padding: Some(4),
+        show_gstin: Some(1),
+        show_item_images: Some(0),
+        show_item_hsn: Some(0),
+        show_bank_details: Some(0),
+        show_qr_code: Some(0),
+        show_signature: Some(0),
+        show_terms: Some(0),
+        show_less_column: Some(0),
+        show_discount_column: Some(0),
+        show_balance_section: Some(0),
+        balance_font_size: Some(10),
+        balance_bold: Some(0),
+        auto_print: Some(0),
+        copies: Some(1),
+        is_default: Some(1),
+        is_active: Some(1),
+        letterhead_data: None,
+        use_letterhead: Some(0),
+        letterhead_margin_top: Some(45.0),
+        letterhead_margin_bottom: Some(25.0),
+        header_title: Some("Job Order Slip".to_string()),
+        bill_note: None,
+        created_at: "2024-01-01".to_string(),
+        updated_at: "2024-01-01".to_string(),
+    };
+
+    // 7. Render via the shared template engine
+    let mut engine = TEMPLATE_ENGINE.lock().map_err(|e| e.to_string())?;
+    engine.render_invoice(&template, &company, voucher_data)
+}
+
 fn build_ship_to_obj(
     metadata: &Option<String>,
     billing_party: &serde_json::Value,

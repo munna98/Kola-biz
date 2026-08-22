@@ -47,7 +47,7 @@ import {
     IconScissors, IconPackage, IconShoppingBag, IconTools,
     IconRefresh, IconCurrencyRupee, IconEye, IconClock,
     IconChevronLeft, IconChevronRight, IconList, IconDeviceFloppy,
-    IconX, IconCash,
+    IconX, IconCash, IconPrinter,
 } from "@tabler/icons-react";
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
@@ -182,6 +182,7 @@ export default function CustomOrdersPage() {
     const [showCreateServiceLedger, setShowCreateServiceLedger] = useState(false);
     const [newServiceLedgerName, setNewServiceLedgerName] = useState('');
     const [targetServiceRowIndex, setTargetServiceRowIndex] = useState<number | null>(null);
+    const [printingSlip, setPrintingSlip] = useState(false);
 
     const matTotal = materials.filter(m => m.product_id).reduce((s, m) => s + m.amount, 0);
     const purTotal = purchases.filter(p => p.description).reduce((s, p) => s + p.amount, 0);
@@ -716,12 +717,46 @@ export default function CustomOrdersPage() {
         }
     };
 
+    const handlePrintOrderSlip = async (orderId: string, orderNo?: string) => {
+        if (!orderId) return;
+        try {
+            setPrintingSlip(true);
+            const html = await invoke<string>('render_custom_order_slip', { orderId });
+            // Print via iframe
+            const iframe = document.createElement('iframe');
+            iframe.style.position = 'absolute';
+            iframe.style.left = '-9999px';
+            iframe.style.top = '-9999px';
+            iframe.style.border = 'none';
+            document.body.appendChild(iframe);
+            const doc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (doc) {
+                doc.open();
+                doc.write(html);
+                doc.close();
+                setTimeout(() => {
+                    const prevTitle = document.title;
+                    if (orderNo) document.title = `Order-Slip-${orderNo}`;
+                    iframe.contentWindow?.focus();
+                    iframe.contentWindow?.print();
+                    setTimeout(() => {
+                        document.title = prevTitle;
+                        document.body.removeChild(iframe);
+                    }, 1500);
+                }, 500);
+            }
+        } catch (e) {
+            console.error('Failed to print order slip', e);
+            toast.error(typeof e === 'string' ? e : (e as any)?.message || 'Failed to generate order slip');
+        } finally {
+            setPrintingSlip(false);
+        }
+    };
+
     const openAdvanceDialog = async (order: CustomOrder) => {
         setAdvanceOrder(order);
         setAdvanceDate(today());
-        const totalPaid = order.advance_amount || order.total_paid || 0;
-        const balance = Math.max(0, order.sale_price - totalPaid);
-        setAdvanceAmount(balance > 0 ? String(balance) : '');
+        setAdvanceAmount('');
         setAdvanceNarration('');
         if (cashBankAccounts.length > 0 && !advanceCashBank) {
             setAdvanceCashBank(cashBankAccounts[0].id);
@@ -755,17 +790,16 @@ export default function CustomOrdersPage() {
                 }
             });
             toast.success(`Payment of ₹${fmt(Number(advanceAmount))} recorded successfully`);
+            const targetOrderId = advanceOrder.id;
             setAdvanceAmount('');
             setAdvanceNarration('');
+            setAdvanceOrder(null);
             loadOrders();
-            const d = await invoke<CustomOrderDetail>('get_custom_order', { id: advanceOrder.id });
-            setAdvanceOrder(d.order);
-            if (currentOrder?.id === advanceOrder.id) {
+            if (currentOrder?.id === targetOrderId) {
+                const d = await invoke<CustomOrderDetail>('get_custom_order', { id: targetOrderId });
                 dispatch(setCustomOrderCurrentOrder(d.order));
                 dispatch(setCustomOrderCurrentDetail(d));
             }
-            const payments = await invoke<CustomOrderPaymentRecord[]>('get_custom_order_payments', { orderId: advanceOrder.id });
-            setOrderPayments(payments || []);
         } catch (err) { toast.error(String(err)); }
         finally { setSavingAdvance(false); }
     };
@@ -855,18 +889,27 @@ export default function CustomOrdersPage() {
                                 {advanceOrder?.status === 'delivered' ? 'Delivered' : 'Pending'}
                             </Badge>
                         </DialogTitle>
-                        {advanceOrder && (
-                            <div className="text-sm space-y-1 pt-1">
-                                <div className="text-muted-foreground">
-                                    Customer: <strong className="text-foreground">{advanceOrder.customer_name}</strong> • Item: <strong className="text-foreground">{advanceOrder.finished_item_name}</strong>
+                        {advanceOrder && (() => {
+                            const recordedPaid = advanceOrder.advance_amount || advanceOrder.total_paid || 0;
+                            const entered = Number(advanceAmount) || 0;
+                            const dynamicBalance = Math.max(0, advanceOrder.sale_price - recordedPaid - entered);
+                            return (
+                                <div className="text-sm space-y-1 pt-1">
+                                    <div className="text-muted-foreground">
+                                        Customer: <strong className="text-foreground">{advanceOrder.customer_name}</strong> • Item: <strong className="text-foreground">{advanceOrder.finished_item_name}</strong>
+                                    </div>
+                                    <div className="flex flex-wrap gap-4 pt-1 text-xs">
+                                        <div>Sale Price: <strong className="font-mono text-sm">₹{fmt(advanceOrder.sale_price)}</strong></div>
+                                        <div>Total Paid: <strong className="font-mono text-sm text-emerald-600">₹{fmt(recordedPaid)}</strong></div>
+                                        <div>
+                                            Balance Due: <strong className={`font-mono text-sm ${dynamicBalance > 0 ? 'text-orange-600' : 'text-emerald-600'}`}>
+                                                ₹{fmt(dynamicBalance)}
+                                            </strong>
+                                        </div>
+                                    </div>
                                 </div>
-                                <div className="flex flex-wrap gap-4 pt-1 text-xs">
-                                    <div>Sale Price: <strong className="font-mono text-sm">₹{fmt(advanceOrder.sale_price)}</strong></div>
-                                    <div>Total Paid: <strong className="font-mono text-sm text-emerald-600">₹{fmt(advanceOrder.advance_amount || advanceOrder.total_paid || 0)}</strong></div>
-                                    <div>Balance Due: <strong className="font-mono text-sm text-orange-600">₹{fmt(Math.max(0, advanceOrder.sale_price - (advanceOrder.advance_amount || advanceOrder.total_paid || 0)))}</strong></div>
-                                </div>
-                            </div>
-                        )}
+                            );
+                        })()}
                     </DialogHeader>
 
                     <div className="space-y-4 py-2">
@@ -911,21 +954,21 @@ export default function CustomOrdersPage() {
                         </div>
 
                         {/* Record New Payment Section */}
-                        {advanceOrder && (advanceOrder.sale_price - (advanceOrder.advance_amount || 0) > 0 || advanceOrder.advance_amount === 0) && (
+                        {advanceOrder && (advanceOrder.sale_price - (advanceOrder.advance_amount || advanceOrder.total_paid || 0) > 0 || (advanceOrder.advance_amount || 0) === 0) && (
                             <div className="border rounded-lg p-3.5 space-y-3 bg-card">
                                 <div className="flex items-center justify-between">
                                     <h4 className="text-xs font-semibold text-foreground">
                                         Record {advanceOrder.status === 'delivered' ? 'Payment' : 'Advance'}
                                     </h4>
-                                    {advanceOrder.sale_price - (advanceOrder.advance_amount || 0) > 0 && (
+                                    {advanceOrder.sale_price - (advanceOrder.advance_amount || advanceOrder.total_paid || 0) > 0 && (
                                         <Button
                                             type="button"
                                             variant="ghost"
                                             size="sm"
                                             className="h-6 text-[11px] px-2 text-primary hover:text-primary"
-                                            onClick={() => setAdvanceAmount(String(Math.max(0, advanceOrder.sale_price - (advanceOrder.advance_amount || 0))))}
+                                            onClick={() => setAdvanceAmount(String(Math.max(0, advanceOrder.sale_price - (advanceOrder.advance_amount || advanceOrder.total_paid || 0))))}
                                         >
-                                            Use Remaining (₹{fmt(Math.max(0, advanceOrder.sale_price - (advanceOrder.advance_amount || 0)))})
+                                            Use Remaining (₹{fmt(Math.max(0, advanceOrder.sale_price - (advanceOrder.advance_amount || advanceOrder.total_paid || 0)))})
                                         </Button>
                                     )}
                                 </div>
@@ -1175,6 +1218,7 @@ export default function CustomOrdersPage() {
                                 <Button variant="outline" size="icon" className="h-8 w-8" onClick={openEditFromView} title="Edit"><IconEdit size={16}/></Button>
                                 <Button variant="outline" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={()=>{setDeleteId(currentOrder.id);setDeleteOrderNo(currentOrder.order_no);}} title="Delete" disabled={currentOrder.status==='delivered'}><IconTrash size={16}/></Button>
                             </div>
+                            <Button variant="outline" size="icon" className="h-8 w-8" title="Print Order Slip" disabled={printingSlip} onClick={()=>handlePrintOrderSlip(currentOrder.id, currentOrder.order_no)}><IconPrinter size={16}/></Button>
                             {currentOrder.status==='pending'&&<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={()=>openAdvanceDialog(currentOrder)}><IconCash size={14}/> {currentOrder.advance_amount > 0 ? 'Collect Payment' : 'Advance'}</Button>}
                             {currentOrder.status==='pending'&&<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={()=>openFinalize(currentOrder)}><IconCheck size={14}/> Finalize</Button>}
                             {currentOrder.status==='delivered'&&(currentOrder.balance_due??0)>0&&currentOrder.final_invoice_id&&<Button size="sm" className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={()=>openCollectPayment(currentOrder)}><IconCurrencyRupee size={14}/> Collect (₹{fmt(currentOrder.balance_due||0)})</Button>}
@@ -1942,6 +1986,7 @@ export default function CustomOrdersPage() {
                                         <div className="flex items-center justify-center gap-1">
                                             <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" title="View" onClick={()=>openViewOrder(order)}><IconEye size={14}/></Button>
                                             <Button variant="ghost" size="icon" className="h-7 w-7" title="Edit" onClick={()=>{ invoke<CustomOrderDetail>('get_custom_order',{id:order.id}).then(d=>{dispatch(setCustomOrderCurrentOrder(d.order));dispatch(setCustomOrderCurrentDetail(d));dispatch(populateCustomOrderForm({order:d.order,detail:d}));dispatch(setCustomOrderMode('editing'));}).catch(err=>toast.error(String(err))); }}><IconEdit size={14}/></Button>
+                                            <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-foreground" title="Print Order Slip" onClick={()=>handlePrintOrderSlip(order.id, order.order_no)}><IconPrinter size={14}/></Button>
                                             {order.status==='pending'&&(<>
                                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:text-amber-700" title={order.advance_amount > 0 ? `Collect Payment (Paid: ₹${fmt(order.advance_amount)})` : "Record Advance"} onClick={()=>openAdvanceDialog(order)}><IconCurrencyRupee size={14}/></Button>
                                                 <Button variant="ghost" size="icon" className="h-7 w-7 text-primary" title="Finalize & Invoice" onClick={()=>openFinalize(order)}><IconCheck size={14}/></Button>
