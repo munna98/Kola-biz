@@ -545,6 +545,28 @@ pub struct PLAccount {
     pub amount: f64,
 }
 
+fn is_direct_expense_group(group_name: &str, groups: &[crate::commands::accounts::AccountGroup]) -> bool {
+    let g_lower = group_name.to_lowercase();
+    if g_lower == "purchase accounts" || g_lower == "cost of sales" || g_lower == "direct expenses" {
+        return true;
+    }
+    let mut current_name = group_name;
+    while let Some(g) = groups.iter().find(|x| x.name.eq_ignore_ascii_case(current_name)) {
+        if let Some(ref parent_id) = g.parent_group_id {
+            if let Some(parent) = groups.iter().find(|x| &x.id == parent_id) {
+                let p_lower = parent.name.to_lowercase();
+                if p_lower == "purchase accounts" || p_lower == "cost of sales" || p_lower == "direct expenses" {
+                    return true;
+                }
+                current_name = &parent.name;
+                continue;
+            }
+        }
+        break;
+    }
+    false
+}
+
 #[tauri::command]
 pub async fn get_profit_loss(
     registry: State<'_, Arc<DbRegistry>>,
@@ -630,6 +652,9 @@ pub async fn get_profit_loss(
             purchases += dr - cr;
         } else if code == "5003" {
             purchases -= cr - dr;
+        } else if is_direct_expense_group(&group_name, &groups) || code == "6010" || code == "6012" {
+            let amount = dr - cr;
+            purchases += amount;
         } else {
             let amount = dr - cr;
             if amount.abs() >= 0.01 {
@@ -645,7 +670,12 @@ pub async fn get_profit_loss(
         }
     }
 
-    let total_purchases = if period_purchases > 0.0 { period_purchases } else { purchases };
+    let total_purchases = if period_purchases > 0.0 && purchases == 0.0 {
+        period_purchases
+    } else {
+        purchases
+    };
+
     let cogs = if cogs_from_gl > 0.0 {
         round2(cogs_from_gl)
     } else {
