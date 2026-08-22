@@ -30,6 +30,7 @@ interface ProfitLossData {
   groups: AccountGroup[];
   income: PLAccount[];
   expenses: PLAccount[];
+  direct_expenses?: PLAccount[];
   total_income: number;
   total_expenses: number;
   opening_stock: number;
@@ -312,6 +313,11 @@ export default function ProfitLossPage() {
     return buildPLTree(data.groups, data.expenses, 'Expense');
   }, [data]);
 
+  const directExpenseTree = useMemo(() => {
+    if (!data) return [];
+    return buildPLTree(data.groups, data.direct_expenses || [], 'Expense');
+  }, [data]);
+
   const toggleExpand = useCallback((groupName: string) => {
     setExpandedGroups(prev => {
       const next = new Set(prev);
@@ -582,14 +588,20 @@ export default function ProfitLossPage() {
                                 <td className="p-2.5 font-medium">Opening Stock</td>
                                 <td className="p-2.5 text-right font-mono font-semibold">{money(data.opening_stock)}</td>
                               </tr>
-                              <tr className="border-b hover:bg-muted/20">
-                                <td className="p-2.5 font-medium">Purchase Accounts</td>
-                                <td className="p-2.5 text-right font-mono font-semibold">{money(data.purchases)}</td>
-                              </tr>
-                              {!!data.cogs_from_gl && data.cogs_from_gl > 0 && (
+                              {directExpenseTree.map(root => (
+                                <PLTRow
+                                  key={`trading-exp-${root.id}`}
+                                  node={root}
+                                  onDrilldown={handleDrilldown}
+                                  expandedGroups={expandedGroups}
+                                  toggleExpand={toggleExpand}
+                                  money={money}
+                                />
+                              ))}
+                              {directExpenseTree.length === 0 && (
                                 <tr className="border-b hover:bg-muted/20">
-                                  <td className="p-2.5 font-medium">COGS (Stock Movements)</td>
-                                  <td className="p-2.5 text-right font-mono font-semibold">{money(data.cogs_from_gl)}</td>
+                                  <td className="p-2.5 font-medium">Purchase Accounts</td>
+                                  <td className="p-2.5 text-right font-mono font-semibold">{money(data.purchases)}</td>
                                 </tr>
                               )}
                               {data.gross_profit >= 0 && (

@@ -526,6 +526,7 @@ pub struct ProfitLossData {
     pub groups: Vec<crate::commands::accounts::AccountGroup>,
     pub income: Vec<PLAccount>,
     pub expenses: Vec<PLAccount>,
+    pub direct_expenses: Vec<PLAccount>,
     pub total_income: f64,
     pub total_expenses: f64,
     pub opening_stock: f64,
@@ -629,6 +630,7 @@ pub async fn get_profit_loss(
 
     let mut income = Vec::new();
     let mut expenses = Vec::new();
+    let mut direct_expenses = Vec::new();
     let mut total_income = 0.0;
     let mut purchases = 0.0;
     let mut cogs_from_gl = 0.0;
@@ -648,14 +650,53 @@ pub async fn get_profit_loss(
                 });
             }
         } else if code == "5002" {
-            cogs_from_gl += dr - cr;
+            let amount = dr - cr;
+            cogs_from_gl += amount;
+            if amount.abs() >= 0.01 {
+                direct_expenses.push(PLAccount {
+                    id,
+                    account_name: name,
+                    account_code: code,
+                    account_group: group_name,
+                    amount: round2(amount),
+                });
+            }
         } else if code == "5001" {
-            purchases += dr - cr;
+            let amount = dr - cr;
+            purchases += amount;
+            if amount.abs() >= 0.01 {
+                direct_expenses.push(PLAccount {
+                    id,
+                    account_name: name,
+                    account_code: code,
+                    account_group: group_name,
+                    amount: round2(amount),
+                });
+            }
         } else if code == "5003" {
-            purchases -= cr - dr;
+            let amount = dr - cr;
+            purchases += amount;
+            if amount.abs() >= 0.01 {
+                direct_expenses.push(PLAccount {
+                    id,
+                    account_name: name,
+                    account_code: code,
+                    account_group: group_name,
+                    amount: round2(amount),
+                });
+            }
         } else if is_direct_expense_group(&group_name, &groups) || code == "6010" {
             let amount = dr - cr;
             purchases += amount;
+            if amount.abs() >= 0.01 {
+                direct_expenses.push(PLAccount {
+                    id,
+                    account_name: name,
+                    account_code: code,
+                    account_group: group_name,
+                    amount: round2(amount),
+                });
+            }
         } else {
             let amount = dr - cr;
             if amount.abs() >= 0.01 {
@@ -691,6 +732,7 @@ pub async fn get_profit_loss(
         groups,
         income,
         expenses,
+        direct_expenses,
         total_income: round2(total_income),
         total_expenses: round2(total_expenses),
         opening_stock: round2(opening_stock),
