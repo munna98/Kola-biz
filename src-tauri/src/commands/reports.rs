@@ -532,6 +532,7 @@ pub struct ProfitLossData {
     pub purchases: f64,
     pub closing_stock: f64,
     pub cogs: f64,
+    pub cogs_from_gl: f64,
     pub gross_profit: f64,
     pub net_profit: f64,
 }
@@ -696,6 +697,7 @@ pub async fn get_profit_loss(
         purchases: round2(total_purchases),
         closing_stock: round2(closing_stock),
         cogs,
+        cogs_from_gl: round2(cogs_from_gl),
         gross_profit,
         net_profit,
     })

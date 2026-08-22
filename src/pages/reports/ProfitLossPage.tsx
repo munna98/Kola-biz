@@ -36,6 +36,7 @@ interface ProfitLossData {
   purchases: number;
   closing_stock: number;
   cogs: number;
+  cogs_from_gl?: number;
   gross_profit: number;
   net_profit: number;
 }
@@ -367,6 +368,9 @@ export default function ProfitLossPage() {
       rows.push(['Particulars (Debit / Expenses)', 'Amount', 'Particulars (Credit / Income)', 'Amount']);
       rows.push(['Opening Stock', data.opening_stock, 'Sales Accounts (Revenue)', data.total_income]);
       rows.push(['Purchase Accounts', data.purchases, 'Closing Stock', data.closing_stock]);
+      if (data.cogs_from_gl && data.cogs_from_gl > 0) {
+        rows.push(['COGS (Stock Movements)', data.cogs_from_gl, '', '']);
+      }
 
       if (data.gross_profit >= 0) {
         rows.push(['Gross Profit c/o', data.gross_profit, '', '']);
@@ -374,7 +378,7 @@ export default function ProfitLossPage() {
         rows.push(['', '', 'Gross Loss c/o', Math.abs(data.gross_profit)]);
       }
 
-      const tradingDebitTotal = round2(data.opening_stock + data.purchases + (data.gross_profit >= 0 ? data.gross_profit : 0));
+      const tradingDebitTotal = round2(data.opening_stock + data.purchases + (data.cogs_from_gl || 0) + (data.gross_profit >= 0 ? data.gross_profit : 0));
       const tradingCreditTotal = round2(data.total_income + data.closing_stock + (data.gross_profit < 0 ? Math.abs(data.gross_profit) : 0));
       rows.push(['Total Trading Debit', tradingDebitTotal, 'Total Trading Credit', tradingCreditTotal]);
       rows.push([]);
@@ -437,7 +441,7 @@ export default function ProfitLossPage() {
   const operatingExpensesTotal = data ? round2(data.total_expenses - data.cogs) : 0;
 
   // Trading account totals for horizontal T-account view
-  const tradingDebitTotal = data ? round2(data.opening_stock + data.purchases + (data.gross_profit >= 0 ? data.gross_profit : 0)) : 0;
+  const tradingDebitTotal = data ? round2(data.opening_stock + data.purchases + (data.cogs_from_gl || 0) + (data.gross_profit >= 0 ? data.gross_profit : 0)) : 0;
   const tradingCreditTotal = data ? round2(data.total_income + data.closing_stock + (data.gross_profit < 0 ? Math.abs(data.gross_profit) : 0)) : 0;
 
   // P&L account totals for horizontal T-account view
@@ -582,6 +586,12 @@ export default function ProfitLossPage() {
                                 <td className="p-2.5 font-medium">Purchase Accounts</td>
                                 <td className="p-2.5 text-right font-mono font-semibold">{money(data.purchases)}</td>
                               </tr>
+                              {!!data.cogs_from_gl && data.cogs_from_gl > 0 && (
+                                <tr className="border-b hover:bg-muted/20">
+                                  <td className="p-2.5 font-medium">COGS (Stock Movements)</td>
+                                  <td className="p-2.5 text-right font-mono font-semibold">{money(data.cogs_from_gl)}</td>
+                                </tr>
+                              )}
                               {data.gross_profit >= 0 && (
                                 <tr className="border-b font-semibold hover:bg-muted/20">
                                   <td className="p-2.5">Gross Profit c/o</td>
@@ -743,9 +753,15 @@ export default function ProfitLossPage() {
                         <td className="p-3 text-right font-mono font-semibold">{money(data.opening_stock)}</td>
                       </tr>
                       <tr className="hover:bg-muted/20">
-                        <td className="p-3 font-medium">Add: Purchases</td>
+                        <td className="p-3 font-medium">Add: Purchases & Direct Expenses</td>
                         <td className="p-3 text-right font-mono font-semibold">{money(data.purchases)}</td>
                       </tr>
+                      {!!data.cogs_from_gl && data.cogs_from_gl > 0 && (
+                        <tr className="hover:bg-muted/20">
+                          <td className="p-3 font-medium">Add: COGS (Stock Movements)</td>
+                          <td className="p-3 text-right font-mono font-semibold">{money(data.cogs_from_gl)}</td>
+                        </tr>
+                      )}
                       <tr className="hover:bg-muted/20 text-blue-600 dark:text-blue-400">
                         <td className="p-3 font-medium">Less: Closing Stock</td>
                         <td className="p-3 text-right font-mono font-semibold">−{money(data.closing_stock)}</td>
