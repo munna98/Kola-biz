@@ -632,6 +632,93 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await?;
 
+    // ==================== PRICE CATEGORY MODULE ====================
+
+    // Price category master table
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS price_categories (
+            id          TEXT PRIMARY KEY,
+            name        TEXT UNIQUE NOT NULL,
+            description TEXT,
+            is_default  INTEGER DEFAULT 0,
+            is_active   INTEGER DEFAULT 1,
+            sort_order  INTEGER DEFAULT 0,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    // Per-product, per-unit, per-category price list
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS product_price_list (
+            id                TEXT PRIMARY KEY,
+            price_category_id TEXT NOT NULL,
+            product_id        TEXT NOT NULL,
+            unit_id           TEXT NOT NULL,
+            sales_rate        REAL NOT NULL DEFAULT 0,
+            is_active         INTEGER DEFAULT 1,
+            updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (price_category_id, product_id, unit_id),
+            FOREIGN KEY (price_category_id) REFERENCES price_categories(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+            FOREIGN KEY (unit_id) REFERENCES units(id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    let _ = sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_ppl_category ON product_price_list(price_category_id)",
+    )
+    .execute(pool)
+    .await;
+
+    let _ = sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_ppl_product ON product_price_list(product_id)",
+    )
+    .execute(pool)
+    .await;
+
+    // ==================== GST TAX SLABS ====================
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS gst_tax_slabs (
+            id            TEXT PRIMARY KEY,
+            name          TEXT NOT NULL,
+            is_dynamic    INTEGER DEFAULT 0,
+            fixed_rate    REAL DEFAULT 0,
+            threshold     REAL DEFAULT 0,
+            below_rate    REAL DEFAULT 0,
+            above_rate    REAL DEFAULT 0,
+            is_active     INTEGER DEFAULT 1,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    // Seed default GST slabs
+    sqlx::query(
+        "INSERT OR IGNORE INTO gst_tax_slabs (id, name, is_dynamic, fixed_rate) VALUES
+        ('gst_0',   'NIL',   0, 0),
+        ('gst_5',   'GST 5%',   0, 5),
+        ('gst_18',  'GST 18%',  0, 18),
+        ('gst_28',  'GST 28%',  0, 28)",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO gst_tax_slabs
+            (id, name, is_dynamic, fixed_rate, threshold, below_rate, above_rate, is_active)
+         VALUES
+            ('gst_apparel', 'GST 5/18 @2500', 1, 0, 2500.0, 5.0, 18.0, 1)",
+    )
+    .execute(pool)
+    .await?;
+
     // ==================== PRODUCT MODULE ====================
 
     // Product Groups
@@ -1629,123 +1716,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await;
 
-    // Payment/Receipt Allocations
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS payment_allocations (
-            id TEXT PRIMARY KEY,
-            payment_voucher_id TEXT NOT NULL,
-            invoice_voucher_id TEXT NOT NULL,
-            allocated_amount REAL NOT NULL,
-            allocation_date DATE NOT NULL DEFAULT CURRENT_DATE,
-            remarks TEXT,
-            party_id TEXT,
-            party_type TEXT,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (payment_voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
-            FOREIGN KEY (invoice_voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_payment ON payment_allocations(payment_voucher_id)").execute(pool).await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_invoice ON payment_allocations(invoice_voucher_id)").execute(pool).await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_allocations_party ON payment_allocations(party_id, party_type)").execute(pool).await?;
-
-    // Migration: Multi-currency — add forex columns to vouchers
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN currency_id TEXT REFERENCES currencies(id)")
-        .execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN exchange_rate REAL DEFAULT 1.0")
-        .execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN foreign_total REAL DEFAULT 0")
-        .execute(pool).await;
-
-    // Migration: Multi-currency — add forex columns to journal_entries
-    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN foreign_debit REAL DEFAULT 0")
-        .execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN foreign_credit REAL DEFAULT 0")
-        .execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN currency_id TEXT")
-        .execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN exchange_rate REAL DEFAULT 1.0")
-        .execute(pool).await;
-
-    // Migration: Multi-currency — add forex columns to payment_allocations
-    let _ = sqlx::query("ALTER TABLE payment_allocations ADD COLUMN exchange_rate REAL DEFAULT 1.0")
-        .execute(pool).await;
-    let _ = sqlx::query("ALTER TABLE payment_allocations ADD COLUMN forex_difference REAL DEFAULT 0")
-        .execute(pool).await;
-
-    // Seed: Forex Exchange Gain (Indirect Income) — for when receipt rate > invoice rate
-    let _ = sqlx::query(
-        "INSERT OR IGNORE INTO chart_of_accounts 
-         (id, account_code, account_name, account_type, account_group, is_system, is_active)
-         VALUES ('sys_forex_gain', 'FOREX-001', 'Forex Exchange Gain', 'Income', 'Indirect Income', 1, 1)"
-    ).execute(pool).await;
-
-    // Seed: Forex Exchange Loss (Indirect Expenses) — for when receipt rate < invoice rate
-    let _ = sqlx::query(
-        "INSERT OR IGNORE INTO chart_of_accounts 
-         (id, account_code, account_name, account_type, account_group, is_system, is_active)
-         VALUES ('sys_forex_loss', 'FOREX-002', 'Forex Exchange Loss', 'Expense', 'Indirect Expenses', 1, 1)"
-    ).execute(pool).await;
-
     // ==================== SETTINGS & CONFIG ====================
-
-    // Invoice Templates
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS invoice_templates (
-            id TEXT PRIMARY KEY,
-            template_number TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            description TEXT,
-            voucher_type TEXT NOT NULL,
-            template_format TEXT NOT NULL,
-            design_mode TEXT NOT NULL,
-            layout_config TEXT,
-            header_html TEXT,
-            body_html TEXT,
-            footer_html TEXT,
-            styles_css TEXT,
-            show_logo INTEGER DEFAULT 1,
-            show_company_address INTEGER DEFAULT 1,
-            show_party_name INTEGER DEFAULT 1,
-            show_party_address INTEGER DEFAULT 1,
-            table_row_padding INTEGER DEFAULT 8,
-            show_bank_details INTEGER DEFAULT 1,
-            show_gstin INTEGER DEFAULT 1,
-            show_item_images INTEGER DEFAULT 0,
-            show_item_hsn INTEGER DEFAULT 0,
-            show_qr_code INTEGER DEFAULT 0,
-            show_signature INTEGER DEFAULT 1,
-            show_terms INTEGER DEFAULT 1,
-            show_less_column INTEGER DEFAULT 1,
-            show_discount_column INTEGER DEFAULT 0,
-            show_balance_section INTEGER DEFAULT 1,
-            auto_print INTEGER DEFAULT 0,
-            copies INTEGER DEFAULT 1,
-            is_default INTEGER DEFAULT 0,
-            is_active INTEGER DEFAULT 1,
-            letterhead_data TEXT,
-            use_letterhead INTEGER DEFAULT 0,
-            letterhead_margin_top REAL DEFAULT 45.0,
-            letterhead_margin_bottom REAL DEFAULT 25.0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    // Migration: Add show_less_column if not exists
-    let _ =
-        sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_less_column INTEGER DEFAULT 1")
-            .execute(pool)
-            .await;
-    let _ =
-        sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_discount_column INTEGER DEFAULT 0")
-            .execute(pool)
-            .await;
 
     // Voucher Sequences
     sqlx::query(
@@ -1941,42 +1912,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
 
     // ==================== GST MODULE ====================
 
-    // GST Tax Slabs table
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS gst_tax_slabs (
-            id            TEXT PRIMARY KEY,
-            name          TEXT NOT NULL,
-            is_dynamic    INTEGER DEFAULT 0,
-            fixed_rate    REAL DEFAULT 0,
-            threshold     REAL DEFAULT 0,
-            below_rate    REAL DEFAULT 0,
-            above_rate    REAL DEFAULT 0,
-            is_active     INTEGER DEFAULT 1,
-            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-    )
-    .execute(pool)
-    .await?;
 
-    // Seed default GST slabs
-    sqlx::query(
-        "INSERT OR IGNORE INTO gst_tax_slabs (id, name, is_dynamic, fixed_rate) VALUES
-        ('gst_0',   'NIL',   0, 0),
-        ('gst_5',   'GST 5%',   0, 5),
-        ('gst_18',  'GST 18%',  0, 18),
-        ('gst_28',  'GST 28%',  0, 28)",
-    )
-    .execute(pool)
-    .await?;
-
-    sqlx::query(
-        "INSERT OR IGNORE INTO gst_tax_slabs
-            (id, name, is_dynamic, fixed_rate, threshold, below_rate, above_rate, is_active)
-         VALUES
-            ('gst_apparel', 'GST 5/18 @2500', 1, 0, 2500.0, 5.0, 18.0, 1)",
-    )
-    .execute(pool)
-    .await?;
 
     // ==================== GST MODULE MIGRATIONS ====================
 
@@ -2276,12 +2212,14 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE invoice_templates ADD COLUMN bill_note TEXT")
         .execute(pool).await;
 
-    // ==================== MULTI-CURRENCY / FOREX MIGRATIONS ====================
+    // Migration: Add price_category_id for existing databases created on earlier versions
+    // (safe to run on new DBs too — ALTER TABLE IF NOT EXISTS column is idempotent via let _ ignore)
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN price_category_id TEXT REFERENCES price_categories(id)")
+        .execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN price_category_id TEXT REFERENCES price_categories(id)")
+        .execute(pool).await;
 
-    // Migration: Add foreign-currency columns to vouchers
-    // currency_id  — FK to currencies.id; NULL means base/domestic currency
-    // exchange_rate — 1 foreign unit = N base-currency units (default 1.0 for domestic)
-    // foreign_total — total amount expressed in the foreign currency (reference only)
+    // Migration: Multi-currency — add forex columns for existing databases created on earlier versions
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN currency_id TEXT REFERENCES currencies(id)")
         .execute(pool).await;
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN exchange_rate REAL DEFAULT 1.0")
@@ -2289,9 +2227,6 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN foreign_total REAL DEFAULT 0")
         .execute(pool).await;
 
-    // Migration: Add foreign-currency reference columns to journal_entries
-    // Accounting amounts (debit/credit) always remain in base currency (INR).
-    // foreign_debit / foreign_credit store the equivalent in the transaction currency.
     let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN foreign_debit REAL DEFAULT 0")
         .execute(pool).await;
     let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN foreign_credit REAL DEFAULT 0")
@@ -2301,92 +2236,23 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE journal_entries ADD COLUMN exchange_rate REAL DEFAULT 1.0")
         .execute(pool).await;
 
-    // Migration: Add forex columns to payment_allocations
-    // exchange_rate    — receipt/payment exchange rate at time of allocation
-    // forex_difference — (receipt_rate - invoice_rate) × foreign_amount in base currency;
-    //                    positive = gain for exporter, negative = loss
     let _ = sqlx::query("ALTER TABLE payment_allocations ADD COLUMN exchange_rate REAL DEFAULT 1.0")
         .execute(pool).await;
     let _ = sqlx::query("ALTER TABLE payment_allocations ADD COLUMN forex_difference REAL DEFAULT 0")
         .execute(pool).await;
 
-    // Seed: Forex Exchange Gain — posted when receipt rate > invoice rate (exporter gets more INR)
-    // is_system = 1 so it cannot be deleted from the UI.
+    // Seed: Forex Exchange Gain & Loss system accounts if missing
     let _ = sqlx::query(
-        "INSERT OR IGNORE INTO chart_of_accounts
+        "INSERT OR IGNORE INTO chart_of_accounts 
          (id, account_code, account_name, account_type, account_group, is_system, is_active)
          VALUES ('sys_forex_gain', 'FOREX-001', 'Forex Exchange Gain', 'Income', 'Indirect Income', 1, 1)"
     ).execute(pool).await;
 
-    // Seed: Forex Exchange Loss — posted when receipt rate < invoice rate (exporter gets less INR)
     let _ = sqlx::query(
-        "INSERT OR IGNORE INTO chart_of_accounts
+        "INSERT OR IGNORE INTO chart_of_accounts 
          (id, account_code, account_name, account_type, account_group, is_system, is_active)
          VALUES ('sys_forex_loss', 'FOREX-002', 'Forex Exchange Loss', 'Expense', 'Indirect Expenses', 1, 1)"
     ).execute(pool).await;
-
-    // ==================== PRICE CATEGORY MODULE ====================
-
-    // Price category master table
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS price_categories (
-            id          TEXT PRIMARY KEY,
-            name        TEXT UNIQUE NOT NULL,
-            description TEXT,
-            is_default  INTEGER DEFAULT 0,
-            is_active   INTEGER DEFAULT 1,
-            sort_order  INTEGER DEFAULT 0,
-            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    // Per-product, per-unit, per-category price list
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS product_price_list (
-            id                TEXT PRIMARY KEY,
-            price_category_id TEXT NOT NULL,
-            product_id        TEXT NOT NULL,
-            unit_id           TEXT NOT NULL,
-            sales_rate        REAL NOT NULL DEFAULT 0,
-            is_active         INTEGER DEFAULT 1,
-            updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE (price_category_id, product_id, unit_id),
-            FOREIGN KEY (price_category_id) REFERENCES price_categories(id) ON DELETE CASCADE,
-            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
-            FOREIGN KEY (unit_id) REFERENCES units(id)
-        )",
-    )
-    .execute(pool)
-    .await?;
-
-    let _ = sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_ppl_category ON product_price_list(price_category_id)",
-    )
-    .execute(pool)
-    .await;
-
-    let _ = sqlx::query(
-        "CREATE INDEX IF NOT EXISTS idx_ppl_product ON product_price_list(product_id)",
-    )
-    .execute(pool)
-    .await;
-
-    // Migration: Add price_category_id to chart_of_accounts (customer default price category)
-    let _ = sqlx::query(
-        "ALTER TABLE chart_of_accounts ADD COLUMN price_category_id TEXT REFERENCES price_categories(id)",
-    )
-    .execute(pool)
-    .await;
-
-    // Migration: Add price_category_id to vouchers (which category was active on this invoice)
-    let _ = sqlx::query(
-        "ALTER TABLE vouchers ADD COLUMN price_category_id TEXT REFERENCES price_categories(id)",
-    )
-    .execute(pool)
-    .await;
 
     crate::seeds::seed_initial_data(pool).await?;
     crate::seeds::seed_handlebars_templates(pool).await?;
