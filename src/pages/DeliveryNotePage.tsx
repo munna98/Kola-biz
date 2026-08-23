@@ -782,7 +782,9 @@ export default function DeliveryNotePage() {
 
   const isReadOnly = noteState.mode === 'viewing';
   const currentCustomerParty = parties.find(p => p.id === noteState.form.customer_id);
-  const shouldShowPartyBalance = currentCustomerParty?.name.trim().toLowerCase() !== 'cash';
+  const currentPartyIsCashBank = currentCustomerParty?.group === 'Cash' || currentCustomerParty?.group === 'Bank Account';
+  const isCashOrBankParty = currentPartyIsCashBank || ['cash', 'bank'].includes(currentCustomerParty?.name.trim().toLowerCase() || '');
+  const shouldShowPartyBalance = currentCustomerParty ? !isCashOrBankParty : false;
 
   return (
     <div className="h-full flex flex-col bg-background">

@@ -951,8 +951,8 @@ async fn get_purchase_invoice_data(
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
             obj.insert("bill_discount".to_string(), json!(round2(bill_discount)));
 
-            // Detect cash purchase (no meaningful balance to show)
-            let is_cash = invoice.supplier_name == "Cash";
+            // Detect cash/bank purchase (no meaningful balance to show)
+            let is_cash = is_cash_or_bank_party(pool, &invoice.supplier_id, &invoice.supplier_name).await;
             obj.insert("is_cash".to_string(), json!(is_cash));
 
             // Add Balance Details
@@ -1341,8 +1341,8 @@ async fn get_sales_invoice_data(
             obj.insert("has_returns".to_string(), json!(return_total > 0.0));
             obj.insert("net_payable".to_string(), json!(round2((invoice.grand_total - return_total).max(0.0))));
 
-            // Detect cash sale (no meaningful balance to show)
-            let is_cash = invoice.customer_name == "Cash";
+            // Detect cash/bank sale (no meaningful balance to show)
+            let is_cash = is_cash_or_bank_party(pool, &invoice.customer_id, &invoice.customer_name).await;
             obj.insert("is_cash".to_string(), json!(is_cash));
 
             // Add Balance Details
@@ -1663,8 +1663,8 @@ async fn get_sales_quotation_data(
             obj.insert("has_returns".to_string(), json!(false));
             obj.insert("net_payable".to_string(), json!(round2(invoice.grand_total.max(0.0))));
 
-            // Detect cash sale (no meaningful balance to show)
-            let is_cash = invoice.customer_name == "Cash";
+            // Detect cash/bank sale (no meaningful balance to show)
+            let is_cash = is_cash_or_bank_party(pool, &invoice.customer_id, &invoice.customer_name).await;
             obj.insert("is_cash".to_string(), json!(is_cash));
 
             // Add Balance Details
@@ -1907,7 +1907,8 @@ async fn get_delivery_note_data(
             obj.insert("return_total".to_string(), json!(0.0));
             obj.insert("has_returns".to_string(), json!(false));
             obj.insert("net_payable".to_string(), json!(round2(invoice.grand_total.max(0.0))));
-            obj.insert("is_cash".to_string(), json!(invoice.customer_name == "Cash"));
+            let is_cash = is_cash_or_bank_party(pool, &invoice.customer_id, &invoice.customer_name).await;
+            obj.insert("is_cash".to_string(), json!(is_cash));
             obj.insert("old_balance".to_string(), json!(old_balance));
             obj.insert("paid_amount".to_string(), json!(0.0));
             obj.insert("balance_due".to_string(), json!(old_balance + invoice.grand_total));
@@ -2206,7 +2207,7 @@ async fn get_sales_return_data(
             obj.insert("has_returns".to_string(), json!(false));
             obj.insert("net_payable".to_string(), json!(round2(invoice.grand_total.max(0.0))));
 
-            let is_cash = invoice.customer_name == "Cash";
+            let is_cash = is_cash_or_bank_party(pool, &invoice.customer_id, &invoice.customer_name).await;
             obj.insert("is_cash".to_string(), json!(is_cash));
 
             obj.insert("old_balance".to_string(), json!(old_balance));
@@ -2319,7 +2320,7 @@ async fn get_payment_data(
         (String::new(), voucher.account_id.clone())
     };
 
-    let is_cash = party_name.trim().eq_ignore_ascii_case("cash") || party_acc_id == "sys_cash";
+    let is_cash = is_cash_or_bank_party(pool, &party_acc_id, &party_name).await;
 
     let balance_res: (f64, f64) = sqlx::query_as(
         "SELECT 
@@ -2451,7 +2452,7 @@ async fn get_receipt_data(
         (received_from.clone(), voucher.account_id.clone())
     };
 
-    let is_cash = party_name.trim().eq_ignore_ascii_case("cash") || party_acc_id == "sys_cash";
+    let is_cash = is_cash_or_bank_party(pool, &party_acc_id, &party_name).await;
 
     let balance_res: (f64, f64) = sqlx::query_as(
         "SELECT 
@@ -2900,4 +2901,27 @@ fn build_ship_to_obj(
     }
     // Fallback: ship-to = billing party
     billing_party.clone()
+}
+
+async fn is_cash_or_bank_party(pool: &SqlitePool, account_id: &str, party_name: &str) -> bool {
+    let is_match: Option<bool> = sqlx::query_scalar(
+        "SELECT EXISTS(
+            SELECT 1 FROM chart_of_accounts 
+            WHERE id = ? AND (
+                account_group IN ('Cash', 'Bank Account') 
+                OR LOWER(TRIM(account_name)) IN ('cash', 'bank')
+            )
+        )",
+    )
+    .bind(account_id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
+    if let Some(true) = is_match {
+        return true;
+    }
+
+    let name_lower = party_name.trim().to_lowercase();
+    name_lower == "cash" || name_lower == "bank" || account_id == "sys_cash"
 }

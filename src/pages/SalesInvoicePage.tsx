@@ -1534,7 +1534,8 @@ export default function SalesInvoicePage() {
   // Compute isCashBankParty dynamically so 'Manage Payments' in view mode also routes correctly.
   const currentCustomerParty = parties.find(p => p.id === salesState.form.customer_id);
   const currentPartyIsCashBank = currentCustomerParty?.group === 'Cash' || currentCustomerParty?.group === 'Bank Account';
-  const shouldShowPartyBalance = currentCustomerParty?.name.trim().toLowerCase() !== 'cash';
+  const isCashOrBankParty = currentPartyIsCashBank || ['cash', 'bank'].includes(currentCustomerParty?.name.trim().toLowerCase() || '');
+  const shouldShowPartyBalance = currentCustomerParty ? !isCashOrBankParty : false;
   const isShowingSavedInvoiceContext = !!savedInvoiceId;
   const effectiveIsCashBankParty = isShowingSavedInvoiceContext ? savedIsCashBankParty : currentPartyIsCashBank;
 

@@ -1022,7 +1022,9 @@ export default function SalesQuotationPage() {
   const isReadOnly = salesState.mode === 'viewing';
 
   const currentCustomerParty = parties.find(p => p.id === salesState.form.customer_id);
-  const shouldShowPartyBalance = currentCustomerParty?.name.trim().toLowerCase() !== 'cash';
+  const currentPartyIsCashBank = currentCustomerParty?.group === 'Cash' || currentCustomerParty?.group === 'Bank Account';
+  const isCashOrBankParty = currentPartyIsCashBank || ['cash', 'bank'].includes(currentCustomerParty?.name.trim().toLowerCase() || '');
+  const shouldShowPartyBalance = currentCustomerParty ? !isCashOrBankParty : false;
 
   const handleConvertToInvoice = () => {
     if (salesState.currentVoucherId && !salesState.hasUnsavedChanges) {
