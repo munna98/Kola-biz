@@ -368,13 +368,18 @@ export default function SalesReturnPage() {
             : salesReturnState.form.is_margin_scheme_invoice;
 
         const calculation = calculateVoucherDiscounts(items, {
-            discountRate: discountRate !== undefined ? discountRate : salesReturnState.form.discount_rate,
-            discountAmount:
+            discountRate:
                 discountRate !== undefined
-                    ? undefined
+                    ? discountRate
                     : discountAmount !== undefined
-                        ? discountAmount
-                        : salesReturnState.form.discount_amount,
+                        ? undefined
+                        : (salesReturnState.form.discount_rate || undefined),
+            discountAmount:
+                discountAmount !== undefined
+                    ? discountAmount
+                    : discountRate !== undefined
+                        ? undefined
+                        : (salesReturnState.form.discount_amount || undefined),
             taxInclusive: !!voucherSettings?.taxInclusive,
             resolveGstRate: resolveItemGstRate,
             isMarginScheme,

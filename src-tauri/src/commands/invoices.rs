@@ -2000,11 +2000,11 @@ pub async fn create_sales_invoice(
         let sm_id = Uuid::now_v7().to_string();
         let qty = item.base_quantity;
         let rate_per_base = if qty > 0.0 {
-            item.amount / qty
+            item.net_amount / qty
         } else {
             item.rate
         };
-        let amount = qty * rate_per_base;
+        let amount = item.net_amount;
         let product_id = item.product_id.as_deref().unwrap_or("");
         let cost_rate = get_product_purchase_cost_rate(&mut tx, product_id).await?;
         let cost_amount = qty * cost_rate;
@@ -2569,11 +2569,11 @@ pub async fn update_sales_invoice(
         let sm_id = Uuid::now_v7().to_string();
         let qty = item.base_quantity;
         let rate_per_base = if qty > 0.0 {
-            item.amount / qty
+            item.net_amount / qty
         } else {
             item.rate
         };
-        let amount = qty * rate_per_base;
+        let amount = item.net_amount;
         let product_id = item.product_id.as_deref().unwrap_or("");
         let cost_rate = get_product_purchase_cost_rate(&mut tx, product_id).await?;
         let cost_amount = qty * cost_rate;

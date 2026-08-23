@@ -594,13 +594,18 @@ export default function PurchaseInvoicePage() {
     };
 
     const calculation = calculateVoucherDiscounts(items, {
-      discountRate: discountRate !== undefined ? discountRate : purchaseState.form.discount_rate,
-      discountAmount:
+      discountRate:
         discountRate !== undefined
-          ? undefined
+          ? discountRate
           : discountAmount !== undefined
-            ? discountAmount
-            : purchaseState.form.discount_amount,
+            ? undefined
+            : (purchaseState.form.discount_rate || undefined),
+      discountAmount:
+        discountAmount !== undefined
+          ? discountAmount
+          : discountRate !== undefined
+            ? undefined
+            : (purchaseState.form.discount_amount || undefined),
       taxInclusive: !!voucherSettings?.taxInclusive,
       resolveGstRate: resolveItemGstRate,
     });

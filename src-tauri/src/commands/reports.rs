@@ -2291,6 +2291,7 @@ pub async fn get_product_profit_report(
     let pool = registry.active_pool().await?;
     
     // 1. Build and execute main profit query using product cost (p.cost) when set/updated, falling back to sm.cost_amount
+    // Revenue uses vi.net_amount (net after item-level and bill-level discounts)
     let mut query_str = String::from("
         SELECT
             p.id as product_id,
@@ -2306,11 +2307,11 @@ pub async fn get_product_profit_report(
                     ELSE 0
                 END
             ), 0) AS REAL) as qty_sold,
-            -- Total revenue (sales amount minus return amount)
+            -- Total net revenue (after item-level and bill-level discounts)
             CAST(COALESCE(SUM(
                 CASE
-                    WHEN sm.movement_type = 'OUT' THEN sm.amount
-                    WHEN sm.movement_type = 'IN' THEN -sm.amount
+                    WHEN sm.movement_type = 'OUT' THEN COALESCE(vi.net_amount, sm.amount)
+                    WHEN sm.movement_type = 'IN' THEN -COALESCE(vi.net_amount, sm.amount)
                     ELSE 0
                 END
             ), 0) AS REAL) as total_revenue,
@@ -2327,6 +2328,7 @@ pub async fn get_product_profit_report(
         JOIN products p ON sm.product_id = p.id
         LEFT JOIN product_groups pg ON p.group_id = pg.id
         JOIN units u ON p.unit_id = u.id
+        LEFT JOIN voucher_items vi ON sm.voucher_id = vi.voucher_id AND sm.product_id = vi.product_id AND vi.item_type != 'service'
         WHERE (
             (v.voucher_type = 'sales_invoice' AND sm.movement_type = 'OUT')
             OR (v.voucher_type = 'sales_return' AND sm.movement_type = 'IN')
@@ -2405,14 +2407,15 @@ pub async fn get_product_profit_invoices(
             ) as party_name,
             CAST(CASE WHEN sm.movement_type = 'OUT' THEN sm.quantity ELSE -sm.quantity END AS REAL) as qty_sold,
             u.symbol as unit_symbol,
-            CAST(sm.rate AS REAL) as rate,
-            CAST(CASE WHEN sm.movement_type = 'OUT' THEN sm.amount ELSE -sm.amount END AS REAL) as total_revenue,
+            CAST(COALESCE(vi.rate, sm.rate) AS REAL) as rate,
+            CAST(CASE WHEN sm.movement_type = 'OUT' THEN COALESCE(vi.net_amount, sm.amount) ELSE -COALESCE(vi.net_amount, sm.amount) END AS REAL) as total_revenue,
             CAST(COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0) AS REAL) as cost_rate,
             CAST(CASE WHEN sm.movement_type = 'OUT' THEN sm.quantity * COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0) ELSE -sm.quantity * COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0) END AS REAL) as total_cost
         FROM stock_movements sm
         JOIN vouchers v ON sm.voucher_id = v.id
         JOIN products p ON sm.product_id = p.id
         JOIN units u ON p.unit_id = u.id
+        LEFT JOIN voucher_items vi ON sm.voucher_id = vi.voucher_id AND sm.product_id = vi.product_id AND vi.item_type != 'service'
         WHERE sm.product_id = ?
           AND (
             (v.voucher_type = 'sales_invoice' AND sm.movement_type = 'OUT')

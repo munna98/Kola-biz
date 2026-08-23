@@ -359,11 +359,18 @@ export default function DeliveryNotePage() {
     };
 
     const calculation = calculateVoucherDiscounts(items, {
-      discountRate: discountRate !== undefined ? discountRate : noteState.form.discount_rate,
+      discountRate:
+        discountRate !== undefined
+          ? discountRate
+          : discountAmount !== undefined
+            ? undefined
+            : (noteState.form.discount_rate || undefined),
       discountAmount:
-        discountRate !== undefined ? undefined
-          : discountAmount !== undefined ? discountAmount
-          : noteState.form.discount_amount,
+        discountAmount !== undefined
+          ? discountAmount
+          : discountRate !== undefined
+            ? undefined
+            : (noteState.form.discount_amount || undefined),
       taxInclusive: isTaxInclusive,
       resolveGstRate: resolveItemGstRate,
     });

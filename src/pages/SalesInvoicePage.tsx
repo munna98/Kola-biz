@@ -155,9 +155,8 @@ export default function SalesInvoicePage() {
   const netPayableTotal = Math.max(0, salesState.totals.grandTotal - linkedReturnTotal);
 
   // ---- Invoice Profit Calculation ----
-  // Revenue base: use subtotal (taxable base, always tax-exclusive) so that
-  // profit is compared on the same tax-exclusive footing as purchase cost.
-  // Using grandTotal would inflate profit by the GST amount on the sale.
+  // Revenue base: use subtotal minus bill-level discount (taxable base after item & bill discounts, excl. tax)
+  // so that profit is compared on the same tax-exclusive footing as purchase cost.
   const profitStats = useMemo(() => {
     if (!voucherSettings?.showInvoiceProfit) return { totalCost: 0, grossProfit: 0, profitPercent: 0 };
     let totalCost = 0;
@@ -173,17 +172,18 @@ export default function SalesInvoicePage() {
           : (product.purchase_rate ?? 0);
       totalCost += finalQty * unitCost;
     });
-    // subtotal = taxable base after item discounts and invoice discounts (excl. tax)
-    // When forex is active, subtotal is in foreign currency (e.g. USD). Convert to base currency (INR) for profit calculation.
+    // Net Subtotal = subtotal after item discounts minus bill-level discount (excl. tax)
+    const netSubtotal = Math.max(0, salesState.totals.subtotal - (salesState.totals.discount || 0));
+    // When forex is active, netSubtotal is in foreign currency (e.g. USD). Convert to base currency (INR) for profit calculation.
     const revenueBase = (isExportBusiness && salesState.currency_id)
-      ? salesState.totals.subtotal * salesState.exchange_rate
-      : salesState.totals.subtotal;
+      ? netSubtotal * salesState.exchange_rate
+      : netSubtotal;
     const grossProfit = revenueBase - totalCost;
     const profitPercent = revenueBase > 0
       ? (grossProfit / revenueBase) * 100
       : 0;
     return { totalCost, grossProfit, profitPercent };
-  }, [voucherSettings?.showInvoiceProfit, voucherSettings?.profitCostSource, salesState.items, salesState.totals.subtotal, salesState.currency_id, salesState.exchange_rate, isExportBusiness, products]);
+  }, [voucherSettings?.showInvoiceProfit, voucherSettings?.profitCostSource, salesState.items, salesState.totals.subtotal, salesState.totals.discount, salesState.currency_id, salesState.exchange_rate, isExportBusiness, products]);
 
   // Create Customer Shortcut State
   const [showCreateCustomer, setShowCreateCustomer] = useState(false);
@@ -716,13 +716,18 @@ export default function SalesInvoicePage() {
       : salesState.form.is_margin_scheme_invoice;
 
     const calculation = calculateVoucherDiscounts(items, {
-      discountRate: discountRate !== undefined ? discountRate : salesState.form.discount_rate,
-      discountAmount:
+      discountRate:
         discountRate !== undefined
-          ? undefined
+          ? discountRate
           : discountAmount !== undefined
-            ? discountAmount
-            : salesState.form.discount_amount,
+            ? undefined
+            : (salesState.form.discount_rate || undefined),
+      discountAmount:
+        discountAmount !== undefined
+          ? discountAmount
+          : discountRate !== undefined
+            ? undefined
+            : (salesState.form.discount_amount || undefined),
       taxInclusive: isTaxInclusive,
       resolveGstRate: resolveItemGstRate,
       isMarginScheme,

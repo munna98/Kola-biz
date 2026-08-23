@@ -321,13 +321,18 @@ export default function PurchaseReturnPage() {
         };
 
         const calculation = calculateVoucherDiscounts(items, {
-            discountRate: discountRate !== undefined ? discountRate : purchaseReturnState.form.discount_rate,
-            discountAmount:
+            discountRate:
                 discountRate !== undefined
-                    ? undefined
+                    ? discountRate
                     : discountAmount !== undefined
-                        ? discountAmount
-                        : purchaseReturnState.form.discount_amount,
+                        ? undefined
+                        : (purchaseReturnState.form.discount_rate || undefined),
+            discountAmount:
+                discountAmount !== undefined
+                    ? discountAmount
+                    : discountRate !== undefined
+                        ? undefined
+                        : (purchaseReturnState.form.discount_amount || undefined),
             taxInclusive: !!voucherSettings?.taxInclusive,
             resolveGstRate: resolveItemGstRate,
         });

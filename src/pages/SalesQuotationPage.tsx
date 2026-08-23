@@ -427,13 +427,18 @@ export default function SalesQuotationPage() {
     };
 
     const calculation = calculateVoucherDiscounts(items, {
-      discountRate: discountRate !== undefined ? discountRate : salesState.form.discount_rate,
-      discountAmount:
+      discountRate:
         discountRate !== undefined
-          ? undefined
+          ? discountRate
           : discountAmount !== undefined
-            ? discountAmount
-            : salesState.form.discount_amount,
+            ? undefined
+            : (salesState.form.discount_rate || undefined),
+      discountAmount:
+        discountAmount !== undefined
+          ? discountAmount
+          : discountRate !== undefined
+            ? undefined
+            : (salesState.form.discount_amount || undefined),
       taxInclusive: isTaxInclusive,
       resolveGstRate: resolveItemGstRate,
     });
