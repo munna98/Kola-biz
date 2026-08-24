@@ -89,44 +89,33 @@ pub async fn get_ledger_report(
 ) -> Result<LedgerReport, String> {
     let pool = registry.active_pool().await?;
 
-    // 1. Fetch initial opening balance and account code
-    let account = sqlx::query_as::<_, (f64, String, String)>(
-        "SELECT CAST(COALESCE(opening_balance, 0) AS REAL), COALESCE(opening_balance_type, 'Dr'), account_code FROM chart_of_accounts WHERE id = ?"
+    // 1. Determine if this is the OB Adjustment account (3004)
+    let account_code: String = sqlx::query_scalar(
+        "SELECT account_code FROM chart_of_accounts WHERE id = ?"
     )
     .bind(&account_id)
     .fetch_one(&pool)
     .await
     .map_err(|e| format!("Failed to fetch account {}: {}", account_id, e))?;
 
-    let is_ob_adjustment_account = account.2 == "3004";
+    let is_ob_adjustment_account = account_code == "3004";
 
-    let coa_opening_balance = if is_ob_adjustment_account {
-        0.0
-    } else if account.1 == "Dr" {
-        account.0
-    } else {
-        -account.0
-    };
+    // For all regular accounts (customers, suppliers, etc.) opening balances are entered
+    // as opening_balance vouchers — the coa.opening_balance field is NOT used.
+    // We always start from 0 and include ALL voucher types (including opening_balance)
+    // in the running sum, which matches get_account_balance_info behaviour.
+    // The 3004 account is the balancing side of OB vouchers so it is unchanged.
+    let mut running_balance = 0.0_f64;
 
-    let mut running_balance = coa_opening_balance;
-
-    // 2. Sum prior transactions (before from_date), EXCLUDING opening_balance vouchers for standard accounts
+    // 2. Sum ALL prior transactions (before from_date), including opening_balance vouchers
     if let Some(ref from) = from_date {
-        let ob_before_filter = if is_ob_adjustment_account {
-            ""
-        } else {
-            "AND v.voucher_type != 'opening_balance'"
-        };
-
-        let before_query = format!(
+        let before_query =
             "SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL), CAST(COALESCE(SUM(je.credit), 0) AS REAL)
              FROM journal_entries je
              JOIN vouchers v ON je.voucher_id = v.id
-             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL {}",
-            ob_before_filter
-        );
+             WHERE je.account_id = ? AND v.voucher_date < ? AND v.deleted_at IS NULL";
 
-        let balance_before: Option<(f64, f64)> = sqlx::query_as(&before_query)
+        let balance_before: Option<(f64, f64)> = sqlx::query_as(before_query)
             .bind(&account_id)
             .bind(from)
             .fetch_optional(&pool)
@@ -149,11 +138,10 @@ pub async fn get_ledger_report(
         format!("AND v.voucher_date <= '{}'", to_date)
     };
 
-    let ob_voucher_filter = if is_ob_adjustment_account {
-        ""
-    } else {
-        "AND v.voucher_type != 'opening_balance'"
-    };
+    // No longer excluding opening_balance vouchers from the entries list.
+    // They are shown as line items in the ledger (dated on the OB voucher date)
+    // and are included in the running balance — consistent with get_account_balance_info.
+    let ob_voucher_filter = "";
 
     // --- Foreign currency opening balance (sum of foreign amounts before from_date) ---
     let (foreign_opening_balance, foreign_opening_code, foreign_opening_symbol) =

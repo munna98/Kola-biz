@@ -237,7 +237,7 @@ export default function PaymentManagementDialog({
                 const newLine: PaymentLine = {
                     id: `line-${Date.now()}-${Math.random()}`,
                     account_id: cashAccount.id,
-                    amount: invoiceAmount > 0 ? invoiceAmount : 0,
+                    amount: 0, // Leave empty — user must type amount manually
                     method: 'cash',
                 };
                 setPaymentLines([newLine]);
@@ -245,7 +245,7 @@ export default function PaymentManagementDialog({
                 const newLine: PaymentLine = {
                     id: `line-${Date.now()}-${Math.random()}`,
                     account_id: cashAccount.id,
-                    amount: remaining,
+                    amount: 0, // Leave empty — user must type amount manually
                     method: 'cash',
                 };
                 setPaymentLines(prev => [...prev, newLine]);

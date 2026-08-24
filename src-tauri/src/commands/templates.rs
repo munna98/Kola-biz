@@ -1139,7 +1139,14 @@ async fn get_sales_invoice_data(
                 obj.insert("product_name".to_string(), json!(resolved_name));
                 obj.insert("name".to_string(), json!(resolved_name));
                 obj.insert("item_name".to_string(), json!(resolved_name));
-                obj.insert("description".to_string(), json!(resolved_name));
+                // Only set description if it's different from the product name (avoid duplicate display)
+                let item_desc = item.description.as_deref().unwrap_or("").trim();
+                let desc_value = if !item_desc.is_empty() && item_desc != resolved_name {
+                    item_desc.to_string()
+                } else {
+                    String::new()
+                };
+                obj.insert("description".to_string(), json!(desc_value));
 
                 // item.amount = gross (original, before invoice discount)
                 // item.net_amount = net after invoice discount (taxable base for tax calc)
