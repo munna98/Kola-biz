@@ -417,6 +417,10 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     const money = moneyFormatter || defaultMoney;
     // Ref to the first product combobox
     const firstProductRef = useRef<HTMLButtonElement>(null);
+    // A Combobox closes in a portal and restores focus asynchronously. Keep the
+    // requested target here until its close lifecycle has completed instead of
+    // relying on a timing-dependent timeout.
+    const postSelectionFocusRef = useRef<number | null>(null);
 
     const [comboboxDisplaySettings, setComboboxDisplaySettings] = React.useState<ProductComboboxDisplaySettings>(DEFAULT_COMBOBOX_DISPLAY_SETTINGS);
     const [columnWidths, setColumnWidths] = React.useState<ProductComboboxColumnWidths>(DEFAULT_COMBOBOX_COLUMN_WIDTHS);
@@ -827,21 +831,24 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                                     }
                                                 }, 100);
                                             } else {
+                                                postSelectionFocusRef.current = idx;
                                                 onUpdateItem(idx, 'product_id', prodId);
-                                                setTimeout(() => {
-                                                    document.body.removeAttribute('data-voucher-selecting');
-                                                    focusFirstEditableAfterProduct(idx);
-                                                }, 100);
                                             }
                                         } else if (strVal.startsWith('s:')) {
                                             const svcId = strVal.slice(2);
                                             document.body.setAttribute('data-voucher-selecting', 'true');
+                                            postSelectionFocusRef.current = idx;
                                             onUpdateItem(idx, 'service_id', svcId);
-                                            setTimeout(() => {
-                                                document.body.removeAttribute('data-voucher-selecting');
-                                                focusFirstEditableAfterProduct(idx);
-                                            }, 100);
                                         }
+                                    }}
+                                    onAfterSelect={() => {
+                                        if (postSelectionFocusRef.current !== idx) return;
+
+                                        postSelectionFocusRef.current = null;
+                                        requestAnimationFrame(() => {
+                                            document.body.removeAttribute('data-voucher-selecting');
+                                            focusFirstEditableAfterProduct(idx);
+                                        });
                                     }}
                                     placeholder="Select product"
                                     searchPlaceholder="Search products..."
