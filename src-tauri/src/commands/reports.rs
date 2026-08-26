@@ -706,8 +706,14 @@ pub async fn get_profit_loss(
         purchases
     };
 
+    // Calculate COGS universally:
+    // 1. Perpetual Inventory: Sales invoices post GL debits to COGS account (5002).
+    //    cogs_from_gl is the COGS recorded from sales. Any GL direct expenses (in 5001/5003/6010) add to it.
+    //    Total stock purchases (which go to Inventory Asset) are NOT added on top.
+    // 2. Periodic Inventory / Manual GL: No perpetual COGS GL debits (cogs_from_gl == 0).
+    //    COGS = Opening Stock + Total Purchases - Closing Stock.
     let cogs = if cogs_from_gl > 0.0 {
-        round2(cogs_from_gl + total_purchases)
+        round2(cogs_from_gl + purchases)
     } else {
         round2((opening_stock + total_purchases - closing_stock).max(0.0))
     };
