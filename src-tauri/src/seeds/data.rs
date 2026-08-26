@@ -120,6 +120,22 @@ pub async fn seed_initial_data(pool: &SqlitePool) -> Result<(), Box<dyn std::err
          WHERE name = 'Job Work Expenses' AND (parent_group_id IS NULL OR parent_group_id = '')"
     ).execute(pool).await;
 
+    // Emp Benefits & Salaries → Indirect Expenses
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO account_groups (id, name, account_type, is_system, base_type, parent_group_id)
+         VALUES (?, 'Emp Benefits & Salaries', 'Expense', 1, 'Expense', (SELECT id FROM account_groups WHERE name = 'Indirect Expenses'))"
+    )
+    .bind(Uuid::now_v7().to_string())
+    .execute(pool)
+    .await;
+
+    let _ = sqlx::query(
+        "UPDATE account_groups
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Indirect Expenses'),
+             base_type = 'Expense'
+         WHERE name = 'Emp Benefits & Salaries' AND (parent_group_id IS NULL OR parent_group_id = '')"
+    ).execute(pool).await;
+
     // Set base_type on the new primary groups (idempotent - safe to run multiple times)
     let _ = sqlx::query(
         "UPDATE account_groups SET base_type = account_type
@@ -179,6 +195,13 @@ pub async fn seed_initial_data(pool: &SqlitePool) -> Result<(), Box<dyn std::err
             "Liability",
             "Current Liabilities",
             "Expenses incurred but not paid",
+        ),
+        (
+            "2004",
+            "Salary Payables",
+            "Liability",
+            "Current Liabilities",
+            "Accrued and unpaid employee salaries",
         ),
         ("3001", "Owner's Capital", "Equity", "Capital Account", "Owner capital"),
         (
@@ -250,7 +273,7 @@ pub async fn seed_initial_data(pool: &SqlitePool) -> Result<(), Box<dyn std::err
             "5005",
             "Salary Expenses",
             "Expense",
-            "Operating Expenses",
+            "Emp Benefits & Salaries",
             "Employee salaries",
         ),
         (

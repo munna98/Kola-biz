@@ -964,6 +964,54 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
          WHERE name = 'Job Work Expenses' AND (parent_group_id IS NULL OR parent_group_id = '')"
     ).execute(pool).await;
 
+    // Migration: Seed / ensure 'Emp Benefits & Salaries' subgroup under 'Indirect Expenses'
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO account_groups (id, name, account_type, parent_group_id, is_system, base_type)
+         VALUES (
+             hex(randomblob(16)),
+             'Emp Benefits & Salaries',
+             'Expense',
+             (SELECT id FROM account_groups WHERE name = 'Indirect Expenses'),
+             1,
+             'Expense'
+         )"
+    ).execute(pool).await;
+
+    let _ = sqlx::query(
+        "UPDATE account_groups
+         SET parent_group_id = (SELECT id FROM account_groups WHERE name = 'Indirect Expenses'),
+             base_type = 'Expense'
+         WHERE name = 'Emp Benefits & Salaries' AND (parent_group_id IS NULL OR parent_group_id = '')"
+    ).execute(pool).await;
+
+    // Migration: Re-assign default Salary Expenses ledger (5005) to 'Emp Benefits & Salaries'
+    let _ = sqlx::query(
+        "UPDATE chart_of_accounts
+         SET account_group = 'Emp Benefits & Salaries'
+         WHERE account_code = '5005'"
+    ).execute(pool).await;
+
+    // Migration: Migrate existing employee ledgers to group 'Emp Benefits & Salaries' and account_type 'Expense'
+    let _ = sqlx::query(
+        "UPDATE chart_of_accounts
+         SET account_group = 'Emp Benefits & Salaries', account_type = 'Expense'
+         WHERE party_type = 'Employee' OR id IN (SELECT account_id FROM employees WHERE account_id IS NOT NULL)"
+    ).execute(pool).await;
+
+    // Migration: Seed / ensure 'Salary Payables' ledger (2004) under 'Current Liabilities'
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, is_system)
+         VALUES (
+             hex(randomblob(16)),
+             '2004',
+             'Salary Payables',
+             'Liability',
+             'Current Liabilities',
+             'Accrued and unpaid employee salaries',
+             1
+         )"
+    ).execute(pool).await;
+
     // Migration: Remove legacy 6011 Job Work Charges ledger if unused
     let _ = sqlx::query(
         "DELETE FROM chart_of_accounts

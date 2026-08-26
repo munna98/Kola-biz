@@ -90,9 +90,9 @@ pub async fn create_employee(
         generate_employee_code(&pool).await?
     };
 
-    // 1. Create Ledger Account (in Current Liabilities -> Employees)
-    let account_group = "Current Liabilities";
-    let account_type = "Liability";
+    // 1. Create Ledger Account (in Emp Benefits & Salaries -> Indirect Expenses)
+    let account_group = "Emp Benefits & Salaries";
+    let account_type = "Expense";
 
     // Create Ledger
     sqlx::query("INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, is_system, party_id, party_type) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'Employee')")
