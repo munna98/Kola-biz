@@ -175,6 +175,14 @@ export default function ProductDialog({
   const [dialogFields, setDialogFields] = useState<ProductDialogFields>(DEFAULT_DIALOG_FIELDS);
   const [marginSchemeEnabled, setMarginSchemeEnabled] = useState(false);
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
+  const [fetchedBrands, setFetchedBrands] = useState<ProductBrand[]>([]);
+  const [fetchedGroups, setFetchedGroups] = useState<ProductGroup[]>([]);
+  const [fetchedUnits, setFetchedUnits] = useState<Unit[]>([]);
+
+  const availableBrands = (brands && brands.length > 0) ? brands : fetchedBrands;
+  const availableGroups = (groups && groups.length > 0) ? groups : fetchedGroups;
+  const availableUnits = (units && units.length > 0) ? units : fetchedUnits;
+
   const unitLocked = Boolean(product?.has_transactions);
 
   const orderedFields = ['code', 'name', 'group', 'brand', 'unit', 'part_number', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp', 'cost', 'barcode'];
@@ -233,7 +241,18 @@ export default function ProductDialog({
   useEffect(() => {
     if (!open) return;
 
-    const initialUnitId = product?.unit_id || getDefaultUnitId(units);
+    if (!brands || brands.length === 0) {
+      api.productBrands.list().then(setFetchedBrands).catch(console.error);
+    }
+    if (!groups || groups.length === 0) {
+      api.productGroups.list().then(setFetchedGroups).catch(console.error);
+    }
+    if (!units || units.length === 0) {
+      api.units.list().then(setFetchedUnits).catch(console.error);
+    }
+
+    const currentUnits = (units && units.length > 0) ? units : fetchedUnits;
+    const initialUnitId = product?.unit_id || getDefaultUnitId(currentUnits);
     const initialPurchaseRate = product?.purchase_rate || 0;
     const initialSalesRate = product?.sales_rate || 0;
     setShowUnitSection(false);
@@ -571,7 +590,7 @@ export default function ProductDialog({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">No Group</SelectItem>
-                      {groups.map(g => (
+                      {availableGroups.map(g => (
                         <SelectItem key={g.id} value={g.id.toString()}>
                           {g.name}
                         </SelectItem>
@@ -599,7 +618,7 @@ export default function ProductDialog({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">No Brand</SelectItem>
-                      {brands.map(b => (
+                      {availableBrands.map(b => (
                         <SelectItem key={b.id} value={b.id.toString()}>
                           {b.name}
                         </SelectItem>
@@ -656,7 +675,7 @@ export default function ProductDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {units.map(u => (
+                      {availableUnits.map(u => (
                         <SelectItem key={u.id} value={u.id}>
                           {u.symbol}
                         </SelectItem>
@@ -720,7 +739,7 @@ export default function ProductDialog({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {units.map(u => (
+                      {availableUnits.map(u => (
                         <SelectItem key={u.id} value={u.id}>
                           {u.symbol}
                         </SelectItem>

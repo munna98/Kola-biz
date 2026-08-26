@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import {
     AlertDialog,
     AlertDialogContent,
@@ -50,12 +51,16 @@ export default function ExitConfirmDialog() {
     const handleConfirmExit = async () => {
         setIsExiting(true);
         try {
-            const { getCurrentWindow } = await import('@tauri-apps/api/window');
-            const appWindow = getCurrentWindow();
-            await appWindow.destroy();
+            await invoke('exit_app');
         } catch (err) {
-            console.error('Tauri destroy window failed, falling back to window.close():', err);
-            window.close();
+            console.error('Failed to invoke exit_app, falling back to window destroy:', err);
+            try {
+                const { getCurrentWindow } = await import('@tauri-apps/api/window');
+                const appWindow = getCurrentWindow();
+                await appWindow.destroy();
+            } catch (e) {
+                window.close();
+            }
         }
     };
 
@@ -90,10 +95,10 @@ export default function ExitConfirmDialog() {
                             e.preventDefault();
                             handleConfirmExit();
                         }}
-                        className="w-full sm:w-auto bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors gap-2 cursor-pointer"
+                        className="w-full sm:w-auto bg-destructive text-white hover:bg-destructive/90 transition-colors gap-2 cursor-pointer font-medium"
                     >
-                        <IconPower size={16} />
-                        <span>{isExiting ? 'Exiting...' : 'Yes, Exit'}</span>
+                        <IconPower size={16} className="text-white" />
+                        <span className="text-white">{isExiting ? 'Exiting...' : 'Yes, Exit'}</span>
                     </AlertDialogAction>
                 </AlertDialogFooter>
             </AlertDialogContent>

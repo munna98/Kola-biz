@@ -20,6 +20,11 @@ fn get_app_version() -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+#[tauri::command]
+fn exit_app(app_handle: tauri::AppHandle) {
+    app_handle.exit(0);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -304,6 +309,7 @@ pub fn run() {
             check_session,
             // App Info
             get_app_version,
+            exit_app,
             // License
             get_license_info,
             activate_license,
