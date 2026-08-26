@@ -585,6 +585,10 @@ export default function ProfitLossPage() {
                                 <td className="p-2.5 font-medium">Opening Stock</td>
                                 <td className="p-2.5 text-right font-mono font-semibold">{money(data.opening_stock)}</td>
                               </tr>
+                              <tr className="border-b hover:bg-muted/20">
+                                <td className="p-2.5 font-medium">Purchase Accounts</td>
+                                <td className="p-2.5 text-right font-mono font-semibold">{money(data.purchases)}</td>
+                              </tr>
                               {directExpenseTree.map(root => (
                                 <PLTRow
                                   key={`trading-exp-${root.id}`}
@@ -595,12 +599,6 @@ export default function ProfitLossPage() {
                                   money={money}
                                 />
                               ))}
-                              {directExpenseTree.length === 0 && (
-                                <tr className="border-b hover:bg-muted/20">
-                                  <td className="p-2.5 font-medium">Purchase Accounts</td>
-                                  <td className="p-2.5 text-right font-mono font-semibold">{money(data.purchases)}</td>
-                                </tr>
-                              )}
                               {data.gross_profit >= 0 && (
                                 <tr className="border-b font-semibold hover:bg-muted/20">
                                   <td className="p-2.5">Gross Profit c/o</td>

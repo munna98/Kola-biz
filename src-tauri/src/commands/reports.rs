@@ -600,21 +600,39 @@ pub async fn get_profit_loss(
         .await
         .map_err(|e| e.to_string())?;
 
-    let purchases_query = "
-        SELECT CAST(COALESCE(SUM(sm.cost_amount), 0.0) AS REAL)
-        FROM stock_movements sm
-        JOIN vouchers v ON sm.voucher_id = v.id
-        WHERE v.voucher_type = 'purchase_invoice'
-          AND sm.movement_type = 'IN'
-          AND v.voucher_date >= ? AND v.voucher_date <= ?
-          AND v.deleted_at IS NULL
-    ";
-    let period_purchases: f64 = sqlx::query_scalar(purchases_query)
-        .bind(&from_date)
-        .bind(&to_date)
-        .fetch_one(&pool)
-        .await
-        .unwrap_or(0.0);
+    let period_purchases_sm: f64 = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(sm.cost_amount), 0.0) AS REAL)
+         FROM stock_movements sm
+         JOIN vouchers v ON sm.voucher_id = v.id
+         WHERE v.voucher_type IN ('purchase', 'purchase_invoice')
+           AND sm.movement_type = 'IN'
+           AND v.voucher_date >= ? AND v.voucher_date <= ?
+           AND v.deleted_at IS NULL"
+    )
+    .bind(&from_date)
+    .bind(&to_date)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0.0);
+
+    let period_purchases_vouchers: f64 = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(v.total_amount), 0.0) AS REAL)
+         FROM vouchers v
+         WHERE v.voucher_type IN ('purchase', 'purchase_invoice')
+           AND v.voucher_date >= ? AND v.voucher_date <= ?
+           AND v.deleted_at IS NULL"
+    )
+    .bind(&from_date)
+    .bind(&to_date)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0.0);
+
+    let period_purchases = if period_purchases_sm > 0.0 {
+        period_purchases_sm
+    } else {
+        period_purchases_vouchers
+    };
 
     let mut income = Vec::new();
     let mut expenses = Vec::new();
@@ -640,15 +658,6 @@ pub async fn get_profit_loss(
         } else if code == "5002" {
             let amount = dr - cr;
             cogs_from_gl += amount;
-            if amount.abs() >= 0.01 {
-                direct_expenses.push(PLAccount {
-                    id,
-                    account_name: name,
-                    account_code: code,
-                    account_group: group_name,
-                    amount: round2(amount),
-                });
-            }
         } else if code == "5001" {
             let amount = dr - cr;
             purchases += amount;
