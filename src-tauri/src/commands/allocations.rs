@@ -329,8 +329,8 @@ pub async fn create_quick_payment(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details
-    let invoice: (String, String, String, String, String) = sqlx::query_as(
-        "SELECT v.party_id, v.party_type, v.voucher_no, v.voucher_type, coa.account_name
+    let invoice: (String, String, String, String, String, Option<String>) = sqlx::query_as(
+        "SELECT v.party_id, v.party_type, v.voucher_no, v.voucher_type, coa.account_name, v.narration
              FROM vouchers v
              LEFT JOIN chart_of_accounts coa ON coa.id = v.party_id
              WHERE v.id = ?",
@@ -339,6 +339,12 @@ pub async fn create_quick_payment(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
+
+    // Determine payment narration: Use source voucher narration if present, otherwise default to payment remarks
+    let final_narration = match &invoice.5 {
+        Some(n) if !n.trim().is_empty() => n.trim().to_string(),
+        _ => payment.remarks.unwrap_or_else(|| format!("Payment for Invoice {}", invoice.2)),
+    };
 
     // Generate voucher number
     let voucher_type = if invoice.3 == "purchase_invoice" {
@@ -371,7 +377,7 @@ pub async fn create_quick_payment(
     .bind(payment.amount)
     .bind(payment.amount)
     .bind(&payment.payment_method)
-    .bind(&payment.remarks)
+    .bind(&final_narration)
     .bind(&payment.invoice_id)
     .bind(&payment.payment_account_id)
     .execute(&mut *tx)
@@ -409,12 +415,13 @@ pub async fn create_quick_payment(
         // Credit: Payment account
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, ?, 'Payment made')",
+             VALUES (?, ?, ?, 0, ?, ?)",
         )
         .bind(&je_id_1)
         .bind(&payment_id)
         .bind(&payment.payment_account_id)
         .bind(payment.amount)
+        .bind(&final_narration)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -422,12 +429,13 @@ pub async fn create_quick_payment(
         // Debit: Party account
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, 'Payment to party')",
+             VALUES (?, ?, ?, ?, 0, ?)",
         )
         .bind(&je_id_2)
         .bind(&payment_id)
         .bind(&invoice.0)
         .bind(payment.amount)
+        .bind(&final_narration)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -435,12 +443,13 @@ pub async fn create_quick_payment(
         // Debit: Payment account
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, 'Receipt received')",
+             VALUES (?, ?, ?, ?, 0, ?)",
         )
         .bind(&je_id_1)
         .bind(&payment_id)
         .bind(&payment.payment_account_id)
         .bind(payment.amount)
+        .bind(&final_narration)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -448,12 +457,13 @@ pub async fn create_quick_payment(
         // Credit: Party account
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, ?, 'Receipt from party')",
+             VALUES (?, ?, ?, 0, ?, ?)",
         )
         .bind(&je_id_2)
         .bind(&payment_id)
         .bind(&invoice.0)
         .bind(payment.amount)
+        .bind(&final_narration)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -471,7 +481,7 @@ pub async fn create_quick_payment(
     .bind(&payment.invoice_id)
     .bind(payment.amount)
     .bind(&payment.payment_date)
-    .bind(&payment.remarks)
+    .bind(&final_narration)
     .bind(&invoice.0)
     .bind(&invoice.1)
     .execute(&mut *tx)
@@ -540,8 +550,8 @@ pub async fn update_quick_payment(
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
     // Get invoice details for party info
-    let invoice: (String, String, String, String, String) = sqlx::query_as(
-        "SELECT v.party_id, v.party_type, v.voucher_no, v.voucher_type, coa.account_name
+    let invoice: (String, String, String, String, String, Option<String>) = sqlx::query_as(
+        "SELECT v.party_id, v.party_type, v.voucher_no, v.voucher_type, coa.account_name, v.narration
              FROM vouchers v
              LEFT JOIN chart_of_accounts coa ON coa.id = v.party_id
              WHERE v.id = ?",
@@ -550,6 +560,12 @@ pub async fn update_quick_payment(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
+
+    // Determine payment narration: Use source voucher narration if present, otherwise default to payment remarks
+    let final_narration = match &invoice.5 {
+        Some(n) if !n.trim().is_empty() => n.trim().to_string(),
+        _ => payment.remarks.clone().unwrap_or_else(|| format!("Payment for Invoice {}", invoice.2)),
+    };
 
     let voucher_type = if invoice.3 == "purchase_invoice" {
         "payment"
@@ -578,7 +594,7 @@ pub async fn update_quick_payment(
     .bind(payment.amount)
     .bind(payment.amount)
     .bind(&payment.payment_method)
-    .bind(&payment.remarks)
+    .bind(&final_narration)
     .bind(&payment.payment_account_id)
     .bind(&payment.payment_voucher_id)
     .execute(&mut *tx)
@@ -610,22 +626,6 @@ pub async fn update_quick_payment(
     let je_id_1 = Uuid::now_v7().to_string();
     let je_id_2 = Uuid::now_v7().to_string();
 
-    // Re-create journal entries
-    // First distinctively delete old ones (logic was just inserting new ones? code had inserts)
-    // Wait, the original code had INSERTS in `update_quick_payment`?
-    // "Re-create journal entries" comment suggests it might be adding duplicates?
-    // Let's check original code. Lines 575-619 were INSERTS.
-    // Yes, but it didn't delete old ones properly? Or does it rely on something else?
-    // Ah, `update_quick_payment` usually deletes old entries first.
-    // Looking at the original code (lines 532+), it updates vouchers, updates voucher_items.
-    // Then lines 572+ inserts NEW journal entries?
-    // That seems like a bug in the original code unless `journal_entries` were deleted somewhere I missed.
-    // I don't see a DELETE query for journal entries in the original code snippet.
-    // I should probably add a DELETE for journal entries if I'm inserting new ones, or UPDATE them.
-    // For now, I will replicate the behavior (INSERT) but adapt to UUIDs.
-    // However, inserting without deleting will duplicate entries.
-    // I will add a DELETE query for safety before inserting, assuming that's the intention.
-
     sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
         .bind(&payment.payment_voucher_id)
         .execute(&mut *tx)
@@ -636,12 +636,13 @@ pub async fn update_quick_payment(
         // Credit: Payment account
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, ?, 'Payment updated')",
+             VALUES (?, ?, ?, 0, ?, ?)",
         )
         .bind(&je_id_1)
         .bind(&payment.payment_voucher_id)
         .bind(&payment.payment_account_id)
         .bind(payment.amount)
+        .bind(&final_narration)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -649,12 +650,13 @@ pub async fn update_quick_payment(
         // Debit: Party account
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, 'Payment to party updated')",
+             VALUES (?, ?, ?, ?, 0, ?)",
         )
         .bind(&je_id_2)
         .bind(&payment.payment_voucher_id)
         .bind(&invoice.0)
         .bind(payment.amount)
+        .bind(&final_narration)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -662,12 +664,13 @@ pub async fn update_quick_payment(
         // Debit: Payment account
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, ?, 0, 'Receipt updated')",
+             VALUES (?, ?, ?, ?, 0, ?)",
         )
         .bind(&je_id_1)
         .bind(&payment.payment_voucher_id)
         .bind(&payment.payment_account_id)
         .bind(payment.amount)
+        .bind(&final_narration)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -675,12 +678,13 @@ pub async fn update_quick_payment(
         // Credit: Party account
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-             VALUES (?, ?, ?, 0, ?, 'Receipt from party updated')",
+             VALUES (?, ?, ?, 0, ?, ?)",
         )
         .bind(&je_id_2)
         .bind(&payment.payment_voucher_id)
         .bind(&invoice.0)
         .bind(payment.amount)
+        .bind(&final_narration)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -696,7 +700,7 @@ pub async fn update_quick_payment(
     )
     .bind(payment.amount)
     .bind(&payment.payment_date)
-    .bind(&payment.remarks)
+    .bind(&final_narration)
     .bind(&payment.payment_voucher_id)
     .bind(&payment.invoice_id)
     .execute(&mut *tx)
