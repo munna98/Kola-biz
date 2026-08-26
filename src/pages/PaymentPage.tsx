@@ -122,7 +122,8 @@ export default function PaymentPage() {
                 }
 
                 if (cashBankData.length > 0 && paymentState.form.account_id === 0) {
-                    dispatch(setPaymentAccount({ id: cashBankData[0].id, name: cashBankData[0].name }));
+                    const cashAcc = cashBankData.find(a => a.name.toLowerCase() === 'cash' || (a as any).account_group === 'Cash') || cashBankData[0];
+                    dispatch(setPaymentAccount({ id: cashAcc.id, name: cashAcc.name }));
                 }
             } catch (error) {
                 toast.error('Failed to load accounts');
@@ -132,6 +133,14 @@ export default function PaymentPage() {
         };
         loadData();
     }, [dispatch]);
+
+    // Auto-populate default Cash/Bank account in new mode if unselected
+    useEffect(() => {
+        if (paymentState.mode === 'new' && payFromAccounts.length > 0 && paymentState.form.account_id === 0) {
+            const cashAcc = payFromAccounts.find(a => a.name.toLowerCase() === 'cash' || (a as any).account_group === 'Cash') || payFromAccounts[0];
+            dispatch(setPaymentAccount({ id: cashAcc.id, name: cashAcc.name }));
+        }
+    }, [payFromAccounts, paymentState.mode, paymentState.form.account_id, dispatch]);
 
     // Auto-add first item when data is loaded (ONLY for new mode)
     useEffect(() => {

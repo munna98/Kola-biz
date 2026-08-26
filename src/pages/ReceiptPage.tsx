@@ -118,8 +118,9 @@ export default function ReceiptPage() {
                 setVoucherSettings(settingsData);
 
                 if (cashBankData.length > 0 && receiptState.form.account_id === 0) {
-                    dispatch(setReceiptAccount({ id: cashBankData[0].id, name: cashBankData[0].name }));
-                    const method = cashBankData[0].account_group === 'Cash' ? 'cash' : 'bank';
+                    const cashAcc = cashBankData.find(a => a.name.toLowerCase() === 'cash' || a.account_group === 'Cash') || cashBankData[0];
+                    dispatch(setReceiptAccount({ id: cashAcc.id, name: cashAcc.name }));
+                    const method = cashAcc.account_group === 'Cash' ? 'cash' : 'bank';
                     dispatch(setReceiptMethod(method));
                 }
             } catch (error) {
@@ -130,6 +131,16 @@ export default function ReceiptPage() {
         };
         loadData();
     }, [dispatch]);
+
+    // Auto-populate default Deposit To account in new mode if unselected
+    useEffect(() => {
+        if (receiptState.mode === 'new' && depositToAccounts.length > 0 && receiptState.form.account_id === 0) {
+            const cashAcc = depositToAccounts.find(a => a.name.toLowerCase() === 'cash' || a.account_group === 'Cash') || depositToAccounts[0];
+            dispatch(setReceiptAccount({ id: cashAcc.id, name: cashAcc.name }));
+            const method = cashAcc.account_group === 'Cash' ? 'cash' : 'bank';
+            dispatch(setReceiptMethod(method));
+        }
+    }, [depositToAccounts, receiptState.mode, receiptState.form.account_id, dispatch]);
 
     // Auto-add first item when data is loaded (ONLY for new mode)
     useEffect(() => {
