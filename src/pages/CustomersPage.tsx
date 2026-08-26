@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconFileUpload } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconArrowLeft, IconFileUpload } from '@tabler/icons-react';
 import { api, Customer } from '@/lib/tauri';
 import { toast } from 'sonner';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
@@ -92,11 +92,19 @@ export default function CustomersPage() {
                 <Button
                   variant="outline"
                   onClick={() => setShowDeleted(!showDeleted)}
+                  className={showDeleted ? 'gap-1.5' : ''}
                 >
-                  {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
+                  {showDeleted ? (
+                    <>
+                      <IconArrowLeft size={16} />
+                      <span>Back</span>
+                    </>
+                  ) : (
+                    <IconRecycle size={16} />
+                  )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>{showDeleted ? 'View Active' : 'View Recycle Bin'}</TooltipContent>
+              <TooltipContent>{showDeleted ? 'Back to Active Customers' : 'View Recycle Bin'}</TooltipContent>
             </Tooltip>
             {!showDeleted && (
               <>

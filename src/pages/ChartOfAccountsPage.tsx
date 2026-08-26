@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   IconPlus, IconEdit, IconTrash, IconSettings, IconRefresh,
-  IconTrashFilled, IconRecycle, IconHome2, IconSearch,
+  IconTrashFilled, IconRecycle, IconArrowLeft, IconSearch,
   IconChevronRight, IconChevronDown, IconFolderFilled, IconFolder, IconListTree
 } from '@tabler/icons-react';
 import { api, ChartOfAccount, AccountGroup, AccountGroupNode, buildAccountGroupTree, flattenGroupTree } from '@/lib/tauri';
@@ -275,11 +275,18 @@ export default function ChartOfAccountsPage() {
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant='outline' size="sm" onClick={() => setShowDeleted(!showDeleted)}>
-                  {showDeleted ? <IconHome2 size={15} /> : <IconRecycle size={15} />}
+                <Button variant='outline' size="sm" onClick={() => setShowDeleted(!showDeleted)} className={showDeleted ? 'gap-1.5' : ''}>
+                  {showDeleted ? (
+                    <>
+                      <IconArrowLeft size={15} />
+                      <span>Back</span>
+                    </>
+                  ) : (
+                    <IconRecycle size={15} />
+                  )}
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>{showDeleted ? 'View Active Accounts' : 'View Recycle Bin'}</TooltipContent>
+              <TooltipContent>{showDeleted ? 'Back to Active Accounts' : 'View Recycle Bin'}</TooltipContent>
             </Tooltip>
 
             {!showDeleted && (

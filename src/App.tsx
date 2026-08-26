@@ -62,6 +62,7 @@ import { LicenseGuard } from './components/LicenseGuard';
 import LicensePage from './pages/LicensePage';
 import CustomOrdersPage from './pages/CustomOrdersPage';
 import FeaturesSettingsPage from './pages/settings/FeaturesSettingsPage';
+import ExitConfirmDialog from './components/dialogs/ExitConfirmDialog';
 
 
 
@@ -256,6 +257,7 @@ export default function App() {
         <LicenseProvider>
           <LicenseGuard>
             <AppContent />
+            <ExitConfirmDialog />
             <Toaster />
           </LicenseGuard>
         </LicenseProvider>

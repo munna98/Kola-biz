@@ -1,4 +1,4 @@
-import { IconMoon, IconSun, IconSettings, IconBuilding, IconArrowLeft, IconArrowRight, IconDownload } from '@tabler/icons-react';
+import { IconMoon, IconSun, IconSettings, IconBuilding, IconArrowLeft, IconArrowRight, IconDownload, IconPower } from '@tabler/icons-react';
 import { useTheme } from '../theme-provider';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, logout } from '../../store';
@@ -234,6 +234,14 @@ export default function Topbar() {
                         <MenubarItem onClick={() => handleNavigation('license')}>About KolaBiz</MenubarItem>
                         <MenubarSeparator />
                         <MenubarItem onClick={() => handleNavigation('db_settings')}>DB Settings</MenubarItem>
+                        <MenubarSeparator />
+                        <MenubarItem
+                            onClick={() => window.dispatchEvent(new CustomEvent('open-exit-confirm'))}
+                            className="text-destructive focus:text-destructive focus:bg-destructive/10 cursor-pointer font-medium"
+                        >
+                            <IconPower size={16} className="mr-2" />
+                            Exit Application
+                        </MenubarItem>
                     </MenubarContent>
                 </MenubarMenu>
             </Menubar>

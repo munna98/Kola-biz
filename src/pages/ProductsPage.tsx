@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconHome2, IconBarcode, IconFileUpload, IconTag, IconPhoto, IconCloudUpload, IconLink, IconDotsVertical, IconBrandWhatsapp, IconReceiptTax } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconArrowLeft, IconBarcode, IconFileUpload, IconTag, IconPhoto, IconCloudUpload, IconLink, IconDotsVertical, IconBrandWhatsapp, IconReceiptTax } from '@tabler/icons-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   DropdownMenu,
@@ -290,12 +290,20 @@ export default function ProductsPage() {
                 <Button
                   variant="outline"
                   onClick={() => setShowDeleted(!showDeleted)}
+                  className={showDeleted ? 'gap-1.5' : ''}
                 >
-                  {showDeleted ? <IconHome2 size={16} /> : <IconRecycle size={16} />}
+                  {showDeleted ? (
+                    <>
+                      <IconArrowLeft size={16} />
+                      <span>Back</span>
+                    </>
+                  ) : (
+                    <IconRecycle size={16} />
+                  )}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                {showDeleted ? 'View Active Products' : 'View Recycle Bin'}
+                {showDeleted ? 'Back to Active Products' : 'View Recycle Bin'}
               </TooltipContent>
             </Tooltip>
             {!showDeleted && (

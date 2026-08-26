@@ -1225,15 +1225,19 @@ pub async fn get_deleted_products(
 ) -> Result<Vec<Product>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Product>(
-        "SELECT id, code, name, group_id, brand_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, part_number, is_active, created_at,
+        "SELECT products.id, products.code, products.name, products.group_id, products.brand_id, products.supplier_id,
+                coa.account_name as supplier_name,
+                products.unit_id, products.purchase_rate, products.sales_rate, products.mrp, products.cost, products.barcode, products.part_number, products.is_active, products.created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
-                hsn_sac_code, gst_slab_id,
-                COALESCE(is_master, 0) as is_master,
-                parent_product_id,
-                vehicle_manufacturer, vehicle_model, vehicle_year, vehicle_odometer, vehicle_fuel_type, vehicle_transmission, vehicle_owner, vehicle_color
+                products.hsn_sac_code, products.gst_slab_id,
+                COALESCE(products.is_master, 0) as is_master,
+                products.parent_product_id,
+                COALESCE(products.is_margin_scheme_default, 0) as is_margin_scheme_default,
+                products.vehicle_manufacturer, products.vehicle_model, products.vehicle_year, products.vehicle_odometer, products.vehicle_fuel_type, products.vehicle_transmission, products.vehicle_owner, products.vehicle_color
          FROM products
-         WHERE deleted_at IS NOT NULL 
-         ORDER BY deleted_at DESC",
+         LEFT JOIN chart_of_accounts coa ON products.supplier_id = coa.id
+         WHERE products.deleted_at IS NOT NULL 
+         ORDER BY products.deleted_at DESC",
     )
     .fetch_all(&pool)
     .await
