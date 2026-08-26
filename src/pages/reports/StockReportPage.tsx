@@ -64,6 +64,7 @@ export default function StockReportPage() {
     const [loading, setLoading] = useState(false);
     const [asOnDate, setAsOnDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedGroup, setSelectedGroup] = useState<string>('all');
+    const [stockFilter, setStockFilter] = useState<'all' | 'positive' | 'negative' | 'zero'>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [expandedProduct, setExpandedProduct] = useState<string | null>(null);
     const [movements, setMovements] = useState<StockMovement[]>([]);
@@ -188,8 +189,14 @@ export default function StockReportPage() {
         toast.info('Export functionality coming soon');
     };
 
-    // Filter stock data based on search query
+    // Filter stock data based on stock status and search query
     const filteredStockData = stockData.filter((item) => {
+        // Stock Status Filter
+        if (stockFilter === 'positive' && item.current_stock <= 0) return false;
+        if (stockFilter === 'negative' && item.current_stock >= 0) return false;
+        if (stockFilter === 'zero' && Math.abs(item.current_stock) > 0.0001) return false;
+
+        // Search Query Filter
         if (!searchQuery) return true;
         const query = searchQuery.toLowerCase();
         return (
@@ -199,7 +206,8 @@ export default function StockReportPage() {
         );
     });
 
-    const totalProducts = filteredStockData.filter(s => s.current_stock > 0).length;
+    const totalProducts = filteredStockData.length;
+    const totalQty = filteredStockData.reduce((sum, s) => sum + s.current_stock, 0);
     const totalValue = filteredStockData.reduce((sum, s) => sum + s.stock_value, 0);
 
     return (
@@ -230,8 +238,8 @@ export default function StockReportPage() {
                 </div>
 
                 {/* Filters */}
-                <div className="mt-4 flex gap-4 items-end">
-                    <div className="flex-1 max-w-xs">
+                <div className="mt-4 flex flex-wrap gap-4 items-end">
+                    <div className="w-44">
                         <Label className="text-xs mb-1 block">Product Group</Label>
                         <Select value={selectedGroup} onValueChange={setSelectedGroup}>
                             <SelectTrigger className="h-9">
@@ -247,7 +255,21 @@ export default function StockReportPage() {
                             </SelectContent>
                         </Select>
                     </div>
-                    <div className="flex-1 max-w-xs">
+                    <div className="w-44">
+                        <Label className="text-xs mb-1 block">Stock Status</Label>
+                        <Select value={stockFilter} onValueChange={(val: any) => setStockFilter(val)}>
+                            <SelectTrigger className="h-9">
+                                <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="all">All Stock</SelectItem>
+                                <SelectItem value="positive">+ve Stock</SelectItem>
+                                <SelectItem value="negative">-ve Stock</SelectItem>
+                                <SelectItem value="zero">0 Stock</SelectItem>
+                            </SelectContent>
+                        </Select>
+                    </div>
+                    <div className="w-40">
                         <Label className="text-xs mb-1 block">As On Date</Label>
                         <Input
                             type="date"
@@ -256,7 +278,7 @@ export default function StockReportPage() {
                             className="h-9"
                         />
                     </div>
-                    <div className="flex-1 max-w-sm">
+                    <div className="flex-1 min-w-[200px] max-w-sm">
                         <Label className="text-xs mb-1 block">Search Products</Label>
                         <div className="relative">
                             <IconSearch size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -441,9 +463,9 @@ export default function StockReportPage() {
                                     </tbody>
                                     <tfoot className="bg-muted/30 border-t-2 border-foreground/20">
                                         <tr>
-                                            <td colSpan={5} className="p-3 font-bold text-sm">TOTAL</td>
+                                            <td colSpan={5} className="p-3 font-bold text-sm">TOTAL ({totalProducts} Items)</td>
                                             <td className="p-3 text-right font-mono font-bold text-sm">
-                                                {totalProducts} Products
+                                                {totalQty.toLocaleString('en-IN', { maximumFractionDigits: 2 })}
                                             </td>
                                             <td colSpan={2} className="p-3 text-right font-mono font-bold text-sm">
                                                 {money(totalValue)}
