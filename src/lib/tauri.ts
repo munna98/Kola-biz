@@ -634,4 +634,109 @@ export const api = {
     getGstr1: (fromDate: string, toDate: string) => invoke<GstSummaryRow[]>('get_gstr1_summary', { fromDate, toDate }),
     getGstr3b: (fromDate: string, toDate: string) => invoke<Gstr3bSummary>('get_gstr3b_summary', { fromDate, toDate }),
   },
+  roles: {
+    list: () => invoke<UserRole[]>('get_roles'),
+    create: (data: CreateRole) => invoke<UserRole>('create_role', { data }),
+    update: (data: UpdateRole) => invoke<void>('update_role', { data }),
+    delete: (id: string) => invoke<void>('delete_role', { id }),
+  },
+  permissions: {
+    getForUser: (userId: string) => invoke<UserPermissionsResult>('get_user_permissions', { userId }),
+    saveForUser: (data: SaveUserPermissions) => invoke<void>('save_user_permissions', { data }),
+  },
 };
+
+// ======= PERMISSIONS / ROLES =======
+
+/** One page's permission set */
+export interface Permission {
+  view: boolean;
+  create: boolean;
+  edit: boolean;
+  delete: boolean;
+  void: boolean;
+  print: boolean;
+}
+
+/** Full role permissions map: pageId -> Permission */
+export type RolePermissions = Record<string, Permission>;
+
+/** Default Permission (all false) */
+export const DEFAULT_PERMISSION: Permission = {
+  view: false,
+  create: false,
+  edit: false,
+  delete: false,
+  void: false,
+  print: false,
+};
+
+/** A role in the system */
+export interface UserRole {
+  id: string;
+  name: string;
+  isBuiltin: boolean;
+  permissions: string; // raw JSON string from backend
+}
+
+/** The merged effective permissions for a user */
+export interface UserPermissionsResult {
+  userId: string;
+  roleId: string;
+  roleName: string;
+  permissions: string; // role's JSON permissions blob
+  overrides: string;   // user's per-user JSON overrides blob
+}
+
+export interface CreateRole {
+  name: string;
+  permissions: string; // JSON blob
+}
+
+export interface UpdateRole {
+  id: string;
+  name: string;
+  permissions: string; // JSON blob
+}
+
+export interface SaveUserPermissions {
+  userId: string;
+  roleId: string;
+  overrides: string; // JSON blob
+}
+
+/**
+ * Parse raw permissions JSON and overrides JSON into a merged RolePermissions map.
+ * Override values take precedence over role defaults.
+ */
+export function mergePermissions(
+  permissionsJson: string,
+  overridesJson: string
+): RolePermissions {
+  let base: RolePermissions = {};
+  let overrides: Partial<Record<string, Partial<Permission>>> = {};
+  try { base = JSON.parse(permissionsJson); } catch { /* ignore */ }
+  try { overrides = JSON.parse(overridesJson); } catch { /* ignore */ }
+
+  const merged: RolePermissions = { ...base };
+  for (const [pageId, override] of Object.entries(overrides)) {
+    merged[pageId] = { ...(merged[pageId] ?? DEFAULT_PERMISSION), ...override };
+  }
+  return merged;
+}
+
+/**
+ * Check a specific action permission for a page.
+ * Admin users always return true.
+ */
+export function can(
+  merged: RolePermissions | null,
+  pageId: string,
+  action: keyof Permission
+): boolean {
+  if (!merged) return false;
+  const pagePerm = merged[pageId];
+  if (!pagePerm) return false;
+  return pagePerm[action] === true;
+}
+

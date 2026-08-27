@@ -4,14 +4,35 @@ import { useAppNavigation } from '../../hooks/useAppNavigation';
 import { IconLayoutSidebar, IconLayoutSidebarLeftCollapse } from '@tabler/icons-react';
 import { ALL_MENU_ITEMS } from '../../lib/menu-items';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { can } from '../../lib/tauri';
 
 export default function Sidebar() {
     const dispatch = useDispatch();
     const { navigateTo } = useAppNavigation();
     const { sidebarCollapsed, activeSection, sidebarItems } = useSelector((state: RootState) => state.app);
-    
-    // Create the final list of items based on enabled IDs and ensure we preserve the master order
-    const visibleMenuItems = ALL_MENU_ITEMS.filter(item => sidebarItems.includes(item.id));
+    const { user, permissions } = useSelector((state: RootState) => state.auth);
+
+    const isAdmin = user?.role === 'admin';
+
+    // Settings-type sections that are always visible
+    const alwaysAllowed = new Set([
+        'company_profile', 'invoice_settings', 'voucher_settings', 'voucher_sequences',
+        'license', 'barcode_settings', 'db_settings', 'sidebar_settings', 'feature_settings',
+        'product_settings', 'tax_settings', 'invoice_designer',
+    ]);
+
+    const canViewItem = (itemId: string): boolean => {
+        if (isAdmin) return true;
+        if (alwaysAllowed.has(itemId)) return true;
+        if (!permissions) return true; // still loading
+        return can(permissions, itemId, 'view');
+    };
+
+    // Create the final list of items based on enabled IDs, master order, and permissions
+    const visibleMenuItems = ALL_MENU_ITEMS.filter(item =>
+        sidebarItems.includes(item.id) && canViewItem(item.id)
+    );
+
 
     return (
         <aside className={`bg-card border-r transition-all duration-300 flex flex-col h-full ${sidebarCollapsed ? 'w-16' : 'w-56'}`}>

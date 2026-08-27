@@ -248,6 +248,13 @@ pub fn run() {
             commands::auth::update_user,
             commands::auth::delete_user,
             commands::auth::reset_user_password,
+            // Roles & Permissions
+            commands::auth::get_roles,
+            commands::auth::create_role,
+            commands::auth::update_role,
+            commands::auth::delete_role,
+            commands::auth::get_user_permissions,
+            commands::auth::save_user_permissions,
             // Dashboard
             get_dashboard_metrics,
             get_revenue_trend,

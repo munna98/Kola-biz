@@ -1,4 +1,5 @@
 import { configureStore, createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { RolePermissions } from '@/lib/tauri';
 
 interface NavHistoryEntry {
   section: string;
@@ -85,11 +86,13 @@ const initialState: AppState = {
 
 // ========== AUTH SLICE ==========
 export interface User {
-  id: number;
+  id: string;
   username: string;
-  full_name: string | null;
+  fullName?: string | null;
+  full_name?: string | null;
   role: string;
-  is_active: boolean;
+  isActive?: boolean;
+  is_active?: boolean;
 }
 
 export interface AuthState {
@@ -98,6 +101,9 @@ export interface AuthState {
   user: User | null;
   token: string | null;
   error: string | null;
+  permissions: RolePermissions | null;
+  permissionsRoleId: string | null;
+  permissionsRoleName: string | null;
 
   needsCompanySetup: boolean;
   isFirstRun: boolean;
@@ -109,6 +115,9 @@ const authInitialState: AuthState = {
   user: null,
   token: null,
   error: null,
+  permissions: null,
+  permissionsRoleId: null,
+  permissionsRoleName: null,
 
   needsCompanySetup: false,
   isFirstRun: false,
@@ -147,9 +156,17 @@ const authSlice = createSlice({
       state.user = null;
       state.token = null;
       state.error = null;
+      state.permissions = null;
+      state.permissionsRoleId = null;
+      state.permissionsRoleName = null;
     },
     clearAuthError: (state) => {
       state.error = null;
+    },
+    setPermissions: (state, action: PayloadAction<{ permissions: RolePermissions; roleId: string; roleName: string }>) => {
+      state.permissions = action.payload.permissions;
+      state.permissionsRoleId = action.payload.roleId;
+      state.permissionsRoleName = action.payload.roleName;
     },
   },
 });
@@ -163,6 +180,7 @@ export const {
   loginFailure,
   logout,
   clearAuthError,
+  setPermissions,
 } = authSlice.actions;
 
 

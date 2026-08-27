@@ -27,6 +27,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
@@ -73,6 +74,7 @@ export default function StockJournalPage() {
     const [newProductName, setNewProductName] = useState('');
     const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
     const [creatingProductSection, setCreatingProductSection] = useState<JournalSection>('source');
+    const [activeTab, setActiveTab] = useState<'source' | 'destination'>('source');
 
     const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
 
@@ -381,7 +383,7 @@ export default function StockJournalPage() {
 
     useVoucherShortcuts({
         onSave: () => formRef.current?.requestSubmit(),
-        onNewItem: () => handleAddItem('source'),
+        onNewItem: () => handleAddItem(activeTab),
         onClear: nav.handleNew,
         onToggleShortcuts: () => setShowShortcuts(prev => !prev),
         onCloseShortcuts: () => setShowShortcuts(false),
@@ -556,7 +558,7 @@ export default function StockJournalPage() {
         const removeAction = section === 'source' ? removeStockJournalSourceItem : removeStockJournalDestinationItem;
 
         return (
-            <div className="bg-card border rounded-lg p-3 space-y-3">
+            <div className="bg-card border rounded-lg p-3 space-y-3 flex-1 min-h-0 flex flex-col">
                 <div className="flex items-center justify-between">
                     <h2 className="text-sm font-semibold">{title}</h2>
                     <div className="text-sm font-mono font-medium">
@@ -675,9 +677,35 @@ export default function StockJournalPage() {
                         </div>
                     </div>
 
-                    <div className="flex-1 min-h-0 overflow-auto pr-1 space-y-4">
-                        {renderSection('source', 'Source Products', stockJournalState.sourceItems)}
-                        {renderSection('destination', 'Destination Products', stockJournalState.destinationItems)}
+                    <div className="flex-1 min-h-0 flex flex-col">
+                        <Tabs value={activeTab} onValueChange={(val) => setActiveTab(val as 'source' | 'destination')} className="flex-1 min-h-0 flex flex-col gap-3">
+                            <TabsList className="grid grid-cols-2 w-full max-w-md shrink-0 mb-0 h-9">
+                                <TabsTrigger value="source" className="flex items-center gap-2 text-xs h-8">
+                                    <IconArrowUp size={14} className="text-amber-500 shrink-0" />
+                                    <span>Source Products (Consumption)</span>
+                                    {stockJournalState.sourceItems.length > 0 && (
+                                        <span className="ml-1 bg-amber-500/10 text-amber-600 dark:text-amber-400 text-[10px] px-1.5 py-0.5 rounded-full font-semibold">
+                                            {stockJournalState.sourceItems.length}
+                                        </span>
+                                    )}
+                                </TabsTrigger>
+                                <TabsTrigger value="destination" className="flex items-center gap-2 text-xs h-8">
+                                    <IconArrowDown size={14} className="text-emerald-500 shrink-0" />
+                                    <span>Destination Products (Production)</span>
+                                    {stockJournalState.destinationItems.length > 0 && (
+                                        <span className="ml-1 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] px-1.5 py-0.5 rounded-full font-semibold">
+                                            {stockJournalState.destinationItems.length}
+                                        </span>
+                                    )}
+                                </TabsTrigger>
+                            </TabsList>
+                            <TabsContent value="source" className="flex-1 min-h-0 flex flex-col mt-0">
+                                {renderSection('source', 'Source Products (Consumption/Issue)', stockJournalState.sourceItems)}
+                            </TabsContent>
+                            <TabsContent value="destination" className="flex-1 min-h-0 flex flex-col mt-0">
+                                {renderSection('destination', 'Destination Products (Production/Receipt)', stockJournalState.destinationItems)}
+                            </TabsContent>
+                        </Tabs>
                     </div>
 
                     <div className="bg-card border rounded-lg p-3 shrink-0">

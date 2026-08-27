@@ -77,10 +77,15 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
     { id: 'cash_flow', label: 'Cash Flow', icon: IconCurrencyRupee, category: 'Report' },
     { id: 'gstr1', label: 'GSTR-1', icon: IconFileReport, category: 'Report' },
     { id: 'gstr3b', label: 'GSTR-3B', icon: IconFileReport, category: 'Report' },
+
+    // Settings / Admin
+    { id: 'users', label: 'Users', icon: IconBriefcase, category: 'Settings' },
+    { id: 'roles', label: 'Roles & Rights', icon: IconAdjustments, category: 'Settings' },
 ];
 
 export const DEFAULT_SIDEBAR_ITEMS = [
     'dashboard', 'products', 'customers', 'suppliers', 'employees',
     'purchase', 'sales', 'payments', 'receipts', 'journal',
-    'stock_report', 'product_profit', 'transactions', 'day_book', 'outstanding'
+    'stock_report', 'product_profit', 'transactions', 'day_book', 'outstanding',
+    'users', 'roles',
 ];

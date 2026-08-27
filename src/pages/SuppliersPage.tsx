@@ -8,6 +8,7 @@ import { api, Supplier } from '@/lib/tauri';
 import { toast } from 'sonner';
 import SupplierDialog from '@/components/dialogs/SupplierDialog';
 import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
+import { usePermissions } from '@/lib/permissions';
 
 export default function SuppliersPage() {
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -16,6 +17,7 @@ export default function SuppliersPage() {
   const [supplierToEdit, setSupplierToEdit] = useState<Supplier | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const { can } = usePermissions();
 
   const load = async () => {
     try {
@@ -108,17 +110,21 @@ export default function SuppliersPage() {
             </Tooltip>
             {!showDeleted && (
               <>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button variant="outline" onClick={() => setImportOpen(true)}>
-                      <IconFileUpload size={16} />
+                {can('suppliers', 'create') && (
+                  <>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button variant="outline" onClick={() => setImportOpen(true)}>
+                          <IconFileUpload size={16} />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>Import Suppliers</TooltipContent>
+                    </Tooltip>
+                    <Button onClick={() => { setOpen(true); setSupplierToEdit(null); }}>
+                      <IconPlus size={16} /> Add Supplier
                     </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Import Suppliers</TooltipContent>
-                </Tooltip>
-                <Button onClick={() => { setOpen(true); setSupplierToEdit(null); }}>
-                  <IconPlus size={16} /> Add Supplier
-                </Button>
+                  </>
+                )}
               </>
             )}
           </TooltipProvider>
@@ -166,13 +172,21 @@ export default function SuppliersPage() {
                     <td className="p-3 flex gap-2">
                       {!showDeleted ? (
                         <>
-                          <Button size="sm" variant="ghost" onClick={() => handleEdit(s)}><IconEdit size={16} /></Button>
-                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(s.id)}><IconTrash size={16} /></Button>
+                          {can('suppliers', 'edit') && (
+                            <Button size="sm" variant="ghost" onClick={() => handleEdit(s)}><IconEdit size={16} /></Button>
+                          )}
+                          {can('suppliers', 'delete') && (
+                            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleDelete(s.id)}><IconTrash size={16} /></Button>
+                          )}
                         </>
                       ) : (
                         <>
-                          <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-700" onClick={() => handleRestore(s.id)}><IconRefresh size={16} /></Button>
-                          <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleHardDelete(s.id)}><IconTrashFilled size={16} /></Button>
+                          {can('suppliers', 'edit') && (
+                            <Button size="sm" variant="ghost" className="text-blue-600 hover:text-blue-700" onClick={() => handleRestore(s.id)}><IconRefresh size={16} /></Button>
+                          )}
+                          {can('suppliers', 'delete') && (
+                            <Button size="sm" variant="ghost" className="text-destructive hover:text-destructive" onClick={() => handleHardDelete(s.id)}><IconTrashFilled size={16} /></Button>
+                          )}
                         </>
                       )}
                     </td>

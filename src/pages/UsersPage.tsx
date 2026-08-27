@@ -5,6 +5,7 @@ import {
     IconEdit,
     IconTrash,
     IconShieldLock,
+    IconShield,
 } from '@tabler/icons-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -27,6 +28,7 @@ export default function UsersPage() {
     const [searchTerm, setSearchTerm] = useState('');
     const [dialogOpen, setDialogOpen] = useState(false);
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
+    const [defaultTab, setDefaultTab] = useState<'profile' | 'rights'>('profile');
 
     const fetchUsers = async () => {
         try {
@@ -144,10 +146,19 @@ export default function UsersPage() {
                                             <Button
                                                 variant="ghost"
                                                 size="icon"
-                                                onClick={() => handleEdit(user)}
+                                                onClick={() => { setDefaultTab('profile'); handleEdit(user); }}
                                                 title="Edit User"
                                             >
                                                 <IconEdit className="h-4 w-4" />
+                                            </Button>
+                                            <Button
+                                                variant="ghost"
+                                                size="icon"
+                                                onClick={() => { setDefaultTab('rights'); handleEdit(user); }}
+                                                title="Manage Rights"
+                                                className="text-blue-600 hover:text-blue-700"
+                                            >
+                                                <IconShield className="h-4 w-4" />
                                             </Button>
                                             <Button
                                                 variant="ghost"
@@ -172,6 +183,7 @@ export default function UsersPage() {
                 onOpenChange={setDialogOpen}
                 userToEdit={selectedUser}
                 onSave={fetchUsers}
+                defaultTab={defaultTab}
             />
         </div>
     );

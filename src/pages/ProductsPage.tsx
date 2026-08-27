@@ -29,6 +29,7 @@ import PriceCategoryQuickEditDialog from '@/components/dialogs/PriceCategoryQuic
 import { invoke } from '@tauri-apps/api/core';
 import { type ProductTableColumns, DEFAULT_TABLE_COLUMNS } from '@/pages/settings/ProductSettingsPage';
 import { useMoney } from '@/hooks/useMoney';
+import { usePermissions } from '@/lib/permissions';
 
 type ProductFilter = 'all' | 'master' | 'child';
 
@@ -100,6 +101,7 @@ export default function ProductsPage() {
   const [whatsappShareEnabled, setWhatsappShareEnabled] = useState(false);
   const currentUser = useSelector((state: RootState) => state.app.currentUser);
   const money = useMoney();
+  const { can } = usePermissions();
 
   const load = async () => {
     try {
@@ -363,9 +365,11 @@ export default function ProductsPage() {
                     <TooltipContent>Sync Catalog</TooltipContent>
                   </Tooltip>
                 )}
-                <Button onClick={handleOpenDialog}>
-                  <IconPlus size={16} /> Add Product
-                </Button>
+                {can('products', 'create') && (
+                  <Button onClick={handleOpenDialog}>
+                    <IconPlus size={16} /> Add Product
+                  </Button>
+                )}
               </>
             )}
           </TooltipProvider>
@@ -529,18 +533,24 @@ export default function ProductsPage() {
                           <DropdownMenuContent align="end">
                             {!showDeleted ? (
                               <>
-                                <DropdownMenuItem onClick={() => handleEdit(p)}>
-                                  <IconEdit size={14} className="mr-2" /> Edit
-                                </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => { setSelectedPriceCatProduct(p); setPriceCatQuickEditOpen(true); }}>
-                                  <IconReceiptTax size={14} className="mr-2" /> Price Category Rates
-                                </DropdownMenuItem>
+                                {can('products', 'edit') && (
+                                  <DropdownMenuItem onClick={() => handleEdit(p)}>
+                                    <IconEdit size={14} className="mr-2" /> Edit
+                                  </DropdownMenuItem>
+                                )}
+                                {can('products', 'edit') && (
+                                  <DropdownMenuItem onClick={() => { setSelectedPriceCatProduct(p); setPriceCatQuickEditOpen(true); }}>
+                                    <IconReceiptTax size={14} className="mr-2" /> Price Category Rates
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem onClick={() => { setBarcodeProduct(p); setBarcodeDialogOpen(true); }}>
                                   <IconBarcode size={14} className="mr-2" /> Print Barcode
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => { setImagesProduct(p); setImagesDialogOpen(true); }}>
-                                  <IconPhoto size={14} className="mr-2" /> Manage Images
-                                </DropdownMenuItem>
+                                {can('products', 'edit') && (
+                                  <DropdownMenuItem onClick={() => { setImagesProduct(p); setImagesDialogOpen(true); }}>
+                                    <IconPhoto size={14} className="mr-2" /> Manage Images
+                                  </DropdownMenuItem>
+                                )}
                                 {whatsappShareEnabled && (
                                   <DropdownMenuItem onClick={() => handleShareWhatsApp(p)}>
                                     <IconBrandWhatsapp size={14} className="mr-2 text-green-500" /> Share on WhatsApp
@@ -551,13 +561,17 @@ export default function ProductsPage() {
                                     <IconLink size={14} className="mr-2" /> Copy Public Link
                                   </DropdownMenuItem>
                                 )}
-                                <DropdownMenuSeparator />
-                                <DropdownMenuItem
-                                  className="text-destructive focus:text-destructive"
-                                  onClick={() => handleDelete(p.id)}
-                                >
-                                  <IconTrash size={14} className="mr-2" /> Move to Recycle Bin
-                                </DropdownMenuItem>
+                                {can('products', 'delete') && (
+                                  <>
+                                    <DropdownMenuSeparator />
+                                    <DropdownMenuItem
+                                      className="text-destructive focus:text-destructive"
+                                      onClick={() => handleDelete(p.id)}
+                                    >
+                                      <IconTrash size={14} className="mr-2" /> Move to Recycle Bin
+                                    </DropdownMenuItem>
+                                  </>
+                                )}
                               </>
                             ) : (
                               <>
