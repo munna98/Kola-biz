@@ -180,7 +180,7 @@ pub async fn get_ledger_report(
             v.voucher_date as date,
             v.voucher_no,
             v.voucher_type,
-            je.narration,
+            COALESCE(NULLIF(je.narration, ''), NULLIF(v.narration, ''), '') as narration,
             CAST(je.debit AS REAL) as debit,
             CAST(je.credit AS REAL) as credit,
             0.0 as balance,
@@ -1056,7 +1056,7 @@ pub async fn get_day_book(
                 coa.account_name,
                 CAST(je.debit AS REAL) as debit,
                 CAST(je.credit AS REAL) as credit,
-                COALESCE(je.narration, v.narration, '') as narration
+                COALESCE(NULLIF(je.narration, ''), NULLIF(v.narration, ''), '') as narration
             FROM journal_entries je
             JOIN vouchers v ON je.voucher_id = v.id
             JOIN chart_of_accounts coa ON je.account_id = coa.id
