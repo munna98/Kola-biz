@@ -32,7 +32,7 @@ interface ShipToPopoverProps {
     onChange: (shipTo: ShipToAddress | undefined) => void;
     defaultAddress: ShipToAddress | undefined;
     disabled?: boolean;
-    partyId?: string;
+    partyId?: string | number;
 }
 
 export function ShipToPopover({ shipTo, onChange, defaultAddress, disabled, partyId }: ShipToPopoverProps) {
@@ -54,7 +54,7 @@ export function ShipToPopover({ shipTo, onChange, defaultAddress, disabled, part
     // Load recent shipping addresses for this party when popover opens
     useEffect(() => {
         if (partyId && isOpen) {
-            invoke<ShipToAddress[]>('get_recent_ship_to_addresses', { partyId })
+            invoke<ShipToAddress[]>('get_recent_ship_to_addresses', { partyId: String(partyId) })
                 .then((res) => setRecentAddresses(res || []))
                 .catch((err) => console.error('Failed to load recent ship to addresses', err));
         }

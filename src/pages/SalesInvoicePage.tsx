@@ -1765,7 +1765,7 @@ export default function SalesInvoicePage() {
                       address_line_1: parties.find(p => p.id === salesState.form.customer_id)?.address_line_1
                     } : undefined}
                     disabled={isReadOnly || !salesState.form.customer_id}
-                    partyId={salesState.form.customer_id}
+                    partyId={salesState.form.customer_id ? String(salesState.form.customer_id) : undefined}
                   />
                 )}
               </div>
