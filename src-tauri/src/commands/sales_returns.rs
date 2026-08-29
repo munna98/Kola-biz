@@ -13,6 +13,11 @@ use super::invoices::{
 use super::resolve_voucher_line_unit;
 use crate::voucher_seq::get_next_voucher_number_in_tx;
 
+// ============= HELPERS =============
+fn round2(v: f64) -> f64 {
+    (v * 100.0).round() / 100.0
+}
+
 // ============= SALES RETURN =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct SalesReturn {
@@ -35,6 +40,11 @@ pub struct SalesReturn {
     pub tax_inclusive: i64,
     pub gst_disabled: i64,
     pub is_margin_scheme_invoice: i64,
+    pub currency_id: Option<String>,
+    pub exchange_rate: Option<f64>,
+    pub foreign_total: Option<f64>,
+    pub foreign_currency_code: Option<String>,
+    pub foreign_currency_symbol: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -246,6 +256,12 @@ pub struct CreateSalesReturn {
     /// When true, skip quantity validation against reference sales invoice.
     #[serde(default)]
     pub skip_linked_validation: Option<bool>,
+    /// Foreign currency for this return (should match the original invoice's currency).
+    #[serde(default)]
+    pub currency_id: Option<String>,
+    /// Exchange rate: 1 foreign unit = this many base currency units.
+    #[serde(default)]
+    pub exchange_rate: Option<f64>,
 }
 
 #[tauri::command]
@@ -273,10 +289,16 @@ pub async fn get_sales_returns(
             v.deleted_at,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
             COALESCE(v.gst_disabled, 0) as gst_disabled,
-            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice
+            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice,
+            v.currency_id,
+            v.exchange_rate,
+            v.foreign_total,
+            cur.code as foreign_currency_code,
+            cur.symbol as foreign_currency_symbol
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+         LEFT JOIN currencies cur ON v.currency_id = cur.id
          WHERE v.voucher_type = 'sales_return' AND v.deleted_at IS NULL
          GROUP BY v.id
          ORDER BY v.voucher_date DESC, v.id DESC",
@@ -312,10 +334,16 @@ pub async fn get_sales_return(
             v.deleted_at,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
             COALESCE(v.gst_disabled, 0) as gst_disabled,
-            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice
+            COALESCE(v.is_margin_scheme_invoice, 0) as is_margin_scheme_invoice,
+            v.currency_id,
+            v.exchange_rate,
+            v.foreign_total,
+            cur.code as foreign_currency_code,
+            cur.symbol as foreign_currency_symbol
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+         LEFT JOIN currencies cur ON v.currency_id = cur.id
          WHERE v.id = ? AND v.voucher_type = 'sales_return' AND v.deleted_at IS NULL
          GROUP BY v.id",
     )
@@ -455,6 +483,19 @@ pub(crate) async fn create_sales_return_in_tx(
     let total_amount = subtotal - discount_amount;
     let grand_total = total_amount + total_tax;
 
+    let exchange_rate = invoice.exchange_rate.unwrap_or(1.0).max(0.0001);
+    let is_foreign_currency = invoice.currency_id.is_some() && exchange_rate != 1.0;
+
+    // For foreign currency: convert all totals to base currency for GL and storage.
+    // The item rates entered are in foreign currency; grand_total etc. must be in base.
+    let grand_total_foreign = round2(grand_total);
+    let subtotal_bc = if is_foreign_currency { round2(subtotal * exchange_rate) } else { round2(subtotal) };
+    let discount_amount_bc = if is_foreign_currency { round2(discount_amount * exchange_rate) } else { round2(discount_amount) };
+    let total_tax_bc = if is_foreign_currency { round2(total_tax * exchange_rate) } else { round2(total_tax) };
+    let total_amount_bc = if is_foreign_currency { round2(total_amount * exchange_rate) } else { round2(total_amount) };
+    let grand_total_bc = if is_foreign_currency { round2(grand_total * exchange_rate) } else { round2(grand_total) };
+    let _fx = if is_foreign_currency { exchange_rate } else { 1.0 }; // reserved for stock valuation
+
     if !invoice.skip_linked_validation.unwrap_or(false) {
         validate_linked_return_quantities(tx, invoice.reference.as_deref(), None, &processed_items)
             .await?;
@@ -462,8 +503,8 @@ pub(crate) async fn create_sales_return_in_tx(
 
     let voucher_id = Uuid::now_v7().to_string();
     sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total, is_margin_scheme_invoice, gst_disabled)
-         VALUES (?, ?, 'sales_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?)",
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total, is_margin_scheme_invoice, gst_disabled, currency_id, exchange_rate, foreign_total)
+         VALUES (?, ?, 'sales_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -471,16 +512,19 @@ pub(crate) async fn create_sales_return_in_tx(
     .bind(&invoice.customer_id)
     .bind(&invoice.party_type)
     .bind(&invoice.reference)
-    .bind(subtotal)
+    .bind(subtotal_bc)
     .bind(discount_rate)
-    .bind(discount_amount)
-    .bind(total_tax)
-    .bind(total_amount)
+    .bind(discount_amount_bc)
+    .bind(total_tax_bc)
+    .bind(total_amount_bc)
     .bind(&invoice.narration)
     .bind(tax_inclusive as i64)
-    .bind(grand_total)
+    .bind(grand_total_bc)
     .bind(invoice.is_margin_scheme_invoice as i64)
     .bind(gst_disabled as i64)
+    .bind(&invoice.currency_id)
+    .bind(exchange_rate)
+    .bind(grand_total_foreign)
     .execute(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -545,6 +589,7 @@ pub(crate) async fn create_sales_return_in_tx(
         .await
         .map_err(|e| format!("Party account not found: {}", e))?;
 
+    // Dr 4003 Sales Return — base currency
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
          VALUES (?, ?, ?, ?, 0, 'Sales Return (Goods returned)')",
@@ -552,12 +597,12 @@ pub(crate) async fn create_sales_return_in_tx(
     .bind(Uuid::now_v7().to_string())
     .bind(&voucher_id)
     .bind(&sales_return_account)
-    .bind(subtotal)
+    .bind(subtotal_bc)
     .execute(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    if total_tax > 0.0 {
+    if total_tax_bc > 0.0 {
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
              VALUES (?, ?, ?, ?, 0, 'Tax Reversal on Sales Return')",
@@ -565,12 +610,13 @@ pub(crate) async fn create_sales_return_in_tx(
         .bind(Uuid::now_v7().to_string())
         .bind(&voucher_id)
         .bind(&tax_account)
-        .bind(total_tax)
+        .bind(total_tax_bc)
         .execute(&mut **tx)
         .await
         .map_err(|e| e.to_string())?;
     }
 
+    // Cr Customer — base currency
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
          VALUES (?, ?, ?, 0, ?, 'Credit Note issued to Customer')",
@@ -578,12 +624,12 @@ pub(crate) async fn create_sales_return_in_tx(
     .bind(Uuid::now_v7().to_string())
     .bind(&voucher_id)
     .bind(&party_account)
-    .bind(subtotal - discount_amount + total_tax)
+    .bind(grand_total_bc)
     .execute(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    if discount_amount > 0.0 {
+    if discount_amount_bc > 0.0 {
         let discount_allowed_account: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'")
                 .fetch_one(&mut **tx)
@@ -597,7 +643,7 @@ pub(crate) async fn create_sales_return_in_tx(
         .bind(Uuid::now_v7().to_string())
         .bind(&voucher_id)
         .bind(&discount_allowed_account)
-        .bind(discount_amount)
+        .bind(discount_amount_bc)
         .execute(&mut **tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -813,6 +859,16 @@ pub async fn update_sales_return(
     let total_amount = subtotal - discount_amount;
     let grand_total = total_amount + total_tax;
 
+    let exchange_rate = invoice.exchange_rate.unwrap_or(1.0).max(0.0001);
+    let is_foreign_currency = invoice.currency_id.is_some() && exchange_rate != 1.0;
+
+    let grand_total_foreign = round2(grand_total);
+    let subtotal_bc = if is_foreign_currency { round2(subtotal * exchange_rate) } else { round2(subtotal) };
+    let discount_amount_bc = if is_foreign_currency { round2(discount_amount * exchange_rate) } else { round2(discount_amount) };
+    let total_tax_bc = if is_foreign_currency { round2(total_tax * exchange_rate) } else { round2(total_tax) };
+    let total_amount_bc = if is_foreign_currency { round2(total_amount * exchange_rate) } else { round2(total_amount) };
+    let grand_total_bc = if is_foreign_currency { round2(grand_total * exchange_rate) } else { round2(grand_total) };
+
     if !invoice.skip_linked_validation.unwrap_or(false) {
         validate_linked_return_quantities(
             &mut tx,
@@ -825,22 +881,25 @@ pub async fn update_sales_return(
 
     sqlx::query(
         "UPDATE vouchers
-         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?, status = 'posted', tax_inclusive = ?, grand_total = ?, gst_disabled = ?
+         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?, status = 'posted', tax_inclusive = ?, grand_total = ?, gst_disabled = ?, currency_id = ?, exchange_rate = ?, foreign_total = ?
          WHERE id = ? AND voucher_type = 'sales_return'",
     )
     .bind(&invoice.voucher_date)
     .bind(&invoice.customer_id)
     .bind(&invoice.party_type)
     .bind(&invoice.reference)
-    .bind(subtotal)
+    .bind(subtotal_bc)
     .bind(discount_rate)
-    .bind(discount_amount)
-    .bind(total_tax)
-    .bind(total_amount)
+    .bind(discount_amount_bc)
+    .bind(total_tax_bc)
+    .bind(total_amount_bc)
     .bind(&invoice.narration)
     .bind(tax_inclusive as i64)
-    .bind(grand_total)
+    .bind(grand_total_bc)
     .bind(gst_disabled as i64)
+    .bind(&invoice.currency_id)
+    .bind(exchange_rate)
+    .bind(grand_total_foreign)
     .bind(&id)
     .execute(&mut *tx)
     .await
@@ -918,6 +977,7 @@ pub async fn update_sales_return(
         .await
         .map_err(|e| e.to_string())?;
 
+    // Dr 4003 Sales Return — base currency
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
          VALUES (?, ?, ?, ?, 0, 'Sales Return (Goods returned)')",
@@ -925,12 +985,12 @@ pub async fn update_sales_return(
     .bind(Uuid::now_v7().to_string())
     .bind(&id)
     .bind(&sales_return_account)
-    .bind(subtotal)
+    .bind(subtotal_bc)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    if total_tax > 0.0 {
+    if total_tax_bc > 0.0 {
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
              VALUES (?, ?, ?, ?, 0, 'Tax Reversal on Sales Return')",
@@ -938,12 +998,13 @@ pub async fn update_sales_return(
         .bind(Uuid::now_v7().to_string())
         .bind(&id)
         .bind(&tax_account)
-        .bind(total_tax)
+        .bind(total_tax_bc)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     }
 
+    // Cr Customer — base currency
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
          VALUES (?, ?, ?, 0, ?, 'Credit Note issued to Customer')",
@@ -951,12 +1012,12 @@ pub async fn update_sales_return(
     .bind(Uuid::now_v7().to_string())
     .bind(&id)
     .bind(&party_account)
-    .bind(subtotal - discount_amount + total_tax)
+    .bind(grand_total_bc)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    if discount_amount > 0.0 {
+    if discount_amount_bc > 0.0 {
         let discount_allowed_account: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'")
                 .fetch_one(&mut *tx)
@@ -970,7 +1031,7 @@ pub async fn update_sales_return(
         .bind(Uuid::now_v7().to_string())
         .bind(&id)
         .bind(&discount_allowed_account)
-        .bind(discount_amount)
+        .bind(discount_amount_bc)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;

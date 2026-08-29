@@ -295,6 +295,11 @@ export interface PurchaseInvoiceState extends VoucherNavigationState {
     discount_rate: number;
     discount_amount: number;
   };
+  currency_id: string | null;
+  exchange_rate: number;
+  foreign_currency_code: string;
+  foreign_currency_symbol: string;
+  foreign_grand_total: number;
   items: PurchaseInvoiceItem[];
   loading: boolean;
   savedInvoices: any[];
@@ -320,6 +325,11 @@ const purchaseInitialState: PurchaseInvoiceState = {
     discount_rate: 0,
     discount_amount: 0,
   },
+  currency_id: null,
+  exchange_rate: 1.0,
+  foreign_currency_code: '',
+  foreign_currency_symbol: '',
+  foreign_grand_total: 0,
   items: [],
   loading: false,
   savedInvoices: [],
@@ -406,7 +416,27 @@ const purchaseInvoiceSlice = createSlice({
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+      state.currency_id = null;
+      state.exchange_rate = 1.0;
+      state.foreign_currency_code = '';
+      state.foreign_currency_symbol = '';
+      state.foreign_grand_total = 0;
       state.hasUnsavedChanges = false;
+    },
+    setPurchaseForexInfo: (state, action: PayloadAction<{ currency_id: string | null; code: string; symbol: string }>) => {
+      state.currency_id = action.payload.currency_id;
+      state.foreign_currency_code = action.payload.code;
+      state.foreign_currency_symbol = action.payload.symbol;
+    },
+    setPurchaseExchangeRate: (state, action: PayloadAction<number>) => {
+      state.exchange_rate = action.payload;
+    },
+    clearPurchaseForex: (state) => {
+      state.currency_id = null;
+      state.exchange_rate = 1.0;
+      state.foreign_currency_code = '';
+      state.foreign_currency_symbol = '';
+      state.foreign_grand_total = 0;
     },
     setSavedInvoices: (state, action: PayloadAction<any[]>) => {
       state.savedInvoices = action.payload;
@@ -437,6 +467,9 @@ export const {
   resetForm,
   setSavedInvoices,
   setLoading,
+  setPurchaseForexInfo,
+  setPurchaseExchangeRate,
+  clearPurchaseForex,
 } = purchaseInvoiceSlice.actions;
 
 export interface AllocationData {
@@ -1553,6 +1586,11 @@ export interface PurchaseReturnState extends VoucherNavigationState {
     discount_rate: number;
     discount_amount: number;
   };
+  currency_id: string | null;
+  exchange_rate: number;
+  foreign_currency_code: string;
+  foreign_currency_symbol: string;
+  foreign_grand_total: number;
   items: PurchaseReturnItem[];
   loading: boolean;
   savedReturns: any[];
@@ -1577,6 +1615,11 @@ const purchaseReturnInitialState: PurchaseReturnState = {
     discount_rate: 0,
     discount_amount: 0,
   },
+  currency_id: null,
+  exchange_rate: 1.0,
+  foreign_currency_code: '',
+  foreign_currency_symbol: '',
+  foreign_grand_total: 0,
   items: [],
   loading: false,
   savedReturns: [],
@@ -1660,7 +1703,27 @@ const purchaseReturnSlice = createSlice({
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+      state.currency_id = null;
+      state.exchange_rate = 1.0;
+      state.foreign_currency_code = '';
+      state.foreign_currency_symbol = '';
+      state.foreign_grand_total = 0;
       state.hasUnsavedChanges = false;
+    },
+    setPurchaseReturnForexInfo: (state, action: PayloadAction<{ currency_id: string | null; code: string; symbol: string }>) => {
+      state.currency_id = action.payload.currency_id;
+      state.foreign_currency_code = action.payload.code;
+      state.foreign_currency_symbol = action.payload.symbol;
+    },
+    setPurchaseReturnExchangeRate: (state, action: PayloadAction<number>) => {
+      state.exchange_rate = action.payload;
+    },
+    clearPurchaseReturnForex: (state) => {
+      state.currency_id = null;
+      state.exchange_rate = 1.0;
+      state.foreign_currency_code = '';
+      state.foreign_currency_symbol = '';
+      state.foreign_grand_total = 0;
     },
     setSavedPurchaseReturns: (state, action: PayloadAction<any[]>) => {
       state.savedReturns = action.payload;
@@ -1690,6 +1753,9 @@ export const {
   resetPurchaseReturnForm,
   setSavedPurchaseReturns,
   setPurchaseReturnLoading,
+  setPurchaseReturnForexInfo,
+  setPurchaseReturnExchangeRate,
+  clearPurchaseReturnForex,
 } = purchaseReturnSlice.actions;
 
 // ========== SALES RETURN SLICE ==========
@@ -1737,6 +1803,11 @@ export interface SalesReturnState extends VoucherNavigationState {
   items: SalesReturnItem[];
   loading: boolean;
   savedReturns: any[];
+  currency_id: string | null;
+  exchange_rate: number;
+  foreign_currency_code: string;
+  foreign_currency_symbol: string;
+  foreign_grand_total: number;
   totals: {
     subtotal: number;
     discount: number;
@@ -1759,6 +1830,11 @@ const salesReturnInitialState: SalesReturnState = {
     discount_amount: 0,
     is_margin_scheme_invoice: false,
   },
+  currency_id: null,
+  exchange_rate: 1.0,
+  foreign_currency_code: '',
+  foreign_currency_symbol: '',
+  foreign_grand_total: 0,
   items: [],
   loading: false,
   savedReturns: [],
@@ -1843,7 +1919,27 @@ const salesReturnSlice = createSlice({
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
+      state.currency_id = null;
+      state.exchange_rate = 1.0;
+      state.foreign_currency_code = '';
+      state.foreign_currency_symbol = '';
+      state.foreign_grand_total = 0;
       state.hasUnsavedChanges = false;
+    },
+    setSalesReturnForexInfo: (state, action: PayloadAction<{ currency_id: string | null; code: string; symbol: string }>) => {
+      state.currency_id = action.payload.currency_id;
+      state.foreign_currency_code = action.payload.code;
+      state.foreign_currency_symbol = action.payload.symbol;
+    },
+    setSalesReturnExchangeRate: (state, action: PayloadAction<number>) => {
+      state.exchange_rate = action.payload;
+    },
+    clearSalesReturnForex: (state) => {
+      state.currency_id = null;
+      state.exchange_rate = 1.0;
+      state.foreign_currency_code = '';
+      state.foreign_currency_symbol = '';
+      state.foreign_grand_total = 0;
     },
     setSalesReturnMarginScheme: (state, action: PayloadAction<boolean>) => {
       state.form.is_margin_scheme_invoice = action.payload;
@@ -1878,6 +1974,9 @@ export const {
   setSavedSalesReturns,
   setSalesReturnLoading,
   setSalesReturnMarginScheme,
+  setSalesReturnForexInfo,
+  setSalesReturnExchangeRate,
+  clearSalesReturnForex,
 } = salesReturnSlice.actions;
 
 // ========== OPENING STOCK SLICE ==========

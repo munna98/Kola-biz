@@ -2003,7 +2003,7 @@ pub async fn get_top_products(
         SELECT
             COALESCE(parent.name, p.name) as product_name,
             CAST(SUM(sm.quantity) AS REAL) as total_quantity,
-            CAST(SUM(sm.amount) AS REAL) as total_revenue
+            CAST(SUM(sm.amount * COALESCE(v.exchange_rate, 1.0)) AS REAL) as total_revenue
         FROM stock_movements sm
         JOIN products p ON sm.product_id = p.id
         LEFT JOIN products parent ON p.parent_product_id = parent.id
@@ -2313,8 +2313,8 @@ pub async fn get_product_profit_report(
             -- Total net revenue (after item-level and bill-level discounts)
             CAST(COALESCE(SUM(
                 CASE
-                    WHEN sm.movement_type = 'OUT' THEN COALESCE(vi.net_amount, sm.amount)
-                    WHEN sm.movement_type = 'IN' THEN -COALESCE(vi.net_amount, sm.amount)
+                    WHEN sm.movement_type = 'OUT' THEN COALESCE(vi.net_amount, sm.amount) * COALESCE(v.exchange_rate, 1.0)
+                    WHEN sm.movement_type = 'IN' THEN -COALESCE(vi.net_amount, sm.amount) * COALESCE(v.exchange_rate, 1.0)
                     ELSE 0
                 END
             ), 0) AS REAL) as total_revenue,
@@ -2411,7 +2411,7 @@ pub async fn get_product_profit_invoices(
             CAST(CASE WHEN sm.movement_type = 'OUT' THEN sm.quantity ELSE -sm.quantity END AS REAL) as qty_sold,
             u.symbol as unit_symbol,
             CAST(COALESCE(vi.rate, sm.rate) AS REAL) as rate,
-            CAST(CASE WHEN sm.movement_type = 'OUT' THEN COALESCE(vi.net_amount, sm.amount) ELSE -COALESCE(vi.net_amount, sm.amount) END AS REAL) as total_revenue,
+            CAST(CASE WHEN sm.movement_type = 'OUT' THEN COALESCE(vi.net_amount, sm.amount) * COALESCE(v.exchange_rate, 1.0) ELSE -COALESCE(vi.net_amount, sm.amount) * COALESCE(v.exchange_rate, 1.0) END AS REAL) as total_revenue,
             CAST(COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0) AS REAL) as cost_rate,
             CAST(CASE WHEN sm.movement_type = 'OUT' THEN sm.quantity * COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0) ELSE -sm.quantity * COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0) END AS REAL) as total_cost
         FROM stock_movements sm

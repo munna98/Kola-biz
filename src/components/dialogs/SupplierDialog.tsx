@@ -11,6 +11,7 @@ import { api, Supplier, CreateSupplier } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { useDialog } from '@/hooks/use-dialog';
 import { RootState } from '@/store';
+import { useMultiCurrencyEnabled } from '@/hooks/useMultiCurrency';
 
 const INDIAN_STATES = [
   'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat',
@@ -45,9 +46,9 @@ export default function SupplierDialog({ open, onOpenChange, supplierToEdit, onS
     const [currencies, setCurrencies] = useState<Currency[]>([]);
 
     const profile = useSelector((state: RootState) => state.companyProfile.profile);
-    const isExportBusiness = profile.business_type === 'Export Business';
+    const isMultiCurrencyEnabled = useMultiCurrencyEnabled();
 
-    const orderedFields = isExportBusiness
+    const orderedFields = isMultiCurrencyEnabled
         ? ['code', 'name', 'email', 'phone', 'gstin', 'addr1', 'addr2', 'addr3', 'city', 'state', 'postal', 'country', 'currency']
         : ['code', 'name', 'email', 'phone', 'gstin', 'addr1', 'addr2', 'addr3', 'city', 'state', 'postal'];
     const { register, handleKeyDown, handleSelectKeyDown } = useDialog(open, onOpenChange, orderedFields);
@@ -184,8 +185,8 @@ export default function SupplierDialog({ open, onOpenChange, supplierToEdit, onS
                         </div>
                     </div>
 
-                    {/* Country & Currency — Export Business only */}
-                    {isExportBusiness && (
+                    {/* Country & Currency — Multi-currency enabled */}
+                    {isMultiCurrencyEnabled && (
                         <div className="grid grid-cols-2 gap-4">
                             <div>
                                 <Label className="text-xs font-medium">Country</Label>

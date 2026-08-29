@@ -129,6 +129,11 @@ pub struct PurchaseInvoice {
     pub created_by_name: Option<String>,
     pub tax_inclusive: i64,
     pub gst_disabled: i64,
+    pub currency_id: Option<String>,
+    pub exchange_rate: Option<f64>,
+    pub foreign_total: Option<f64>,
+    pub foreign_currency_code: Option<String>,
+    pub foreign_currency_symbol: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -573,11 +578,17 @@ pub async fn get_purchase_invoices(
             v.deleted_at,
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
-            COALESCE(v.gst_disabled, 0) as gst_disabled
+            COALESCE(v.gst_disabled, 0) as gst_disabled,
+            v.currency_id,
+            v.exchange_rate,
+            v.foreign_total,
+            cur.code as foreign_currency_code,
+            cur.symbol as foreign_currency_symbol
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         LEFT JOIN users u ON v.created_by = u.id
+        LEFT JOIN currencies cur ON v.currency_id = cur.id
         WHERE v.voucher_type = 'purchase_invoice' AND v.deleted_at IS NULL
         GROUP BY v.id
         ORDER BY v.voucher_date DESC, v.id DESC",
@@ -615,11 +626,17 @@ pub async fn get_purchase_invoice(
             v.deleted_at,
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
-            COALESCE(v.gst_disabled, 0) as gst_disabled
+            COALESCE(v.gst_disabled, 0) as gst_disabled,
+            v.currency_id,
+            v.exchange_rate,
+            v.foreign_total,
+            cur.code as foreign_currency_code,
+            cur.symbol as foreign_currency_symbol
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         LEFT JOIN users u ON v.created_by = u.id
+        LEFT JOIN currencies cur ON v.currency_id = cur.id
         WHERE v.id = ? AND v.voucher_type = 'purchase_invoice' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -678,11 +695,17 @@ pub(crate) async fn get_purchase_invoice_with_pool(
             v.deleted_at,
             u.full_name as created_by_name,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
-            COALESCE(v.gst_disabled, 0) as gst_disabled
+            COALESCE(v.gst_disabled, 0) as gst_disabled,
+            v.currency_id,
+            v.exchange_rate,
+            v.foreign_total,
+            cur.code as foreign_currency_code,
+            cur.symbol as foreign_currency_symbol
         FROM vouchers v
         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         LEFT JOIN users u ON v.created_by = u.id
+        LEFT JOIN currencies cur ON v.currency_id = cur.id
         WHERE v.id = ? AND v.voucher_type = 'purchase_invoice' AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
@@ -841,20 +864,38 @@ pub async fn create_purchase_invoice(
     let total_cgst = processed.total_cgst;
     let total_sgst = processed.total_sgst;
     let total_igst = processed.total_igst;
-    let total_amount = round2(subtotal - discount_amount);
-    let total_tax = round2(total_cgst + total_sgst + total_igst);
-    let grand_total = round2(total_amount + total_tax);
+
+    let exchange_rate = invoice.exchange_rate.unwrap_or(1.0).max(0.0001);
+    let is_foreign_currency = invoice.currency_id.is_some() && exchange_rate != 1.0;
+
+    // Foreign currency amounts (as entered by user)
+    let subtotal_foreign = subtotal;
+    let discount_amount_foreign = discount_amount;
+    let total_tax_foreign = round2(total_cgst + total_sgst + total_igst);
+    let total_amount_foreign = round2(subtotal_foreign - discount_amount_foreign);
+    let grand_total_foreign = round2(total_amount_foreign + total_tax_foreign);
+
+    // Base currency amounts (converted)
+    let subtotal = if is_foreign_currency { round2(subtotal_foreign * exchange_rate) } else { subtotal_foreign };
+    let discount_amount = if is_foreign_currency { round2(discount_amount_foreign * exchange_rate) } else { discount_amount_foreign };
+    let total_tax = if is_foreign_currency { round2(total_tax_foreign * exchange_rate) } else { total_tax_foreign };
+    let total_amount = if is_foreign_currency { round2(total_amount_foreign * exchange_rate) } else { total_amount_foreign };
+    let total_cgst = if is_foreign_currency { round2(total_cgst * exchange_rate) } else { total_cgst };
+    let total_sgst = if is_foreign_currency { round2(total_sgst * exchange_rate) } else { total_sgst };
+    let total_igst = if is_foreign_currency { round2(total_igst * exchange_rate) } else { total_igst };
+    let grand_total = if is_foreign_currency { round2(grand_total_foreign * exchange_rate) } else { grand_total_foreign };
 
     let voucher_id = Uuid::now_v7().to_string();
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, gst_disabled)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, gst_disabled, currency_id, exchange_rate, foreign_total)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("purchase_invoice").bind(&invoice.voucher_date).bind(&invoice.supplier_id)
     .bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(discount_rate)
     .bind(discount_amount).bind(total_tax).bind(total_amount).bind(&invoice.narration)
     .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total)
-    .bind(gst_disabled as i64).execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    .bind(gst_disabled as i64).bind(&invoice.currency_id).bind(exchange_rate).bind(grand_total_foreign)
+    .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
     for item in &processed_items {
@@ -900,22 +941,25 @@ pub async fn create_purchase_invoice(
     let party_id = invoice.supplier_id;
 
     // ============= JOURNAL: SPLIT BY ITEM TYPE =============
+    // For foreign currency invoices, item amounts are in foreign currency;
+    // multiply by exchange_rate to get base currency for GL posting.
+    let fx = if is_foreign_currency { exchange_rate } else { 1.0 };
     let product_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type != "service")
-            .map(|i| i.net_amount)
+            .map(|i| round2(i.net_amount * fx))
             .sum::<f64>(),
     );
     let service_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type == "service")
-            .map(|i| i.net_amount)
+            .map(|i| round2(i.net_amount * fx))
             .sum::<f64>(),
     );
 
-    // Group tax
+    // Group tax — convert to base currency
     let mut tax_ledgers: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     for row in &processed_items {
         if row.tax_amount > 0.0 {
@@ -925,23 +969,23 @@ pub async fn create_purchase_invoice(
                 true,
             );
             if let Some(cgst_acc) = accounts.cgst_account {
-                *tax_ledgers.entry(cgst_acc).or_insert(0.0) += row.cgst_amount;
+                *tax_ledgers.entry(cgst_acc).or_insert(0.0) += round2(row.cgst_amount * fx);
             }
             if let Some(sgst_acc) = accounts.sgst_account {
-                *tax_ledgers.entry(sgst_acc).or_insert(0.0) += row.sgst_amount;
+                *tax_ledgers.entry(sgst_acc).or_insert(0.0) += round2(row.sgst_amount * fx);
             }
             if let Some(igst_acc) = accounts.igst_account {
-                *tax_ledgers.entry(igst_acc).or_insert(0.0) += row.igst_amount;
+                *tax_ledgers.entry(igst_acc).or_insert(0.0) += round2(row.igst_amount * fx);
             }
         }
     }
 
-    // Party entry (Cr supplier)
+    // Party entry (Cr supplier) — grand_total already in base currency
     sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
-        .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&party_id).bind(0.0).bind(total_amount + total_tax)
+        .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&party_id).bind(0.0).bind(grand_total)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    // Dr 1004 Inventory for product lines (Perpetual Inventory)
+    // Dr 1004 Inventory for product lines (base currency)
     if product_subtotal > 0.0 {
         let inventory_acc: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
@@ -953,7 +997,7 @@ pub async fn create_purchase_invoice(
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
-    // Dr 5011 Service Expenses for service lines
+    // Dr 5011 Service Expenses for service lines (base currency)
     if service_subtotal > 0.0 {
         let svc_exp_acc: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5011'")
@@ -965,7 +1009,7 @@ pub async fn create_purchase_invoice(
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
-    // Tax entries
+    // Tax entries (base currency)
     for (acc_name, amt) in tax_ledgers {
         if amt > 0.0 {
             let acc_id = crate::commands::tax_utils::ensure_gst_account_exists_in_tx(
@@ -975,6 +1019,22 @@ pub async fn create_purchase_invoice(
             sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
                 .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(amt).bind(0.0)
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
+    }
+
+    // Stamp foreign amounts on journal entries
+    if is_foreign_currency {
+        if let Some(ref cid) = invoice.currency_id {
+            let _ = sqlx::query(
+                "UPDATE journal_entries 
+                 SET foreign_debit = CASE WHEN debit > 0 THEN ROUND(debit / ?, 6) ELSE 0 END,
+                     foreign_credit = CASE WHEN credit > 0 THEN ROUND(credit / ?, 6) ELSE 0 END,
+                     currency_id = ?,
+                     exchange_rate = ?
+                 WHERE voucher_id = ?"
+            )
+            .bind(exchange_rate).bind(exchange_rate).bind(cid).bind(exchange_rate).bind(&voucher_id)
+            .execute(&mut *tx).await;
         }
     }
 
@@ -1189,9 +1249,24 @@ pub async fn update_purchase_invoice(
     let total_cgst = processed.total_cgst;
     let total_sgst = processed.total_sgst;
     let total_igst = processed.total_igst;
-    let total_amount = round2(subtotal - discount_amount);
-    let total_tax = round2(total_cgst + total_sgst + total_igst);
-    let grand_total = round2(total_amount + total_tax);
+
+    let exchange_rate = invoice.exchange_rate.unwrap_or(1.0).max(0.0001);
+    let is_foreign_currency = invoice.currency_id.is_some() && exchange_rate != 1.0;
+
+    let subtotal_foreign = subtotal;
+    let discount_amount_foreign = discount_amount;
+    let total_tax_foreign = round2(total_cgst + total_sgst + total_igst);
+    let total_amount_foreign = round2(subtotal_foreign - discount_amount_foreign);
+    let grand_total_foreign = round2(total_amount_foreign + total_tax_foreign);
+
+    let subtotal = if is_foreign_currency { round2(subtotal_foreign * exchange_rate) } else { subtotal_foreign };
+    let discount_amount = if is_foreign_currency { round2(discount_amount_foreign * exchange_rate) } else { discount_amount_foreign };
+    let total_tax = if is_foreign_currency { round2(total_tax_foreign * exchange_rate) } else { total_tax_foreign };
+    let total_amount = if is_foreign_currency { round2(total_amount_foreign * exchange_rate) } else { total_amount_foreign };
+    let total_cgst = if is_foreign_currency { round2(total_cgst * exchange_rate) } else { total_cgst };
+    let total_sgst = if is_foreign_currency { round2(total_sgst * exchange_rate) } else { total_sgst };
+    let total_igst = if is_foreign_currency { round2(total_igst * exchange_rate) } else { total_igst };
+    let grand_total = if is_foreign_currency { round2(grand_total_foreign * exchange_rate) } else { grand_total_foreign };
 
     let voucher_id = id;
     let old_party_id: Option<String> = sqlx::query_scalar(
@@ -1205,14 +1280,17 @@ pub async fn update_purchase_invoice(
         "UPDATE vouchers 
          SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, 
              discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?,
-             tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, gst_disabled = ?
+             tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, gst_disabled = ?,
+             currency_id = ?, exchange_rate = ?, foreign_total = ?
          WHERE id = ?"
     )
     .bind(&invoice.voucher_date).bind(&invoice.supplier_id).bind(&invoice.party_type).bind(&invoice.reference)
     .bind(subtotal).bind(discount_rate).bind(discount_amount)
     .bind(total_tax).bind(total_amount).bind(&invoice.narration)
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
-    .bind(grand_total).bind(gst_disabled as i64).bind(&voucher_id)
+    .bind(grand_total).bind(gst_disabled as i64)
+    .bind(&invoice.currency_id).bind(exchange_rate).bind(grand_total_foreign)
+    .bind(&voucher_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     if let Some(old_id) = &old_party_id {
@@ -1403,22 +1481,23 @@ pub async fn update_purchase_invoice(
     let party_id = invoice.supplier_id;
 
     // ============= JOURNAL: SPLIT BY ITEM TYPE =============
+    let fx = if is_foreign_currency { exchange_rate } else { 1.0 };
     let product_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type != "service")
-            .map(|i| i.net_amount)
+            .map(|i| round2(i.net_amount * fx))
             .sum::<f64>(),
     );
     let service_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type == "service")
-            .map(|i| i.net_amount)
+            .map(|i| round2(i.net_amount * fx))
             .sum::<f64>(),
     );
 
-    // Group tax
+    // Group tax — base currency
     let mut tax_ledgers: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     for row in &processed_items {
         if row.tax_amount > 0.0 {
@@ -1428,23 +1507,23 @@ pub async fn update_purchase_invoice(
                 true,
             );
             if let Some(cgst_acc) = accounts.cgst_account {
-                *tax_ledgers.entry(cgst_acc).or_insert(0.0) += row.cgst_amount;
+                *tax_ledgers.entry(cgst_acc).or_insert(0.0) += round2(row.cgst_amount * fx);
             }
             if let Some(sgst_acc) = accounts.sgst_account {
-                *tax_ledgers.entry(sgst_acc).or_insert(0.0) += row.sgst_amount;
+                *tax_ledgers.entry(sgst_acc).or_insert(0.0) += round2(row.sgst_amount * fx);
             }
             if let Some(igst_acc) = accounts.igst_account {
-                *tax_ledgers.entry(igst_acc).or_insert(0.0) += row.igst_amount;
+                *tax_ledgers.entry(igst_acc).or_insert(0.0) += round2(row.igst_amount * fx);
             }
         }
     }
 
-    // Party entry (Cr supplier)
+    // Party entry (Cr supplier) — grand_total in base currency
     sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
-        .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&party_id).bind(0.0).bind(total_amount + total_tax)
+        .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&party_id).bind(0.0).bind(grand_total)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    // Dr 1004 Inventory for product lines (Perpetual Inventory)
+    // Dr 1004 Inventory for product lines (base currency)
     if product_subtotal > 0.0 {
         let inventory_acc: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '1004'")
@@ -1475,6 +1554,22 @@ pub async fn update_purchase_invoice(
             sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
                 .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(acc_id).bind(amt).bind(0.0)
                 .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
+    }
+
+    // Stamp foreign amounts on journal entries
+    if is_foreign_currency {
+        if let Some(ref cid) = invoice.currency_id {
+            let _ = sqlx::query(
+                "UPDATE journal_entries 
+                 SET foreign_debit = CASE WHEN debit > 0 THEN ROUND(debit / ?, 6) ELSE 0 END,
+                     foreign_credit = CASE WHEN credit > 0 THEN ROUND(credit / ?, 6) ELSE 0 END,
+                     currency_id = ?,
+                     exchange_rate = ?
+                 WHERE voucher_id = ?"
+            )
+            .bind(exchange_rate).bind(exchange_rate).bind(cid).bind(exchange_rate).bind(&voucher_id)
+            .execute(&mut *tx).await;
         }
     }
 
@@ -1823,6 +1918,8 @@ async fn create_draft_return_for_sales_invoice_in_tx(
         gst_disabled: invoice.gst_disabled,
         is_margin_scheme_invoice: invoice.is_margin_scheme_invoice,
         skip_linked_validation: Some(true),
+        currency_id: invoice.currency_id.clone(),
+        exchange_rate: invoice.exchange_rate,
     };
     let return_id = create_sales_return_in_tx(pool, tx, &sales_return).await?;
 
@@ -2025,22 +2122,30 @@ pub async fn create_sales_invoice(
     // Use pre-bill-discount net (net_amount + invoice_discount_amount) so that
     // Sales/Service is credited at the gross subtotal and the bill-level discount
     // is captured solely in the Discount Allowed (5007) debit entry.
+    // For foreign currency invoices, amounts from processed_items are in foreign currency;
+    // multiply by exchange_rate to convert to base currency for GL posting.
     let product_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type != "service")
-            .map(|i| i.net_amount + i.invoice_discount_amount)
+            .map(|i| {
+                let fc_amount = i.net_amount + i.invoice_discount_amount;
+                if is_foreign_currency { round2(fc_amount * exchange_rate) } else { fc_amount }
+            })
             .sum::<f64>(),
     );
     let service_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type == "service")
-            .map(|i| i.net_amount + i.invoice_discount_amount)
+            .map(|i| {
+                let fc_amount = i.net_amount + i.invoice_discount_amount;
+                if is_foreign_currency { round2(fc_amount * exchange_rate) } else { fc_amount }
+            })
             .sum::<f64>(),
     );
 
-    // Group tax
+    // Group tax — convert to base currency for foreign currency invoices
     let mut tax_ledgers: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     for row in &processed_items {
         if row.tax_amount > 0.0 {
@@ -2049,24 +2154,25 @@ pub async fn create_sales_invoice(
                 is_inter_state,
                 false,
             );
+            let fx = if is_foreign_currency { exchange_rate } else { 1.0 };
             if let Some(cgst_acc) = accounts.cgst_account {
-                *tax_ledgers.entry(cgst_acc).or_insert(0.0) += row.cgst_amount;
+                *tax_ledgers.entry(cgst_acc).or_insert(0.0) += round2(row.cgst_amount * fx);
             }
             if let Some(sgst_acc) = accounts.sgst_account {
-                *tax_ledgers.entry(sgst_acc).or_insert(0.0) += row.sgst_amount;
+                *tax_ledgers.entry(sgst_acc).or_insert(0.0) += round2(row.sgst_amount * fx);
             }
             if let Some(igst_acc) = accounts.igst_account {
-                *tax_ledgers.entry(igst_acc).or_insert(0.0) += row.igst_amount;
+                *tax_ledgers.entry(igst_acc).or_insert(0.0) += round2(row.igst_amount * fx);
             }
         }
     }
 
-    // Party entry (Dr customer)
+    // Party entry (Dr customer) — grand_total is already in base currency
     sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
         .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&party_id).bind(grand_total).bind(0.0)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
-    // Cr 4001 Sales for product lines
+    // Cr 4001 Sales for product lines (base currency)
     if product_subtotal > 0.0 {
         let sales_acc: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4001'")
@@ -2078,7 +2184,7 @@ pub async fn create_sales_invoice(
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
-    // Cr 4002 Services for service lines
+    // Cr 4002 Services for service lines (base currency)
     if service_subtotal > 0.0 {
         let svc_acc: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4002'")
@@ -2090,7 +2196,7 @@ pub async fn create_sales_invoice(
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
-    // Discount entry
+    // Discount entry (base currency — discount_amount already converted above)
     if discount_amount > 0.0 {
         let dis_acc: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'")
@@ -2102,7 +2208,7 @@ pub async fn create_sales_invoice(
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
-    // Tax entries
+    // Tax entries (base currency)
     for (acc_name, amt) in tax_ledgers {
         if amt > 0.0 {
             let acc_id = crate::commands::tax_utils::ensure_gst_account_exists_in_tx(
@@ -2600,22 +2706,30 @@ pub async fn update_sales_invoice(
     // Use pre-bill-discount net (net_amount + invoice_discount_amount) so that
     // Sales/Service is credited at the gross subtotal and the bill-level discount
     // is captured solely in the Discount Allowed (5007) debit entry.
+    // For foreign currency invoices, amounts from processed_items are in foreign currency;
+    // multiply by exchange_rate to convert to base currency for GL posting.
     let product_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type != "service")
-            .map(|i| i.net_amount + i.invoice_discount_amount)
+            .map(|i| {
+                let fc_amount = i.net_amount + i.invoice_discount_amount;
+                if is_foreign_currency { round2(fc_amount * exchange_rate) } else { fc_amount }
+            })
             .sum::<f64>(),
     );
     let service_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type == "service")
-            .map(|i| i.net_amount + i.invoice_discount_amount)
+            .map(|i| {
+                let fc_amount = i.net_amount + i.invoice_discount_amount;
+                if is_foreign_currency { round2(fc_amount * exchange_rate) } else { fc_amount }
+            })
             .sum::<f64>(),
     );
 
-    // Group tax
+    // Group tax — convert to base currency for foreign currency invoices
     let mut tax_ledgers: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     for row in &processed_items {
         if row.tax_amount > 0.0 {
@@ -2624,23 +2738,25 @@ pub async fn update_sales_invoice(
                 is_inter_state,
                 false,
             );
+            let fx = if is_foreign_currency { exchange_rate } else { 1.0 };
             if let Some(cgst_acc) = accounts.cgst_account {
-                *tax_ledgers.entry(cgst_acc).or_insert(0.0) += row.cgst_amount;
+                *tax_ledgers.entry(cgst_acc).or_insert(0.0) += round2(row.cgst_amount * fx);
             }
             if let Some(sgst_acc) = accounts.sgst_account {
-                *tax_ledgers.entry(sgst_acc).or_insert(0.0) += row.sgst_amount;
+                *tax_ledgers.entry(sgst_acc).or_insert(0.0) += round2(row.sgst_amount * fx);
             }
             if let Some(igst_acc) = accounts.igst_account {
-                *tax_ledgers.entry(igst_acc).or_insert(0.0) += row.igst_amount;
+                *tax_ledgers.entry(igst_acc).or_insert(0.0) += round2(row.igst_amount * fx);
             }
         }
     }
 
-    // Party entry (Dr customer)
+    // Party entry (Dr customer) — grand_total is already in base currency
     sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
         .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&party_id).bind(grand_total).bind(0.0)
         .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
+    // Cr 4001 Sales for product lines (base currency)
     if product_subtotal > 0.0 {
         let sales_acc: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4001'")
@@ -2651,6 +2767,7 @@ pub async fn update_sales_invoice(
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(sales_acc).bind(0.0).bind(product_subtotal)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
+    // Cr 4002 Services for service lines (base currency)
     if service_subtotal > 0.0 {
         let svc_acc: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '4002'")
@@ -2662,6 +2779,7 @@ pub async fn update_sales_invoice(
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
+    // Discount entry (base currency — discount_amount already converted above)
     if discount_amount > 0.0 {
         let dis_acc: String =
             sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5007'")
@@ -2673,6 +2791,7 @@ pub async fn update_sales_invoice(
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
+    // Tax entries (base currency)
     for (acc_name, amt) in tax_ledgers {
         if amt > 0.0 {
             let acc_id = crate::commands::tax_utils::ensure_gst_account_exists_in_tx(
@@ -3161,3 +3280,57 @@ pub async fn save_invoice_pdf(html: String, file_name: String) -> Result<String,
         Err("PDF generation failed. Try updating Microsoft Edge.".to_string())
     }
 }
+
+#[tauri::command]
+pub async fn get_recent_ship_to_addresses(
+    registry: State<'_, Arc<DbRegistry>>,
+    party_id: String,
+) -> Result<Vec<ShipToAddress>, String> {
+    let pool = registry.active_pool().await?;
+    let rows: Vec<(Option<String>,)> = sqlx::query_as(
+        "SELECT metadata FROM vouchers 
+         WHERE party_id = ? AND metadata IS NOT NULL AND deleted_at IS NULL
+         ORDER BY voucher_date DESC, id DESC
+         LIMIT 30",
+    )
+    .bind(&party_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut results: Vec<ShipToAddress> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for (meta_opt,) in rows {
+        if let Some(meta_str) = meta_opt {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&meta_str) {
+                if let Some(ship_to_val) = val.get("ship_to") {
+                    if !ship_to_val.is_null() {
+                        if let Ok(addr) = serde_json::from_value::<ShipToAddress>(ship_to_val.clone()) {
+                            let name = addr.name.as_deref().unwrap_or("").trim();
+                            let addr1 = addr.address_line_1.as_deref().unwrap_or("").trim();
+                            if name.is_empty() && addr1.is_empty() {
+                                continue;
+                            }
+                            let key = format!(
+                                "{}:{}:{}:{}:{}",
+                                name.to_lowercase(),
+                                addr1.to_lowercase(),
+                                addr.city.as_deref().unwrap_or("").trim().to_lowercase(),
+                                addr.postal_code.as_deref().unwrap_or("").trim().to_lowercase(),
+                                addr.gstin.as_deref().unwrap_or("").trim().to_lowercase()
+                            );
+                            if !seen.contains(&key) {
+                                seen.insert(key);
+                                results.push(addr);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(results)
+}
+

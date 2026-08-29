@@ -70,6 +70,7 @@ import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
 import { ShipToPopover, ShipToAddress } from '@/components/voucher/ShipToPopover';
 import { useCurrencyLabel, useMoney, useForexMoney } from '@/hooks/useMoney';
+import { useMultiCurrencyEnabled } from '@/hooks/useMultiCurrency';
 
 
 
@@ -86,8 +87,7 @@ export default function SalesInvoicePage() {
   const salesState = useSelector((state: RootState) => state.salesInvoice);
   const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
   const user = useSelector((state: RootState) => state.auth.user);
-  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
-  const isExportBusiness = companyProfile.business_type === 'Export Business';
+  const isExportBusiness = useMultiCurrencyEnabled();
   const money = useMoney();
   const currencyLabel = useCurrencyLabel();
   const forexMoney = useForexMoney(salesState.foreign_currency_code, salesState.foreign_currency_symbol);
@@ -1765,6 +1765,7 @@ export default function SalesInvoicePage() {
                       address_line_1: parties.find(p => p.id === salesState.form.customer_id)?.address_line_1
                     } : undefined}
                     disabled={isReadOnly || !salesState.form.customer_id}
+                    partyId={salesState.form.customer_id}
                   />
                 )}
               </div>

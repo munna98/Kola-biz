@@ -46,6 +46,7 @@ import BillAllocationDialog, { AllocationData } from '@/components/dialogs/BillA
 import ChartOfAccountDialog from '@/components/dialogs/ChartOfAccountDialog';
 import { AccountGroup, Product, api } from '@/lib/tauri';
 import { useMoney, useForexMoney } from '@/hooks/useMoney';
+import { useMultiCurrencyEnabled } from '@/hooks/useMultiCurrency';
 
 interface AccountData {
     id: number;
@@ -63,8 +64,7 @@ export default function PaymentPage() {
     const paymentState = useSelector((state: RootState) => state.payment);
     const user = useSelector((state: RootState) => state.auth.user);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
-    const companyProfile = useSelector((state: any) => state.companyProfile?.profile);
-    const isExportBusiness = companyProfile?.business_type === 'Export Business';
+    const isExportBusiness = useMultiCurrencyEnabled();
     const money = useMoney();
 
     const [forexCurrencyId, setForexCurrencyId] = useState<string | null>(null);

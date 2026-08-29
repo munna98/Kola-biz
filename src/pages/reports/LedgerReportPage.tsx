@@ -18,6 +18,7 @@ import {
   setActiveSectionWithParams,
 } from '@/store';
 import { useMoney } from '@/hooks/useMoney';
+import { useMultiCurrencyEnabled } from '@/hooks/useMultiCurrency';
 
 interface LedgerAccount {
   id: string;
@@ -57,7 +58,7 @@ export default function LedgerReportPage() {
     hasGenerated,
   } = useSelector((state: RootState) => state.ledgerReport);
   const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
-  const isExportBusiness = true;
+  const isExportBusiness = useMultiCurrencyEnabled();
   const money = useMoney();
 
   const [accounts, setAccounts] = useState<LedgerAccount[]>([]);

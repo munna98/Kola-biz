@@ -922,6 +922,7 @@ export default function DeliveryNotePage() {
                       address_line_1: parties.find(p => p.id === noteState.form.customer_id)?.address_line_1
                     } : undefined}
                     disabled={isReadOnly || !noteState.form.customer_id}
+                    partyId={noteState.form.customer_id}
                   />
                 )}
               </div>

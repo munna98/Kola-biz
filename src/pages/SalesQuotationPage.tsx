@@ -1214,6 +1214,7 @@ export default function SalesQuotationPage() {
                       address_line_1: parties.find(p => p.id === salesState.form.customer_id)?.address_line_1
                     } : undefined}
                     disabled={isReadOnly || !salesState.form.customer_id}
+                    partyId={salesState.form.customer_id}
                   />
                 )}
               </div>

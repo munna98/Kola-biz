@@ -22,7 +22,10 @@ import {
   setPurchaseHasUnsavedChanges,
   setPurchaseNavigationData,
   setPurchaseCreatedByName,
-  setActiveSectionWithParams
+  setActiveSectionWithParams,
+  setPurchaseForexInfo,
+  setPurchaseExchangeRate,
+  clearPurchaseForex,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -56,7 +59,8 @@ import PriceCategoryQuickEditDialog from '@/components/dialogs/PriceCategoryQuic
 import { Product, ProductGroup, ProductUnitConversion, Unit, GstTaxSlab, api } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
-import { useCurrencyLabel, useMoney } from '@/hooks/useMoney';
+import { useCurrencyLabel, useMoney, useForexMoney } from '@/hooks/useMoney';
+import { useMultiCurrencyEnabled } from '@/hooks/useMultiCurrency';
 
 interface Party {
   id: number;
@@ -71,7 +75,12 @@ export default function PurchaseInvoicePage() {
   const purchaseState = useSelector((state: RootState) => state.purchaseInvoice);
   const user = useSelector((state: RootState) => state.auth.user);
   const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
+  const isMultiCurrencyEnabled = useMultiCurrencyEnabled();
   const money = useMoney();
+  const forexMoney = useForexMoney(
+    purchaseState.foreign_currency_code || 'USD',
+    purchaseState.foreign_currency_symbol || '$'
+  );
   const currencyLabel = useCurrencyLabel();
   const [products, setProducts] = useState<Product[]>([]);
   const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
@@ -282,6 +291,19 @@ export default function PurchaseInvoicePage() {
 
       // Set Creator Name
       dispatch(setPurchaseCreatedByName(voucher.created_by_name));
+
+      if (voucher.currency_id) {
+        dispatch(
+          setPurchaseForexInfo({
+            currency_id: voucher.currency_id,
+            code: voucher.foreign_currency_code || '',
+            symbol: voucher.foreign_currency_symbol || '',
+          })
+        );
+        dispatch(setPurchaseExchangeRate(voucher.exchange_rate || 1.0));
+      } else {
+        dispatch(clearPurchaseForex());
+      }
 
       // Add items
       const mappedItems = items.map(item => ({
@@ -677,6 +699,8 @@ export default function PurchaseInvoicePage() {
             narration: purchaseState.form.narration || null,
             discount_rate: purchaseState.form.discount_rate || null,
             discount_amount: purchaseState.form.discount_amount || null,
+            currency_id: isMultiCurrencyEnabled ? purchaseState.currency_id : null,
+            exchange_rate: isMultiCurrencyEnabled && purchaseState.currency_id ? purchaseState.exchange_rate : 1.0,
             items: purchaseState.items.map(item => ({
               item_type: item.item_type || 'product',
               product_id: item.item_type === 'service' ? null : (item.product_id || null),
@@ -788,6 +812,8 @@ export default function PurchaseInvoicePage() {
             narration: purchaseState.form.narration || null,
             discount_rate: purchaseState.form.discount_rate || null,
             discount_amount: purchaseState.form.discount_amount || null,
+            currency_id: isMultiCurrencyEnabled ? purchaseState.currency_id : null,
+            exchange_rate: isMultiCurrencyEnabled && purchaseState.currency_id ? purchaseState.exchange_rate : 1.0,
             items: purchaseState.items.map(item => ({
               item_type: item.item_type || 'product',
               product_id: item.item_type === 'service' ? null : (item.product_id || null),
@@ -1324,42 +1350,101 @@ export default function PurchaseInvoicePage() {
           <div className="bg-card border rounded-lg p-3 space-y-3 shrink-0">
             <div className="grid grid-cols-6 gap-3">
               {/* Supplier */}
-              <div ref={supplierRef} className="col-span-2">
-                <Label className="text-xs font-medium mb-1 block">Party *</Label>
-                <Combobox
-                  options={parties.map(p => ({
-                    value: p.id,
-                    label: p.name,
-                    subLabel: p.address_line_1 || undefined,
-                  }))}
-                  value={purchaseState.form.supplier_id}
-                  onChange={(value) => {
-                    const party = parties.find((p) => p.id === value);
-                    if (party) {
-                      dispatch(setSupplier({ id: party.id, name: party.name, type: party.type }));
-                      markUnsaved();
-                      invoke<number>('get_account_balance', { accountId: party.id })
-                        .then(bal => setPartyBalance(bal))
-                        .catch(console.error);
+              <div ref={supplierRef} className="col-span-2 flex items-end gap-2">
+                <div className="flex-1">
+                  <Label className="text-xs font-medium mb-1 block">Party *</Label>
+                  <Combobox
+                    options={parties.map(p => ({
+                      value: p.id,
+                      label: p.name,
+                      subLabel: p.address_line_1 || undefined,
+                    }))}
+                    value={purchaseState.form.supplier_id}
+                    onChange={(value) => {
+                      const party = parties.find((p) => p.id === value);
+                      if (party) {
+                        dispatch(setSupplier({ id: party.id, name: party.name, type: party.type }));
+                        markUnsaved();
+                        invoke<number>('get_account_balance', { accountId: party.id })
+                          .then(bal => setPartyBalance(bal))
+                          .catch(console.error);
 
-                      // Auto-focus first product after party selection
-                      setTimeout(() => {
-                        voucherItemsRef.current?.focusFirstProduct();
-                      }, 100);
-                    }
-                  }}
-                  placeholder="Select party"
-                  searchPlaceholder="Search parties..."
-                  disabled={isReadOnly}
-                  onActionClick={() => {
-                    setNewSupplierName('');
-                    setShowCreateSupplier(true);
-                  }}
-                  onCreate={(name) => {
-                    setNewSupplierName(name);
-                    setShowCreateSupplier(true);
-                  }}
-                />
+                        invoke<{ id: string; code: string; name: string; symbol: string } | null>(
+                          'get_party_currency_info',
+                          { partyId: party.id }
+                        )
+                          .then((info) => {
+                            if (info) {
+                              dispatch(
+                                setPurchaseForexInfo({
+                                  currency_id: info.id,
+                                  code: info.code,
+                                  symbol: info.symbol,
+                                })
+                              );
+                            } else {
+                              dispatch(clearPurchaseForex());
+                            }
+                          })
+                          .catch(() => dispatch(clearPurchaseForex()));
+
+                        // Auto-focus first product after party selection
+                        setTimeout(() => {
+                          voucherItemsRef.current?.focusFirstProduct();
+                        }, 100);
+                      }
+                    }}
+                    placeholder="Select party"
+                    searchPlaceholder="Search parties..."
+                    disabled={isReadOnly}
+                    onActionClick={() => {
+                      setNewSupplierName('');
+                      setShowCreateSupplier(true);
+                    }}
+                    onCreate={(name) => {
+                      setNewSupplierName(name);
+                      setShowCreateSupplier(true);
+                    }}
+                  />
+                </div>
+                {purchaseState.currency_id && (
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-8 px-2.5 flex items-center gap-1 shrink-0 font-medium text-xs rounded-md transition-colors"
+                      >
+                        <span className="font-semibold">{purchaseState.foreign_currency_code}</span>
+                        <span className="text-[10px] text-muted-foreground">@ {purchaseState.exchange_rate}</span>
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-64 p-3" align="end">
+                      <div className="space-y-2">
+                        <h4 className="font-semibold text-xs text-foreground">Exchange Rate Settings</h4>
+                        <p className="text-[10px] text-muted-foreground leading-normal">
+                          Set conversion rate from {purchaseState.foreign_currency_code} to base currency ({currencyLabel || 'INR'}).
+                        </p>
+                        <div className="flex items-center gap-2 pt-1">
+                          <span className="text-xs font-semibold text-foreground shrink-0">1 {purchaseState.foreign_currency_code} =</span>
+                          <Input
+                            type="number"
+                            min="0.0001"
+                            step="0.0001"
+                            value={purchaseState.exchange_rate}
+                            onChange={(e) => {
+                              dispatch(setPurchaseExchangeRate(parseFloat(e.target.value) || 1.0));
+                              markUnsaved();
+                            }}
+                            className="h-7 text-xs flex-1 bg-white focus-visible:ring-primary"
+                            disabled={isReadOnly}
+                          />
+                          <span className="text-xs font-medium text-muted-foreground shrink-0">{currencyLabel || 'INR'}</span>
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                )}
               </div>
 
               {/* Invoice Date */}
@@ -1538,17 +1623,40 @@ export default function PurchaseInvoicePage() {
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
                     <span className="text-muted-foreground">Subtotal:</span>
-                    <span className="font-mono font-medium">{money(purchaseState.totals.subtotal)}</span>
+                    <span className="font-mono font-medium">
+                      {isMultiCurrencyEnabled && purchaseState.currency_id
+                        ? forexMoney(purchaseState.totals.subtotal)
+                        : money(purchaseState.totals.subtotal)}
+                    </span>
                   </div>
                   {purchaseState.totals.discount > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">
-                      Discount: {money(purchaseState.totals.discount)}
+                      Discount:{' '}
+                      {isMultiCurrencyEnabled && purchaseState.currency_id
+                        ? forexMoney(purchaseState.totals.discount)
+                        : money(purchaseState.totals.discount)}
                     </div>
                   )}
                   {purchaseState.totals.tax > 0 && (
-                    <div className="text-xs font-mono text-muted-foreground">Tax: {money(purchaseState.totals.tax)}</div>
+                    <div className="text-xs font-mono text-muted-foreground">
+                      Tax:{' '}
+                      {isMultiCurrencyEnabled && purchaseState.currency_id
+                        ? forexMoney(purchaseState.totals.tax)
+                        : money(purchaseState.totals.tax)}
+                    </div>
                   )}
-                  <div className="text-lg font-mono font-bold">{money(purchaseState.totals.grandTotal)}</div>
+                  <div className="text-lg font-mono font-bold">
+                    {isMultiCurrencyEnabled && purchaseState.currency_id ? (
+                      <div className="flex flex-col items-end">
+                        <span>{forexMoney(purchaseState.totals.grandTotal)}</span>
+                        <span className="text-xs font-normal text-muted-foreground">
+                          ≈ {money(purchaseState.totals.grandTotal * purchaseState.exchange_rate)}
+                        </span>
+                      </div>
+                    ) : (
+                      money(purchaseState.totals.grandTotal)
+                    )}
+                  </div>
                 </div>
               </div>
             </div>

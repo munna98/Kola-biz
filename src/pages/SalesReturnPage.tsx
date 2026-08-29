@@ -23,6 +23,9 @@ import {
     setActiveSectionWithParams,
     setSalesReturnDraft,
     setSalesReturnMarginScheme,
+    setSalesReturnForexInfo,
+    setSalesReturnExchangeRate,
+    clearSalesReturnForex,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -51,7 +54,8 @@ import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/Vouche
 import { Product, ProductUnitConversion, Unit, GstTaxSlab, api } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
-import { useCurrencyLabel, useMoney } from '@/hooks/useMoney';
+import { useCurrencyLabel, useMoney, useForexMoney } from '@/hooks/useMoney';
+import { useMultiCurrencyEnabled } from '@/hooks/useMultiCurrency';
 
 interface Party {
     id: number;
@@ -64,7 +68,12 @@ export default function SalesReturnPage() {
     const dispatch = useDispatch<AppDispatch>();
     const salesReturnState = useSelector((state: RootState) => state.salesReturn);
     const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
+    const isMultiCurrencyEnabled = useMultiCurrencyEnabled();
     const money = useMoney();
+    const forexMoney = useForexMoney(
+        salesReturnState.foreign_currency_code || 'USD',
+        salesReturnState.foreign_currency_symbol || '$'
+    );
     const currencyLabel = useCurrencyLabel();
     const [products, setProducts] = useState<Product[]>([]);
     const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
@@ -471,6 +480,8 @@ export default function SalesReturnPage() {
                         })),
                         gst_disabled: gstDisabled,
                         is_margin_scheme_invoice: salesReturnState.form.is_margin_scheme_invoice,
+                        currency_id: isMultiCurrencyEnabled ? salesReturnState.currency_id : null,
+                        exchange_rate: isMultiCurrencyEnabled && salesReturnState.currency_id ? salesReturnState.exchange_rate : 1.0,
                     },
                 });
                 toast.success('Sales return updated successfully');
@@ -499,6 +510,8 @@ export default function SalesReturnPage() {
                         })),
                         gst_disabled: gstDisabled,
                         is_margin_scheme_invoice: salesReturnState.form.is_margin_scheme_invoice,
+                        currency_id: isMultiCurrencyEnabled ? salesReturnState.currency_id : null,
+                        exchange_rate: isMultiCurrencyEnabled && salesReturnState.currency_id ? salesReturnState.exchange_rate : 1.0,
                     },
                 });
                 toast.success('Sales return created successfully');
@@ -555,6 +568,19 @@ export default function SalesReturnPage() {
             dispatch(setSalesReturnDiscountRate(invoice.discount_rate || 0));
             const loadedIsMarginScheme = Boolean(invoice.is_margin_scheme_invoice);
             dispatch(setSalesReturnMarginScheme(loadedIsMarginScheme));
+
+            if (invoice.currency_id) {
+                dispatch(
+                    setSalesReturnForexInfo({
+                        currency_id: invoice.currency_id,
+                        code: invoice.foreign_currency_code || '',
+                        symbol: invoice.foreign_currency_symbol || '',
+                    })
+                );
+                dispatch(setSalesReturnExchangeRate(invoice.exchange_rate || 1.0));
+            } else {
+                dispatch(clearSalesReturnForex());
+            }
 
             // Populate Items
             items.forEach(item => {
@@ -795,25 +821,83 @@ export default function SalesReturnPage() {
                     <div className="bg-card border rounded-lg p-3 space-y-3 shrink-0">
                         <div className="grid grid-cols-6 gap-3">
                             {/* Customer */}
-                            <div ref={customerRef} className="col-span-2">
-                                <Label className="text-xs font-medium mb-1 block">Party (Customer/Supplier) *</Label>
-                                <Combobox
-                                    options={parties.map(p => ({
-                                        value: p.id,
-                                        label: `${p.name} (${p.type === 'customer' ? 'Customer' : 'Supplier'})`,
-                                        subLabel: p.address_line_1 || undefined,
-                                    }))}
-                                    value={salesReturnState.form.customer_id}
-                                    onChange={(value) => {
-                                        const party = parties.find((p) => p.id === value);
-                                        if (party) {
-                                            dispatch(setSalesReturnCustomer({ id: party.id, name: party.name, type: party.type }));
-                                        }
-                                    }}
-                                    placeholder="Select party"
-                                    searchPlaceholder="Search parties..."
-                                    disabled={isReadOnly}
-                                />
+                            <div ref={customerRef} className="col-span-2 flex items-end gap-2">
+                                <div className="flex-1">
+                                    <Label className="text-xs font-medium mb-1 block">Party (Customer/Supplier) *</Label>
+                                    <Combobox
+                                        options={parties.map(p => ({
+                                            value: p.id,
+                                            label: p.name,
+                                            subLabel: p.address_line_1 || undefined,
+                                        }))}
+                                        value={salesReturnState.form.customer_id}
+                                        onChange={(value) => {
+                                            const party = parties.find((p) => p.id === value);
+                                            if (party) {
+                                                dispatch(setSalesReturnCustomer({ id: party.id, name: party.name, type: party.type }));
+                                                invoke<{ id: string; code: string; name: string; symbol: string } | null>(
+                                                    'get_party_currency_info',
+                                                    { partyId: party.id }
+                                                )
+                                                    .then((info) => {
+                                                        if (info) {
+                                                            dispatch(
+                                                                setSalesReturnForexInfo({
+                                                                    currency_id: info.id,
+                                                                    code: info.code,
+                                                                    symbol: info.symbol,
+                                                                })
+                                                            );
+                                                        } else {
+                                                            dispatch(clearSalesReturnForex());
+                                                        }
+                                                    })
+                                                    .catch(() => dispatch(clearSalesReturnForex()));
+                                            }
+                                        }}
+                                        placeholder="Select party"
+                                        searchPlaceholder="Search parties..."
+                                        disabled={isReadOnly}
+                                    />
+                                </div>
+                                {salesReturnState.currency_id && (
+                                    <Popover>
+                                        <PopoverTrigger asChild>
+                                            <Button
+                                                type="button"
+                                                variant="outline"
+                                                className="h-8 px-2.5 flex items-center gap-1 shrink-0 font-medium text-xs rounded-md transition-colors"
+                                            >
+                                                <span className="font-semibold">{salesReturnState.foreign_currency_code}</span>
+                                                <span className="text-[10px] text-muted-foreground">@ {salesReturnState.exchange_rate}</span>
+                                            </Button>
+                                        </PopoverTrigger>
+                                        <PopoverContent className="w-64 p-3" align="end">
+                                            <div className="space-y-2">
+                                                <h4 className="font-semibold text-xs text-foreground">Exchange Rate Settings</h4>
+                                                <p className="text-[10px] text-muted-foreground leading-normal">
+                                                    Set conversion rate from {salesReturnState.foreign_currency_code} to base currency ({currencyLabel || 'INR'}).
+                                                </p>
+                                                <div className="flex items-center gap-2 pt-1">
+                                                    <span className="text-xs font-semibold text-foreground shrink-0">1 {salesReturnState.foreign_currency_code} =</span>
+                                                    <Input
+                                                        type="number"
+                                                        min="0.0001"
+                                                        step="0.0001"
+                                                        value={salesReturnState.exchange_rate}
+                                                        onChange={(e) => {
+                                                            dispatch(setSalesReturnExchangeRate(parseFloat(e.target.value) || 1.0));
+                                                            dispatch(setSalesReturnHasUnsavedChanges(true));
+                                                        }}
+                                                        className="h-7 text-xs flex-1 bg-white focus-visible:ring-primary"
+                                                        disabled={isReadOnly}
+                                                    />
+                                                    <span className="text-xs font-medium text-muted-foreground shrink-0">{currencyLabel || 'INR'}</span>
+                                                </div>
+                                            </div>
+                                        </PopoverContent>
+                                    </Popover>
+                                )}
                             </div>
 
                             {/* Invoice Date */}
@@ -989,7 +1073,18 @@ export default function SalesReturnPage() {
                                 </div>
                                 <div className="border-t pt-1.5 flex justify-between text-sm">
                                     <span className="font-semibold">Grand Total</span>
-                                    <span className="font-bold font-mono text-primary">{money(salesReturnState.totals.grandTotal)}</span>
+                                    <span className="font-bold font-mono text-primary">
+                                        {isMultiCurrencyEnabled && salesReturnState.currency_id ? (
+                                            <div className="flex flex-col items-end">
+                                                <span>{forexMoney(salesReturnState.totals.grandTotal)}</span>
+                                                <span className="text-xs font-normal text-muted-foreground">
+                                                    ≈ {money(salesReturnState.totals.grandTotal * salesReturnState.exchange_rate)}
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            money(salesReturnState.totals.grandTotal)
+                                        )}
+                                    </span>
                                 </div>
                             </div>
                         </div>

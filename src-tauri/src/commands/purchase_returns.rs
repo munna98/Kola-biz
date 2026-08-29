@@ -31,6 +31,11 @@ pub struct PurchaseReturn {
     pub deleted_at: Option<String>,
     pub tax_inclusive: i64,
     pub gst_disabled: i64,
+    pub currency_id: Option<String>,
+    pub exchange_rate: Option<f64>,
+    pub foreign_total: Option<f64>,
+    pub foreign_currency_code: Option<String>,
+    pub foreign_currency_symbol: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -104,6 +109,12 @@ pub struct CreatePurchaseReturn {
     pub items: Vec<CreatePurchaseReturnItem>,
     pub tax_inclusive: Option<bool>,
     pub gst_disabled: Option<bool>,
+    /// Foreign currency for this return.
+    #[serde(default)]
+    pub currency_id: Option<String>,
+    /// Exchange rate: 1 foreign unit = this many base currency units.
+    #[serde(default)]
+    pub exchange_rate: Option<f64>,
 }
 
 #[tauri::command]
@@ -130,10 +141,16 @@ pub async fn get_purchase_returns(
             v.created_at,
             v.deleted_at,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
-            COALESCE(v.gst_disabled, 0) as gst_disabled
+            COALESCE(v.gst_disabled, 0) as gst_disabled,
+            v.currency_id,
+            v.exchange_rate,
+            v.foreign_total,
+            cur.code as foreign_currency_code,
+            cur.symbol as foreign_currency_symbol
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+         LEFT JOIN currencies cur ON v.currency_id = cur.id
          WHERE v.voucher_type = 'purchase_return' AND v.deleted_at IS NULL
          GROUP BY v.id
          ORDER BY v.voucher_date DESC, v.id DESC",
@@ -168,10 +185,16 @@ pub async fn get_purchase_return(
             v.created_at,
             v.deleted_at,
             COALESCE(v.tax_inclusive, 0) as tax_inclusive,
-            COALESCE(v.gst_disabled, 0) as gst_disabled
+            COALESCE(v.gst_disabled, 0) as gst_disabled,
+            v.currency_id,
+            v.exchange_rate,
+            v.foreign_total,
+            cur.code as foreign_currency_code,
+            cur.symbol as foreign_currency_symbol
          FROM vouchers v
          LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
+         LEFT JOIN currencies cur ON v.currency_id = cur.id
          WHERE v.id = ? AND v.voucher_type = 'purchase_return' AND v.deleted_at IS NULL
          GROUP BY v.id",
     )
@@ -293,10 +316,21 @@ pub async fn create_purchase_return(
     let total_amount = subtotal - discount_amount;
     let grand_total = total_amount + total_tax;
 
+    let exchange_rate = invoice.exchange_rate.unwrap_or(1.0).max(0.0001);
+    let is_foreign_currency = invoice.currency_id.is_some() && exchange_rate != 1.0;
+    let fx = if is_foreign_currency { exchange_rate } else { 1.0 };
+
+    let grand_total_foreign = round2(grand_total);
+    let subtotal_bc = if is_foreign_currency { round2(subtotal * exchange_rate) } else { round2(subtotal) };
+    let discount_amount_bc = if is_foreign_currency { round2(discount_amount * exchange_rate) } else { round2(discount_amount) };
+    let total_tax_bc = if is_foreign_currency { round2(total_tax * exchange_rate) } else { round2(total_tax) };
+    let total_amount_bc = if is_foreign_currency { round2(total_amount * exchange_rate) } else { round2(total_amount) };
+    let grand_total_bc = if is_foreign_currency { round2(grand_total * exchange_rate) } else { round2(grand_total) };
+
     let voucher_id = Uuid::now_v7().to_string();
     sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total, gst_disabled)
-         VALUES (?, ?, 'purchase_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?)",
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, tax_inclusive, grand_total, gst_disabled, currency_id, exchange_rate, foreign_total)
+         VALUES (?, ?, 'purchase_return', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?)",
     )
     .bind(&voucher_id)
     .bind(&voucher_no)
@@ -304,15 +338,18 @@ pub async fn create_purchase_return(
     .bind(&invoice.supplier_id)
     .bind(&invoice.party_type)
     .bind(&invoice.reference)
-    .bind(subtotal)
+    .bind(subtotal_bc)
     .bind(discount_rate)
-    .bind(discount_amount)
-    .bind(total_tax)
-    .bind(total_amount)
+    .bind(discount_amount_bc)
+    .bind(total_tax_bc)
+    .bind(total_amount_bc)
     .bind(&invoice.narration)
     .bind(tax_inclusive as i64)
-    .bind(grand_total)
+    .bind(grand_total_bc)
     .bind(gst_disabled as i64)
+    .bind(&invoice.currency_id)
+    .bind(exchange_rate)
+    .bind(grand_total_foreign)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -374,18 +411,19 @@ pub async fn create_purchase_return(
         .await
         .map_err(|e| format!("Party account not found: {}", e))?;
 
+    // Cr Inventory/Purchase — base currency
     let product_net_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type != "service")
-            .map(|i| i.net_amount)
+            .map(|i| round2(i.net_amount * fx))
             .sum::<f64>(),
     );
     let service_net_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type == "service")
-            .map(|i| i.net_amount)
+            .map(|i| round2(i.net_amount * fx))
             .sum::<f64>(),
     );
 
@@ -422,7 +460,7 @@ pub async fn create_purchase_return(
         .map_err(|e| e.to_string())?;
     }
 
-    if total_tax > 0.0 {
+    if total_tax_bc > 0.0 {
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
              VALUES (?, ?, ?, 0, ?, 'Tax Reversal on Purchase Return')",
@@ -430,12 +468,13 @@ pub async fn create_purchase_return(
         .bind(Uuid::now_v7().to_string())
         .bind(&voucher_id)
         .bind(&tax_account)
-        .bind(total_tax)
+        .bind(total_tax_bc)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     }
 
+    // Dr Supplier — base currency
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
          VALUES (?, ?, ?, ?, 0, 'Debit Note issued to Supplier')",
@@ -443,7 +482,7 @@ pub async fn create_purchase_return(
     .bind(Uuid::now_v7().to_string())
     .bind(&voucher_id)
     .bind(&party_account)
-    .bind(total_amount + total_tax)
+    .bind(grand_total_bc)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -562,24 +601,38 @@ pub async fn update_purchase_return(
     let total_amount = subtotal - discount_amount;
     let grand_total = total_amount + total_tax;
 
+    let exchange_rate = invoice.exchange_rate.unwrap_or(1.0).max(0.0001);
+    let is_foreign_currency = invoice.currency_id.is_some() && exchange_rate != 1.0;
+    let fx = if is_foreign_currency { exchange_rate } else { 1.0 };
+
+    let grand_total_foreign = round2(grand_total);
+    let subtotal_bc = if is_foreign_currency { round2(subtotal * exchange_rate) } else { round2(subtotal) };
+    let discount_amount_bc = if is_foreign_currency { round2(discount_amount * exchange_rate) } else { round2(discount_amount) };
+    let total_tax_bc = if is_foreign_currency { round2(total_tax * exchange_rate) } else { round2(total_tax) };
+    let total_amount_bc = if is_foreign_currency { round2(total_amount * exchange_rate) } else { round2(total_amount) };
+    let grand_total_bc = if is_foreign_currency { round2(grand_total * exchange_rate) } else { round2(grand_total) };
+
     sqlx::query(
         "UPDATE vouchers
-         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?, status = 'posted', tax_inclusive = ?, grand_total = ?, gst_disabled = ?
+         SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?, status = 'posted', tax_inclusive = ?, grand_total = ?, gst_disabled = ?, currency_id = ?, exchange_rate = ?, foreign_total = ?
          WHERE id = ? AND voucher_type = 'purchase_return'",
     )
     .bind(&invoice.voucher_date)
     .bind(&invoice.supplier_id)
     .bind(&invoice.party_type)
     .bind(&invoice.reference)
-    .bind(subtotal)
+    .bind(subtotal_bc)
     .bind(discount_rate)
-    .bind(discount_amount)
-    .bind(total_tax)
-    .bind(total_amount)
+    .bind(discount_amount_bc)
+    .bind(total_tax_bc)
+    .bind(total_amount_bc)
     .bind(&invoice.narration)
     .bind(tax_inclusive as i64)
-    .bind(grand_total)
+    .bind(grand_total_bc)
     .bind(gst_disabled as i64)
+    .bind(&invoice.currency_id)
+    .bind(exchange_rate)
+    .bind(grand_total_foreign)
     .bind(&id)
     .execute(&mut *tx)
     .await
@@ -657,18 +710,19 @@ pub async fn update_purchase_return(
         .await
         .map_err(|e| e.to_string())?;
 
+    // Cr Inventory/Purchase — base currency
     let product_net_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type != "service")
-            .map(|i| i.net_amount)
+            .map(|i| round2(i.net_amount * fx))
             .sum::<f64>(),
     );
     let service_net_subtotal = round2(
         processed_items
             .iter()
             .filter(|i| i.item_type == "service")
-            .map(|i| i.net_amount)
+            .map(|i| round2(i.net_amount * fx))
             .sum::<f64>(),
     );
 
@@ -705,7 +759,7 @@ pub async fn update_purchase_return(
         .map_err(|e| e.to_string())?;
     }
 
-    if total_tax > 0.0 {
+    if total_tax_bc > 0.0 {
         sqlx::query(
             "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
              VALUES (?, ?, ?, 0, ?, 'Tax Reversal on Purchase Return')",
@@ -713,12 +767,13 @@ pub async fn update_purchase_return(
         .bind(Uuid::now_v7().to_string())
         .bind(&id)
         .bind(&tax_account)
-        .bind(total_tax)
+        .bind(total_tax_bc)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
     }
 
+    // Dr Supplier — base currency
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
          VALUES (?, ?, ?, ?, 0, 'Debit Note issued to Supplier')",
@@ -726,7 +781,7 @@ pub async fn update_purchase_return(
     .bind(Uuid::now_v7().to_string())
     .bind(&id)
     .bind(&party_account)
-    .bind(total_amount + total_tax)
+    .bind(grand_total_bc)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
