@@ -59,6 +59,13 @@
             <span class="addr-field-colon">:</span>
             <span class="addr-field-value">{{company.state}}{{#if company.state_code}}, <span class="field-key">Code :</span> {{company.state_code}}{{/if}}</span>
           </div>
+          {{#if company.phone}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">Mobile</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{company.phone}}</span>
+          </div>
+          {{/if}}
         </div>
 
         <div class="addr-separator"></div>
@@ -99,6 +106,13 @@
             <span class="addr-field-colon">:</span>
             <span class="addr-field-value">{{party.state}}{{#if party.state_code}}, <span class="field-key">Code :</span> {{party.state_code}}{{/if}}</span>
           </div>
+          {{#if party.phone}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">Mobile</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{party.phone}}</span>
+          </div>
+          {{/if}}
           {{/if}}
         </div>
         {{else}}
@@ -116,6 +130,13 @@
             <span class="addr-field-colon">:</span>
             <span class="addr-field-value">{{party.state}}{{#if party.state_code}}, <span class="field-key">Code :</span> {{party.state_code}}{{/if}}</span>
           </div>
+          {{#if party.phone}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">Mobile</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{party.phone}}</span>
+          </div>
+          {{/if}}
         </div>
         {{/if}}
         {{/if}}

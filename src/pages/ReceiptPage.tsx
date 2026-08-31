@@ -258,10 +258,9 @@ export default function ReceiptPage() {
                     print({ voucherId: receiptState.currentVoucherId, voucherType: 'receipt' });
                 }
 
-                dispatch(resetReceiptForm());
+                // Use handleNew(true) to reset + refresh the next voucher number preview
+                await handleNew(true);
                 handleAddItem();
-                dispatch(setReceiptHasUnsavedChanges(false));
-                dispatch(setReceiptMode('new'));
                 setForexCurrencyId(null);
                 setForexCurrencyCode('');
                 setForexCurrencySymbol('');
@@ -287,7 +286,8 @@ export default function ReceiptPage() {
                 print({ voucherId: newVoucherId, voucherType: 'receipt' });
             }
 
-            dispatch(resetReceiptForm());
+            // Use handleNew(true) to reset + refresh the next voucher number preview
+            await handleNew(true);
             handleAddItem();
             setForexCurrencyId(null);
             setForexCurrencyCode('');

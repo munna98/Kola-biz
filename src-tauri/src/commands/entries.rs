@@ -348,16 +348,20 @@ pub async fn create_payment(
 
     // Create journal entries
     let je_id_1 = Uuid::now_v7().to_string();
+    let je_narration = payment.narration.clone()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| "Payment made".to_string());
 
     // Credit: Cash/Bank Account (the account user selected to pay from)
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, is_manual, narration)
-         VALUES (?, ?, ?, 0, ?, 0, 'Payment made')",
+         VALUES (?, ?, ?, 0, ?, 0, ?)",
     )
     .bind(&je_id_1)
     .bind(&voucher_id)
     .bind(&payment.account_id)
     .bind(grand_total)
+    .bind(&je_narration)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -388,7 +392,7 @@ pub async fn create_payment(
             .bind(&voucher_id)
             .bind(payee_acc)
             .bind(item_amount_inr)
-            .bind(format!("Payment to {}", item.description))
+            .bind(&je_narration)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
@@ -1069,14 +1073,18 @@ pub async fn update_payment(
     // 6. Create New Journal Entries
     // Credit: Cash/Bank Account
     let je_id_1 = Uuid::now_v7().to_string();
+    let je_narration = payment.narration.clone()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| "Payment updated".to_string());
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, is_manual, narration)
-         VALUES (?, ?, ?, 0, ?, 0, 'Payment updated')",
+         VALUES (?, ?, ?, 0, ?, 0, ?)",
     )
     .bind(&je_id_1)
     .bind(&id)
     .bind(&payment.account_id)
     .bind(grand_total)
+    .bind(&je_narration)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -1106,7 +1114,7 @@ pub async fn update_payment(
             .bind(&id)
             .bind(payee_acc)
             .bind(item_amount_inr)
-            .bind(format!("Payment to {}", item.description))
+            .bind(&je_narration)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
@@ -1458,16 +1466,20 @@ pub async fn create_receipt(
 
     // Create journal entries
     let je_id_1 = Uuid::now_v7().to_string();
+    let je_narration = receipt.narration.clone()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| "Receipt received".to_string());
 
     // Debit: Cash/Bank Account (the account user selected to receive payment)
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, ?, 0, 'Receipt received')",
+         VALUES (?, ?, ?, ?, 0, ?)",
     )
     .bind(&je_id_1)
     .bind(&voucher_id)
     .bind(&receipt.account_id)
     .bind(grand_total)
+    .bind(&je_narration)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -1498,7 +1510,7 @@ pub async fn create_receipt(
             .bind(&voucher_id)
             .bind(payer_acc)
             .bind(item_amount_inr)
-            .bind(format!("Receipt from {}", item.description))
+            .bind(&je_narration)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;
@@ -2120,14 +2132,18 @@ pub async fn update_receipt(
     // 6. Create New Journal Entries
     // Debit: Cash/Bank Account
     let je_id_1 = Uuid::now_v7().to_string();
+    let je_narration = receipt.narration.clone()
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| "Receipt updated".to_string());
     sqlx::query(
         "INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration)
-         VALUES (?, ?, ?, ?, 0, 'Receipt updated')",
+         VALUES (?, ?, ?, ?, 0, ?)",
     )
     .bind(&je_id_1)
     .bind(&id)
     .bind(&receipt.account_id)
     .bind(grand_total)
+    .bind(&je_narration)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -2157,7 +2173,7 @@ pub async fn update_receipt(
             .bind(&id)
             .bind(payer_acc)
             .bind(item_amount_inr)
-            .bind(format!("Receipt from {}", item.description))
+            .bind(&je_narration)
             .execute(&mut *tx)
             .await
             .map_err(|e| e.to_string())?;

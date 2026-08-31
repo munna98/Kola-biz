@@ -249,15 +249,9 @@ export default function PaymentPage() {
                 toast.success('Payment updated successfully');
                 dispatch(setPaymentLoading(false));
 
-                // Return to list view or just clear? Usually editing returns to view or stays. 
-                // Let's reset for now to be consistent with creating new.
-                // Ideally we might want to stay in view mode of the updated voucher.
-                // But for now, let's reset to allow next entry.
-                dispatch(resetPaymentForm());
+                // Use handleNew(true) to reset + refresh the next voucher number preview
+                await handleNew(true);
                 handleAddItem();
-                dispatch(setPaymentHasUnsavedChanges(false));
-                dispatch(setPaymentMode('new'));
-                // Refresh list if needed (handled by sheet verify)
                 return;
             }
 
@@ -271,7 +265,8 @@ export default function PaymentPage() {
                 }
             });
             toast.success('Payment saved successfully');
-            dispatch(resetPaymentForm());
+            // Use handleNew(true) to reset + refresh the next voucher number preview
+            await handleNew(true);
             handleAddItem();
 
             // Focus back to pay from after save

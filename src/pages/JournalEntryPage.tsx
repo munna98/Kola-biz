@@ -320,10 +320,9 @@ export default function JournalEntryPage() {
                     }
                 });
                 toast.success('Journal entry saved successfully');
-                dispatch(resetJournalForm());
+                // Use handleNew(true) to reset + refresh the next voucher number preview
+                await handleNew(true);
                 handleAddLine();
-                dispatch(setJournalMode('new'));
-                dispatch(setJournalHasUnsavedChanges(false));
                 setTimeout(() => dateRef.current?.focus(), 100);
             }
 

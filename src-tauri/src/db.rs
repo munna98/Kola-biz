@@ -2362,6 +2362,11 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     crate::seeds::seed_initial_data(pool).await?;
     crate::seeds::seed_handlebars_templates(pool).await?;
 
+    // Backfill: replace auto-generated narrations in payment/receipt journal entries
+    // with the user-entered voucher narration (idempotent — only touches rows that
+    // still carry the old generated text AND whose voucher has a non-empty narration).
+    let _ = backfill_voucher_narrations(pool).await;
+
     Ok(())
 }
 
@@ -2428,6 +2433,63 @@ async fn backfill_voucher_sequences(pool: &SqlitePool) -> Result<(), sqlx::Error
             .await;
         }
     }
+
+    Ok(())
+}
+/// Backfill: for every existing payment/receipt voucher that has a user narration,
+/// overwrite the auto-generated journal-entry narrations with that narration.
+/// Safe to run repeatedly — only touches rows whose narration still matches the
+/// old generated patterns, so manually edited narrations are preserved.
+async fn backfill_voucher_narrations(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    // Payment vouchers: replace 'Payment made', 'Payment updated', and 'Payment to <name>'
+    sqlx::query(
+        "UPDATE journal_entries
+         SET narration = (
+             SELECT TRIM(v.narration)
+             FROM vouchers v
+             WHERE v.id = journal_entries.voucher_id
+               AND v.voucher_type = 'payment'
+               AND v.deleted_at IS NULL
+               AND TRIM(COALESCE(v.narration, '')) != ''
+         )
+         WHERE voucher_id IN (
+             SELECT id FROM vouchers
+             WHERE voucher_type = 'payment'
+               AND deleted_at IS NULL
+               AND TRIM(COALESCE(narration, '')) != ''
+         )
+         AND (
+             narration IN ('Payment made', 'Payment updated')
+             OR narration LIKE 'Payment to %'
+         )",
+    )
+    .execute(pool)
+    .await?;
+
+    // Receipt vouchers: replace 'Receipt received', 'Receipt updated', and 'Receipt from <name>'
+    sqlx::query(
+        "UPDATE journal_entries
+         SET narration = (
+             SELECT TRIM(v.narration)
+             FROM vouchers v
+             WHERE v.id = journal_entries.voucher_id
+               AND v.voucher_type = 'receipt'
+               AND v.deleted_at IS NULL
+               AND TRIM(COALESCE(v.narration, '')) != ''
+         )
+         WHERE voucher_id IN (
+             SELECT id FROM vouchers
+             WHERE voucher_type = 'receipt'
+               AND deleted_at IS NULL
+               AND TRIM(COALESCE(narration, '')) != ''
+         )
+         AND (
+             narration IN ('Receipt received', 'Receipt updated')
+             OR narration LIKE 'Receipt from %'
+         )",
+    )
+    .execute(pool)
+    .await?;
 
     Ok(())
 }
