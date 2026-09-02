@@ -260,7 +260,6 @@ export default function ReceiptPage() {
 
                 // Use handleNew(true) to reset + refresh the next voucher number preview
                 await handleNew(true);
-                handleAddItem();
                 setForexCurrencyId(null);
                 setForexCurrencyCode('');
                 setForexCurrencySymbol('');
@@ -288,7 +287,6 @@ export default function ReceiptPage() {
 
             // Use handleNew(true) to reset + refresh the next voucher number preview
             await handleNew(true);
-            handleAddItem();
             setForexCurrencyId(null);
             setForexCurrencyCode('');
             setForexCurrencySymbol('');
@@ -304,8 +302,7 @@ export default function ReceiptPage() {
     };
 
     const handleClear = () => {
-        dispatch(resetReceiptForm());
-        handleAddItem();
+        handleNew(true);
         setForexCurrencyId(null);
         setForexCurrencyCode('');
         setForexCurrencySymbol('');
@@ -602,6 +599,7 @@ export default function ReceiptPage() {
                                     placeholder="Select destination account"
                                     searchPlaceholder="Search accounts..."
                                     disabled={receiptState.mode === 'viewing'}
+                                    openOnFocus={false}
                                     onCreate={(name) => {
                                         setNewAccountName(name);
                                         setCreatingForIndex(null);

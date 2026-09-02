@@ -301,6 +301,8 @@ pub fn run() {
             commands::entries::get_pending_invoices,
             // PDF Export
             generate_ledger_pdf,
+            generate_balance_sheet_pdf,
+            generate_profit_loss_pdf,
             get_downloads_path,
             save_invoice_pdf,
             // Employees

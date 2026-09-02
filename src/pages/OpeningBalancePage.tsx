@@ -286,10 +286,7 @@ export default function OpeningBalancePage() {
                     }
                 });
                 toast.success('Opening balance saved successfully');
-                dispatch(resetOpeningBalanceForm());
-                handleAddLine();
-                dispatch(setOpeningBalanceMode('new'));
-                dispatch(setOpeningBalanceHasUnsavedChanges(false));
+                await handleNew(true);
                 setTimeout(() => dateRef.current?.focus(), 100);
             }
 
@@ -319,12 +316,7 @@ export default function OpeningBalancePage() {
     };
 
     const handleClear = () => {
-        dispatch(resetOpeningBalanceForm());
-        handleAddLine();
-        dispatch(setOpeningBalanceMode('new'));
-        dispatch(setOpeningBalanceCurrentVoucherId(null));
-        dispatch(setOpeningBalanceCurrentVoucherNo(undefined));
-        dispatch(setOpeningBalanceHasUnsavedChanges(false));
+        handleNew(true);
         setTimeout(() => dateRef.current?.focus(), 100);
     };
 

@@ -267,8 +267,17 @@ pub async fn get_stock_value_as_of_date(
     as_of_date: &str,
     is_opening: bool,
 ) -> Result<f64, String> {
+    get_stock_value_for_period(pool, as_of_date, as_of_date, is_opening).await
+}
+
+pub async fn get_stock_value_for_period(
+    pool: &sqlx::SqlitePool,
+    from_date: &str,
+    to_date: &str,
+    is_opening: bool,
+) -> Result<f64, String> {
     let date_condition = if is_opening {
-        "v.voucher_date < ? OR (v.voucher_type = 'opening_stock' AND v.voucher_date = ?)"
+        "v.voucher_date < ? OR (v.voucher_type = 'opening_stock' AND v.voucher_date <= ?)"
     } else {
         "v.voucher_date <= ?"
     };
@@ -302,17 +311,17 @@ pub async fn get_stock_value_as_of_date(
 
     let rows: Vec<(String, f64, f64)> = if is_opening {
         sqlx::query_as(&query)
-            .bind(as_of_date)
-            .bind(as_of_date)
-            .bind(as_of_date)
-            .bind(as_of_date)
+            .bind(from_date)
+            .bind(to_date)
+            .bind(from_date)
+            .bind(to_date)
             .fetch_all(pool)
             .await
             .map_err(|e| e.to_string())?
     } else {
         sqlx::query_as(&query)
-            .bind(as_of_date)
-            .bind(as_of_date)
+            .bind(to_date)
+            .bind(to_date)
             .fetch_all(pool)
             .await
             .map_err(|e| e.to_string())?
@@ -572,8 +581,8 @@ pub async fn get_profit_loss(
     .await
     .map_err(|e| e.to_string())?;
 
-    let opening_stock = get_stock_value_as_of_date(&pool, &from_date, true).await?;
-    let closing_stock = get_stock_value_as_of_date(&pool, &to_date, false).await?;
+    let opening_stock = get_stock_value_for_period(&pool, &from_date, &to_date, true).await?;
+    let closing_stock = get_stock_value_for_period(&pool, &from_date, &to_date, false).await?;
 
     let query = "
         SELECT 

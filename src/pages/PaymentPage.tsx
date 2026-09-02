@@ -251,7 +251,6 @@ export default function PaymentPage() {
 
                 // Use handleNew(true) to reset + refresh the next voucher number preview
                 await handleNew(true);
-                handleAddItem();
                 return;
             }
 
@@ -267,7 +266,6 @@ export default function PaymentPage() {
             toast.success('Payment saved successfully');
             // Use handleNew(true) to reset + refresh the next voucher number preview
             await handleNew(true);
-            handleAddItem();
 
             // Focus back to pay from after save
             setTimeout(() => payFromRef.current?.querySelector('button')?.focus(), 100);
@@ -280,8 +278,7 @@ export default function PaymentPage() {
     };
 
     const handleClear = () => {
-        dispatch(resetPaymentForm());
-        handleAddItem();
+        handleNew(true);
         setTimeout(() => payFromRef.current?.querySelector('button')?.focus(), 100);
     };
 
@@ -567,6 +564,7 @@ export default function PaymentPage() {
                                     placeholder="Select source account"
                                     searchPlaceholder="Search accounts..."
                                     disabled={paymentState.mode === 'viewing'}
+                                    openOnFocus={false}
                                     onCreate={(name) => {
                                         setNewAccountName(name);
                                         setCreatingForIndex(null);

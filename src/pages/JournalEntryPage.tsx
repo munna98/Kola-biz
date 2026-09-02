@@ -322,7 +322,6 @@ export default function JournalEntryPage() {
                 toast.success('Journal entry saved successfully');
                 // Use handleNew(true) to reset + refresh the next voucher number preview
                 await handleNew(true);
-                handleAddLine();
                 setTimeout(() => dateRef.current?.focus(), 100);
             }
 
@@ -335,12 +334,7 @@ export default function JournalEntryPage() {
     };
 
     const handleClear = () => {
-        dispatch(resetJournalForm());
-        handleAddLine();
-        dispatch(setJournalMode('new'));
-        dispatch(setJournalCurrentVoucherId(null));
-        dispatch(setJournalCurrentVoucherNo(undefined));
-        dispatch(setJournalHasUnsavedChanges(false));
+        handleNew(true);
         setTimeout(() => dateRef.current?.focus(), 100);
     };
 

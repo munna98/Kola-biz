@@ -352,8 +352,55 @@ export default function BalanceSheetPage() {
     );
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (!data) {
+      toast.error('No balance sheet data to print');
+      return;
+    }
+
+    try {
+      const companyName = companyProfile?.company_name || 'Company';
+      const fileName = `Balance_Sheet_${asOnDate}.pdf`;
+      const downloadsPath = await invoke<string>('get_downloads_path');
+      const filePath = `${downloadsPath}/${fileName}`;
+
+      const pdfData = {
+        company_name: companyName,
+        as_on_date: formatDate(asOnDate),
+        total_assets: data.total_assets,
+        total_liabilities: data.total_liabilities,
+        total_equity: data.total_equity,
+        currency_symbol: companyProfile?.base_currency_symbol || '',
+        assets: data.assets.map(a => ({
+          account_code: a.account_code,
+          account_name: a.account_name,
+          account_group: a.account_group,
+          amount: a.amount,
+        })),
+        liabilities: data.liabilities.map(a => ({
+          account_code: a.account_code,
+          account_name: a.account_name,
+          account_group: a.account_group,
+          amount: a.amount,
+        })),
+        equity: data.equity.map(a => ({
+          account_code: a.account_code,
+          account_name: a.account_name,
+          account_group: a.account_group,
+          amount: a.amount,
+        })),
+      };
+
+      await invoke('generate_balance_sheet_pdf', {
+        data: pdfData,
+        filePath,
+      });
+
+      toast.success(`PDF generated at: ${filePath}`);
+    } catch (error) {
+      toast.error('Failed to generate PDF');
+      console.error(error);
+    }
   };
 
   const handleExport = () => {

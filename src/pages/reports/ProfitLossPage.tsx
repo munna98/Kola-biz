@@ -347,8 +347,55 @@ export default function ProfitLossPage() {
     );
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (!data) {
+      toast.error('No profit & loss data to print');
+      return;
+    }
+
+    try {
+      const companyName = companyProfile?.company_name || 'Company';
+      const fileName = `Profit_and_Loss_${fromDate}_to_${toDate}.pdf`;
+      const downloadsPath = await invoke<string>('get_downloads_path');
+      const filePath = `${downloadsPath}/${fileName}`;
+
+      const pdfData = {
+        company_name: companyName,
+        period_from: formatDate(fromDate),
+        period_to: formatDate(toDate),
+        opening_stock: data.opening_stock,
+        purchases: data.purchases,
+        closing_stock: data.closing_stock,
+        cogs: data.cogs,
+        total_income: data.total_income,
+        total_expenses: data.total_expenses,
+        gross_profit: data.gross_profit,
+        net_profit: data.net_profit,
+        currency_symbol: companyProfile?.base_currency_symbol || '',
+        income_items: data.income.map(i => ({
+          account_code: i.account_code,
+          account_name: i.account_name,
+          account_group: i.account_group,
+          amount: i.amount,
+        })),
+        expense_items: data.expenses.map(e => ({
+          account_code: e.account_code,
+          account_name: e.account_name,
+          account_group: e.account_group,
+          amount: e.amount,
+        })),
+      };
+
+      await invoke('generate_profit_loss_pdf', {
+        data: pdfData,
+        filePath,
+      });
+
+      toast.success(`PDF generated at: ${filePath}`);
+    } catch (error) {
+      toast.error('Failed to generate PDF');
+      console.error(error);
+    }
   };
 
   const handleExport = () => {
