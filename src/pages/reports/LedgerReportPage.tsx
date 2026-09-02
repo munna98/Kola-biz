@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -191,8 +192,105 @@ export default function LedgerReportPage() {
   };
 
   const handleExport = () => {
-    // TODO: Implement CSV export
-    toast.info('Export functionality coming soon');
+    if (!selectedAccountData || displayedEntries.length === 0) {
+      toast.error('No ledger data to export');
+      return;
+    }
+
+    try {
+      const companyName = companyProfile?.company_name || 'Company';
+      const currencySymbol = isViewingForeign ? (foreignCurrencySymbol || '') : (companyProfile.base_currency_symbol || '');
+      const currencyCode = isViewingForeign ? foreignCurrencyCode : (companyProfile.base_currency || 'INR');
+      const viewTitle = isViewingForeign ? ` (${currencyCode} View)` : '';
+
+      const rows: any[][] = [];
+
+      // Title & Header info
+      rows.push([`${companyName} - LEDGER REPORT${viewTitle}`]);
+      rows.push([`Account: ${selectedAccountData.account_code} - ${selectedAccountData.account_name}`]);
+      rows.push([`Period: ${fromDate ? formatDate(fromDate) : 'Beginning'} to ${formatDate(toDate)}`]);
+      rows.push([]);
+
+      // Column Headers
+      rows.push([
+        'Date',
+        'Voucher No',
+        'Type',
+        'Narration',
+        `Debit (${currencyCode})`,
+        `Credit (${currencyCode})`,
+        `Balance (${currencyCode})`,
+      ]);
+
+      // Opening Balance Row
+      if (displayOpeningBalance !== 0) {
+        const opDr = displayOpeningBalance > 0 ? displayOpeningBalance : '';
+        const opCr = displayOpeningBalance < 0 ? Math.abs(displayOpeningBalance) : '';
+        const opBalStr = `${currencySymbol}${Math.abs(displayOpeningBalance).toFixed(2)} ${displayOpeningBalance >= 0 ? 'Dr' : 'Cr'}`;
+        rows.push(['', '', '', 'Opening Balance', opDr, opCr, opBalStr]);
+      }
+
+      // Entry Rows
+      for (const entry of displayedEntries) {
+        const entryMatchesForeignCurrency = !!entry.currency_code && entry.currency_code === foreignCurrencyCode;
+        const debit = isViewingForeign
+          ? (entryMatchesForeignCurrency && (entry.foreign_debit ?? 0) > 0 ? (entry.foreign_debit ?? 0) : '')
+          : (entry.debit > 0 ? entry.debit : '');
+        const credit = isViewingForeign
+          ? (entryMatchesForeignCurrency && (entry.foreign_credit ?? 0) > 0 ? (entry.foreign_credit ?? 0) : '')
+          : (entry.credit > 0 ? entry.credit : '');
+
+        const balVal = isViewingForeign ? (entry.foreign_balance ?? 0) : entry.balance;
+        const balStr = `${currencySymbol}${Math.abs(balVal).toFixed(2)} ${balVal >= 0 ? 'Dr' : 'Cr'}`;
+
+        const voucherTypeLabel = entry.voucher_type
+          ? entry.voucher_type
+              .split('_')
+              .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+              .join(' ')
+          : '-';
+
+        rows.push([
+          formatDate(entry.date),
+          entry.voucher_no,
+          voucherTypeLabel,
+          entry.narration || '-',
+          debit,
+          credit,
+          balStr,
+        ]);
+      }
+
+      // Closing Balance Row
+      const clDr = displayClosingBalance > 0 ? displayClosingBalance : '';
+      const clCr = displayClosingBalance < 0 ? Math.abs(displayClosingBalance) : '';
+      const clBalStr = `${currencySymbol}${Math.abs(displayClosingBalance).toFixed(2)} ${displayClosingBalance >= 0 ? 'Dr' : 'Cr'}`;
+      rows.push(['', '', '', 'Closing Balance', clDr, clCr, clBalStr]);
+
+      // Create sheet and set column widths
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 14 }, // Date
+        { wch: 18 }, // Voucher No
+        { wch: 20 }, // Type
+        { wch: 40 }, // Narration
+        { wch: 16 }, // Debit
+        { wch: 16 }, // Credit
+        { wch: 22 }, // Balance
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Ledger Report');
+
+      const timestamp = new Date().toISOString().split('T')[0];
+      const fileName = `Ledger_${selectedAccountData.account_code}_${timestamp}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast.success(`Ledger report exported as ${fileName}`);
+    } catch (err) {
+      console.error('Export error:', err);
+      toast.error('Failed to export Ledger Report to Excel');
+    }
   };
 
   const handleVoucherClick = (id: string, type: string) => {
@@ -479,7 +577,12 @@ export default function LedgerReportPage() {
                           </td>
                           <td className="p-3 text-sm">
                             <span className="px-2 py-0.5 rounded text-xs font-medium bg-primary/10 text-primary">
-                              {entry.voucher_type ? entry.voucher_type.replace(/_/g, ' ').toUpperCase() : '-'}
+                              {entry.voucher_type
+                                ? entry.voucher_type
+                                    .split('_')
+                                    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+                                    .join(' ')
+                                : '-'}
                             </span>
                           </td>
                           <td className="p-3 text-sm text-muted-foreground">{entry.narration || '-'}</td>

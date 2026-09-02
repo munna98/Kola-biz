@@ -30,6 +30,20 @@ pub struct LedgerPdfData {
     pub entries: Vec<LedgerPdfEntry>,
 }
 
+fn format_voucher_type(vtype: &str) -> String {
+    vtype
+        .split('_')
+        .map(|word| {
+            let mut c = word.chars();
+            match c.next() {
+                None => String::new(),
+                Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn format_pdf_currency(amount: f64, data: &LedgerPdfData) -> String {
     let value = format!("{:.2}", amount);
     match data.currency_display.as_deref().unwrap_or("symbol") {
@@ -197,8 +211,9 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         );
 
         // Type
+        let formatted_type = format_voucher_type(&entry.voucher_type);
         current_layer.use_text(
-            &entry.voucher_type,
+            &formatted_type,
             7.5,
             Mm(col_x[2] + cell_padding),
             Mm(y_pos),
