@@ -71,7 +71,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         .add_builtin_font(BuiltinFont::HelveticaBold)
         .map_err(|e| e.to_string())?;
 
-    let current_layer = document.get_page(page1).get_layer(layer1);
+    let mut current_layer = document.get_page(page1).get_layer(layer1);
 
     // Margins
     let left_margin = 12.0;
@@ -161,12 +161,12 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         if y_pos < 25.0 {
             // Create new page if needed
             let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
-            let new_layer = document.get_page(page).get_layer(layer);
+            current_layer = document.get_page(page).get_layer(layer);
             y_pos = top_margin - 15.0;
 
             // Repeat headers on new page
             for (i, header) in headers.iter().enumerate() {
-                new_layer.use_text(
+                current_layer.use_text(
                     *header,
                     9.0,
                     Mm(col_x[i] + cell_padding),
@@ -243,20 +243,36 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
             );
         }
 
-        // Balance (right-aligned)
+        // Balance
         let balance_str = format!(
             "{} {}",
             format_pdf_currency(entry.balance.abs(), &data),
             if entry.balance >= 0.0 { "Dr" } else { "Cr" }
         );
-        current_layer.use_text(&balance_str, 7.5, Mm(col_x[6] - 8.0), Mm(y_pos), &font);
+        current_layer.use_text(&balance_str, 7.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font);
 
         y_pos -= line_height;
     }
 
     // Closing Balance Row
     y_pos -= 2.0;
-    y_pos -= 2.0;
+    if y_pos < 25.0 {
+        let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+        current_layer = document.get_page(page).get_layer(layer);
+        y_pos = top_margin - 15.0;
+
+        for (i, header) in headers.iter().enumerate() {
+            current_layer.use_text(
+                *header,
+                9.0,
+                Mm(col_x[i] + cell_padding),
+                Mm(y_pos),
+                &font_bold,
+            );
+        }
+        y_pos -= line_height;
+        y_pos -= 1.0;
+    }
 
     current_layer.use_text(
         "Closing Balance",
@@ -275,7 +291,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
     current_layer.use_text(
         &format!("{} {}", closing_str, dr_cr),
         9.0,
-        Mm(col_x[6] - 8.0),
+        Mm(col_x[6] + cell_padding),
         Mm(y_pos),
         &font_bold,
     );
