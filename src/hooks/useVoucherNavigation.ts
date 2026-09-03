@@ -136,8 +136,8 @@ export function useVoucherNavigation({
             dispatch(actions.setMode('viewing'));
             dispatch(actions.setCurrentVoucherId(navigationData.nextId));
             await onLoadVoucher(navigationData.nextId);
-        } else if (mode === 'viewing') {
-            // PageDown / Alt+Right on the last saved voucher transitions back to new mode
+        } else if (mode === 'viewing' || mode === 'editing') {
+            // PageDown / Alt+Right or clicking > on the last saved voucher transitions back to new mode
             await handleNew();
         }
     };

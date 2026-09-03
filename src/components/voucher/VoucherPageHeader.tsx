@@ -112,9 +112,9 @@ export function VoucherPageHeader({
                             variant="outline"
                             size="icon"
                             className="h-8 w-8 shrink-0"
-                            disabled={mode === 'new' ? true : !hasNext}
+                            disabled={mode === 'new'}
                             onClick={mode === 'new' ? undefined : onNavigateNext}
-                            title={mode === 'new' ? 'No next voucher in new mode' : 'Next (Alt+Right)'}
+                            title={mode === 'new' ? 'No next voucher in new mode' : (hasNext ? 'Next (Alt+Right)' : 'New Voucher (Alt+Right)')}
                         >
                             <IconChevronRight size={16} />
                         </Button>

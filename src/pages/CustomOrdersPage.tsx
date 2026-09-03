@@ -559,7 +559,7 @@ export default function CustomOrdersPage() {
                 dispatch(setCustomOrderMode('viewing'));
                 await checkNavigation(d.order.id);
             } catch { /**/ }
-        } else if (mode === 'viewing') {
+        } else if (mode === 'viewing' || mode === 'editing') {
             await openNew();
         }
     };
@@ -1191,8 +1191,8 @@ export default function CustomOrdersPage() {
                             </span>
                         )}
                         <Button variant="outline" size="icon" className="h-8 w-8 shrink-0"
-                            disabled={mode==='new'?true:!hasNext} onClick={handleNavigateNext}
-                            title={mode==='new'?'No next in new mode':'Next (Alt+Right)'}>
+                            disabled={mode === 'new'} onClick={handleNavigateNext}
+                            title={mode === 'new' ? 'No next in new mode' : (hasNext ? 'Next (Alt+Right)' : 'New Custom Order (Alt+Right)')}>
                             <IconChevronRight size={16} />
                         </Button>
                     </div>
