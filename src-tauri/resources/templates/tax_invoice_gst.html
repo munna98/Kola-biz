@@ -217,7 +217,9 @@
       {{#if show_discount_column}}
       <th class="col-disc-amt">Disc</th>
       {{/if}}
+      {{#if show_amount_column}}
       <th class="col-amount">Amount</th>
+      {{/if}}
       {{/if}}
     </tr>
   </thead>
@@ -243,7 +245,9 @@
       {{#if @root.show_discount_column}}
       <td class="right">{{format_number discount_amount 2}}</td>
       {{/if}}
+      {{#if @root.show_amount_column}}
       <td class="right">{{format_number amount 2}}</td>
+      {{/if}}
       {{/if}}
     </tr>
     {{/each}}
@@ -266,7 +270,9 @@
       {{#if show_discount_column}}
       <td class="sp-disc-amt"></td>
       {{/if}}
+      {{#if show_amount_column}}
       <td class="sp-amount"></td>
+      {{/if}}
       {{/if}}
     </tr>
 

@@ -1258,6 +1258,10 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_discount_column INTEGER DEFAULT 0")
             .execute(pool)
             .await;
+    let _ =
+        sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_amount_column INTEGER DEFAULT 1")
+            .execute(pool)
+            .await;
 
     // Migration: Add show_party_name if not exists
     let _ =
@@ -1643,6 +1647,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             show_terms INTEGER DEFAULT 1,
             show_less_column INTEGER DEFAULT 1,
             show_discount_column INTEGER DEFAULT 0,
+            show_amount_column INTEGER DEFAULT 1,
             show_balance_section INTEGER DEFAULT 1,
             auto_print INTEGER DEFAULT 0,
             copies INTEGER DEFAULT 1,
@@ -1668,6 +1673,10 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             .await;
     let _ =
         sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_discount_column INTEGER DEFAULT 0")
+            .execute(pool)
+            .await;
+    let _ =
+        sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_amount_column INTEGER DEFAULT 1")
             .execute(pool)
             .await;
 

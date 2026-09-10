@@ -55,6 +55,7 @@ interface InvoiceTemplate {
     show_terms: number;
     show_less_column: number;
     show_discount_column: number;
+    show_amount_column: number;
     show_balance_section: number;
     table_row_padding: number;
     // Balance section style (thermal only)
@@ -79,12 +80,14 @@ const FEATURE_LABELS: Record<string, string> = {
     show_terms: 'Terms',
     show_less_column: 'Show Less Column',
     show_discount_column: 'Discount Amount Column',
+    show_amount_column: 'Amount Column',
     show_balance_section: 'Customer Balance',
 };
 
 const VOUCHER_TYPE_OPTIONS = [
     { value: 'all', label: 'All Vouchers' },
     { value: 'sales_invoice', label: 'Sales Invoice' },
+    { value: 'sales_quotation', label: 'Sales Quotation' },
     { value: 'sales_return', label: 'Sales Return' },
     { value: 'delivery_note', label: 'Delivery Note' },
     { value: 'purchase_invoice', label: 'Purchase Invoice' },
@@ -214,6 +217,7 @@ export function InvoiceTemplatesPage() {
     const getVoucherLabel = (type: string) => {
         switch (type) {
             case 'sales_invoice': return 'Sales Invoice';
+            case 'sales_quotation': return 'Sales Quotation';
             case 'sales_return': return 'Sales Return';
             case 'purchase_invoice': return 'Purchase Invoice';
             case 'payment': return 'Payment Voucher';
@@ -314,7 +318,7 @@ export function InvoiceTemplatesPage() {
                         <Card key={type}>
                         <CardHeader>
                             <CardTitle className="text-lg flex items-center gap-2">
-                                {type === 'sales_invoice' || type === 'purchase_invoice' || type === 'sales_return' ? (
+                                {type === 'sales_invoice' || type === 'sales_quotation' || type === 'purchase_invoice' || type === 'sales_return' ? (
                                     <IconFileInvoice size={20} />
                                 ) : (
                                     <IconReceipt size={20} />

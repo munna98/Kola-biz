@@ -41,6 +41,7 @@ interface DesignerTemplateResult {
     show_terms: boolean;
     show_less_column: boolean;
     show_discount_column: boolean;
+    show_amount_column: boolean;
 }
 
 interface InvoiceDesignerProps {
@@ -97,6 +98,7 @@ export default function InvoiceDesigner({ templateId, voucherType, onBack }: Inv
                     show_terms: result.show_terms,
                     show_less_column: result.show_less_column,
                     show_discount_column: result.show_discount_column,
+                    show_amount_column: result.show_amount_column,
                 };
                 const design = generateDefaultDesign(features);
                 designer.loadDesign(design);

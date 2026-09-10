@@ -22,6 +22,7 @@ export interface TemplateFeatures {
     show_terms: boolean;
     show_less_column: boolean;
     show_discount_column: boolean;
+    show_amount_column: boolean;
 }
 
 let idCounter = 0;
@@ -593,8 +594,10 @@ function generateA4Design(
     }
     tableCols.push(
         { key: 'rate', label: 'Rate', width: 12, align: 'right' },
-        { key: 'amount', label: 'Amount', width: 14, align: 'right' },
     );
+    if (features.show_amount_column !== false) {
+        tableCols.push({ key: 'amount', label: 'Amount', width: 14, align: 'right' });
+    }
     if (features.show_discount_column) {
         tableCols.push({ key: 'discount_amount', label: 'Disc', width: 10, align: 'right', format: 'currency' });
     }

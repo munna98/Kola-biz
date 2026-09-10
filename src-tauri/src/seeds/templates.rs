@@ -114,6 +114,32 @@ pub async fn seed_handlebars_templates(
     .execute(pool)
     .await?;
 
+    // Sales Quotation Thermal 80mm Template
+    let sq_t80_h = t80_h.replace("INVOICE", "QUOTATION").replace("Invoice:", "Quotation:");
+    let sq_t80_b = t80_b.clone();
+    let sq_t80_f = t80_f.clone();
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-SQ-002")
+    .bind("Thermal 80mm Quotation")
+    .bind("Compact quotation format for 80mm thermal printers")
+    .bind("sales_quotation")
+    .bind("thermal_80mm")
+    .bind("compact")
+    .bind(&sq_t80_h)
+    .bind(&sq_t80_b)
+    .bind(&sq_t80_f)
+    .bind(THERMAL_80MM_CSS)
+    .bind(0)
+    .execute(pool)
+    .await?;
+
     // ==================== DELIVERY NOTE TEMPLATES ====================
 
     // Delivery Note Professional A4 Template (dedicated DN layout)
@@ -271,6 +297,14 @@ pub async fn seed_handlebars_templates(
         .bind(&sq_b)
         .bind(&sq_f)
         .bind(A4_CSS)
+        .execute(pool)
+        .await?;
+
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SQ-002' AND design_mode != 'designer'")
+        .bind(&sq_t80_h)
+        .bind(&sq_t80_b)
+        .bind(&sq_t80_f)
+        .bind(THERMAL_80MM_CSS)
         .execute(pool)
         .await?;
 

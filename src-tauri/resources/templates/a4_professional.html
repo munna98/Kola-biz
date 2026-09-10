@@ -131,7 +131,9 @@
             <th style="width: 8%;">Less</th>
             {{/if}}
             <th style="width: 8%;">Rate</th>
+            {{#if show_amount_column}}
             <th style="width: 10%;">Amount</th>
+            {{/if}}
             {{#if show_discount_column}}
             <th style="width: 8%;">Disc</th>
             {{/if}}
@@ -156,7 +158,9 @@
             <td class="right">{{format_number less_quantity 2}}</td>
             {{/if}}
             <td class="right">{{format_currency rate}}</td>
+            {{#if @root.show_amount_column}}
             <td class="right">{{format_currency amount}}</td>
+            {{/if}}
             {{#if @root.show_discount_column}}
             <td class="right">{{format_currency discount_amount}}</td>
             {{/if}}

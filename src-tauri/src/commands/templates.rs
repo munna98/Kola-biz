@@ -46,6 +46,7 @@ pub struct InvoiceTemplate {
     pub show_terms: Option<i64>,
     pub show_less_column: Option<i64>,
     pub show_discount_column: Option<i64>,
+    pub show_amount_column: Option<i64>,
     pub show_balance_section: Option<i64>,
     pub balance_font_size: Option<i64>,  // pt — applies to balance section in thermal templates
     pub balance_bold: Option<i64>,        // 0 = normal, 1 = bold
@@ -131,6 +132,7 @@ pub struct TemplateSettingsUpdate {
     pub show_terms: Option<bool>,
     pub show_less_column: Option<bool>,
     pub show_discount_column: Option<bool>,
+    pub show_amount_column: Option<bool>,
     pub show_balance_section: Option<bool>,
     pub balance_font_size: Option<i64>,
     pub balance_bold: Option<bool>,
@@ -207,6 +209,10 @@ pub async fn update_template_settings(
     }
     if let Some(val) = settings.show_discount_column {
         separated.push("show_discount_column = ");
+        separated.push_bind_unseparated(if val { 1 } else { 0 });
+    }
+    if let Some(val) = settings.show_amount_column {
+        separated.push("show_amount_column = ");
         separated.push_bind_unseparated(if val { 1 } else { 0 });
     }
     if let Some(val) = settings.show_balance_section {
@@ -431,6 +437,28 @@ pub struct DesignerTemplateData {
     pub show_terms: bool,
     pub show_less_column: bool,
     pub show_discount_column: bool,
+    pub show_amount_column: bool,
+}
+
+#[derive(Debug, sqlx::FromRow)]
+struct DesignerTemplateRow {
+    name: String,
+    layout_config: Option<String>,
+    voucher_type: String,
+    template_format: String,
+    show_logo: Option<i64>,
+    show_company_address: Option<i64>,
+    show_party_name: Option<i64>,
+    show_party_address: Option<i64>,
+    table_row_padding: Option<i64>,
+    show_gstin: Option<i64>,
+    show_item_hsn: Option<i64>,
+    show_bank_details: Option<i64>,
+    show_signature: Option<i64>,
+    show_terms: Option<i64>,
+    show_less_column: Option<i64>,
+    show_discount_column: Option<i64>,
+    show_amount_column: Option<i64>,
 }
 
 #[tauri::command]
@@ -439,30 +467,10 @@ pub async fn get_designer_template(
     template_id: String,
 ) -> Result<DesignerTemplateData, String> {
     let pool = registry.active_pool().await?;
-    let row = sqlx::query_as::<
-        _,
-        (
-            String,
-            Option<String>,
-            String,
-            String,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-            Option<i64>,
-        ),
-    >(
+    let row = sqlx::query_as::<_, DesignerTemplateRow>(
         "SELECT name, layout_config, voucher_type, template_format, 
          show_logo, show_company_address, show_party_name, show_party_address, table_row_padding, show_gstin,
-         show_item_hsn, show_bank_details, show_signature, show_terms, show_less_column, show_discount_column
+         show_item_hsn, show_bank_details, show_signature, show_terms, show_less_column, show_discount_column, show_amount_column
          FROM invoice_templates WHERE id = ?",
     )
     .bind(&template_id)
@@ -471,22 +479,23 @@ pub async fn get_designer_template(
     .map_err(|e| format!("Template not found: {}", e))?;
 
     Ok(DesignerTemplateData {
-        name: row.0,
-        layout_config: row.1,
-        voucher_type: row.2,
-        template_format: row.3,
-        show_logo: row.4.unwrap_or(1) == 1,
-        show_company_address: row.5.unwrap_or(1) == 1,
-        show_party_name: row.6.unwrap_or(1) == 1,
-        show_party_address: row.7.unwrap_or(1) == 1,
-        table_row_padding: row.8.unwrap_or(8),
-        show_gstin: row.9.unwrap_or(1) == 1,
-        show_item_hsn: row.10.unwrap_or(1) == 1,
-        show_bank_details: row.11.unwrap_or(0) == 1,
-        show_signature: row.12.unwrap_or(0) == 1,
-        show_terms: row.13.unwrap_or(0) == 1,
-        show_less_column: row.14.unwrap_or(0) == 1,
-        show_discount_column: row.15.unwrap_or(0) == 1,
+        name: row.name,
+        layout_config: row.layout_config,
+        voucher_type: row.voucher_type,
+        template_format: row.template_format,
+        show_logo: row.show_logo.unwrap_or(1) == 1,
+        show_company_address: row.show_company_address.unwrap_or(1) == 1,
+        show_party_name: row.show_party_name.unwrap_or(1) == 1,
+        show_party_address: row.show_party_address.unwrap_or(1) == 1,
+        table_row_padding: row.table_row_padding.unwrap_or(8),
+        show_gstin: row.show_gstin.unwrap_or(1) == 1,
+        show_item_hsn: row.show_item_hsn.unwrap_or(1) == 1,
+        show_bank_details: row.show_bank_details.unwrap_or(0) == 1,
+        show_signature: row.show_signature.unwrap_or(0) == 1,
+        show_terms: row.show_terms.unwrap_or(0) == 1,
+        show_less_column: row.show_less_column.unwrap_or(0) == 1,
+        show_discount_column: row.show_discount_column.unwrap_or(0) == 1,
+        show_amount_column: row.show_amount_column.unwrap_or(1) == 1,
     })
 }
 
@@ -602,11 +611,17 @@ pub async fn reset_template_to_default(
                 (html.to_string(), css.to_string())
             }
         }
-        "TPL-SI-002" | "TPL-PI-002" | "TPL-SR-002" => {
+        "TPL-SI-002" | "TPL-PI-002" | "TPL-SR-002" | "TPL-SQ-002" | "TPL-DN-002" => {
             let html = include_str!("../../resources/templates/thermal_80mm.html");
             let css = include_str!("../../resources/templates/thermal_80mm.css");
             if template_number == "TPL-SR-002" {
                 let html_replaced = html.replace("Invoice:", "Credit Note:");
+                (html_replaced, css.to_string())
+            } else if template_number == "TPL-SQ-002" {
+                let html_replaced = html.replace("INVOICE", "QUOTATION").replace("Invoice:", "Quotation:");
+                (html_replaced, css.to_string())
+            } else if template_number == "TPL-DN-002" {
+                let html_replaced = html.replace("INVOICE", "DELIVERY NOTE").replace("Invoice:", "Delivery Note:");
                 (html_replaced, css.to_string())
             } else {
                 (html.to_string(), css.to_string())
@@ -2863,6 +2878,7 @@ pub async fn render_custom_order_slip(
         show_terms: Some(0),
         show_less_column: Some(0),
         show_discount_column: Some(0),
+        show_amount_column: Some(1),
         show_balance_section: Some(0),
         balance_font_size: Some(10),
         balance_bold: Some(0),

@@ -131,6 +131,10 @@ impl TemplateEngine {
                 "show_discount_column".to_string(),
                 json!(template.show_discount_column.unwrap_or(0) == 1),
             );
+            obj.insert(
+                "show_amount_column".to_string(),
+                json!(template.show_amount_column.unwrap_or(1) == 1),
+            );
             let show_bal = template.show_balance_section.unwrap_or(1) == 1;
             obj.insert(
                 "show_balance_section".to_string(),
