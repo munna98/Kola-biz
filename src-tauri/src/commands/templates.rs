@@ -412,6 +412,20 @@ pub async fn render_invoice(
         }
     }
 
+    // Dynamically inject letterhead background wrapper if enabled and not present in header_html
+    if template.use_letterhead.unwrap_or(0) == 1 && !template.header_html.contains("letterhead-bg-wrapper") {
+        let letterhead_wrapper = r#"
+{{#if use_letterhead}}
+<div class="letterhead-bg-wrapper" style="position:absolute;top:0;left:0;width:210mm;height:297mm;z-index:0;pointer-events:none;overflow:hidden;">
+    <svg viewBox="0 0 210 297" width="210mm" height="297mm" style="width:100%;height:100%;display:block;">
+        <image href="{{letterhead_data}}" x="0" y="0" width="210" height="297" preserveAspectRatio="none" />
+    </svg>
+</div>
+{{/if}}
+"#;
+        template.header_html.insert_str(0, letterhead_wrapper);
+    }
+
     // 6. Render using Handlebars
     let mut engine = TEMPLATE_ENGINE.lock().map_err(|e| e.to_string())?;
     engine.render_invoice(&template, &company, voucher_data)
@@ -1241,6 +1255,9 @@ async fn get_sales_invoice_data(
 
     if let Some(mut invoice_val) = serde_json::to_value(&invoice).ok() {
         if let Some(obj) = invoice_val.as_object_mut() {
+            obj.insert("voucher_number".to_string(), json!(invoice.voucher_no.clone()));
+            obj.insert("invoice_number".to_string(), json!(invoice.voucher_no.clone()));
+            obj.insert("party_name".to_string(), json!(invoice.customer_name.clone()));
             obj.insert(
                 "items".to_string(),
                 serde_json::to_value(formatted_items.clone()).unwrap_or(json!([])),

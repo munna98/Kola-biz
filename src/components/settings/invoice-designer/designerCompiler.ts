@@ -67,7 +67,8 @@ export function compileDesign(design: TemplateDesign): {
             bodyHtml += `\n<!-- Account Summary -->\n<div style="border-top:1px dashed #000;margin:10px 0;padding:5px 0;font-size:10pt;color:#000;">\n    <div style="display:flex;justify-content:space-between;"><span>Old Bal:</span><span>{{format_currency old_balance}}</span></div>\n    <div style="display:flex;justify-content:space-between;"><span>Bill Amt:</span><span>{{format_currency grand_total}}</span></div>\n    <div style="display:flex;justify-content:space-between;"><span>Paid Amt:</span><span>{{format_currency paid_amount}}</span></div>\n    <div style="display:flex;justify-content:space-between;font-weight:bold;border-top:1px dotted #000;padding-top:2px;margin-top:2px;font-size:11pt;"><span>Bal Due:</span><span>{{format_currency balance_due}}</span></div>\n</div>`;
         }
     } else {
-        headerHtml = renderAbsoluteElements(headerElements);
+        const letterheadWrapper = `{{#if use_letterhead}}\n<div class="letterhead-bg-wrapper" style="position:absolute;top:0;left:0;width:${design.pageSize.width}mm;height:${design.pageSize.height}mm;z-index:0;pointer-events:none;overflow:hidden;">\n    <svg viewBox="0 0 ${design.pageSize.width} ${design.pageSize.height}" width="${design.pageSize.width}mm" height="${design.pageSize.height}mm" style="width:100%;height:100%;display:block;">\n        <image href="{{letterhead_data}}" x="0" y="0" width="${design.pageSize.width}" height="${design.pageSize.height}" preserveAspectRatio="none" />\n    </svg>\n</div>\n{{/if}}\n`;
+        headerHtml = letterheadWrapper + renderAbsoluteElements(headerElements);
         bodyHtml = renderAbsoluteElements(bodyElements);
         footerHtml = renderAbsoluteElements(footerElements);
         stylesCss = generateA4CSS(design);
@@ -498,7 +499,7 @@ function renderA4TableElement(el: DesignerElement): string {
     const fontFamilyStyle = config.fontFamily ? `font-family:${config.fontFamily};` : '';
 
     let html = `<div class="de de-table" style="${style}">`;
-    html += `<table style="width:100%;border-collapse:collapse;font-size:${config.bodyFontSize || 9}pt;${fontFamilyStyle}">`;
+    html += `<table style="width:100%;table-layout:fixed;border-collapse:collapse;font-size:${config.bodyFontSize || 9}pt;${fontFamilyStyle}">`;
 
     const visibleCols = config.columns.filter(c => !c.hidden);
     // A4 padding: use rowPaddingV/H if set, otherwise sensible A4 defaults (4px / 6px)
@@ -527,7 +528,7 @@ function renderA4TableElement(el: DesignerElement): string {
             cellContent = `{{${col.key}}}`;
         }
         const a4BodyBold = config.bodyFontBold ? 'font-weight:bold;' : '';
-        html += `<td style="padding:${a4pv}px ${a4ph}px;${borderStyle}text-align:${col.align};${a4BodyBold}">${cellContent}</td>`;
+        html += `<td style="width:${col.width}%;padding:${a4pv}px ${a4ph}px;${borderStyle}text-align:${col.align};${a4BodyBold}">${cellContent}</td>`;
     }
     html += '</tr>{{/each}}</tbody>';
     html += '</table></div>';
@@ -540,7 +541,7 @@ function renderA4TotalsElement(el: DesignerElement): string {
     const config = el.totalsConfig;
     if (!config) return '';
 
-    let html = `<div class="de de-totals" style="${style}"><table style="width:100%;">`;
+    let html = `<div class="de de-totals" style="${style}"><table style="width:100%;table-layout:fixed;border-collapse:collapse;">`;
     html += '<tbody>';
     for (const row of config.rows) {
         const borderTop = row.bold && config.showBorder ? 'border-top:1px solid #333;' : '';
@@ -560,7 +561,9 @@ function renderA4TotalsElement(el: DesignerElement): string {
             valueHtml = `{{${resolvedField}}}`;
         }
 
-        const rowHtml = `<tr><td style="text-align:${config.labelAlign || 'right'};padding:2px 6px;${borderTop}${fontWeight}">${escapeHtml(row.label)}:</td><td style="text-align:right;padding:2px 6px;width:40%;${borderTop}${fontWeight}">${valueHtml}</td></tr>`;
+        const labelHtml = row.label ? `<td style="text-align:${config.labelAlign || 'right'};padding:0 4px;${borderTop}${fontWeight}">${escapeHtml(row.label)}:</td>` : '';
+        const valueWidth = row.label ? 'width:40%;' : 'width:100%;';
+        const rowHtml = `<tr>${labelHtml}<td style="text-align:right;padding:0 4px;${valueWidth}${borderTop}${fontWeight}">${valueHtml}</td></tr>`;
 
         if (guardField) {
             html += `{{#if ${guardField}}}${rowHtml}{{/if}}`;
@@ -635,6 +638,7 @@ function generateA4CSS(design: TemplateDesign): string {
     .de-image { display: flex; align-items: center; justify-content: center; }
     .de-image img { max-width: 100%; max-height: 100%; object-fit: contain; }
     .de-divider { display: flex; align-items: center; }
+    .letterhead-bg-wrapper { position: absolute; top: 0; left: 0; width: ${pageSize.width}mm; height: ${pageSize.height}mm; z-index: 0; pointer-events: none; }
     @media print {
       @page {
         size: ${pageSize.width}mm ${pageSize.height}mm;
