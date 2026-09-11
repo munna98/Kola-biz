@@ -339,8 +339,49 @@ pub async fn render_invoice(
 
     // Existing saved templates may not have been reseeded with the returns block.
     // Inject a compact return summary at render time so all active templates show net payable.
-    if has_sales_returns && !template.body_html.contains("has_returns") {
-        let return_summary = r#"
+    if has_sales_returns {
+        let is_thermal = template.template_format.contains("thermal")
+            || template.body_html.contains("width: 80mm")
+            || template.body_html.contains("width: 58mm")
+            || template.body_html.contains("width:80mm")
+            || template.body_html.contains("width:58mm");
+
+        let return_summary = if is_thermal {
+            r#"
+{{#if has_returns}}
+<div class="return-section" style="margin: 8px 0; padding-top: 4px; border-top: 1px dashed #000;">
+  <div style="text-align: center; font-weight: bold; font-size: 9pt; margin-bottom: 4px;">RETURNED ITEMS</div>
+  <table style="width: 100%; border-collapse: collapse; font-size: 8pt; color: #000;">
+    <tbody>
+      {{#each return_items}}
+      <tr>
+        <td style="padding: 2px 0;">{{description}}</td>
+        <td style="text-align: right; padding: 2px 0;">{{format_number final_quantity 2}}</td>
+        <td style="text-align: right; padding: 2px 0;">{{format_number rate 2}}</td>
+        <td style="text-align: right; padding: 2px 0;">{{format_number total 2}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  <div style="border-top: 1px dashed #000; margin: 6px 0; padding-top: 4px;">
+    <div style="display: flex; justify-content: space-between; font-size: 9pt; padding: 1px 0;">
+      <span>Invoice Total:</span>
+      <span>{{format_currency grand_total}}</span>
+    </div>
+    <div style="display: flex; justify-content: space-between; font-size: 9pt; padding: 1px 0;">
+      <span>Less Returns:</span>
+      <span>-{{format_currency return_total}}</span>
+    </div>
+    <div style="display: flex; justify-content: space-between; font-weight: bold; font-size: 10pt; border-top: 1px solid #000; margin-top: 4px; padding-top: 2px;">
+      <span>NET PAYABLE:</span>
+      <span>{{format_currency net_payable}}</span>
+    </div>
+  </div>
+</div>
+{{/if}}
+"#
+        } else {
+            r#"
 {{#if has_returns}}
 <div class="inline-return-items" style="margin: 10px 0; padding: 6px 0; border-top: 1px dashed #999; border-bottom: 1px dashed #999; font-size: 9pt;">
   <div style="text-align: center; font-weight: bold; margin-bottom: 4px;">RETURNED ITEMS</div>
@@ -372,18 +413,35 @@ pub async fn render_invoice(
   </div>
 </div>
 {{/if}}
-"#;
+"#
+        };
 
-        if let Some(pos) = template.body_html.find("<!-- Account Summary -->") {
-            template.body_html.insert_str(pos, return_summary);
-        } else if let Some(pos) = template.body_html.find("account-summary") {
-            if let Some(div_start) = template.body_html[..pos].rfind('<') {
-                template.body_html.insert_str(div_start, return_summary);
+        if !template.body_html.contains("return_items") {
+            if let Some(pos) = template.body_html.find("<!-- Account Summary -->") {
+                template.body_html.insert_str(pos, return_summary);
+            } else if let Some(pos) = template.body_html.find("account-summary") {
+                if let Some(div_start) = template.body_html[..pos].rfind('<') {
+                    template.body_html.insert_str(div_start, return_summary);
+                } else {
+                    template.body_html.insert_str(pos, return_summary);
+                }
+            } else if let Some(pos) = template.body_html.find("grand_total") {
+                if let Some(div_end) = template.body_html[pos..].find("</div>") {
+                    template.body_html.insert_str(pos + div_end + 6, return_summary);
+                } else {
+                    template.body_html.push_str(return_summary);
+                }
+            } else if let Some(pos) = template.body_html.find("Thank You").or_else(|| template.body_html.find("Visit Again")) {
+                if let Some(div_start) = template.body_html[..pos].rfind('<') {
+                    template.body_html.insert_str(div_start, return_summary);
+                } else {
+                    template.body_html.insert_str(pos, return_summary);
+                }
+            } else if let Some(last_div) = template.body_html.rfind("</div>") {
+                template.body_html.insert_str(last_div, return_summary);
             } else {
                 template.body_html.push_str(return_summary);
             }
-        } else {
-            template.body_html.push_str(return_summary);
         }
     }
 
@@ -1363,21 +1421,48 @@ async fn get_sales_invoice_data(
                             } else {
                                 item.amount
                             };
+                            let item_desc = item
+                                .description
+                                .clone()
+                                .filter(|d| !d.trim().is_empty())
+                                .or(item.product_name.clone())
+                                .unwrap_or_default();
+                            let qty = if item.final_quantity > 0.0 {
+                                item.final_quantity
+                            } else if item.initial_quantity > 0.0 {
+                                item.initial_quantity
+                            } else {
+                                1.0
+                            };
+                            let item_total = round2(item.net_amount + item.tax_amount);
+                            let final_total = if item_total > 0.0 { item_total } else { round2(qty * item.rate) };
+
+                            obj.insert("quantity".to_string(), json!(qty));
+                            obj.insert("final_quantity".to_string(), json!(qty));
+                            obj.insert("initial_quantity".to_string(), json!(if item.initial_quantity > 0.0 { item.initial_quantity } else { qty }));
                             obj.insert("amount".to_string(), json!(round2(display_amt)));
-                            obj.insert("total".to_string(), json!(round2(item.net_amount + item.tax_amount)));
-                            obj.insert("description".to_string(), json!(item.description.clone().or(item.product_name.clone()).unwrap_or_default()));
+                            obj.insert("total".to_string(), json!(final_total));
+                            obj.insert("description".to_string(), json!(&item_desc));
+                            obj.insert("product_name".to_string(), json!(item.product_name.as_deref().unwrap_or(&item_desc)));
+                            obj.insert("name".to_string(), json!(item.product_name.as_deref().unwrap_or(&item_desc)));
                         }
                         item_val
                     })
                     .collect();
 
-                (formatted, total)
+                let computed_return_total: f64 = formatted
+                    .iter()
+                    .filter_map(|it| it.get("total").and_then(|v| v.as_f64()))
+                    .sum();
+                let final_return_total = if total > 0.0 { total } else { round2(computed_return_total) };
+
+                (formatted, final_return_total)
             } else {
                 (Vec::new(), 0.0)
             };
             obj.insert("return_items".to_string(), serde_json::to_value(&formatted_return_items).unwrap_or(json!([])));
             obj.insert("return_total".to_string(), json!(round2(return_total)));
-            obj.insert("has_returns".to_string(), json!(return_total > 0.0));
+            obj.insert("has_returns".to_string(), json!(return_total > 0.0 || !formatted_return_items.is_empty()));
             obj.insert("net_payable".to_string(), json!(round2((invoice.grand_total - return_total).max(0.0))));
 
             // Detect cash/bank sale (no meaningful balance to show)

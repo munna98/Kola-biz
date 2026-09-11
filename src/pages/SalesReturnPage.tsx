@@ -143,10 +143,12 @@ export default function SalesReturnPage() {
                     dispatch(setSalesReturnMode('new'));
                     dispatch(setSalesReturnCurrentVoucherId(null));
                     dispatch(setSalesReturnCurrentVoucherNo(undefined));
+                    const partyIdVal = invoicePrefill.customerId;
+                    const matchingParty = combinedParties.find(p => String(p.id) === String(partyIdVal));
                     dispatch(setSalesReturnCustomer({
-                        id: Number(invoicePrefill.customerId) || 0,
-                        name: String(invoicePrefill.customerName || ''),
-                        type: invoicePrefill.partyType || 'customer',
+                        id: (matchingParty ? matchingParty.id : (partyIdVal || 0)) as any,
+                        name: String(invoicePrefill.customerName || matchingParty?.name || ''),
+                        type: invoicePrefill.partyType || matchingParty?.type || 'customer',
                     }));
                     dispatch(setSalesReturnVoucherDate(String(invoicePrefill.voucherDate || new Date().toISOString().split('T')[0])));
                     dispatch(setSalesReturnReference(String(invoicePrefill.invoiceNo || '')));
@@ -168,18 +170,6 @@ export default function SalesReturnPage() {
                         }));
                     }
                     dispatch(setSalesReturnHasUnsavedChanges(true));
-                } else if (salesReturnState.form.customer_id === 0 && salesReturnState.mode === 'new') {
-                    // Default to "Cash Sale" account if available, otherwise first party
-                    const cashSaleAccount = combinedParties.find(p => p.name === 'Cash');
-                    const defaultParty = cashSaleAccount || combinedParties[0];
-
-                    if (defaultParty) {
-                        dispatch(setSalesReturnCustomer({
-                            id: defaultParty.id,
-                            name: defaultParty.name,
-                            type: defaultParty.type
-                        }));
-                    }
                 }
             } catch (error) {
                 toast.error('Failed to load data');
@@ -191,6 +181,23 @@ export default function SalesReturnPage() {
 
         loadData();
     }, [dispatch, activeSectionParams]);
+
+    // Default Party Selection Effect
+    useEffect(() => {
+        if (salesReturnState.mode === 'new' && salesReturnState.form.customer_id === 0 && parties.length > 0) {
+            // Default to "Cash Sale" account if available, otherwise first party
+            const cashSaleAccount = parties.find(p => p.name === 'Cash');
+            const defaultParty = cashSaleAccount || parties[0];
+
+            if (defaultParty) {
+                dispatch(setSalesReturnCustomer({
+                    id: defaultParty.id,
+                    name: defaultParty.name,
+                    type: defaultParty.type
+                }));
+            }
+        }
+    }, [salesReturnState.mode, salesReturnState.form.customer_id, parties, dispatch]);
 
     // Auto-add first line if empty and in new mode
     useEffect(() => {
@@ -537,9 +544,12 @@ export default function SalesReturnPage() {
                 return;
             }
             handleNew(true);
-        } catch (error) {
-            toast.error('Failed to save sales return');
-            console.error(error);
+        } catch (error: any) {
+            const errorMessage = typeof error === 'string'
+                ? error
+                : (error?.message || error?.toString() || 'Failed to save sales return');
+            toast.error(errorMessage);
+            console.error('Failed to save sales return error:', error);
         } finally {
             dispatch(setSalesReturnLoading(false));
         }
@@ -823,7 +833,7 @@ export default function SalesReturnPage() {
                             {/* Customer */}
                             <div ref={customerRef} className="col-span-2 flex items-end gap-2">
                                 <div className="flex-1">
-                                    <Label className="text-xs font-medium mb-1 block">Party (Customer/Supplier) *</Label>
+                                    <Label className="text-xs font-medium mb-1 block">Party *</Label>
                                     <Combobox
                                         options={parties.map(p => ({
                                             value: p.id,

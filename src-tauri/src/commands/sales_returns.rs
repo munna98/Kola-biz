@@ -195,9 +195,18 @@ async fn validate_linked_return_quantities(
         .unwrap_or(0.0);
 
         if requested_qty > (sold_qty - prior_returned_qty) + 0.0001 {
+            let max_allowed = (sold_qty - prior_returned_qty).max(0.0);
+            let product_name: Option<String> = sqlx::query_scalar("SELECT name FROM products WHERE id = ?")
+                .bind(&product_id)
+                .fetch_optional(&mut **tx)
+                .await
+                .ok()
+                .flatten();
+            let name_display = product_name.unwrap_or_else(|| product_id.clone());
+
             return Err(format!(
-                "Return quantity exceeds original sale quantity for product {}",
-                product_id
+                "Return quantity ({}) exceeds available returnable quantity ({}) for product '{}'",
+                requested_qty, max_allowed, name_display
             ));
         }
     }
