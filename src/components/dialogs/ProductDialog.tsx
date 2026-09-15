@@ -156,6 +156,7 @@ export default function ProductDialog({
     serial_number: '',
     imei: '',
     warranty_months: undefined,
+    battery_health: '',
     unit_id: defaultUnitId,
     purchase_rate: 0,
     sales_rate: 0,
@@ -238,7 +239,7 @@ export default function ProductDialog({
 
   const unitLocked = Boolean(product?.has_transactions);
 
-  const orderedFields = ['code', 'name', 'group', 'brand', 'color', 'warranty', 'unit', 'part_number', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp', 'cost', 'barcode'];
+  const orderedFields = ['code', 'name', 'group', 'brand', 'color', 'warranty', 'battery_health', 'unit', 'part_number', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp', 'cost', 'barcode'];
 
   const { register, handleKeyDown, handleSelectKeyDown, focusNext, parseNumber, formatNumber } = useDialog(
     open,
@@ -324,6 +325,7 @@ export default function ProductDialog({
           serial_number: product.serial_number || '',
           imei: product.imei || '',
           warranty_months: product.warranty_months,
+          battery_health: product.battery_health || '',
           group_id: product.group_id,
           brand_id: product.brand_id,
           color_id: product.color_id,
@@ -381,6 +383,8 @@ export default function ProductDialog({
           part_number: '',
           serial_number: '',
           imei: '',
+          warranty_months: undefined,
+          battery_health: '',
           group_id: undefined,
           brand_id: undefined,
           supplier_id: undefined,
@@ -438,6 +442,8 @@ export default function ProductDialog({
       part_number: '',
       serial_number: '',
       imei: '',
+      warranty_months: undefined,
+      battery_health: '',
       group_id: undefined,
       brand_id: undefined,
       supplier_id: undefined,
@@ -850,6 +856,17 @@ export default function ProductDialog({
                     value={form.warranty_months ?? ''}
                     onChange={e => setForm({ ...form, warranty_months: e.target.value ? parseInt(e.target.value, 10) || 0 : undefined })}
                     placeholder="e.g., 12"
+                    className="h-8 text-sm font-mono"
+                  />
+                </div>
+              )}
+              {(dialogFields.battery_health || product?.battery_health) && (
+                <div>
+                  <Label className="text-xs font-medium mb-1 block">B Health</Label>
+                  <Input
+                    value={form.battery_health || ''}
+                    onChange={e => setForm({ ...form, battery_health: e.target.value })}
+                    placeholder="e.g., 85%"
                     className="h-8 text-sm font-mono"
                   />
                 </div>

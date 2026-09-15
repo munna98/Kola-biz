@@ -13,6 +13,8 @@ export interface ProductComboboxDisplaySettings {
   show_brand: boolean;
   show_color: boolean;
   show_warranty: boolean;
+  show_battery_health: boolean;
+  show_supplier: boolean;
 }
 
 export const DEFAULT_COMBOBOX_DISPLAY_SETTINGS: ProductComboboxDisplaySettings = {
@@ -28,6 +30,8 @@ export const DEFAULT_COMBOBOX_DISPLAY_SETTINGS: ProductComboboxDisplaySettings =
   show_brand: false,
   show_color: false,
   show_warranty: false,
+  show_battery_health: false,
+  show_supplier: false,
 };
 
 export interface ProductComboboxColumnWidths {
@@ -45,6 +49,8 @@ export interface ProductComboboxColumnWidths {
   brand?: number;
   color?: number;
   warranty?: number;
+  battery_health?: number;
+  supplier?: number;
 }
 
 export const DEFAULT_COMBOBOX_COLUMN_WIDTHS: Required<ProductComboboxColumnWidths> = {
@@ -62,6 +68,8 @@ export const DEFAULT_COMBOBOX_COLUMN_WIDTHS: Required<ProductComboboxColumnWidth
   brand: 100,
   color: 100,
   warranty: 100,
+  battery_health: 90,
+  supplier: 120,
 };
 
 export interface ComboboxHeaderColumn {
@@ -116,6 +124,12 @@ export function getProductComboboxHeaderColumns(
   }
   if (displaySettings.show_warranty) {
     cols.push({ key: 'warranty', label: 'Warranty', widthPx: widths.warranty, align: 'left' });
+  }
+  if (displaySettings.show_battery_health) {
+    cols.push({ key: 'battery_health', label: 'B Health', widthPx: widths.battery_health, align: 'left' });
+  }
+  if (displaySettings.show_supplier) {
+    cols.push({ key: 'supplier', label: 'Supplier', widthPx: widths.supplier, align: 'left' });
   }
 
   return cols;
@@ -239,6 +253,18 @@ export function buildProductComboboxOption({
     const wStr = `${p.warranty_months} Mo`;
     columnData.warranty = wStr;
     searchItems.push(`warranty:${p.warranty_months}`, wStr, `${p.warranty_months} months`);
+  }
+
+  if (displaySettings.show_battery_health && p.battery_health !== undefined && p.battery_health !== null) {
+    columnData.battery_health = p.battery_health;
+    searchItems.push(`battery:${p.battery_health}`, String(p.battery_health));
+  }
+
+  if (displaySettings.show_supplier && p.supplier_name) {
+    columnData.supplier = p.supplier_name;
+  }
+  if (p.supplier_name) {
+    searchItems.push(p.supplier_name);
   }
 
   const keywords = searchItems.filter(Boolean) as string[];

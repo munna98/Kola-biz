@@ -20,6 +20,7 @@ export interface ProductTableColumns {
   brand: boolean;
   color: boolean;
   warranty: boolean;
+  battery_health: boolean;
   unit: boolean;
   purchase_rate: boolean;
   sales_rate: boolean;
@@ -46,6 +47,7 @@ export interface ProductDialogFields {
   brand: boolean;
   color: boolean;
   warranty: boolean;
+  battery_health: boolean;
   hsn_sac_code: boolean;
   gst_slab: boolean;
   purchase_rate: boolean;
@@ -74,6 +76,7 @@ export const DEFAULT_TABLE_COLUMNS: ProductTableColumns = {
   brand: true,
   color: false,
   warranty: false,
+  battery_health: false,
   unit: true,
   purchase_rate: true,
   sales_rate: true,
@@ -100,6 +103,7 @@ export const DEFAULT_DIALOG_FIELDS: ProductDialogFields = {
   brand: true,
   color: false,
   warranty: false,
+  battery_health: false,
   hsn_sac_code: true,
   gst_slab: true,
   purchase_rate: true,
@@ -145,6 +149,7 @@ const TABLE_COLUMN_DEFS: { key: keyof ProductTableColumns; label: string; descri
   { key: 'brand', label: 'Brand', description: 'Product brand name' },
   { key: 'color', label: 'Color', description: 'Product color' },
   { key: 'warranty', label: 'Warranty (Months)', description: 'Product warranty duration column' },
+  { key: 'battery_health', label: 'B Health', description: 'Product Battery Health column' },
   { key: 'unit', label: 'Unit', description: 'Base unit of measurement' },
   { key: 'part_number', label: 'Part Number', description: 'Manufacturer / OEM Part Number column' },
   { key: 'purchase_rate', label: 'Purchase Rate', description: 'Default purchase price' },
@@ -168,6 +173,7 @@ const DIALOG_FIELD_DEFS: { key: keyof ProductDialogFields; label: string; descri
   { key: 'brand', label: 'Brand', description: 'Brand selector' },
   { key: 'color', label: 'Color', description: 'Color selector' },
   { key: 'warranty', label: 'Warranty (Months)', description: 'Product warranty duration input field' },
+  { key: 'battery_health', label: 'B Health', description: 'Product Battery Health input field' },
   { key: 'serial_number', label: 'Serial Number', description: 'Product Serial Number input field' },
   { key: 'imei', label: 'IMEI Number', description: 'Product IMEI Number input field' },
   { key: 'part_number', label: 'Part Number', description: 'Manufacturer / OEM Part Number input field' },
@@ -202,6 +208,8 @@ const COMBOBOX_FIELD_DEFS: { key: keyof ProductComboboxDisplaySettings; widthKey
   { key: 'show_brand', widthKey: 'brand', label: 'Product Brand', description: 'Show Brand column in dropdown table' },
   { key: 'show_color', widthKey: 'color', label: 'Product Color', description: 'Show Color column in dropdown table' },
   { key: 'show_warranty', widthKey: 'warranty', label: 'Warranty', description: 'Show Warranty column in dropdown table' },
+  { key: 'show_battery_health', widthKey: 'battery_health', label: 'B Health', description: 'Show B Health column in dropdown table' },
+  { key: 'show_supplier', widthKey: 'supplier', label: 'Supplier', description: 'Show Supplier column in dropdown table' },
 ];
 
 // ── Component ─────────────────────────────────────────────────────────────────

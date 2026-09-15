@@ -41,6 +41,7 @@ const formatProductSpecs = (p: Product, money: (amount: number | null | undefine
   if (p.serial_number) text += `• *Serial No:* ${p.serial_number}\n`;
   if (p.imei) text += `• *IMEI:* ${p.imei}\n`;
   if (p.warranty_months) text += `• *Warranty:* ${p.warranty_months} Months\n`;
+  if (p.battery_health) text += `• *B Health:* ${p.battery_health}\n`;
   if (p.sales_rate !== undefined && p.sales_rate !== null) {
     text += `• *Price:* ${money(p.sales_rate)}\n`;
   }
@@ -263,6 +264,7 @@ export default function ProductsPage() {
       (p.serial_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (p.imei || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (p.warranty_months ? `${p.warranty_months} months` : '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.battery_health || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (groups.find(g => g.id === p.group_id)?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (brands.find(b => b.id === p.brand_id)?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (colors.find(c => c.id === p.color_id)?.name || p.color_name || '').toLowerCase().includes(searchTerm.toLowerCase());
@@ -440,6 +442,7 @@ export default function ProductsPage() {
                 {columnSettings.serial_number && <th className="p-3">Serial No.</th>}
                 {columnSettings.imei && <th className="p-3">IMEI</th>}
                 {columnSettings.warranty && <th className="p-3">Warranty</th>}
+                {columnSettings.battery_health && <th className="p-3">B Health</th>}
                 {columnSettings.purchase_rate && <th className="p-3">Purchase</th>}
                 {columnSettings.sales_rate && <th className="p-3">Sales</th>}
                 {columnSettings.mrp && <th className="p-3">MRP</th>}
@@ -467,6 +470,7 @@ export default function ProductsPage() {
                       (columnSettings.serial_number ? 1 : 0) +
                       (columnSettings.imei ? 1 : 0) +
                       (columnSettings.warranty ? 1 : 0) +
+                      (columnSettings.battery_health ? 1 : 0) +
                       (columnSettings.hsn_sac_code ? 1 : 0) +
                       (columnSettings.group ? 1 : 0) +
                       (columnSettings.brand ? 1 : 0) +
@@ -532,6 +536,7 @@ export default function ProductsPage() {
                       {columnSettings.serial_number && <td className="p-3 font-mono text-sm">{p.serial_number || '-'}</td>}
                       {columnSettings.imei && <td className="p-3 font-mono text-sm">{p.imei || '-'}</td>}
                       {columnSettings.warranty && <td className="p-3 font-mono text-sm">{p.warranty_months !== undefined && p.warranty_months !== null ? `${p.warranty_months} Mo` : '-'}</td>}
+                      {columnSettings.battery_health && <td className="p-3 font-mono text-sm">{p.battery_health || '-'}</td>}
                       {columnSettings.purchase_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.purchase_rate)}</td>}
                       {columnSettings.sales_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.sales_rate)}</td>}
                       {columnSettings.mrp && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.mrp)}</td>}
@@ -710,7 +715,8 @@ export default function ProductsPage() {
           salesRate: barcodeProduct.sales_rate,
           mrp: barcodeProduct.mrp,
           supplierCode: barcodeProduct.supplier_id || '',
-          supplierName: barcodeProduct.supplier_name || ''
+          supplierName: barcodeProduct.supplier_name || '',
+          imei: barcodeProduct.imei || '',
         }] : []}
       />
 
@@ -718,7 +724,7 @@ export default function ProductsPage() {
         open={importOpen}
         onOpenChange={setImportOpen}
         title="Import Products from Excel"
-        expectedColumns={['name', 'code', 'part_number', 'serial_number', 'imei', 'warranty_months', 'group', 'unit', 'purchase_rate', 'sales_rate', 'mrp', 'barcode', 'hsn_sac_code']}
+        expectedColumns={['name', 'code', 'part_number', 'serial_number', 'imei', 'warranty_months', 'battery_health', 'group', 'unit', 'purchase_rate', 'sales_rate', 'mrp', 'barcode', 'hsn_sac_code']}
         sampleData={[
           {
             name: "Premium Widget",
@@ -727,6 +733,7 @@ export default function ProductsPage() {
             serial_number: "SN-12345",
             imei: "356789012345678",
             warranty_months: 12,
+            battery_health: "85%",
             group: "General",
             unit: "PCS",
             purchase_rate: 100.0,
@@ -760,6 +767,7 @@ export default function ProductsPage() {
               serial_number: r.serial_number ? String(r.serial_number) : undefined,
               imei: r.imei ? String(r.imei) : undefined,
               warranty_months: r.warranty_months ? Number(r.warranty_months) : undefined,
+              battery_health: r.battery_health ? String(r.battery_health) : undefined,
               group_id: groupId,
               unit_id: unitId,
               purchase_rate: Number(r.purchase_rate) || 0,

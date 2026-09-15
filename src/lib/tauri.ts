@@ -162,6 +162,7 @@ export interface Product {
   serial_number?: string;
   imei?: string;
   warranty_months?: number;
+  battery_health?: string;
   is_active: number;
   created_at: string;
   has_transactions: boolean;
@@ -232,6 +233,7 @@ export interface CreateProduct {
   serial_number?: string;
   imei?: string;
   warranty_months?: number;
+  battery_health?: string;
   conversions?: CreateProductUnitConversion[];
   hsn_sac_code?: string;
   gst_slab_id?: string;

@@ -127,6 +127,13 @@ export function buildDefaultElements(companyName?: string, customText?: string):
             textAlign: 'center', color: '#000000', letterSpacing: 0,
             dataField: 'product.supplierName',
         },
+        {
+            id: 'imei', label: 'IMEI Number', type: 'text', enabled: false,
+            x: 2, y: 23, width: 46, height: 2.5,
+            fontFamily: 'Arial', fontSize: 6, fontWeight: 'normal', fontStyle: 'normal',
+            textAlign: 'center', color: '#000000', letterSpacing: 0,
+            dataField: 'product.imei',
+        },
     ];
 }
 
@@ -213,6 +220,7 @@ const SAMPLE_PRODUCT = {
     mrp: 1099.00,
     supplierCode: 'SUP-001',
     supplierName: 'Acme Traders',
+    imei: '356789012345678',
 };
 
 // ── Formatting Toolbar ──
@@ -701,6 +709,7 @@ function DesignerElement({ element, selected, scale, barcodeFormat, onSelect, on
             case 'product.mrp': return `MRP ${money(SAMPLE_PRODUCT.mrp)}`;
             case 'product.supplierCode': return SAMPLE_PRODUCT.supplierCode;
             case 'product.supplierName': return SAMPLE_PRODUCT.supplierName;
+            case 'product.imei': return SAMPLE_PRODUCT.imei;
             default: return element.content || null; // null = show placeholder
         }
     };

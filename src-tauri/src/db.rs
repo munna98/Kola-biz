@@ -842,6 +842,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             serial_number TEXT,
             imei TEXT,
             warranty_months INTEGER,
+            battery_health TEXT,
             supplier_id TEXT REFERENCES chart_of_accounts(id),
             is_master INTEGER NOT NULL DEFAULT 0,
             parent_product_id TEXT REFERENCES products(id),
@@ -899,6 +900,11 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
 
     // Migration: Add warranty_months to products if not exists
     let _ = sqlx::query("ALTER TABLE products ADD COLUMN warranty_months INTEGER")
+        .execute(pool)
+        .await;
+
+    // Migration: Add battery_health to products if not exists
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN battery_health TEXT")
         .execute(pool)
         .await;
 

@@ -97,15 +97,16 @@ pub(crate) async fn create_child_product_in_tx(
         Option<String>,
         Option<String>,
         Option<i64>,
+        Option<String>,
     )> = sqlx::query_as(
-        "SELECT name, group_id, brand_id, color_id, supplier_id, unit_id, hsn_sac_code, gst_slab_id, part_number, serial_number, imei, warranty_months FROM products WHERE id = ?",
+        "SELECT name, group_id, brand_id, color_id, supplier_id, unit_id, hsn_sac_code, gst_slab_id, part_number, serial_number, imei, warranty_months, battery_health FROM products WHERE id = ?",
     )
     .bind(master_product_id)
     .fetch_optional(&mut **tx)
     .await
     .map_err(|e| e.to_string())?;
 
-    let (name, group_id, brand_id, color_id, supplier_id, unit_id, hsn_sac_code, gst_slab_id, part_number, serial_number, imei, warranty_months) =
+    let (name, group_id, brand_id, color_id, supplier_id, unit_id, hsn_sac_code, gst_slab_id, part_number, serial_number, imei, warranty_months, battery_health) =
         master.ok_or_else(|| format!("Master product '{}' not found", master_product_id))?;
 
     // Generate next sequential code within the same transaction
@@ -115,8 +116,8 @@ pub(crate) async fn create_child_product_in_tx(
     sqlx::query(
         "INSERT INTO products \
          (id, code, name, group_id, brand_id, color_id, supplier_id, unit_id, purchase_rate, sales_rate, mrp, \
-          barcode, part_number, serial_number, imei, warranty_months, hsn_sac_code, gst_slab_id, is_master, parent_product_id, is_active) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, 0, ?, 1)",
+          barcode, part_number, serial_number, imei, warranty_months, battery_health, hsn_sac_code, gst_slab_id, is_master, parent_product_id, is_active) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1)",
     )
     .bind(&child_id)
     .bind(&code)
@@ -133,6 +134,7 @@ pub(crate) async fn create_child_product_in_tx(
     .bind(&serial_number)
     .bind(&imei)
     .bind(warranty_months)
+    .bind(&battery_health)
     .bind(&hsn_sac_code)
     .bind(&gst_slab_id)
     .bind(master_product_id)
@@ -605,6 +607,7 @@ pub struct Product {
     pub serial_number: Option<String>,
     pub imei: Option<String>,
     pub warranty_months: Option<i64>,
+    pub battery_health: Option<String>,
     pub is_active: i64,
     pub created_at: String,
     pub has_transactions: bool,
@@ -674,6 +677,7 @@ pub struct CreateProduct {
     pub serial_number: Option<String>,
     pub imei: Option<String>,
     pub warranty_months: Option<i64>,
+    pub battery_health: Option<String>,
     #[serde(default)]
     pub conversions: Vec<ProductUnitConversionInput>,
     pub hsn_sac_code: Option<String>,
@@ -908,7 +912,7 @@ pub async fn get_products(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Pr
         "SELECT products.id, products.code, products.name, products.group_id, products.brand_id, products.color_id,
                 pc.name as color_name, products.supplier_id,
                 coa.account_name as supplier_name,
-                products.unit_id, products.purchase_rate, products.sales_rate, products.mrp, products.cost, products.barcode, products.part_number, products.serial_number, products.imei, products.warranty_months, products.is_active, products.created_at,
+                products.unit_id, products.purchase_rate, products.sales_rate, products.mrp, products.cost, products.barcode, products.part_number, products.serial_number, products.imei, products.warranty_months, products.battery_health, products.is_active, products.created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
                 products.hsn_sac_code, products.gst_slab_id,
                 COALESCE(products.is_master, 0) as is_master,
@@ -975,9 +979,9 @@ pub async fn create_product(
     };
 
     sqlx::query(
-        "INSERT INTO products (id, code, name, group_id, brand_id, color_id, supplier_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, part_number, serial_number, imei, warranty_months, hsn_sac_code, gst_slab_id, is_master, is_margin_scheme_default,
+        "INSERT INTO products (id, code, name, group_id, brand_id, color_id, supplier_id, unit_id, purchase_rate, sales_rate, mrp, cost, barcode, part_number, serial_number, imei, warranty_months, battery_health, hsn_sac_code, gst_slab_id, is_master, is_margin_scheme_default,
                               vehicle_manufacturer, vehicle_model, vehicle_year, vehicle_odometer, vehicle_fuel_type, vehicle_transmission, vehicle_owner, vehicle_color) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&code)
@@ -996,6 +1000,7 @@ pub async fn create_product(
     .bind(&product.serial_number)
     .bind(&product.imei)
     .bind(product.warranty_months)
+    .bind(&product.battery_health)
     .bind(&product.hsn_sac_code)
     .bind(&product.gst_slab_id)
     .bind(if product.is_master { 1i64 } else { 0i64 })
@@ -1028,7 +1033,7 @@ pub async fn create_product(
         "SELECT products.id, products.code, products.name, products.group_id, products.brand_id, products.color_id,
                 pc.name as color_name, products.supplier_id,
                 coa.account_name as supplier_name,
-                products.unit_id, products.purchase_rate, products.sales_rate, products.mrp, products.cost, products.barcode, products.part_number, products.serial_number, products.imei, products.warranty_months, products.is_active, products.created_at,
+                products.unit_id, products.purchase_rate, products.sales_rate, products.mrp, products.cost, products.barcode, products.part_number, products.serial_number, products.imei, products.warranty_months, products.battery_health, products.is_active, products.created_at,
                 EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
                 products.hsn_sac_code, products.gst_slab_id,
                 COALESCE(products.is_master, 0) as is_master,
@@ -1071,8 +1076,8 @@ pub async fn batch_create_products(
         };
 
         sqlx::query(
-            "INSERT INTO products (id, code, name, group_id, brand_id, color_id, supplier_id, unit_id, purchase_rate, sales_rate, mrp, barcode, part_number, serial_number, imei, warranty_months, hsn_sac_code, gst_slab_id, is_master) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO products (id, code, name, group_id, brand_id, color_id, supplier_id, unit_id, purchase_rate, sales_rate, mrp, barcode, part_number, serial_number, imei, warranty_months, battery_health, hsn_sac_code, gst_slab_id, is_master) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(&code)
@@ -1090,6 +1095,7 @@ pub async fn batch_create_products(
         .bind(&product.serial_number)
         .bind(&product.imei)
         .bind(product.warranty_months)
+        .bind(&product.battery_health)
         .bind(&product.hsn_sac_code)
         .bind(&product.gst_slab_id)
         .bind(if product.is_master { 1i64 } else { 0i64 })
@@ -1172,7 +1178,7 @@ pub async fn update_product(
     sqlx::query(
         "UPDATE products 
          SET code = ?, name = ?, group_id = ?, brand_id = ?, color_id = ?, supplier_id = ?, unit_id = ?, purchase_rate = ?, sales_rate = ?, mrp = ?, cost = ?,
-             barcode = ?, part_number = ?, serial_number = ?, imei = ?, warranty_months = ?, hsn_sac_code = ?, gst_slab_id = ?, is_master = ?, is_margin_scheme_default = ?,
+             barcode = ?, part_number = ?, serial_number = ?, imei = ?, warranty_months = ?, battery_health = ?, hsn_sac_code = ?, gst_slab_id = ?, is_master = ?, is_margin_scheme_default = ?,
              vehicle_manufacturer = ?, vehicle_model = ?, vehicle_year = ?, vehicle_odometer = ?, vehicle_fuel_type = ?, vehicle_transmission = ?, vehicle_owner = ?, vehicle_color = ?,
              updated_at = CURRENT_TIMESTAMP 
          WHERE id = ?",
@@ -1193,6 +1199,7 @@ pub async fn update_product(
     .bind(&product.serial_number)
     .bind(&product.imei)
     .bind(product.warranty_months)
+    .bind(&product.battery_health)
     .bind(&product.hsn_sac_code)
     .bind(&product.gst_slab_id)
     .bind(if product.is_master { 1i64 } else { 0i64 })
