@@ -22,3 +22,14 @@ export function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/**
+ * Capitalizes the first letter of each word in a string.
+ * @param str - Input string
+ * @returns String with each word capitalized
+ */
+export function capitalizeWords(str: string): string {
+  if (!str) return str;
+  return str.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+

@@ -105,13 +105,14 @@ export default function SupplierDialog({ open, onOpenChange, supplierToEdit, onS
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
+            const payload = { ...form, name: form.name.trim().toUpperCase() };
             let result: Supplier | undefined;
             if (supplierToEdit) {
-                await api.suppliers.update(supplierToEdit.id, form);
+                await api.suppliers.update(supplierToEdit.id, payload);
                 toast.success('Supplier updated successfully');
                 onOpenChange(false);
             } else {
-                result = await api.suppliers.create(form);
+                result = await api.suppliers.create(payload);
                 toast.success('Supplier created successfully');
                 setForm(EMPTY_FORM);
             }
@@ -139,7 +140,7 @@ export default function SupplierDialog({ open, onOpenChange, supplierToEdit, onS
                         </div>
                         <div>
                             <Label className="text-xs font-medium">Name *</Label>
-                            <Input ref={register('name') as any} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} onKeyDown={e => handleKeyDown(e, 'name')} required className="h-8 text-sm mt-1" />
+                            <Input ref={register('name') as any} value={form.name} onChange={e => setForm({ ...form, name: e.target.value.toUpperCase() })} onKeyDown={e => handleKeyDown(e, 'name')} required className="h-8 text-sm mt-1" />
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">

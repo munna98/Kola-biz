@@ -13,6 +13,10 @@ import { toast } from 'sonner';
 import { useDialog } from '@/hooks/use-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { type ProductDialogFields, DEFAULT_DIALOG_FIELDS } from '@/pages/settings/ProductSettingsPage';
+import ProductGroupsDialog from '@/components/dialogs/ProductGroupsDialog';
+import ProductBrandsDialog from '@/components/dialogs/ProductBrandsDialog';
+import ProductColorsDialog from '@/components/dialogs/ProductColorsDialog';
+import UnitsDialog from '@/components/dialogs/UnitsDialog';
 
 interface ProductDialogProps {
   open: boolean;
@@ -186,10 +190,51 @@ export default function ProductDialog({
   const [fetchedColors, setFetchedColors] = useState<ProductColor[]>([]);
   const [fetchedUnits, setFetchedUnits] = useState<Unit[]>([]);
 
-  const availableBrands = (brands && brands.length > 0) ? brands : fetchedBrands;
-  const availableGroups = (groups && groups.length > 0) ? groups : fetchedGroups;
-  const availableColors = (colors && colors.length > 0) ? colors : fetchedColors;
-  const availableUnits = (units && units.length > 0) ? units : fetchedUnits;
+  const [groupsOpen, setGroupsOpen] = useState(false);
+  const [brandsOpen, setBrandsOpen] = useState(false);
+  const [colorsOpen, setColorsOpen] = useState(false);
+  const [unitsOpen, setUnitsOpen] = useState(false);
+
+  const refreshGroups = async () => {
+    try {
+      const list = await api.productGroups.list();
+      setFetchedGroups(list);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const refreshBrands = async () => {
+    try {
+      const list = await api.productBrands.list();
+      setFetchedBrands(list);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const refreshColors = async () => {
+    try {
+      const list = await api.productColors.list();
+      setFetchedColors(list);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const refreshUnits = async () => {
+    try {
+      const list = await api.units.list();
+      setFetchedUnits(list);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const availableBrands = fetchedBrands.length > 0 ? fetchedBrands : ((brands && brands.length > 0) ? brands : fetchedBrands);
+  const availableGroups = fetchedGroups.length > 0 ? fetchedGroups : ((groups && groups.length > 0) ? groups : fetchedGroups);
+  const availableColors = fetchedColors.length > 0 ? fetchedColors : ((colors && colors.length > 0) ? colors : fetchedColors);
+  const availableUnits = fetchedUnits.length > 0 ? fetchedUnits : ((units && units.length > 0) ? units : fetchedUnits);
 
   const unitLocked = Boolean(product?.has_transactions);
 
@@ -475,6 +520,7 @@ export default function ProductDialog({
       setLoading(true);
       const payload: CreateProduct = {
         ...form,
+        name: form.name.trim().toUpperCase(),
         cost: (!product && (!form.cost || form.cost === 0)) ? form.purchase_rate : form.cost,
         is_master: isMaster,
         conversions: normalizedConversions
@@ -502,7 +548,8 @@ export default function ProductDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <>
+      <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-3xl">
         <DialogHeader>
           <DialogTitle>{product ? 'Edit' : 'Add'} Product</DialogTitle>
@@ -580,7 +627,7 @@ export default function ProductDialog({
               <Input
                 ref={register('name') as any}
                 value={form.name}
-                onChange={e => setForm({ ...form, name: e.target.value })}
+                onChange={e => setForm({ ...form, name: e.target.value.toUpperCase() })}
                 onKeyDown={(e) => handleKeyDown(e, 'name')}
                 placeholder={isMaster ? "e.g., SHIRT" : "e.g., Product Name"}
                 className="h-8 text-sm"
@@ -602,8 +649,10 @@ export default function ProductDialog({
                   >
                     <SelectTrigger
                       ref={register('group') as any}
-                      className="h-8 text-sm"
+                      className="h-8 text-sm w-full"
                       onKeyDown={(e) => handleSelectKeyDown(e, 'group')}
+                      onActionClick={() => setGroupsOpen(true)}
+                      actionTitle="Add Group"
                     >
                       <SelectValue placeholder="Select a group" />
                     </SelectTrigger>
@@ -630,8 +679,10 @@ export default function ProductDialog({
                   >
                     <SelectTrigger
                       ref={register('brand') as any}
-                      className="h-8 text-sm"
+                      className="h-8 text-sm w-full"
                       onKeyDown={(e) => handleSelectKeyDown(e, 'brand')}
+                      onActionClick={() => setBrandsOpen(true)}
+                      actionTitle="Add Brand"
                     >
                       <SelectValue placeholder="Select a brand" />
                     </SelectTrigger>
@@ -658,8 +709,10 @@ export default function ProductDialog({
                   >
                     <SelectTrigger
                       ref={register('color') as any}
-                      className="h-8 text-sm"
+                      className="h-8 text-sm w-full"
                       onKeyDown={(e) => handleSelectKeyDown(e, 'color')}
+                      onActionClick={() => setColorsOpen(true)}
+                      actionTitle="Add Color"
                     >
                       <SelectValue placeholder="Select a color" />
                     </SelectTrigger>
@@ -689,7 +742,7 @@ export default function ProductDialog({
                     value={form.supplier_id?.toString() || 'none'}
                     onValueChange={v => setForm({ ...form, supplier_id: v === 'none' ? undefined : v })}
                   >
-                    <SelectTrigger className="h-8 text-sm">
+                    <SelectTrigger className="h-8 text-sm w-full">
                       <SelectValue placeholder="Select supplier" />
                     </SelectTrigger>
                     <SelectContent>
@@ -717,7 +770,7 @@ export default function ProductDialog({
                   >
                     <SelectTrigger
                       ref={register('unit') as any}
-                      className="h-8 text-sm"
+                      className="h-8 text-sm w-full"
                       onKeyDown={(e) => {
                         if (/^\d$/.test(e.key)) {
                           handleDigitShortcut(e.key);
@@ -726,6 +779,8 @@ export default function ProductDialog({
                         handleSelectKeyDown(e, 'unit');
                       }}
                       disabled={unitLocked}
+                      onActionClick={() => setUnitsOpen(true)}
+                      actionTitle="Add Unit"
                     >
                       <SelectValue />
                     </SelectTrigger>
@@ -744,6 +799,7 @@ export default function ProductDialog({
                     className="h-8 w-8 p-0 shrink-0"
                     onClick={() => setShowUnitSection((prev) => !prev)}
                     tabIndex={-1}
+                    title="Unit Conversions"
                   >
                     <IconCircleDashedPlus size={14} />
                   </Button>
@@ -1341,5 +1397,26 @@ export default function ProductDialog({
         </form>
       </DialogContent>
     </Dialog>
+      <ProductGroupsDialog
+        open={groupsOpen}
+        onOpenChange={setGroupsOpen}
+        onGroupsChange={refreshGroups}
+      />
+      <ProductBrandsDialog
+        open={brandsOpen}
+        onOpenChange={setBrandsOpen}
+        onBrandsChange={refreshBrands}
+      />
+      <ProductColorsDialog
+        open={colorsOpen}
+        onOpenChange={setColorsOpen}
+        onColorsChange={refreshColors}
+      />
+      <UnitsDialog
+        open={unitsOpen}
+        onOpenChange={setUnitsOpen}
+        onUnitsChange={refreshUnits}
+      />
+    </>
   );
 }

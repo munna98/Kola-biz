@@ -71,10 +71,11 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
         setLoading(true);
 
         try {
+            const uppercasedName = formData.name.trim().toUpperCase();
             if (employeeToEdit) {
                 const updateData: UpdateEmployee = {
                     id: employeeToEdit.id,
-                    name: formData.name,
+                    name: uppercasedName,
                     code: formData.code,
                     designation: formData.designation,
                     phone: formData.phone,
@@ -90,7 +91,7 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                 await api.employees.update(updateData);
                 toast.success('Employee updated successfully');
             } else {
-                await api.employees.create(formData);
+                await api.employees.create({ ...formData, name: uppercasedName });
                 toast.success('Employee created successfully');
             }
             onSave();
@@ -118,7 +119,7 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                                 id="name"
                                 required
                                 value={formData.name}
-                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value.toUpperCase() })}
                             />
                         </div>
                         <div className="space-y-2">

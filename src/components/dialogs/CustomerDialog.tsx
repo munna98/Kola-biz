@@ -111,9 +111,10 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
+            const payload = { ...form, name: form.name.trim().toUpperCase() };
             let result: Customer | undefined;
             if (customerToEdit) {
-                await api.customers.update(customerToEdit.id, form);
+                await api.customers.update(customerToEdit.id, payload);
                 // Also persist price_category_id on the COA record
                 await invoke('set_customer_price_category', {
                     customerId: customerToEdit.id,
@@ -122,7 +123,7 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
                 toast.success('Customer updated successfully');
                 onOpenChange(false);
             } else {
-                result = await api.customers.create(form);
+                result = await api.customers.create(payload);
                 if (result && selectedPriceCategoryId) {
                     await invoke('set_customer_price_category', {
                         customerId: result.id,
@@ -157,7 +158,7 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
                         </div>
                         <div>
                             <Label className="text-xs font-medium">Name *</Label>
-                            <Input ref={register('name') as any} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} onKeyDown={e => handleKeyDown(e, 'name')} required className="h-8 text-sm mt-1" />
+                            <Input ref={register('name') as any} value={form.name} onChange={e => setForm({ ...form, name: e.target.value.toUpperCase() })} onKeyDown={e => handleKeyDown(e, 'name')} required className="h-8 text-sm mt-1" />
                         </div>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
