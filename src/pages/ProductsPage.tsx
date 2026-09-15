@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconArrowLeft, IconBarcode, IconFileUpload, IconTag, IconPhoto, IconCloudUpload, IconLink, IconDotsVertical, IconBrandWhatsapp, IconReceiptTax } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconRuler, IconCategory, IconRefresh, IconTrashFilled, IconRecycle, IconArrowLeft, IconBarcode, IconFileUpload, IconTag, IconPalette, IconPhoto, IconCloudUpload, IconLink, IconDotsVertical, IconBrandWhatsapp, IconReceiptTax } from '@tabler/icons-react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import {
   DropdownMenu,
@@ -13,7 +13,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { api, Product, Unit, ProductGroup, ProductBrand, GstTaxSlab } from '@/lib/tauri';
+import { api, Product, Unit, ProductGroup, ProductBrand, ProductColor, GstTaxSlab } from '@/lib/tauri';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { toast } from 'sonner';
@@ -21,6 +21,7 @@ import ProductDialog from '@/components/dialogs/ProductDialog';
 import UnitsDialog from '@/components/dialogs/UnitsDialog';
 import ProductGroupsDialog from '@/components/dialogs/ProductGroupsDialog';
 import ProductBrandsDialog from '@/components/dialogs/ProductBrandsDialog';
+import ProductColorsDialog from '@/components/dialogs/ProductColorsDialog';
 import BarcodeLabelDialog from '@/components/dialogs/BarcodeLabelDialog';
 import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
 import ProductImagesDialog from '@/components/dialogs/ProductImagesDialog';
@@ -37,6 +38,9 @@ const formatProductSpecs = (p: Product, money: (amount: number | null | undefine
   let text = `*${p.name.toUpperCase()}*\n`;
   if (p.code) text += `• *Code:* ${p.code}\n`;
   if (p.part_number) text += `• *Part No:* ${p.part_number}\n`;
+  if (p.serial_number) text += `• *Serial No:* ${p.serial_number}\n`;
+  if (p.imei) text += `• *IMEI:* ${p.imei}\n`;
+  if (p.warranty_months) text += `• *Warranty:* ${p.warranty_months} Months\n`;
   if (p.sales_rate !== undefined && p.sales_rate !== null) {
     text += `• *Price:* ${money(p.sales_rate)}\n`;
   }
@@ -72,6 +76,7 @@ export default function ProductsPage() {
   const [units, setUnits] = useState<Unit[]>([]);
   const [groups, setGroups] = useState<ProductGroup[]>([]);
   const [brands, setBrands] = useState<ProductBrand[]>([]);
+  const [colors, setColors] = useState<ProductColor[]>([]);
   const [loading, setLoading] = useState(true);
   const [gstEnabled, setGstEnabled] = useState(false);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
@@ -82,6 +87,7 @@ export default function ProductsPage() {
   const [unitsOpen, setUnitsOpen] = useState(false);
   const [groupsOpen, setGroupsOpen] = useState(false);
   const [brandsOpen, setBrandsOpen] = useState(false);
+  const [colorsOpen, setColorsOpen] = useState(false);
   const [priceCategoriesOpen, setPriceCategoriesOpen] = useState(false);
   const [priceCatQuickEditOpen, setPriceCatQuickEditOpen] = useState(false);
   const [selectedPriceCatProduct, setSelectedPriceCatProduct] = useState<Product | null>(null);
@@ -106,11 +112,12 @@ export default function ProductsPage() {
   const load = async () => {
     try {
       setLoading(true);
-      const [p, u, g, b, gstSettings, slabs, masterSetting, colSetting, r2En, r2Wu, waShare] = await Promise.all([
+      const [p, u, g, b, c, gstSettings, slabs, masterSetting, colSetting, r2En, r2Wu, waShare] = await Promise.all([
         showDeleted ? api.products.listDeleted() : api.products.list(),
         api.units.list(),
         api.productGroups.list(),
         api.productBrands.list(),
+        api.productColors.list(),
         api.gst.getSettings(),
         api.gst.getSlabs(),
         invoke<string | null>('get_app_setting', { key: 'enable_master_products' }),
@@ -123,6 +130,7 @@ export default function ProductsPage() {
       setUnits(u);
       setGroups(g);
       setBrands(b);
+      setColors(c);
       setGstEnabled(gstSettings.gst_enabled);
       setGstSlabs(slabs);
       setMasterProductsEnabled(masterSetting === 'true');
@@ -194,6 +202,7 @@ export default function ProductsPage() {
   const handleUnitsChange = () => load();
   const handleGroupsChange = () => load();
   const handleBrandsChange = () => load();
+  const handleColorsChange = () => load();
 
   const handleSyncCatalog = async () => {
     setSyncing(true);
@@ -251,7 +260,12 @@ export default function ProductsPage() {
       p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       p.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (p.part_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (groups.find(g => g.id === p.group_id)?.name || '').toLowerCase().includes(searchTerm.toLowerCase());
+      (p.serial_number || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.imei || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (p.warranty_months ? `${p.warranty_months} months` : '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (groups.find(g => g.id === p.group_id)?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (brands.find(b => b.id === p.brand_id)?.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (colors.find(c => c.id === p.color_id)?.name || p.color_name || '').toLowerCase().includes(searchTerm.toLowerCase());
 
     if (!matchesSearch) return false;
 
@@ -336,6 +350,14 @@ export default function ProductsPage() {
                 </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => setColorsOpen(true)}>
+                      <IconPalette size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Manage Colors</TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
                     <Button variant="outline" onClick={() => setUnitsOpen(true)}>
                       <IconRuler size={16} />
                     </Button>
@@ -411,9 +433,13 @@ export default function ProductsPage() {
                 {columnSettings.hsn_sac_code && <th className="p-3">HSN Code</th>}
                 {columnSettings.group && <th className="p-3">Group</th>}
                 {columnSettings.brand && <th className="p-3">Brand</th>}
+                {columnSettings.color && <th className="p-3">Color</th>}
                 {columnSettings.supplier && <th className="p-3">Supplier</th>}
                 {columnSettings.unit && <th className="p-3">Unit</th>}
                 {columnSettings.part_number && <th className="p-3">Part No.</th>}
+                {columnSettings.serial_number && <th className="p-3">Serial No.</th>}
+                {columnSettings.imei && <th className="p-3">IMEI</th>}
+                {columnSettings.warranty && <th className="p-3">Warranty</th>}
                 {columnSettings.purchase_rate && <th className="p-3">Purchase</th>}
                 {columnSettings.sales_rate && <th className="p-3">Sales</th>}
                 {columnSettings.mrp && <th className="p-3">MRP</th>}
@@ -438,9 +464,13 @@ export default function ProductsPage() {
                       3 +
                       (columnSettings.code ? 1 : 0) +
                       (columnSettings.part_number ? 1 : 0) +
+                      (columnSettings.serial_number ? 1 : 0) +
+                      (columnSettings.imei ? 1 : 0) +
+                      (columnSettings.warranty ? 1 : 0) +
                       (columnSettings.hsn_sac_code ? 1 : 0) +
                       (columnSettings.group ? 1 : 0) +
                       (columnSettings.brand ? 1 : 0) +
+                      (columnSettings.color ? 1 : 0) +
                       (columnSettings.supplier ? 1 : 0) +
                       (columnSettings.unit ? 1 : 0) +
                       (columnSettings.purchase_rate ? 1 : 0) +
@@ -495,9 +525,13 @@ export default function ProductsPage() {
                       {columnSettings.hsn_sac_code && <td className="p-3 text-sm">{p.hsn_sac_code || '-'}</td>}
                       {columnSettings.group && <td className="p-3 text-sm">{groups.find(g => g.id === p.group_id)?.name || '-'}</td>}
                       {columnSettings.brand && <td className="p-3 text-sm">{brands.find(b => b.id === p.brand_id)?.name || '-'}</td>}
+                      {columnSettings.color && <td className="p-3 text-sm">{colors.find(c => c.id === p.color_id)?.name || p.color_name || '-'}</td>}
                       {columnSettings.supplier && <td className="p-3 text-sm">{p.supplier_name || '-'}</td>}
                       {columnSettings.unit && <td className="p-3">{units.find(u => u.id === p.unit_id)?.symbol || '-'}</td>}
                       {columnSettings.part_number && <td className="p-3 font-mono text-sm">{p.part_number || '-'}</td>}
+                      {columnSettings.serial_number && <td className="p-3 font-mono text-sm">{p.serial_number || '-'}</td>}
+                      {columnSettings.imei && <td className="p-3 font-mono text-sm">{p.imei || '-'}</td>}
+                      {columnSettings.warranty && <td className="p-3 font-mono text-sm">{p.warranty_months !== undefined && p.warranty_months !== null ? `${p.warranty_months} Mo` : '-'}</td>}
                       {columnSettings.purchase_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.purchase_rate)}</td>}
                       {columnSettings.sales_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.sales_rate)}</td>}
                       {columnSettings.mrp && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.mrp)}</td>}
@@ -610,6 +644,7 @@ export default function ProductsPage() {
         units={units}
         groups={groups}
         brands={brands}
+        colors={colors}
         product={editingProduct}
         onSuccess={load}
       />
@@ -633,6 +668,13 @@ export default function ProductsPage() {
         open={brandsOpen}
         onOpenChange={setBrandsOpen}
         onBrandsChange={handleBrandsChange}
+      />
+
+      {/* Product Colors Management Dialog Component */}
+      <ProductColorsDialog
+        open={colorsOpen}
+        onOpenChange={setColorsOpen}
+        onColorsChange={handleColorsChange}
       />
 
       {/* Price Categories Management Dialog Component */}
@@ -676,12 +718,15 @@ export default function ProductsPage() {
         open={importOpen}
         onOpenChange={setImportOpen}
         title="Import Products from Excel"
-        expectedColumns={['name', 'code', 'part_number', 'group', 'unit', 'purchase_rate', 'sales_rate', 'mrp', 'barcode', 'hsn_sac_code']}
+        expectedColumns={['name', 'code', 'part_number', 'serial_number', 'imei', 'warranty_months', 'group', 'unit', 'purchase_rate', 'sales_rate', 'mrp', 'barcode', 'hsn_sac_code']}
         sampleData={[
           {
             name: "Premium Widget",
             code: "PW-001",
             part_number: "PN-8877",
+            serial_number: "SN-12345",
+            imei: "356789012345678",
+            warranty_months: 12,
             group: "General",
             unit: "PCS",
             purchase_rate: 100.0,
@@ -712,6 +757,9 @@ export default function ProductsPage() {
               name: String(r.name),
               code: r.code ? String(r.code) : '',
               part_number: r.part_number ? String(r.part_number) : undefined,
+              serial_number: r.serial_number ? String(r.serial_number) : undefined,
+              imei: r.imei ? String(r.imei) : undefined,
+              warranty_months: r.warranty_months ? Number(r.warranty_months) : undefined,
               group_id: groupId,
               unit_id: unitId,
               purchase_rate: Number(r.purchase_rate) || 0,

@@ -808,6 +808,22 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await?;
 
+    // Product Colors
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS product_colors (
+            id TEXT PRIMARY KEY,
+            name TEXT UNIQUE NOT NULL,
+            hex_code TEXT,
+            description TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME
+        )",
+    )
+    .execute(pool)
+    .await?;
+
     // Products
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS products (
@@ -821,7 +837,11 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             mrp REAL NOT NULL,
             barcode TEXT,
             brand_id TEXT REFERENCES product_brands(id),
+            color_id TEXT REFERENCES product_colors(id),
             part_number TEXT,
+            serial_number TEXT,
+            imei TEXT,
+            warranty_months INTEGER,
             supplier_id TEXT REFERENCES chart_of_accounts(id),
             is_master INTEGER NOT NULL DEFAULT 0,
             parent_product_id TEXT REFERENCES products(id),
@@ -857,8 +877,28 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         .execute(pool)
         .await;
 
+    // Migration: Add color_id to products if not exists
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN color_id TEXT REFERENCES product_colors(id)")
+        .execute(pool)
+        .await;
+
     // Migration: Add part_number to products if not exists
     let _ = sqlx::query("ALTER TABLE products ADD COLUMN part_number TEXT")
+        .execute(pool)
+        .await;
+
+    // Migration: Add serial_number to products if not exists
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN serial_number TEXT")
+        .execute(pool)
+        .await;
+
+    // Migration: Add imei to products if not exists
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN imei TEXT")
+        .execute(pool)
+        .await;
+
+    // Migration: Add warranty_months to products if not exists
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN warranty_months INTEGER")
         .execute(pool)
         .await;
 

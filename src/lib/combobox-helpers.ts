@@ -1,6 +1,8 @@
-import type { Product, ProductGroup, ProductBrand } from './tauri';
+import type { Product, ProductGroup, ProductBrand, ProductColor } from './tauri';
 
 export interface ProductComboboxDisplaySettings {
+  show_serial_number: boolean;
+  show_imei: boolean;
   show_part_number: boolean;
   show_barcode: boolean;
   show_sales_rate: boolean;
@@ -9,9 +11,13 @@ export interface ProductComboboxDisplaySettings {
   show_stock: boolean;
   show_group: boolean;
   show_brand: boolean;
+  show_color: boolean;
+  show_warranty: boolean;
 }
 
 export const DEFAULT_COMBOBOX_DISPLAY_SETTINGS: ProductComboboxDisplaySettings = {
+  show_serial_number: false,
+  show_imei: false,
   show_part_number: true,
   show_barcode: true,
   show_sales_rate: false,
@@ -20,11 +26,15 @@ export const DEFAULT_COMBOBOX_DISPLAY_SETTINGS: ProductComboboxDisplaySettings =
   show_stock: false,
   show_group: false,
   show_brand: false,
+  show_color: false,
+  show_warranty: false,
 };
 
 export interface ProductComboboxColumnWidths {
   code?: number;
   product_name?: number;
+  serial_number?: number;
+  imei?: number;
   part_number?: number;
   barcode?: number;
   sales_rate?: number;
@@ -33,11 +43,15 @@ export interface ProductComboboxColumnWidths {
   stock?: number;
   group?: number;
   brand?: number;
+  color?: number;
+  warranty?: number;
 }
 
 export const DEFAULT_COMBOBOX_COLUMN_WIDTHS: Required<ProductComboboxColumnWidths> = {
   code: 70,
   product_name: 240,
+  serial_number: 100,
+  imei: 110,
   part_number: 100,
   barcode: 100,
   sales_rate: 80,
@@ -46,6 +60,8 @@ export const DEFAULT_COMBOBOX_COLUMN_WIDTHS: Required<ProductComboboxColumnWidth
   stock: 65,
   group: 100,
   brand: 100,
+  color: 100,
+  warranty: 100,
 };
 
 export interface ComboboxHeaderColumn {
@@ -65,6 +81,12 @@ export function getProductComboboxHeaderColumns(
     { key: 'product_name', label: 'Product', widthPx: widths.product_name, align: 'left' },
   ];
 
+  if (displaySettings.show_serial_number) {
+    cols.push({ key: 'serial_number', label: 'Serial #', widthPx: widths.serial_number, align: 'left' });
+  }
+  if (displaySettings.show_imei) {
+    cols.push({ key: 'imei', label: 'IMEI', widthPx: widths.imei, align: 'left' });
+  }
   if (displaySettings.show_part_number) {
     cols.push({ key: 'part_number', label: 'Part #', widthPx: widths.part_number, align: 'left' });
   }
@@ -88,6 +110,12 @@ export function getProductComboboxHeaderColumns(
   }
   if (displaySettings.show_brand) {
     cols.push({ key: 'brand', label: 'Brand', widthPx: widths.brand, align: 'left' });
+  }
+  if (displaySettings.show_color) {
+    cols.push({ key: 'color', label: 'Color', widthPx: widths.color, align: 'left' });
+  }
+  if (displaySettings.show_warranty) {
+    cols.push({ key: 'warranty', label: 'Warranty', widthPx: widths.warranty, align: 'left' });
   }
 
   return cols;
@@ -117,6 +145,7 @@ export interface ProductComboboxOptionInput {
   product: Product;
   groups?: ProductGroup[];
   brands?: ProductBrand[];
+  colors?: ProductColor[];
   displaySettings?: ProductComboboxDisplaySettings;
   stockMap?: Record<string, number>;
   moneyFormatter?: (amount: number | null | undefined) => string;
@@ -126,6 +155,7 @@ export function buildProductComboboxOption({
   product: p,
   groups,
   brands,
+  colors,
   displaySettings = DEFAULT_COMBOBOX_DISPLAY_SETTINGS,
   stockMap,
   moneyFormatter = (amt) => (amt !== undefined && amt !== null ? `₹${amt}` : ''),
@@ -138,6 +168,20 @@ export function buildProductComboboxOption({
   }
 
   columnData.product_name = p.name;
+
+  if (displaySettings.show_serial_number && p.serial_number) {
+    columnData.serial_number = p.serial_number;
+  }
+  if (p.serial_number) {
+    searchItems.push(p.serial_number);
+  }
+
+  if (displaySettings.show_imei && p.imei) {
+    columnData.imei = p.imei;
+  }
+  if (p.imei) {
+    searchItems.push(p.imei);
+  }
 
   if (displaySettings.show_part_number && p.part_number) {
     columnData.part_number = p.part_number;
@@ -183,6 +227,18 @@ export function buildProductComboboxOption({
     const brandName = brands.find((b) => b.id === p.brand_id)?.name;
     columnData.brand = brandName;
     if (brandName) searchItems.push(brandName);
+  }
+
+  if (displaySettings.show_color && (p.color_id || p.color_name)) {
+    const colorName = p.color_name || (p.color_id && colors ? colors.find((c) => c.id === p.color_id)?.name : undefined);
+    columnData.color = colorName;
+    if (colorName) searchItems.push(colorName);
+  }
+
+  if (displaySettings.show_warranty && p.warranty_months !== undefined && p.warranty_months !== null) {
+    const wStr = `${p.warranty_months} Mo`;
+    columnData.warranty = wStr;
+    searchItems.push(`warranty:${p.warranty_months}`, wStr, `${p.warranty_months} months`);
   }
 
   const keywords = searchItems.filter(Boolean) as string[];

@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { IconCheck, IconCircleDashedPlus, IconPlus, IconTrash, IconX } from '@tabler/icons-react';
-import { api, Product, CreateProduct, Unit, ProductGroup, ProductBrand, CreateProductUnitConversion, GstTaxSlab } from '@/lib/tauri';
+import { api, Product, CreateProduct, Unit, ProductGroup, ProductBrand, ProductColor, CreateProductUnitConversion, GstTaxSlab } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { useDialog } from '@/hooks/use-dialog';
 import { invoke } from '@tauri-apps/api/core';
@@ -20,6 +20,7 @@ interface ProductDialogProps {
   units: Unit[];
   groups: ProductGroup[];
   brands?: ProductBrand[];
+  colors?: ProductColor[];
   product?: Product;
   onSuccess?: () => void;
 }
@@ -138,6 +139,7 @@ export default function ProductDialog({
   units,
   groups,
   brands = [],
+  colors = [],
   product,
   onSuccess
 }: ProductDialogProps) {
@@ -147,6 +149,9 @@ export default function ProductDialog({
     name: '',
     barcode: '',
     part_number: '',
+    serial_number: '',
+    imei: '',
+    warranty_months: undefined,
     unit_id: defaultUnitId,
     purchase_rate: 0,
     sales_rate: 0,
@@ -156,6 +161,7 @@ export default function ProductDialog({
     hsn_sac_code: '',
     gst_slab_id: 'gst_0',
     brand_id: undefined,
+    color_id: undefined,
     supplier_id: undefined,
     vehicle_manufacturer: undefined,
     vehicle_model: undefined,
@@ -177,15 +183,17 @@ export default function ProductDialog({
   const [suppliers, setSuppliers] = useState<{ id: string; name: string }[]>([]);
   const [fetchedBrands, setFetchedBrands] = useState<ProductBrand[]>([]);
   const [fetchedGroups, setFetchedGroups] = useState<ProductGroup[]>([]);
+  const [fetchedColors, setFetchedColors] = useState<ProductColor[]>([]);
   const [fetchedUnits, setFetchedUnits] = useState<Unit[]>([]);
 
   const availableBrands = (brands && brands.length > 0) ? brands : fetchedBrands;
   const availableGroups = (groups && groups.length > 0) ? groups : fetchedGroups;
+  const availableColors = (colors && colors.length > 0) ? colors : fetchedColors;
   const availableUnits = (units && units.length > 0) ? units : fetchedUnits;
 
   const unitLocked = Boolean(product?.has_transactions);
 
-  const orderedFields = ['code', 'name', 'group', 'brand', 'unit', 'part_number', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp', 'cost', 'barcode'];
+  const orderedFields = ['code', 'name', 'group', 'brand', 'color', 'warranty', 'unit', 'part_number', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp', 'cost', 'barcode'];
 
   const { register, handleKeyDown, handleSelectKeyDown, focusNext, parseNumber, formatNumber } = useDialog(
     open,
@@ -247,6 +255,9 @@ export default function ProductDialog({
     if (!groups || groups.length === 0) {
       api.productGroups.list().then(setFetchedGroups).catch(console.error);
     }
+    if (!colors || colors.length === 0) {
+      api.productColors.list().then(setFetchedColors).catch(console.error);
+    }
     if (!units || units.length === 0) {
       api.units.list().then(setFetchedUnits).catch(console.error);
     }
@@ -265,8 +276,12 @@ export default function ProductDialog({
           name: product.name,
           barcode: product.barcode || '',
           part_number: product.part_number || '',
+          serial_number: product.serial_number || '',
+          imei: product.imei || '',
+          warranty_months: product.warranty_months,
           group_id: product.group_id,
           brand_id: product.brand_id,
+          color_id: product.color_id,
           supplier_id: product.supplier_id,
           unit_id: product.unit_id,
           purchase_rate: product.purchase_rate,
@@ -319,6 +334,8 @@ export default function ProductDialog({
           name: '',
           barcode: '',
           part_number: '',
+          serial_number: '',
+          imei: '',
           group_id: undefined,
           brand_id: undefined,
           supplier_id: undefined,
@@ -374,6 +391,8 @@ export default function ProductDialog({
       name: '',
       barcode: '',
       part_number: '',
+      serial_number: '',
+      imei: '',
       group_id: undefined,
       brand_id: undefined,
       supplier_id: undefined,
@@ -569,7 +588,7 @@ export default function ProductDialog({
             </div>
           </div>
 
-          {(dialogFields.group || dialogFields.brand || dialogFields.supplier || dialogFields.part_number || product?.part_number) && (
+          {(dialogFields.group || dialogFields.brand || dialogFields.supplier || dialogFields.part_number || dialogFields.serial_number || dialogFields.imei || product?.part_number || product?.serial_number || product?.imei) && (
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {dialogFields.group && (
                 <div>
@@ -621,6 +640,42 @@ export default function ProductDialog({
                       {availableBrands.map(b => (
                         <SelectItem key={b.id} value={b.id.toString()}>
                           {b.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {dialogFields.color && (
+                <div>
+                  <Label className="text-xs font-medium mb-1 block">Color</Label>
+                  <Select
+                    value={form.color_id?.toString() || 'none'}
+                    onValueChange={v => {
+                      setForm({ ...form, color_id: v === 'none' ? undefined : v });
+                      setTimeout(() => focusNext('color'), 100);
+                    }}
+                  >
+                    <SelectTrigger
+                      ref={register('color') as any}
+                      className="h-8 text-sm"
+                      onKeyDown={(e) => handleSelectKeyDown(e, 'color')}
+                    >
+                      <SelectValue placeholder="Select a color" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No Color</SelectItem>
+                      {availableColors.map(c => (
+                        <SelectItem key={c.id} value={c.id.toString()}>
+                          <div className="flex items-center gap-2">
+                            {c.hex_code && (
+                              <span
+                                className="w-3 h-3 rounded-full border shrink-0 inline-block"
+                                style={{ backgroundColor: c.hex_code }}
+                              />
+                            )}
+                            {c.name}
+                          </div>
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -703,6 +758,42 @@ export default function ProductDialog({
                     onChange={e => setForm({ ...form, part_number: e.target.value })}
                     onKeyDown={(e) => handleKeyDown(e, 'part_number')}
                     placeholder="e.g., PN-98765"
+                    className="h-8 text-sm font-mono"
+                  />
+                </div>
+              )}
+              {(dialogFields.serial_number || product?.serial_number) && (
+                <div>
+                  <Label className="text-xs font-medium mb-1 block">Serial Number</Label>
+                  <Input
+                    value={form.serial_number || ''}
+                    onChange={e => setForm({ ...form, serial_number: e.target.value })}
+                    placeholder="e.g., SN-123456"
+                    className="h-8 text-sm font-mono"
+                  />
+                </div>
+              )}
+              {(dialogFields.imei || product?.imei) && (
+                <div>
+                  <Label className="text-xs font-medium mb-1 block">IMEI Number</Label>
+                  <Input
+                    value={form.imei || ''}
+                    onChange={e => setForm({ ...form, imei: e.target.value })}
+                    placeholder="e.g., 356789012345678"
+                    className="h-8 text-sm font-mono"
+                  />
+                </div>
+              )}
+              {(dialogFields.warranty || product?.warranty_months !== undefined) && (
+                <div>
+                  <Label className="text-xs font-medium mb-1 block">Warranty (Months)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={form.warranty_months ?? ''}
+                    onChange={e => setForm({ ...form, warranty_months: e.target.value ? parseInt(e.target.value, 10) || 0 : undefined })}
+                    placeholder="e.g., 12"
                     className="h-8 text-sm font-mono"
                   />
                 </div>

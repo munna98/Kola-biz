@@ -87,6 +87,11 @@ pub fn run() {
             create_product_brand,
             update_product_brand,
             delete_product_brand,
+            // Product Colors
+            get_product_colors,
+            create_product_color,
+            update_product_color,
+            delete_product_color,
             // Products
             get_products,
             get_all_product_unit_conversions,

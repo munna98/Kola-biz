@@ -57,6 +57,23 @@ export interface CreateProductBrand {
   description?: string;
 }
 
+// ======= PRODUCT COLORS =======
+
+export interface ProductColor {
+  id: string;
+  name: string;
+  hex_code?: string;
+  description?: string;
+  is_active: number;
+  created_at: string;
+}
+
+export interface CreateProductColor {
+  name: string;
+  hex_code?: string;
+  description?: string;
+}
+
 // ======= GST TYPES =======
 
 export interface GstTaxSlab {
@@ -131,6 +148,8 @@ export interface Product {
   name: string;
   group_id?: string;
   brand_id?: string;
+  color_id?: string;
+  color_name?: string;
   supplier_id?: string;
   supplier_name?: string;
   unit_id: string;
@@ -140,6 +159,9 @@ export interface Product {
   cost?: number;
   barcode?: string;
   part_number?: string;
+  serial_number?: string;
+  imei?: string;
+  warranty_months?: number;
   is_active: number;
   created_at: string;
   has_transactions: boolean;
@@ -198,6 +220,7 @@ export interface CreateProduct {
   name: string;
   group_id?: string;
   brand_id?: string;
+  color_id?: string;
   supplier_id?: string;
   unit_id: string;
   purchase_rate: number;
@@ -206,6 +229,9 @@ export interface CreateProduct {
   cost?: number;
   barcode?: string;
   part_number?: string;
+  serial_number?: string;
+  imei?: string;
+  warranty_months?: number;
   conversions?: CreateProductUnitConversion[];
   hsn_sac_code?: string;
   gst_slab_id?: string;
@@ -569,6 +595,12 @@ export const api = {
     create: (data: CreateProductBrand) => invoke<ProductBrand>('create_product_brand', { brand: data }),
     update: (id: string, data: CreateProductBrand) => invoke<void>('update_product_brand', { id, brand: data }),
     delete: (id: string) => invoke<void>('delete_product_brand', { id }),
+  },
+  productColors: {
+    list: () => invoke<ProductColor[]>('get_product_colors'),
+    create: (data: CreateProductColor) => invoke<ProductColor>('create_product_color', { color: data }),
+    update: (id: string, data: CreateProductColor) => invoke<void>('update_product_color', { id, color: data }),
+    delete: (id: string) => invoke<void>('delete_product_color', { id }),
   },
   customers: {
     list: () => invoke<Customer[]>('get_customers'),

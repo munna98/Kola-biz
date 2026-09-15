@@ -12,10 +12,14 @@ import { type ProductComboboxDisplaySettings, DEFAULT_COMBOBOX_DISPLAY_SETTINGS,
 
 export interface ProductTableColumns {
   code: boolean;
+  serial_number: boolean;
+  imei: boolean;
   part_number: boolean;
   hsn_sac_code: boolean;
   group: boolean;
   brand: boolean;
+  color: boolean;
+  warranty: boolean;
   unit: boolean;
   purchase_rate: boolean;
   sales_rate: boolean;
@@ -35,9 +39,13 @@ export interface ProductTableColumns {
 
 export interface ProductDialogFields {
   code: boolean;
+  serial_number: boolean;
+  imei: boolean;
   part_number: boolean;
   group: boolean;
   brand: boolean;
+  color: boolean;
+  warranty: boolean;
   hsn_sac_code: boolean;
   gst_slab: boolean;
   purchase_rate: boolean;
@@ -58,10 +66,14 @@ export interface ProductDialogFields {
 
 export const DEFAULT_TABLE_COLUMNS: ProductTableColumns = {
   code: true,
+  serial_number: false,
+  imei: false,
   part_number: false,
   hsn_sac_code: true,
   group: true,
   brand: true,
+  color: false,
+  warranty: false,
   unit: true,
   purchase_rate: true,
   sales_rate: true,
@@ -81,9 +93,13 @@ export const DEFAULT_TABLE_COLUMNS: ProductTableColumns = {
 
 export const DEFAULT_DIALOG_FIELDS: ProductDialogFields = {
   code: true,
+  serial_number: false,
+  imei: false,
   part_number: false,
   group: true,
   brand: true,
+  color: false,
+  warranty: false,
   hsn_sac_code: true,
   gst_slab: true,
   purchase_rate: true,
@@ -122,9 +138,13 @@ async function saveSetting(key: string, value: unknown) {
 
 const TABLE_COLUMN_DEFS: { key: keyof ProductTableColumns; label: string; description: string }[] = [
   { key: 'code', label: 'Code', description: 'Product / SKU code column' },
+  { key: 'serial_number', label: 'Serial Number', description: 'Product Serial Number column' },
+  { key: 'imei', label: 'IMEI Number', description: 'Product IMEI Number column' },
   { key: 'hsn_sac_code', label: 'HSN Code', description: 'HSN / SAC code for GST purposes' },
   { key: 'group', label: 'Group', description: 'Product group / category' },
   { key: 'brand', label: 'Brand', description: 'Product brand name' },
+  { key: 'color', label: 'Color', description: 'Product color' },
+  { key: 'warranty', label: 'Warranty (Months)', description: 'Product warranty duration column' },
   { key: 'unit', label: 'Unit', description: 'Base unit of measurement' },
   { key: 'part_number', label: 'Part Number', description: 'Manufacturer / OEM Part Number column' },
   { key: 'purchase_rate', label: 'Purchase Rate', description: 'Default purchase price' },
@@ -144,9 +164,12 @@ const TABLE_COLUMN_DEFS: { key: keyof ProductTableColumns; label: string; descri
 ];
 
 const DIALOG_FIELD_DEFS: { key: keyof ProductDialogFields; label: string; description: string }[] = [
-  { key: 'code', label: 'Code', description: 'Auto-generated product / SKU code' },
   { key: 'group', label: 'Product Group', description: 'Category / group selector' },
   { key: 'brand', label: 'Brand', description: 'Brand selector' },
+  { key: 'color', label: 'Color', description: 'Color selector' },
+  { key: 'warranty', label: 'Warranty (Months)', description: 'Product warranty duration input field' },
+  { key: 'serial_number', label: 'Serial Number', description: 'Product Serial Number input field' },
+  { key: 'imei', label: 'IMEI Number', description: 'Product IMEI Number input field' },
   { key: 'part_number', label: 'Part Number', description: 'Manufacturer / OEM Part Number input field' },
   { key: 'hsn_sac_code', label: 'HSN / SAC Code', description: 'Commodity code for GST' },
   { key: 'gst_slab', label: 'GST Category', description: 'Tax slab selector' },
@@ -167,6 +190,8 @@ const DIALOG_FIELD_DEFS: { key: keyof ProductDialogFields; label: string; descri
 ];
 
 const COMBOBOX_FIELD_DEFS: { key: keyof ProductComboboxDisplaySettings; widthKey: keyof ProductComboboxColumnWidths; label: string; description: string }[] = [
+  { key: 'show_serial_number', widthKey: 'serial_number', label: 'Serial Number', description: 'Show Serial #: <number> column in dropdown table' },
+  { key: 'show_imei', widthKey: 'imei', label: 'IMEI Number', description: 'Show IMEI: <number> column in dropdown table' },
   { key: 'show_part_number', widthKey: 'part_number', label: 'Part Number', description: 'Show Part #: <number> column in dropdown table' },
   { key: 'show_barcode', widthKey: 'barcode', label: 'Barcode', description: 'Show Barcode column in dropdown table' },
   { key: 'show_sales_rate', widthKey: 'sales_rate', label: 'Sales Rate', description: 'Show S.Rate column in dropdown table' },
@@ -175,6 +200,8 @@ const COMBOBOX_FIELD_DEFS: { key: keyof ProductComboboxDisplaySettings; widthKey
   { key: 'show_stock', widthKey: 'stock', label: 'Current Stock', description: 'Show Stock column in dropdown table' },
   { key: 'show_group', widthKey: 'group', label: 'Product Group', description: 'Show Group column in dropdown table' },
   { key: 'show_brand', widthKey: 'brand', label: 'Product Brand', description: 'Show Brand column in dropdown table' },
+  { key: 'show_color', widthKey: 'color', label: 'Product Color', description: 'Show Color column in dropdown table' },
+  { key: 'show_warranty', widthKey: 'warranty', label: 'Warranty', description: 'Show Warranty column in dropdown table' },
 ];
 
 // ── Component ─────────────────────────────────────────────────────────────────
