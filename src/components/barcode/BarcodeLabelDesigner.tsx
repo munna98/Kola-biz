@@ -39,6 +39,9 @@ export interface LabelElement {
 }
 
 export interface BarcodeDesignerSettings {
+    id?: string;
+    name?: string;
+    isDefault?: boolean;
     labelWidth: number;
     labelHeight: number;
     labelPadding: number;
@@ -138,6 +141,9 @@ export function buildDefaultElements(companyName?: string, customText?: string):
 }
 
 export const DEFAULT_DESIGNER_SETTINGS: BarcodeDesignerSettings = {
+    id: 'default',
+    name: 'Standard Label (50x25)',
+    isDefault: true,
     labelWidth: 50,
     labelHeight: 25,
     labelPadding: 1,

@@ -4,20 +4,21 @@ import {
     DialogContent,
     DialogHeader,
     DialogTitle,
-    DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { IconPrinter } from '@tabler/icons-react';
-import { invoke } from '@tauri-apps/api/core';
 import JsBarcode from 'jsbarcode';
 import {
     type BarcodeDesignerSettings,
     type LabelElement,
     DEFAULT_DESIGNER_SETTINGS,
-    migrateSettings,
 } from '@/components/barcode/BarcodeLabelDesigner';
+import { loadBarcodeDesigns } from '@/utils/barcodeSettings';
 import { useMoney } from '@/hooks/useMoney';
 
 interface Product {
@@ -42,14 +43,15 @@ export default function BarcodeLabelDialog({
     onOpenChange,
     products,
 }: BarcodeLabelDialogProps) {
-    const [settings, setSettings] = useState<BarcodeDesignerSettings>(DEFAULT_DESIGNER_SETTINGS);
+    const [designs, setDesigns] = useState<BarcodeDesignerSettings[]>([{ ...DEFAULT_DESIGNER_SETTINGS }]);
+    const [selectedDesignId, setSelectedDesignId] = useState<string>('default');
     const [productCounts, setProductCounts] = useState<Record<number, number>>({});
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [checkedProducts, setCheckedProducts] = useState<Set<number>>(new Set());
     const printRef = useRef<HTMLDivElement>(null);
     const money = useMoney();
 
-    // Initialize counts and selection when products change
+    // Initialize counts and selection when products change or dialog opens
     useEffect(() => {
         if (open) {
             loadSettings();
@@ -64,6 +66,19 @@ export default function BarcodeLabelDialog({
             setSelectedIndex(0);
         }
     }, [open, products]);
+
+    const loadSettings = async () => {
+        try {
+            const loadedDesigns = await loadBarcodeDesigns();
+            setDesigns(loadedDesigns);
+            const defaultDesign = loadedDesigns.find(d => d.isDefault) || loadedDesigns[0];
+            if (defaultDesign) {
+                setSelectedDesignId(defaultDesign.id || 'default');
+            }
+        } catch (error) {
+            console.error('Failed to load barcode designs:', error);
+        }
+    };
 
     const toggleProduct = (idx: number) => {
         setCheckedProducts(prev => {
@@ -84,29 +99,18 @@ export default function BarcodeLabelDialog({
     const allChecked = products.length > 0 && checkedProducts.size === products.length;
     const someChecked = checkedProducts.size > 0 && checkedProducts.size < products.length;
 
-    const loadSettings = async () => {
-        try {
-            const saved = await invoke<string | null>('get_app_setting', { key: 'barcode_settings' });
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                setSettings(migrateSettings(parsed));
-            }
-        } catch (error) {
-            console.error('Failed to load barcode settings:', error);
-        }
-    };
-
     const updateCount = (index: number, value: number) => {
         setProductCounts(prev => ({ ...prev, [index]: Math.max(1, value) }));
     };
 
+    const activeSettings = designs.find(d => d.id === selectedDesignId) || designs[0] || DEFAULT_DESIGNER_SETTINGS;
     const totalLabels = products.reduce((s, _, idx) => s + (checkedProducts.has(idx) ? (productCounts[idx] || 1) : 0), 0);
     const selectedProduct = products[selectedIndex] || products[0];
 
     const handlePrint = () => {
         if (!printRef.current) return;
 
-        const { labelWidth, labelHeight, elements, barcodeFormat, columnsPerRow, horizontalGap, verticalGap } = settings;
+        const { labelWidth, labelHeight, elements, barcodeFormat, columnsPerRow, horizontalGap, verticalGap } = activeSettings;
         const cols = columnsPerRow || 1;
         const hGap = horizontalGap || 0;
         const vGap = verticalGap || 0;
@@ -234,11 +238,39 @@ export default function BarcodeLabelDialog({
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
-                <DialogHeader>
-                    <DialogTitle>Print Barcode Labels</DialogTitle>
-                    <DialogDescription>
-                        {products.length} product(s) · {totalLabels} label(s) total
-                    </DialogDescription>
+                <DialogHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                    <div>
+                        <DialogTitle>Print Barcode Labels</DialogTitle>
+                    </div>
+
+                    {/* ── Design Selector Dropdown ── */}
+                    <div className="flex items-center gap-2 mr-6">
+                        <Label className="text-xs font-semibold whitespace-nowrap text-muted-foreground">
+                            Design:
+                        </Label>
+                        <Select
+                            value={selectedDesignId}
+                            onValueChange={setSelectedDesignId}
+                        >
+                            <SelectTrigger className="h-8 text-xs w-[220px]">
+                                <SelectValue placeholder="Select design..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {designs.map(d => (
+                                    <SelectItem key={d.id} value={d.id || 'default'} className="text-xs">
+                                        <div className="flex items-center gap-1.5">
+                                            <span>{d.name || 'Unnamed Design'}</span>
+                                            {d.isDefault && (
+                                                <Badge variant="secondary" className="text-[9px] px-1 py-0 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300">
+                                                    Default
+                                                </Badge>
+                                            )}
+                                        </div>
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
                 </DialogHeader>
 
                 <div className="flex flex-col flex-1 min-h-0 overflow-hidden gap-3">
@@ -247,13 +279,13 @@ export default function BarcodeLabelDialog({
                         {selectedProduct && (
                             <BarcodeLabel
                                 product={selectedProduct}
-                                settings={settings}
+                                settings={activeSettings}
                                 scale={previewScale}
                             />
                         )}
                     </div>
                     <div className="text-[10px] text-muted-foreground text-center -mt-2">
-                        {selectedProduct?.name} · {settings.labelWidth}×{settings.labelHeight}mm · ×{productCounts[selectedIndex] || 1}
+                        {selectedProduct?.name} · {activeSettings.name || 'Design'} ({activeSettings.labelWidth}×{activeSettings.labelHeight}mm) · ×{productCounts[selectedIndex] || 1}
                     </div>
 
                     {/* ── Bottom: Product Table ── */}
@@ -321,7 +353,7 @@ export default function BarcodeLabelDialog({
                 {/* ── Footer ── */}
                 <div className="flex items-center justify-between pt-3 border-t">
                     <div className="text-xs text-muted-foreground">
-                        Total: {totalLabels} label(s) to print
+                        Total: {totalLabels} label(s) to print ({activeSettings.name || 'Selected Design'})
                     </div>
                     <Button onClick={handlePrint} disabled={checkedProducts.size === 0}>
                         <IconPrinter size={16} className="mr-2" />
@@ -329,7 +361,7 @@ export default function BarcodeLabelDialog({
                     </Button>
                 </div>
 
-                {/* Hidden ref for print - not used anymore since we build HTML directly */}
+                {/* Hidden ref for print */}
                 <div ref={printRef} className="hidden" />
             </DialogContent>
         </Dialog>

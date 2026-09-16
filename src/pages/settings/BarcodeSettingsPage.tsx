@@ -4,14 +4,31 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { IconDeviceFloppy, IconPackages } from '@tabler/icons-react';
+import { Badge } from '@/components/ui/badge';
+import {
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogFooter,
+} from '@/components/ui/dialog';
+import {
+    IconDeviceFloppy,
+    IconPlus,
+    IconCopy,
+    IconPencil,
+    IconStar,
+    IconTrash,
+} from '@tabler/icons-react';
 import BarcodeLabelDesigner, {
     type BarcodeDesignerSettings,
     DEFAULT_DESIGNER_SETTINGS,
-    migrateSettings,
 } from '@/components/barcode/BarcodeLabelDesigner';
+import {
+    loadBarcodeDesigns,
+    saveBarcodeDesigns,
+} from '@/utils/barcodeSettings';
 
 // Re-export for backward compatibility with BarcodeLabelDialog
 export type { BarcodeDesignerSettings as BarcodeSettings } from '@/components/barcode/BarcodeLabelDesigner';
@@ -23,19 +40,33 @@ const BARCODE_FORMATS = [
 ];
 
 export default function BarcodeSettingsPage() {
-    const [settings, setSettings] = useState<BarcodeDesignerSettings>(DEFAULT_DESIGNER_SETTINGS);
+    const [designs, setDesigns] = useState<BarcodeDesignerSettings[]>([{ ...DEFAULT_DESIGNER_SETTINGS }]);
+    const [activeDesignId, setActiveDesignId] = useState<string>('default');
     const [loading, setLoading] = useState(false);
     const [printers, setPrinters] = useState<string[]>([]);
-    const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
-    const [savingMaster, setSavingMaster] = useState(false);
+
+    // Name dialog state for Create / Rename
+    const [nameDialogOpen, setNameDialogOpen] = useState(false);
+    const [nameDialogMode, setNameDialogMode] = useState<'create' | 'rename'>('create');
+    const [designNameInput, setDesignNameInput] = useState('');
 
     useEffect(() => {
-        loadSettings();
-        loadPrinters();
-        invoke<string | null>('get_app_setting', { key: 'enable_master_products' })
-            .then(v => setMasterProductsEnabled(v === 'true'))
-            .catch(console.error);
+        initData();
     }, []);
+
+    const initData = async () => {
+        setLoading(true);
+        try {
+            await Promise.all([
+                loadAllDesigns(),
+                loadPrinters(),
+            ]);
+        } catch (error) {
+            console.error('Failed to initialize barcode settings page:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const loadPrinters = async () => {
         try {
@@ -46,29 +77,26 @@ export default function BarcodeSettingsPage() {
         }
     };
 
-    const loadSettings = async () => {
-        setLoading(true);
-        try {
-            const saved = await invoke<string | null>('get_app_setting', { key: 'barcode_settings' });
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                setSettings(migrateSettings(parsed));
-            }
-        } catch (error) {
-            console.error('Failed to load barcode settings:', error);
-        } finally {
-            setLoading(false);
-        }
+    const loadAllDesigns = async () => {
+        const loaded = await loadBarcodeDesigns();
+        setDesigns(loaded);
+        const def = loaded.find(d => d.isDefault) || loaded[0];
+        setActiveDesignId(def.id || 'default');
+    };
+
+    const activeDesign = designs.find(d => d.id === activeDesignId) || designs[0] || DEFAULT_DESIGNER_SETTINGS;
+
+    const updateActiveDesign = (updates: Partial<BarcodeDesignerSettings>) => {
+        setDesigns(prev =>
+            prev.map(d => (d.id === activeDesignId ? { ...d, ...updates } : d))
+        );
     };
 
     const handleSave = async () => {
         setLoading(true);
         try {
-            await invoke('set_app_setting', {
-                key: 'barcode_settings',
-                value: JSON.stringify(settings),
-            });
-            toast.success('Barcode settings saved');
+            await saveBarcodeDesigns(designs);
+            toast.success('Barcode settings saved successfully');
         } catch (error) {
             console.error('Failed to save barcode settings:', error);
             toast.error('Failed to save settings');
@@ -77,72 +105,176 @@ export default function BarcodeSettingsPage() {
         }
     };
 
-    const handleToggleMasterProducts = async (enabled: boolean) => {
-        setSavingMaster(true);
-        try {
-            await invoke('set_app_setting', {
-                key: 'enable_master_products',
-                value: enabled ? 'true' : 'false',
-            });
-            setMasterProductsEnabled(enabled);
-            toast.success(enabled ? 'Master Products enabled' : 'Master Products disabled');
-        } catch (error) {
-            toast.error('Failed to update setting');
-        } finally {
-            setSavingMaster(false);
+    // ── Design Management Actions ──
+
+    const handleOpenNewDialog = () => {
+        setNameDialogMode('create');
+        setDesignNameInput(`Barcode Design ${designs.length + 1}`);
+        setNameDialogOpen(true);
+    };
+
+    const handleOpenRenameDialog = () => {
+        setNameDialogMode('rename');
+        setDesignNameInput(activeDesign.name || 'Custom Label');
+        setNameDialogOpen(true);
+    };
+
+    const handleConfirmNameDialog = () => {
+        const trimmed = designNameInput.trim();
+        if (!trimmed) {
+            toast.error('Design name cannot be empty');
+            return;
         }
+
+        if (nameDialogMode === 'create') {
+            const newId = `design_${Date.now()}`;
+            const newDesign: BarcodeDesignerSettings = {
+                ...DEFAULT_DESIGNER_SETTINGS,
+                id: newId,
+                name: trimmed,
+                isDefault: designs.length === 0,
+            };
+            setDesigns(prev => [...prev, newDesign]);
+            setActiveDesignId(newId);
+            toast.success(`Created new design "${trimmed}"`);
+        } else {
+            setDesigns(prev =>
+                prev.map(d => (d.id === activeDesignId ? { ...d, name: trimmed } : d))
+            );
+            toast.success(`Renamed design to "${trimmed}"`);
+        }
+
+        setNameDialogOpen(false);
+    };
+
+    const handleDuplicateDesign = () => {
+        const newId = `design_${Date.now()}`;
+        const duplicateName = `${activeDesign.name || 'Design'} (Copy)`;
+        const newDesign: BarcodeDesignerSettings = {
+            ...activeDesign,
+            id: newId,
+            name: duplicateName,
+            isDefault: false,
+        };
+        setDesigns(prev => [...prev, newDesign]);
+        setActiveDesignId(newId);
+        toast.success(`Duplicated to "${duplicateName}"`);
+    };
+
+    const handleSetAsDefault = () => {
+        setDesigns(prev =>
+            prev.map(d => ({
+                ...d,
+                isDefault: d.id === activeDesignId,
+            }))
+        );
+        toast.success(`"${activeDesign.name}" set as default design`);
+    };
+
+    const handleDeleteDesign = () => {
+        if (designs.length <= 1) {
+            toast.error('Cannot delete the only remaining barcode design');
+            return;
+        }
+
+        if (!confirm(`Are you sure you want to delete "${activeDesign.name}"?`)) return;
+
+        const remaining = designs.filter(d => d.id !== activeDesignId);
+        const wasDefault = activeDesign.isDefault;
+
+        if (wasDefault && remaining.length > 0) {
+            remaining[0].isDefault = true;
+        }
+
+        setDesigns(remaining);
+        setActiveDesignId(remaining[0].id || 'default');
+        toast.success(`Deleted design "${activeDesign.name}"`);
     };
 
     return (
         <div className="h-full flex flex-col bg-background">
+            {/* Top Navigation & Action Header */}
             <div className="flex justify-between items-center p-6 border-b shrink-0">
                 <div>
                     <h1 className="text-2xl font-bold text-foreground">Barcode Settings</h1>
                     <p className="text-sm text-muted-foreground mt-1">
-                        Design barcode label layout with drag-and-drop
+                        Design and manage custom barcode label layouts per business
                     </p>
                 </div>
                 <Button onClick={handleSave} disabled={loading}>
                     <IconDeviceFloppy className="mr-2 h-4 w-4" />
-                    Save Settings
+                    Save All Settings
                 </Button>
             </div>
 
             <div className="flex-1 overflow-auto p-6">
                 <div className="max-w-5xl mx-auto space-y-6">
 
-                    {/* ── Master Products Feature Flag ── */}
-                    <div className="bg-card border rounded-lg p-6 space-y-4">
-                        <div className="flex items-center gap-3">
-                            <IconPackages size={20} className="text-amber-600 dark:text-amber-400" />
-                            <h3 className="text-lg font-medium">Master Products</h3>
-                            <span className="ml-auto text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
-                                Textile / Apparel
-                            </span>
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                            Enable this for retail textile businesses. When a master product (e.g. &quot;Shirt&quot;) is
-                            added to a purchase invoice, the system automatically creates a child batch with a
-                            unique sequential item code per purchase line — ready for barcode label printing.
-                        </p>
-                        <div className="flex items-center gap-3 pt-1">
-                            <Switch
-                                id="enable-master-products"
-                                checked={masterProductsEnabled}
-                                onCheckedChange={handleToggleMasterProducts}
-                                disabled={savingMaster}
-                            />
-                            <Label htmlFor="enable-master-products" className="cursor-pointer">
-                                {masterProductsEnabled ? 'Master Products Enabled' : 'Master Products Disabled'}
-                            </Label>
-                        </div>
-                        {masterProductsEnabled && (
-                            <div className="rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 p-3 text-xs text-amber-800 dark:text-amber-300 space-y-1">
-                                <p>✓ &quot;Is Master Product&quot; toggle visible in the Add Product form.</p>
-                                <p>✓ Sales Rate &amp; MRP columns shown in Purchase Invoice for master items.</p>
-                                <p>✓ Master / Child Batch filters shown in the Products list.</p>
+                    {/* ── Multi-Design Management Bar ── */}
+                    <div className="bg-card border rounded-lg p-6 space-y-4 shadow-xs">
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                            <div className="flex items-center gap-3">
+                                <Label className="text-sm font-semibold whitespace-nowrap">Active Design:</Label>
+                                <Select
+                                    value={activeDesignId}
+                                    onValueChange={setActiveDesignId}
+                                >
+                                    <SelectTrigger className="w-[280px]">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        {designs.map(d => (
+                                            <SelectItem key={d.id} value={d.id || 'default'}>
+                                                <div className="flex items-center gap-2">
+                                                    <span>{d.name || 'Unnamed Design'}</span>
+                                                    {d.isDefault && (
+                                                        <Badge variant="secondary" className="text-[10px] px-1 py-0 bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300">
+                                                            Default
+                                                        </Badge>
+                                                    )}
+                                                </div>
+                                            </SelectItem>
+                                        ))}
+                                    </SelectContent>
+                                </Select>
                             </div>
-                        )}
+
+                            <div className="flex flex-wrap items-center gap-2">
+                                <Button size="sm" variant="outline" onClick={handleOpenNewDialog}>
+                                    <IconPlus size={15} className="mr-1.5" />
+                                    New Design
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={handleDuplicateDesign}>
+                                    <IconCopy size={15} className="mr-1.5" />
+                                    Duplicate
+                                </Button>
+                                <Button size="sm" variant="outline" onClick={handleOpenRenameDialog}>
+                                    <IconPencil size={15} className="mr-1.5" />
+                                    Rename
+                                </Button>
+                                {!activeDesign.isDefault ? (
+                                    <Button size="sm" variant="outline" onClick={handleSetAsDefault}>
+                                        <IconStar size={15} className="mr-1.5 text-amber-500" />
+                                        Set as Default
+                                    </Button>
+                                ) : (
+                                    <Badge variant="outline" className="px-3 py-1.5 text-xs bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-950/40 dark:text-amber-300 flex items-center gap-1">
+                                        <IconStar size={14} className="fill-amber-500 text-amber-500" />
+                                        Default Design
+                                    </Badge>
+                                )}
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleDeleteDesign}
+                                    disabled={designs.length <= 1}
+                                    className="text-destructive hover:bg-destructive/10"
+                                >
+                                    <IconTrash size={15} className="mr-1.5" />
+                                    Delete
+                                </Button>
+                            </div>
+                        </div>
                     </div>
 
                     {/* ── Barcode Format + Printer ── */}
@@ -152,8 +284,8 @@ export default function BarcodeSettingsPage() {
                             <div className="space-y-2">
                                 <Label>Barcode Format</Label>
                                 <Select
-                                    value={settings.barcodeFormat}
-                                    onValueChange={(value) => setSettings(prev => ({ ...prev, barcodeFormat: value as BarcodeDesignerSettings['barcodeFormat'] }))}
+                                    value={activeDesign.barcodeFormat}
+                                    onValueChange={(value) => updateActiveDesign({ barcodeFormat: value as BarcodeDesignerSettings['barcodeFormat'] })}
                                 >
                                     <SelectTrigger className="w-[240px]">
                                         <SelectValue />
@@ -175,8 +307,8 @@ export default function BarcodeSettingsPage() {
                             <div className="space-y-2">
                                 <Label>Barcode Printer</Label>
                                 <Select
-                                    value={settings.barcodePrinter || ''}
-                                    onValueChange={(value) => setSettings(prev => ({ ...prev, barcodePrinter: value }))}
+                                    value={activeDesign.barcodePrinter || ''}
+                                    onValueChange={(value) => updateActiveDesign({ barcodePrinter: value })}
                                     disabled={!printers.length}
                                 >
                                     <SelectTrigger className="w-[240px]">
@@ -199,10 +331,12 @@ export default function BarcodeSettingsPage() {
 
                     {/* ── Label Designer ── */}
                     <div className="bg-card border rounded-lg p-6">
-                        <h3 className="text-lg font-medium mb-4">Label Designer</h3>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-medium">Label Designer — {activeDesign.name}</h3>
+                        </div>
                         <BarcodeLabelDesigner
-                            settings={settings}
-                            onChange={setSettings}
+                            settings={activeDesign}
+                            onChange={updateActiveDesign}
                         />
                     </div>
 
@@ -217,8 +351,8 @@ export default function BarcodeSettingsPage() {
                                 <Label>Columns per Row</Label>
                                 <Input
                                     type="number" min={1} max={6} step={1}
-                                    value={settings.columnsPerRow}
-                                    onChange={e => setSettings(prev => ({ ...prev, columnsPerRow: Math.max(1, parseInt(e.target.value) || 1) }))}
+                                    value={activeDesign.columnsPerRow}
+                                    onChange={e => updateActiveDesign({ columnsPerRow: Math.max(1, parseInt(e.target.value) || 1) })}
                                     className="w-20"
                                 />
                                 <p className="text-xs text-muted-foreground">
@@ -229,8 +363,8 @@ export default function BarcodeSettingsPage() {
                                 <Label>Horizontal Gap (mm)</Label>
                                 <Input
                                     type="number" min={0} max={20} step={0.5}
-                                    value={settings.horizontalGap}
-                                    onChange={e => setSettings(prev => ({ ...prev, horizontalGap: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                                    value={activeDesign.horizontalGap}
+                                    onChange={e => updateActiveDesign({ horizontalGap: Math.max(0, parseFloat(e.target.value) || 0) })}
                                     className="w-20"
                                 />
                                 <p className="text-xs text-muted-foreground">
@@ -241,8 +375,8 @@ export default function BarcodeSettingsPage() {
                                 <Label>Vertical Gap (mm)</Label>
                                 <Input
                                     type="number" min={0} max={20} step={0.5}
-                                    value={settings.verticalGap}
-                                    onChange={e => setSettings(prev => ({ ...prev, verticalGap: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                                    value={activeDesign.verticalGap}
+                                    onChange={e => updateActiveDesign({ verticalGap: Math.max(0, parseFloat(e.target.value) || 0) })}
                                     className="w-20"
                                 />
                                 <p className="text-xs text-muted-foreground">
@@ -253,6 +387,41 @@ export default function BarcodeSettingsPage() {
                     </div>
                 </div>
             </div>
+
+            {/* Modal for Creating or Renaming Design */}
+            <Dialog open={nameDialogOpen} onOpenChange={setNameDialogOpen}>
+                <DialogContent className="max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>
+                            {nameDialogMode === 'create' ? 'Create New Barcode Design' : 'Rename Barcode Design'}
+                        </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-3 py-2">
+                        <Label htmlFor="design-name">Design Name</Label>
+                        <Input
+                            id="design-name"
+                            value={designNameInput}
+                            onChange={e => setDesignNameInput(e.target.value)}
+                            placeholder="e.g. Jewelry Tag 40x15, Apparel Label 50x25"
+                            autoFocus
+                            onKeyDown={e => {
+                                if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleConfirmNameDialog();
+                                }
+                            }}
+                        />
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setNameDialogOpen(false)}>
+                            Cancel
+                        </Button>
+                        <Button onClick={handleConfirmNameDialog}>
+                            {nameDialogMode === 'create' ? 'Create Design' : 'Save Name'}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
         </div>
     );
 }
