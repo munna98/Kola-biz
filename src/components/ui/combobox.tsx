@@ -138,6 +138,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   const [open, setOpen] = React.useState(false)
   const [hasOpenedOnFocus, setHasOpenedOnFocus] = React.useState(false)
   const [inputValue, setInputValue] = React.useState("")
+  const [commandValue, setCommandValue] = React.useState<string | undefined>(undefined)
   const skipOpen = React.useRef(false)
   const itemSelected = React.useRef(false)
   const isPointerDown = React.useRef(false)
@@ -162,9 +163,16 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
       setHasOpenedOnFocus(false);
       setInputValue("");
       awaitFirstArrowDown.current = false;
-    } else if (!value && initialSearchValue) {
-      // Popover just opened on an empty combobox with a recall value — arm the flag.
-      awaitFirstArrowDown.current = true;
+      setCommandValue(undefined);
+    } else {
+      if (!value && initialSearchValue) {
+        // Popover just opened on an empty combobox with a recall value — arm the flag.
+        awaitFirstArrowDown.current = true;
+      }
+      const selected = options.find((opt) => opt.value === value);
+      if (selected) {
+        setCommandValue(selected.searchString || String(selected.label));
+      }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
@@ -252,7 +260,11 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
           }
         }}
       >
-        <Command filter={filter || defaultComboboxFilter}>
+        <Command
+          value={commandValue}
+          onValueChange={(val) => setCommandValue(val)}
+          filter={filter || defaultComboboxFilter}
+        >
           <CommandInput
             placeholder={searchPlaceholder}
             autoFocus

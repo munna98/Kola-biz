@@ -97,7 +97,7 @@ export default function PurchaseInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean, updateCost?: boolean, updateSupplierOnPurchase?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean, updateCost?: boolean, updateSupplierOnPurchase?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [gstDisabled, setGstDisabled] = useState(false);
@@ -151,6 +151,7 @@ export default function PurchaseInvoicePage() {
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
   const supplierRef = useRef<HTMLDivElement>(null);
+  const partyComboRef = useRef<HTMLButtonElement>(null);
   const voucherItemsRef = useRef<VoucherItemsSectionRef>(null);
 
   // Ref to track if auto-print is pending after payment dialog
@@ -235,6 +236,23 @@ export default function PurchaseInvoicePage() {
       }
     }
   }, [purchaseState.mode, purchaseState.form.supplier_id, parties, dispatch]);
+
+  // Auto-focus party or product when opening a new voucher (if setting enabled)
+  useEffect(() => {
+    if (purchaseState.mode === 'new' && !purchaseState.currentVoucherId) {
+      const shouldFocusProduct = voucherSettings?.autoFocusProduct ?? (!voucherSettings?.autoFocusParty);
+      if (shouldFocusProduct) {
+        requestAnimationFrame(() => {
+          voucherItemsRef.current?.focusFirstProduct();
+        });
+      } else if (voucherSettings?.autoFocusParty) {
+        requestAnimationFrame(() => {
+          partyComboRef.current?.focus();
+        });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [purchaseState.mode, purchaseState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct]);
 
   // Auto-add first line if empty and in new mode.
   // NOTE: we also guard on !isInitializing so that voucherSettings (column defaults)
@@ -1354,6 +1372,7 @@ export default function PurchaseInvoicePage() {
                 <div className="flex-1">
                   <Label className="text-xs font-medium mb-1 block">Party *</Label>
                   <Combobox
+                    ref={partyComboRef}
                     options={parties.map(p => ({
                       value: p.id,
                       label: p.name,

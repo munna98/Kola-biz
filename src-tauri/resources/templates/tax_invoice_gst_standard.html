@@ -1,0 +1,125 @@
+<!-- [HEADER] -->
+<div class="gst-bg-page">
+
+<!-- ── COMPANY HEADER (centered over the letterhead box) ── -->
+<div class="gst-company-block">
+  <div class="gst-cn">{{company.name}}</div>
+  {{#if show_company_address}}
+  {{#if company.address_line1}}<div class="gst-ca">{{company.address_line1}}{{#if company.address_line2}}, {{company.address_line2}}{{/if}}</div>{{/if}}
+  {{#if company.city}}<div class="gst-ca">{{company.city}}{{#if company.state}}, {{company.state}}{{/if}}{{#if company.pincode}} - {{company.pincode}}{{/if}}</div>{{/if}}
+  {{/if}}
+  {{#if company.phone}}<div class="gst-ca">Mob: {{company.phone}}</div>{{/if}}
+  {{#if company.gstin}}<div class="gst-cg">GSTIN &nbsp; {{company.gstin}}</div>{{/if}}
+</div>
+
+<!-- ── META VALUES — LEFT SIDE ── -->
+<!-- Row 1: Reverse Charge -->
+<div class="gst-v" style="top:54.5mm;left:40mm;width:60mm;">{{reverse_charge}}</div>
+<!-- Row 2: Invoice No -->
+<div class="gst-v gst-bold" style="top:61.3mm;left:40mm;width:60mm;">{{voucher_no}}</div>
+<!-- Row 3: Invoice Date -->
+<div class="gst-v gst-bold" style="top:68mm;left:40mm;width:60mm;">{{format_date voucher_date}}</div>
+<!-- Row 4: State name + State Code -->
+<div class="gst-v" style="top:74.7mm;left:40mm;width:40mm;">{{company.state}}</div>
+<div class="gst-v" style="top:74.7mm;left:121mm;width:18mm;">{{company.state_code}}</div>
+
+<!-- ── META VALUES — RIGHT SIDE ── -->
+<!-- Row 1: Transportation Mode -->
+<div class="gst-v" style="top:54.5mm;left:170mm;width:37mm;">{{transport_mode}}</div>
+<!-- Row 2: Vehicle Number -->
+<div class="gst-v" style="top:61.3mm;left:170mm;width:37mm;">{{vehicle_number}}</div>
+<!-- Row 3: Date of Supply -->
+<div class="gst-v" style="top:68mm;left:170mm;width:37mm;">{{#if supply_date}}{{format_date supply_date}}{{else}}{{format_date voucher_date}}{{/if}}</div>
+<!-- Row 4: Place of Supply -->
+<div class="gst-v" style="top:74.7mm;left:170mm;width:37mm;">{{place_of_supply}}</div>
+
+<!-- ── PARTY — BILLED TO (left half) ── -->
+<div class="gst-v gst-bold" style="top:87.5mm;left:22mm;width:82mm;">{{party.name}}</div>
+<div class="gst-v gst-addr"  style="top:93mm;left:22mm;width:82mm;">{{party.address_line_1}}</div>
+<div class="gst-v" style="top:101mm;left:22mm;width:82mm;">{{party.gstin}}</div>
+<div class="gst-v" style="top:107mm;left:22mm;width:82mm;">{{party.state}}{{#if party.state_code}} ({{party.state_code}}){{/if}}</div>
+
+<!-- ── PARTY — SHIPPED TO (right half) ── -->
+<div class="gst-v gst-bold" style="top:87.5mm;left:128mm;width:80mm;">{{ship_to.name}}</div>
+<div class="gst-v gst-addr"  style="top:93mm;left:128mm;width:80mm;">{{ship_to.address_line_1}}</div>
+<div class="gst-v" style="top:101mm;left:128mm;width:80mm;">{{ship_to.gstin}}</div>
+<div class="gst-v" style="top:107mm;left:128mm;width:80mm;">{{ship_to.state}}{{#if ship_to.state_code}} ({{ship_to.state_code}}){{/if}}</div>
+
+<!-- [BODY] -->
+
+<!-- ── ITEMS ROWS OVERLAY ── -->
+<div class="gst-items-area">
+  {{#each items}}
+  <div class="gst-row">
+    <span class="gst-col-sl">{{increment @index}}</span>
+    <span class="gst-col-name">{{product_name}}{{#if description}}<br/><small>{{description}}</small>{{/if}}</span>
+    <span class="gst-col-hsn">{{hsn_sac_code}}</span>
+    <span class="gst-col-uom">{{unit}}</span>
+    <span class="gst-col-qty">{{format_number initial_quantity 2}}</span>
+    <span class="gst-col-rate">{{format_number rate 2}}</span>
+    <span class="gst-col-amt">{{format_number amount 2}}</span>
+    <span class="gst-col-disc">{{format_number discount_amount 2}}</span>
+    <span class="gst-col-taxv">{{format_number taxable_amount 2}}</span>
+    {{#if @root.is_inter_state}}
+    <span class="gst-col-gstr">{{format_number igst_rate 2}}%</span>
+    <span class="gst-col-gsta">{{format_number igst_amount 2}}</span>
+    {{else}}
+    <span class="gst-col-gstr">{{format_number cgst_rate 2}}%+{{format_number sgst_rate 2}}%</span>
+    <span class="gst-col-gsta">{{format_number tax_amount 2}}</span>
+    {{/if}}
+    <span class="gst-col-total">{{format_number line_total 2}}</span>
+  </div>
+  {{/each}}
+</div>
+
+<!-- ── TOTALS ROW ── -->
+<div class="gst-total-bar">
+  <span class="gst-col-qty gst-bold">{{total_quantity_display}}</span>
+  <span class="gst-col-amt gst-bold">{{format_number subtotal 2}}</span>
+  <span class="gst-col-disc gst-bold">{{format_number bill_discount 2}}</span>
+  <span class="gst-col-taxv gst-bold">{{format_number taxable_total 2}}</span>
+  <span class="gst-col-gsta gst-bold">{{format_number tax_total 2}}</span>
+  <span class="gst-col-total gst-bold">{{format_currency grand_total}}</span>
+</div>
+
+<!-- [FOOTER] -->
+
+<!-- ── AMOUNT IN WORDS ── -->
+<div class="gst-v" style="top:220mm;left:5mm;width:112mm;font-weight:700;font-size:9pt;">{{grand_total_words}}</div>
+
+<!-- ── TAX SUMMARY VALUES (right panel) ── -->
+<div class="gst-sum-val" style="top:211.5mm;">{{format_currency taxable_total}}</div>
+{{#unless is_inter_state}}{{#if gst_enabled}}
+<div class="gst-sum-val" style="top:218mm;">{{format_currency cgst_total}}</div>
+<div class="gst-sum-val" style="top:224.5mm;">{{format_currency sgst_total}}</div>
+<div class="gst-sum-val" style="top:231mm;">0</div>
+{{/if}}{{/unless}}
+{{#if is_inter_state}}{{#if gst_enabled}}
+<div class="gst-sum-val" style="top:218mm;">0</div>
+<div class="gst-sum-val" style="top:224.5mm;">0</div>
+<div class="gst-sum-val" style="top:231mm;">{{format_currency igst_total}}</div>
+{{/if}}{{/if}}
+<div class="gst-sum-val" style="top:237.5mm;">{{format_currency tax_total}}</div>
+<div class="gst-sum-val gst-bold" style="top:244mm;font-size:9.5pt;">{{format_currency grand_total}}</div>
+
+<!-- ── BANK DETAILS VALUES ── -->
+{{#if show_bank_details}}{{#if bank.has_details}}
+<div class="gst-v" style="top:253mm;left:28mm;width:65mm;">{{bank.name}}</div>
+<div class="gst-v" style="top:258.5mm;left:28mm;width:65mm;">{{bank.branch}}</div>
+<div class="gst-v" style="top:264mm;left:28mm;width:65mm;">{{bank.account_no}}</div>
+<div class="gst-v" style="top:269.5mm;left:28mm;width:65mm;">{{bank.ifsc}}</div>
+{{/if}}{{/if}}
+
+<!-- Terms (in the pre-printed terms box area) -->
+{{#if show_terms}}
+{{#if terms_and_conditions}}
+<div class="gst-v gst-terms-text">{{terms_and_conditions}}</div>
+{{/if}}
+{{/if}}
+
+<!-- ── SIGNATURE — For, Company ── -->
+<div class="gst-v" style="top:274mm;left:132mm;width:75mm;text-align:center;">
+  <strong>{{company.name}}</strong>
+</div>
+
+</div>{{! closes gst-bg-page }}

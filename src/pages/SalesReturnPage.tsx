@@ -50,7 +50,7 @@ import { usePrint } from '@/hooks/usePrint';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
-import { VoucherItemsSection, ColumnSettings } from '@/components/voucher/VoucherItemsSection';
+import { VoucherItemsSection, ColumnSettings, VoucherItemsSectionRef } from '@/components/voucher/VoucherItemsSection';
 import { Product, ProductUnitConversion, Unit, GstTaxSlab, api } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
@@ -85,7 +85,7 @@ export default function SalesReturnPage() {
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
     const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
-    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean } | undefined>(undefined);
+    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
     const { print } = usePrint();
     const productUnitsByProduct = useMemo(
         () => buildProductUnitMap(productUnitConversions),
@@ -95,6 +95,8 @@ export default function SalesReturnPage() {
     // Refs for focus management
     const formRef = useRef<HTMLFormElement>(null);
     const customerRef = useRef<HTMLDivElement>(null);
+    const partyComboRef = useRef<HTMLButtonElement>(null);
+    const voucherItemsRef = useRef<VoucherItemsSectionRef>(null);
     const appliedInvoicePrefillRef = useRef<string | null>(null);
     const loadingVoucherIdRef = useRef<string | null>(null);
 
@@ -198,6 +200,23 @@ export default function SalesReturnPage() {
             }
         }
     }, [salesReturnState.mode, salesReturnState.form.customer_id, parties, dispatch]);
+
+    // Auto-focus party or product when opening a new voucher (if setting enabled)
+    useEffect(() => {
+        if (salesReturnState.mode === 'new' && !salesReturnState.currentVoucherId) {
+            const shouldFocusProduct = voucherSettings?.autoFocusProduct ?? (!voucherSettings?.autoFocusParty);
+            if (shouldFocusProduct) {
+                requestAnimationFrame(() => {
+                    voucherItemsRef.current?.focusFirstProduct();
+                });
+            } else if (voucherSettings?.autoFocusParty) {
+                requestAnimationFrame(() => {
+                    partyComboRef.current?.focus();
+                });
+            }
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [salesReturnState.mode, salesReturnState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct]);
 
     // Auto-add first line if empty and in new mode
     useEffect(() => {
@@ -835,6 +854,7 @@ export default function SalesReturnPage() {
                                 <div className="flex-1">
                                     <Label className="text-xs font-medium mb-1 block">Party *</Label>
                                     <Combobox
+                                        ref={partyComboRef}
                                         options={parties.map(p => ({
                                             value: p.id,
                                             label: p.name,
@@ -863,6 +883,9 @@ export default function SalesReturnPage() {
                                                         }
                                                     })
                                                     .catch(() => dispatch(clearSalesReturnForex()));
+                                                setTimeout(() => {
+                                                    voucherItemsRef.current?.focusFirstProduct();
+                                                }, 100);
                                             }
                                         }}
                                         placeholder="Select party"
@@ -944,6 +967,7 @@ export default function SalesReturnPage() {
 
                     {/* Items Section */}
                     <VoucherItemsSection
+                        ref={voucherItemsRef}
                         items={salesReturnState.items}
                         products={masterProductsEnabled ? products.filter(p => (p as any).is_master !== 1) : products}
                         units={units}

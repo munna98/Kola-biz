@@ -112,7 +112,7 @@ export default function SalesInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost', showShipTo?: boolean, enablePriceCategory?: boolean, priceCategoryFallback?: 'default_sales_rate' | 'show_zero', allowTotalInput?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost', showShipTo?: boolean, enablePriceCategory?: boolean, priceCategoryFallback?: 'default_sales_rate' | 'show_zero', allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [partyForeignBalance, setPartyForeignBalance] = useState<number | null>(null);
@@ -204,6 +204,7 @@ export default function SalesInvoicePage() {
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
   const customerRef = useRef<HTMLDivElement>(null);
+  const partyComboRef = useRef<HTMLButtonElement>(null);
   const voucherItemsRef = useRef<VoucherItemsSectionRef>(null);
   const loadingVoucherIdRef = useRef<string | null>(null);
 
@@ -276,6 +277,23 @@ export default function SalesInvoicePage() {
       setIsTaxInclusive(!!voucherSettings?.taxInclusive);
     }
   }, [salesState.mode, salesState.currentVoucherId, voucherSettings?.taxInclusive]);
+
+  // Auto-focus party or product when opening a new voucher (if setting enabled)
+  useEffect(() => {
+    if (salesState.mode === 'new' && !salesState.currentVoucherId) {
+      const shouldFocusProduct = voucherSettings?.autoFocusProduct ?? (!voucherSettings?.autoFocusParty);
+      if (shouldFocusProduct) {
+        requestAnimationFrame(() => {
+          voucherItemsRef.current?.focusFirstProduct();
+        });
+      } else if (voucherSettings?.autoFocusParty) {
+        requestAnimationFrame(() => {
+          partyComboRef.current?.focus();
+        });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [salesState.mode, salesState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct]);
 
   // Lookup linked custom order for current sales voucher (if feature enabled)
   useEffect(() => {
@@ -1687,6 +1705,7 @@ export default function SalesInvoicePage() {
                 <div className="flex-1">
                   <Label className="text-xs font-medium mb-1 block">Party *</Label>
                   <Combobox
+                    ref={partyComboRef}
                     options={parties.map(p => ({
                       value: p.id,
                       label: p.name,

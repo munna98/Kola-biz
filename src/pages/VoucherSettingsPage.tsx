@@ -50,6 +50,8 @@ interface VoucherSettings {
     showShipTo?: boolean; // Show Ship To address section
     enablePriceCategory?: boolean; // Enable Price Category feature on Sales Invoice
     priceCategoryFallback?: 'default_sales_rate' | 'show_zero'; // Fallback when no category price found
+    autoFocusParty?: boolean; // Auto-focus party combobox when opening a new voucher
+    autoFocusProduct?: boolean; // Auto-focus product input when opening a new voucher
 }
 
 const AVAILABLE_COLUMNS = [
@@ -116,6 +118,8 @@ export default function VoucherSettingsPage() {
     const [enablePriceCategory, setEnablePriceCategory] = useState(false);
     const [priceCategoryFallback, setPriceCategoryFallback] = useState<'default_sales_rate' | 'show_zero'>('default_sales_rate');
     const [allowTotalInput, setAllowTotalInput] = useState(false);
+    const [autoFocusParty, setAutoFocusParty] = useState(false);
+    const [autoFocusProduct, setAutoFocusProduct] = useState(false);
     const [loading, setLoading] = useState(false);
 
     // ---- Reassign Voucher Numbers state ----
@@ -171,6 +175,8 @@ export default function VoucherSettingsPage() {
                 setEnablePriceCategory(savedSettings.enablePriceCategory || false);
                 setPriceCategoryFallback(savedSettings.priceCategoryFallback || 'default_sales_rate');
                 setAllowTotalInput(savedSettings.allowTotalInput || false);
+                setAutoFocusParty(savedSettings.autoFocusParty || false);
+                setAutoFocusProduct(savedSettings.autoFocusProduct !== undefined ? savedSettings.autoFocusProduct : (!savedSettings.autoFocusParty));
 
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
@@ -224,6 +230,8 @@ export default function VoucherSettingsPage() {
                 setEnablePriceCategory(false);
                 setPriceCategoryFallback('default_sales_rate');
                 setAllowTotalInput(false);
+                setAutoFocusParty(false);
+                setAutoFocusProduct(true);
                 initialColumns = availableCols.map((col, index) => ({
                     id: col.id,
                     label: col.label,
@@ -267,6 +275,8 @@ export default function VoucherSettingsPage() {
                 enablePriceCategory: enablePriceCategory,
                 priceCategoryFallback: priceCategoryFallback,
                 allowTotalInput: allowTotalInput,
+                autoFocusParty: autoFocusParty,
+                autoFocusProduct: autoFocusProduct,
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -677,6 +687,56 @@ export default function VoucherSettingsPage() {
                                 </label>
                                 <p className="text-sm text-muted-foreground">
                                     Makes the Total column editable. Enter a line total and the rate is automatically back-calculated. Useful for invoices that show totals but not individual rates.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 mb-6">
+                            <Checkbox
+                                id="auto-focus-party"
+                                checked={autoFocusParty}
+                                onCheckedChange={(checked) => {
+                                    const isChecked = !!checked;
+                                    setAutoFocusParty(isChecked);
+                                    if (isChecked) {
+                                        setAutoFocusProduct(false);
+                                    }
+                                }}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                                <label
+                                    htmlFor="auto-focus-party"
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                    Auto Focus Party on New Voucher
+                                </label>
+                                <p className="text-sm text-muted-foreground">
+                                    When opening a new voucher, automatically focus the Party field so you can start typing immediately.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 mb-6">
+                            <Checkbox
+                                id="auto-focus-product"
+                                checked={autoFocusProduct}
+                                onCheckedChange={(checked) => {
+                                    const isChecked = !!checked;
+                                    setAutoFocusProduct(isChecked);
+                                    if (isChecked) {
+                                        setAutoFocusParty(false);
+                                    }
+                                }}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                                <label
+                                    htmlFor="auto-focus-product"
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                    Auto Focus Product on New Voucher
+                                </label>
+                                <p className="text-sm text-muted-foreground">
+                                    When opening a new voucher, automatically focus the Product field in the items table so you can start adding products immediately.
                                 </p>
                             </div>
                         </div>

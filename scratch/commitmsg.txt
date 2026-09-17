@@ -1,0 +1,10 @@
+feat: recall last product search on first ArrowDown in empty voucher row
+
+When a product is searched (e.g. "self screw") and selected in one row,
+pressing ArrowDown on the next empty row's product combobox now pre-fills
+the search box with that previous keyword instead of navigating the list.
+
+- combobox.tsx: added onSearchChange + initialSearchValue props;
+  awaitFirstArrowDown ref intercepts first ArrowDown on CommandInput.
+- VoucherItemsSection.tsx: added lastProductSearchRef, wired the two
+  new props into every product Combobox in the items table.

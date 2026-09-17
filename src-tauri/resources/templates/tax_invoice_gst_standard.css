@@ -1,0 +1,190 @@
+/* ============================================================
+   GST TAX INVOICE — STANDARD STYLE (Background Image Overlay)
+   The background image carries all borders, labels and grid lines.
+   This CSS only handles positioning of data values.
+
+   COORDINATE SYSTEM: 210mm × 297mm A4 page (no margins).
+   All top/left values are relative to the top-left corner of
+   the gst-bg-page container.
+
+   To fine-tune field positions, adjust the inline style
+   top/left values in the HTML template directly.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;600;700&display=swap');
+
+/* ── Reset ── */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: 'Noto Sans', 'Arial', sans-serif;
+    font-size: 9pt;
+    color: #000;
+    background: #fff;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+}
+
+/* ── Print: zero margins so the bg image touches all edges ── */
+@media print {
+    @page {
+        size: A4 portrait;
+        margin: 0;
+    }
+    body { margin: 0; padding: 0; }
+}
+
+/* ============================================================
+   PAGE CONTAINER — exactly A4, background image fills it
+   (background-image is injected by Rust at compile time)
+   ============================================================ */
+.gst-bg-page {
+    position: relative;
+    width: 210mm;
+    height: 297mm;
+    overflow: hidden;
+    /* background-image: injected via seed — do not add here */
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    background-position: 0 0;
+}
+
+/* ============================================================
+   COMPANY HEADER BLOCK — centered in the letterhead box
+   (~3mm top, spans full inner width, ~42mm tall)
+   ============================================================ */
+.gst-company-block {
+    position: absolute;
+    top: 3mm;
+    left: 3mm;
+    width: 204mm;
+    text-align: center;
+    line-height: 1.55;
+}
+
+.gst-cn {
+    font-size: 14pt;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+}
+
+.gst-ca {
+    font-size: 10pt;
+    font-weight: 600;
+}
+
+.gst-cg {
+    font-size: 10pt;
+    font-weight: 700;
+    letter-spacing: 1px;
+    margin-top: 2px;
+}
+
+/* ============================================================
+   GENERIC VALUE DIV — used for all overlaid data fields
+   ============================================================ */
+.gst-v {
+    position: absolute;
+    font-size: 9pt;
+    line-height: 1.3;
+    color: #000;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.gst-addr { white-space: normal; line-height: 1.4; }
+
+.gst-bold { font-weight: 700; }
+
+.gst-terms-text {
+    position: absolute;
+    top: 278mm;
+    left: 5mm;
+    width: 100mm;
+    font-size: 7.5pt;
+    color: #333;
+    line-height: 1.4;
+}
+
+/* ============================================================
+   ITEMS AREA — starts where the first data row begins
+   Items rows flow downward from this container
+   ============================================================ */
+.gst-items-area {
+    position: absolute;
+    top: 120mm;       /* top of first item row */
+    left: 3mm;
+    width: 204mm;
+}
+
+/* Each item row — mirrors the column grid in the background image */
+.gst-row {
+    display: flex;
+    align-items: flex-start;
+    width: 100%;
+    min-height: 7.5mm;
+    font-size: 8.5pt;
+    line-height: 1.3;
+}
+
+/* ── TOTAL bar (sits in the pre-printed Total row) ── */
+.gst-total-bar {
+    position: absolute;
+    top: 203mm;       /* adjust to match Total row in image */
+    left: 3mm;
+    width: 204mm;
+    display: flex;
+    align-items: center;
+    font-size: 9pt;
+    min-height: 6.5mm;
+}
+
+/* ============================================================
+   COLUMN SPANS  (shared by .gst-row and .gst-total-bar)
+
+   Column left positions derived from 1241px image mapped to
+   210mm A4 (scale = 210/1241 ≈ 0.1692 mm/px):
+
+   Sl       :   3mm  – 9mm    (6mm)   center
+   Name     :   9mm  – 54mm   (45mm)  left-align
+   HSN      :  54mm  – 67mm   (13mm)  center
+   UOM      :  67mm  – 79mm   (12mm)  center
+   QTY      :  79mm  – 91mm   (12mm)  right-align
+   Rate     :  91mm  – 108mm  (17mm)  right-align
+   Amount   : 108mm  – 126mm  (18mm)  right-align
+   LessDisc : 126mm  – 144mm  (18mm)  right-align
+   TaxValue : 144mm  – 163mm  (19mm)  right-align
+   GST Rate : 163mm  – 176mm  (13mm)  center
+   GST Amt  : 176mm  – 189mm  (13mm)  right-align
+   Total    : 189mm  – 207mm  (18mm)  right-align
+   ============================================================ */
+
+.gst-col-sl   { flex: 0 0 6mm;  text-align: center; }
+.gst-col-name { flex: 0 0 45mm; text-align: left;   overflow: hidden; }
+.gst-col-hsn  { flex: 0 0 13mm; text-align: center; font-size: 8pt; }
+.gst-col-uom  { flex: 0 0 12mm; text-align: center; }
+.gst-col-qty  { flex: 0 0 12mm; text-align: right;  }
+.gst-col-rate { flex: 0 0 17mm; text-align: right;  }
+.gst-col-amt  { flex: 0 0 18mm; text-align: right;  }
+.gst-col-disc { flex: 0 0 18mm; text-align: right;  }
+.gst-col-taxv { flex: 0 0 19mm; text-align: right;  }
+.gst-col-gstr { flex: 0 0 13mm; text-align: center; font-size: 7.5pt; }
+.gst-col-gsta { flex: 0 0 13mm; text-align: right;  }
+.gst-col-total{ flex: 0 0 18mm; text-align: right;  font-weight: 600; }
+
+/* ============================================================
+   TAX SUMMARY VALUES (right panel in footer)
+   The right-panel summary starts at ~120mm from left of page.
+   Values are right-aligned within their column area.
+   ============================================================ */
+.gst-sum-val {
+    position: absolute;
+    left: 163mm;
+    width: 44mm;
+    text-align: right;
+    font-size: 9pt;
+    color: #000;
+    padding-right: 2mm;
+}

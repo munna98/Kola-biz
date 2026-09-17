@@ -1,5 +1,6 @@
 use sqlx::SqlitePool;
 use uuid::Uuid;
+use base64::{Engine as _, engine::general_purpose};
 
 // Consolidated Templates
 const A4_HTML: &str = include_str!("../../resources/templates/a4_professional.html");
@@ -15,6 +16,11 @@ const MINIMAL_CSS: &str = include_str!("../../resources/templates/minimal_clean.
 
 const GST_TAX_INVOICE_HTML: &str = include_str!("../../resources/templates/tax_invoice_gst.html");
 const GST_TAX_INVOICE_CSS: &str = include_str!("../../resources/templates/tax_invoice_gst.css");
+
+const GST_STD_INVOICE_HTML: &str = include_str!("../../resources/templates/tax_invoice_gst_standard.html");
+const GST_STD_INVOICE_CSS: &str = include_str!("../../resources/templates/tax_invoice_gst_standard.css");
+/// Background image for the standard GST template (embedded at compile time)
+const GST_STD_BG_BYTES: &[u8] = include_bytes!("../../resources/templates/tax_invoice_gst_bg.png");
 
 const DELIVERY_NOTE_HTML: &str = include_str!("../../resources/templates/delivery_note_a4.html");
 const DELIVERY_NOTE_CSS: &str = include_str!("../../resources/templates/delivery_note_a4.css");
@@ -410,6 +416,126 @@ pub async fn seed_handlebars_templates(
         .bind(&gst_b)
         .bind(&gst_f)
         .bind(GST_TAX_INVOICE_CSS)
+        .execute(pool)
+        .await?;
+
+    // ==================== GST TAX INVOICE STANDARD STYLE ====================
+
+    let (gst_std_h, gst_std_b, gst_std_f) = split_template(GST_STD_INVOICE_HTML);
+
+    // Build CSS with the background image embedded as a base64 data URL.
+    // This means the template is fully self-contained — no external file references.
+    let bg_b64 = general_purpose::STANDARD.encode(GST_STD_BG_BYTES);
+    let gst_std_css_with_bg = format!(
+        "{}\n.gst-bg-page {{ background-image: url('data:image/png;base64,{}'); }}",
+        GST_STD_INVOICE_CSS, bg_b64
+    );
+
+    // Sales Invoice — GST Standard Style
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css,
+            show_gstin, show_item_hsn, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-SI-GST-002")
+    .bind("GST Tax Invoice (Standard Style)")
+    .bind("Standard GST Tax Invoice — uses background image scan as form, data overlaid with absolute positioning")
+    .bind("sales_invoice")
+    .bind("a4_portrait")
+    .bind("standard")
+    .bind(&gst_std_h)
+    .bind(&gst_std_b)
+    .bind(&gst_std_f)
+    .bind(&gst_std_css_with_bg)
+    .bind(1) // show_gstin
+    .bind(1) // show_item_hsn
+    .bind(0) // not default
+    .execute(pool)
+    .await?;
+
+    // Sales Return — GST Standard Style (Credit Note)
+    let sr_gst_std_h = gst_std_h.clone();
+    let sr_gst_std_b = gst_std_b.clone();
+    let sr_gst_std_f = gst_std_f.clone();
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css,
+            show_gstin, show_item_hsn, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-SR-GST-002")
+    .bind("GST Credit Note (Standard Style)")
+    .bind("Standard GST Credit Note for sales returns — background image scan")
+    .bind("sales_return")
+    .bind("a4_portrait")
+    .bind("standard")
+    .bind(&sr_gst_std_h)
+    .bind(&sr_gst_std_b)
+    .bind(&sr_gst_std_f)
+    .bind(&gst_std_css_with_bg)
+    .bind(1) // show_gstin
+    .bind(1) // show_item_hsn
+    .bind(0) // not default
+    .execute(pool)
+    .await?;
+
+    // Purchase Return — GST Standard Style (Debit Note)
+    let pr_gst_std_h = gst_std_h.clone();
+    let pr_gst_std_b = gst_std_b.clone();
+    let pr_gst_std_f = gst_std_f.clone();
+
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css,
+            show_gstin, show_item_hsn, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-PR-GST-002")
+    .bind("GST Debit Note (Standard Style)")
+    .bind("Standard GST Debit Note for purchase returns — background image scan")
+    .bind("purchase_return")
+    .bind("a4_portrait")
+    .bind("standard")
+    .bind(&pr_gst_std_h)
+    .bind(&pr_gst_std_b)
+    .bind(&pr_gst_std_f)
+    .bind(&gst_std_css_with_bg)
+    .bind(1) // show_gstin
+    .bind(1) // show_item_hsn
+    .bind(0) // not default
+    .execute(pool)
+    .await?;
+
+    // Refresh Standard GST templates on startup (unless customised via designer)
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SI-GST-002' AND design_mode != 'designer'")
+        .bind(&gst_std_h)
+        .bind(&gst_std_b)
+        .bind(&gst_std_f)
+        .bind(&gst_std_css_with_bg)
+        .execute(pool)
+        .await?;
+
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SR-GST-002' AND design_mode != 'designer'")
+        .bind(&sr_gst_std_h)
+        .bind(&sr_gst_std_b)
+        .bind(&sr_gst_std_f)
+        .bind(&gst_std_css_with_bg)
+        .execute(pool)
+        .await?;
+
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-PR-GST-002' AND design_mode != 'designer'")
+        .bind(&pr_gst_std_h)
+        .bind(&pr_gst_std_b)
+        .bind(&pr_gst_std_f)
+        .bind(&gst_std_css_with_bg)
         .execute(pool)
         .await?;
 

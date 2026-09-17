@@ -86,7 +86,7 @@ export default function DeliveryNotePage() {
   const [showCreateProduct, setShowCreateProduct] = useState(false);
   const [newProductName, setNewProductName] = useState('');
   const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showShipTo?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showShipTo?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
@@ -112,6 +112,7 @@ export default function DeliveryNotePage() {
 
   const formRef = useRef<HTMLFormElement>(null);
   const customerRef = useRef<HTMLDivElement>(null);
+  const partyComboRef = useRef<HTMLButtonElement>(null);
   const voucherItemsRef = useRef<VoucherItemsSectionRef>(null);
 
   // Load initial data
@@ -170,6 +171,23 @@ export default function DeliveryNotePage() {
       setIsTaxInclusive(!!voucherSettings?.taxInclusive);
     }
   }, [noteState.mode, noteState.currentVoucherId, voucherSettings?.taxInclusive]);
+
+  // Auto-focus party or product when opening a new voucher (if setting enabled)
+  useEffect(() => {
+    if (noteState.mode === 'new' && !noteState.currentVoucherId) {
+      const shouldFocusProduct = voucherSettings?.autoFocusProduct ?? (!voucherSettings?.autoFocusParty);
+      if (shouldFocusProduct) {
+        requestAnimationFrame(() => {
+          voucherItemsRef.current?.focusFirstProduct();
+        });
+      } else if (voucherSettings?.autoFocusParty) {
+        requestAnimationFrame(() => {
+          partyComboRef.current?.focus();
+        });
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [noteState.mode, noteState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct]);
 
   // Default Party Selection Effect
   useEffect(() => {
@@ -896,6 +914,7 @@ export default function DeliveryNotePage() {
                 <div className="flex-1">
                   <Label className="text-xs font-medium mb-1 block">Party *</Label>
                   <Combobox
+                    ref={partyComboRef}
                     options={parties.map(p => ({ value: p.id, label: p.name, subLabel: p.address_line_1 || undefined }))}
                     value={noteState.form.customer_id}
                     onChange={(value) => {

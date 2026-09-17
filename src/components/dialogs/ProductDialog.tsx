@@ -239,7 +239,13 @@ export default function ProductDialog({
 
   const unitLocked = Boolean(product?.has_transactions);
 
-  const orderedFields = ['code', 'name', 'group', 'brand', 'color', 'warranty', 'battery_health', 'unit', 'part_number', 'hsn', 'gst_slab', 'purchase', 'sales', 'mrp', 'cost', 'barcode'];
+  const orderedFields = [
+    'code', 'name', 'group', 'brand', 'color', 'supplier', 'unit', 'part_number',
+    'serial_number', 'imei', 'warranty', 'battery_health', 'hsn', 'gst_slab',
+    'purchase', 'sales', 'mrp', 'cost', 'barcode',
+    'vehicle_manufacturer', 'vehicle_model', 'vehicle_year', 'vehicle_fuel_type',
+    'vehicle_transmission', 'vehicle_owner', 'vehicle_odometer', 'vehicle_color'
+  ];
 
   const { register, handleKeyDown, handleSelectKeyDown, focusNext, parseNumber, formatNumber } = useDialog(
     open,
@@ -746,9 +752,16 @@ export default function ProductDialog({
                   <Label className="text-xs font-medium mb-1 block">Supplier</Label>
                   <Select
                     value={form.supplier_id?.toString() || 'none'}
-                    onValueChange={v => setForm({ ...form, supplier_id: v === 'none' ? undefined : v })}
+                    onValueChange={v => {
+                      setForm({ ...form, supplier_id: v === 'none' ? undefined : v });
+                      setTimeout(() => focusNext('supplier'), 100);
+                    }}
                   >
-                    <SelectTrigger className="h-8 text-sm w-full">
+                    <SelectTrigger
+                      ref={register('supplier') as any}
+                      className="h-8 text-sm w-full"
+                      onKeyDown={(e) => handleSelectKeyDown(e, 'supplier')}
+                    >
                       <SelectValue placeholder="Select supplier" />
                     </SelectTrigger>
                     <SelectContent>
@@ -828,8 +841,10 @@ export default function ProductDialog({
                 <div>
                   <Label className="text-xs font-medium mb-1 block">Serial Number</Label>
                   <Input
+                    ref={register('serial_number') as any}
                     value={form.serial_number || ''}
                     onChange={e => setForm({ ...form, serial_number: e.target.value })}
+                    onKeyDown={(e) => handleKeyDown(e, 'serial_number')}
                     placeholder="e.g., SN-123456"
                     className="h-8 text-sm font-mono"
                   />
@@ -839,8 +854,10 @@ export default function ProductDialog({
                 <div>
                   <Label className="text-xs font-medium mb-1 block">IMEI Number</Label>
                   <Input
+                    ref={register('imei') as any}
                     value={form.imei || ''}
                     onChange={e => setForm({ ...form, imei: e.target.value })}
+                    onKeyDown={(e) => handleKeyDown(e, 'imei')}
                     placeholder="e.g., 356789012345678"
                     className="h-8 text-sm font-mono"
                   />
@@ -850,11 +867,13 @@ export default function ProductDialog({
                 <div>
                   <Label className="text-xs font-medium mb-1 block">Warranty (Months)</Label>
                   <Input
+                    ref={register('warranty') as any}
                     type="number"
                     min="0"
                     step="1"
                     value={form.warranty_months ?? ''}
                     onChange={e => setForm({ ...form, warranty_months: e.target.value ? parseInt(e.target.value, 10) || 0 : undefined })}
+                    onKeyDown={(e) => handleKeyDown(e, 'warranty')}
                     placeholder="e.g., 12"
                     className="h-8 text-sm font-mono"
                   />
@@ -864,8 +883,10 @@ export default function ProductDialog({
                 <div>
                   <Label className="text-xs font-medium mb-1 block">B Health</Label>
                   <Input
+                    ref={register('battery_health') as any}
                     value={form.battery_health || ''}
                     onChange={e => setForm({ ...form, battery_health: e.target.value })}
+                    onKeyDown={(e) => handleKeyDown(e, 'battery_health')}
                     placeholder="e.g., 85%"
                     className="h-8 text-sm font-mono"
                   />
@@ -1097,9 +1118,16 @@ export default function ProductDialog({
                     <Label className="text-xs font-medium mb-1 block">Manufacturer</Label>
                     <Select
                       value={form.vehicle_manufacturer || 'none'}
-                      onValueChange={v => setForm({ ...form, vehicle_manufacturer: v === 'none' ? undefined : v })}
+                      onValueChange={v => {
+                        setForm({ ...form, vehicle_manufacturer: v === 'none' ? undefined : v });
+                        setTimeout(() => focusNext('vehicle_manufacturer'), 100);
+                      }}
                     >
-                      <SelectTrigger className="h-8 text-sm">
+                      <SelectTrigger
+                        ref={register('vehicle_manufacturer') as any}
+                        className="h-8 text-sm"
+                        onKeyDown={(e) => handleSelectKeyDown(e, 'vehicle_manufacturer')}
+                      >
                         <SelectValue placeholder="Select manufacturer" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1118,9 +1146,11 @@ export default function ProductDialog({
                   <div>
                     <Label className="text-xs font-medium mb-1 block">Model</Label>
                     <Input
+                      ref={register('vehicle_model') as any}
                       list="vehicle-models-list"
                       value={form.vehicle_model || ''}
                       onChange={e => setForm({ ...form, vehicle_model: e.target.value || undefined })}
+                      onKeyDown={(e) => handleKeyDown(e, 'vehicle_model')}
                       placeholder="e.g., Swift"
                       className="h-8 text-sm"
                     />
@@ -1137,12 +1167,14 @@ export default function ProductDialog({
                   <div>
                     <Label className="text-xs font-medium mb-1 block">Year</Label>
                     <Input
+                      ref={register('vehicle_year') as any}
                       type="number"
                       step="1"
                       min="1900"
                       max={new Date().getFullYear() + 1}
                       value={form.vehicle_year !== undefined ? String(form.vehicle_year) : ''}
                       onChange={e => setForm({ ...form, vehicle_year: e.target.value ? Number(e.target.value) : undefined })}
+                      onKeyDown={(e) => handleKeyDown(e, 'vehicle_year')}
                       placeholder="e.g., 2021"
                       className="h-8 text-sm font-mono"
                     />
@@ -1155,9 +1187,16 @@ export default function ProductDialog({
                     <Label className="text-xs font-medium mb-1 block">Fuel Type</Label>
                     <Select
                       value={form.vehicle_fuel_type || 'none'}
-                      onValueChange={v => setForm({ ...form, vehicle_fuel_type: v === 'none' ? undefined : v })}
+                      onValueChange={v => {
+                        setForm({ ...form, vehicle_fuel_type: v === 'none' ? undefined : v });
+                        setTimeout(() => focusNext('vehicle_fuel_type'), 100);
+                      }}
                     >
-                      <SelectTrigger className="h-8 text-sm">
+                      <SelectTrigger
+                        ref={register('vehicle_fuel_type') as any}
+                        className="h-8 text-sm"
+                        onKeyDown={(e) => handleSelectKeyDown(e, 'vehicle_fuel_type')}
+                      >
                         <SelectValue placeholder="Select fuel type" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1179,9 +1218,16 @@ export default function ProductDialog({
                     <Label className="text-xs font-medium mb-1 block">Transmission</Label>
                     <Select
                       value={form.vehicle_transmission || 'none'}
-                      onValueChange={v => setForm({ ...form, vehicle_transmission: v === 'none' ? undefined : v })}
+                      onValueChange={v => {
+                        setForm({ ...form, vehicle_transmission: v === 'none' ? undefined : v });
+                        setTimeout(() => focusNext('vehicle_transmission'), 100);
+                      }}
                     >
-                      <SelectTrigger className="h-8 text-sm">
+                      <SelectTrigger
+                        ref={register('vehicle_transmission') as any}
+                        className="h-8 text-sm"
+                        onKeyDown={(e) => handleSelectKeyDown(e, 'vehicle_transmission')}
+                      >
                         <SelectValue placeholder="Select" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1202,9 +1248,16 @@ export default function ProductDialog({
                     <Label className="text-xs font-medium mb-1 block">Owner</Label>
                     <Select
                       value={form.vehicle_owner || 'none'}
-                      onValueChange={v => setForm({ ...form, vehicle_owner: v === 'none' ? undefined : v })}
+                      onValueChange={v => {
+                        setForm({ ...form, vehicle_owner: v === 'none' ? undefined : v });
+                        setTimeout(() => focusNext('vehicle_owner'), 100);
+                      }}
                     >
-                      <SelectTrigger className="h-8 text-sm">
+                      <SelectTrigger
+                        ref={register('vehicle_owner') as any}
+                        className="h-8 text-sm"
+                        onKeyDown={(e) => handleSelectKeyDown(e, 'vehicle_owner')}
+                      >
                         <SelectValue placeholder="Select owner" />
                       </SelectTrigger>
                       <SelectContent>
@@ -1223,11 +1276,13 @@ export default function ProductDialog({
                   <div>
                     <Label className="text-xs font-medium mb-1 block">Odometer (km)</Label>
                     <Input
+                      ref={register('vehicle_odometer') as any}
                       type="number"
                       step="1"
                       min="0"
                       value={form.vehicle_odometer !== undefined ? String(form.vehicle_odometer) : ''}
                       onChange={e => setForm({ ...form, vehicle_odometer: e.target.value ? Number(e.target.value) : undefined })}
+                      onKeyDown={(e) => handleKeyDown(e, 'vehicle_odometer')}
                       placeholder="e.g., 45000"
                       className="h-8 text-sm font-mono"
                     />
@@ -1239,8 +1294,10 @@ export default function ProductDialog({
                   <div>
                     <Label className="text-xs font-medium mb-1 block">Color</Label>
                     <Input
+                      ref={register('vehicle_color') as any}
                       value={form.vehicle_color || ''}
                       onChange={e => setForm({ ...form, vehicle_color: e.target.value || undefined })}
+                      onKeyDown={(e) => handleKeyDown(e, 'vehicle_color')}
                       placeholder="e.g., Pearl White"
                       className="h-8 text-sm"
                     />
