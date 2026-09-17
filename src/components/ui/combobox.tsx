@@ -52,6 +52,11 @@ interface ComboboxProps {
    *  Use this to redirect focus before the browser moves it anywhere else. */
   onAfterSelect?: () => void
   filter?: (value: string, search: string, keywords?: string[]) => number
+  /** Called whenever the search input value changes so the parent can record the last typed keyword. */
+  onSearchChange?: (value: string) => void
+  /** When set and the combobox has no selected value, pre-fill the search box with this string
+   *  when the popover opens via ArrowDown key ("recall last search" behaviour). */
+  initialSearchValue?: string
 }
 
 const defaultComboboxFilter = (value: string, search: string, keywords?: string[]) => {
@@ -127,6 +132,8 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   onEmptyEnter,
   onAfterSelect,
   filter,
+  onSearchChange,
+  initialSearchValue,
 }, ref) => {
   const [open, setOpen] = React.useState(false)
   const [hasOpenedOnFocus, setHasOpenedOnFocus] = React.useState(false)
@@ -134,6 +141,10 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   const skipOpen = React.useRef(false)
   const itemSelected = React.useRef(false)
   const isPointerDown = React.useRef(false)
+  // Armed when the popover opens on an empty combobox that has a recall value.
+  // The first ArrowDown on the CommandInput will pre-fill that value instead of
+  // navigating the list.  Any other key (or a second ArrowDown) disarms it.
+  const awaitFirstArrowDown = React.useRef(false)
 
   const handleFocus = React.useCallback(() => {
     if (skipOpen.current || isPointerDown.current) {
@@ -145,17 +156,41 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
     }
   }, [openOnFocus, open, hasOpenedOnFocus]);
 
-  // Reset flag when closed so it can open again on next focus cycle
+  // Reset flags when closed so it can open again on next focus cycle
   React.useEffect(() => {
     if (!open) {
       setHasOpenedOnFocus(false);
       setInputValue("");
+      awaitFirstArrowDown.current = false;
+    } else if (!value && initialSearchValue) {
+      // Popover just opened on an empty combobox with a recall value — arm the flag.
+      awaitFirstArrowDown.current = true;
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  // Intercept the first ArrowDown inside the CommandInput to recall the last
+  // search term rather than moving the selection cursor down the list.
+  const handleCommandInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' && awaitFirstArrowDown.current && !inputValue) {
+      e.preventDefault();
+      e.stopPropagation();
+      awaitFirstArrowDown.current = false;
+      setInputValue(initialSearchValue!);
+      onSearchChange?.(initialSearchValue!);
+      return;
+    }
+    // Any other key disarms the flag
+    awaitFirstArrowDown.current = false;
+  };
 
   const selectedOption = options.find((opt) => opt.value === value)
   const widthMatch = popoverClassName?.match(/w-\[(\d+)px\]/);
   const popoverWidthStyle = widthMatch ? { width: `${widthMatch[1]}px`, maxWidth: '95vw' } : undefined;
+
+  const handleButtonKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    onKeyDown?.(e);
+  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -167,7 +202,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
           aria-expanded={open}
           className={cn("justify-between h-8 text-sm w-full min-w-0 overflow-hidden font-normal group", className)}
           disabled={disabled}
-          onKeyDown={onKeyDown}
+          onKeyDown={handleButtonKeyDown}
           onFocus={handleFocus}
           onPointerDown={() => { isPointerDown.current = true }}
           onPointerUp={() => { setTimeout(() => { isPointerDown.current = false }, 300) }}
@@ -221,7 +256,12 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
           <CommandInput
             placeholder={searchPlaceholder}
             autoFocus
-            onValueChange={setInputValue}
+            value={inputValue}
+            onValueChange={(v) => {
+              setInputValue(v);
+              onSearchChange?.(v);
+            }}
+            onKeyDown={handleCommandInputKeyDown}
           />
 
           {headerColumns && headerColumns.length > 0 && (

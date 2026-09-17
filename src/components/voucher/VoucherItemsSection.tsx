@@ -421,6 +421,9 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     // requested target here until its close lifecycle has completed instead of
     // relying on a timing-dependent timeout.
     const postSelectionFocusRef = useRef<number | null>(null);
+    // Stores the last keyword the user typed in any row's product search box so
+    // that pressing ↓ on the next (empty) row pre-fills that search term.
+    const lastProductSearchRef = useRef<string>('');
 
     const [comboboxDisplaySettings, setComboboxDisplaySettings] = React.useState<ProductComboboxDisplaySettings>(DEFAULT_COMBOBOX_DISPLAY_SETTINGS);
     const [columnWidths, setColumnWidths] = React.useState<ProductComboboxColumnWidths>(DEFAULT_COMBOBOX_COLUMN_WIDTHS);
@@ -722,6 +725,8 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     popoverClassName={cbWidthClass}
                                     options={allOptions}
                                     value={currentValue ?? undefined}
+                                    onSearchChange={(term) => { lastProductSearchRef.current = term; }}
+                                    initialSearchValue={!currentValue ? lastProductSearchRef.current : undefined}
                                     onChange={(value) => {
                                         if (!value) return;
                                         const strVal = String(value);
