@@ -13,6 +13,7 @@ import { getDefaultProductUnitId, type ProductUnitDefaultKind } from '@/lib/prod
 import type { GstTaxSlab, Product as TauriProduct } from '@/lib/tauri';
 import { useMoney } from '@/hooks/useMoney';
 import { buildProductComboboxOption, getProductComboboxHeaderColumns, getProductComboboxWidthClass, type ProductComboboxDisplaySettings, DEFAULT_COMBOBOX_DISPLAY_SETTINGS, type ProductComboboxColumnWidths, DEFAULT_COMBOBOX_COLUMN_WIDTHS } from '@/lib/combobox-helpers';
+import ProductTraceDialog from '@/components/dialogs/ProductTraceDialog';
 
 /** Hover card content that lazily fetches stock qty for a product */
 const ProductHoverInfo = ({ productId, fullProducts }: { productId: string; fullProducts: TauriProduct[] }) => {
@@ -430,6 +431,21 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     const [groups, setGroups] = React.useState<any[]>([]);
     const [brands, setBrands] = React.useState<any[]>([]);
     const [stockMap, setStockMap] = React.useState<Record<string, number>>({});
+    const [traceProductId, setTraceProductId] = React.useState<string | null>(null);
+
+    const handlePageDownOnCombobox = (val: string | number) => {
+        if (!val) return;
+        const strVal = String(val);
+        let prodId: string | null = null;
+        if (strVal.startsWith('p:')) {
+            prodId = strVal.slice(2);
+        } else if (!strVal.startsWith('s:') && !strVal.startsWith('custom:')) {
+            prodId = strVal;
+        }
+        if (prodId) {
+            setTraceProductId(prodId);
+        }
+    };
 
     React.useEffect(() => {
         invoke<string | null>('get_app_setting', { key: 'product_combobox_display_settings' })
@@ -597,6 +613,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     );
 
     return (
+    <>
         <VoucherItemsTable
             header={header || defaultHeader}
             onAddItem={onAddItem}
@@ -860,6 +877,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     disabled={isReadOnly}
                                     onActionClick={() => onProductCreate?.('', idx)}
                                     onCreate={(name) => onProductCreate?.(name, idx)}
+                                    onPageDown={handlePageDownOnCombobox}
                                     onEmptyEnter={() => {
                                         if (idx > 0) { onRemoveItem(idx); onSectionExit?.(); }
                                     }}
@@ -1257,6 +1275,15 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                 );
             })}
         </VoucherItemsTable>
+        <ProductTraceDialog
+            open={Boolean(traceProductId)}
+            productId={traceProductId}
+            onOpenChange={(open) => {
+                if (!open) setTraceProductId(null);
+            }}
+            moneyFormatter={money}
+        />
+    </>
     );
 });
 

@@ -112,6 +112,7 @@ pub fn run() {
             reorder_product_images,
             sync_all_to_r2,
             share_listing_to_whatsapp,
+            get_product_trace,
             // Services
             get_next_service_code,
             get_services,

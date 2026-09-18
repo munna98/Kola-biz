@@ -2001,18 +2001,253 @@ pub async fn share_listing_to_whatsapp(specs_text: String, image_paths: Vec<Stri
 }
 
 fn simulate_paste(enigo: &mut enigo::Enigo) -> Result<(), String> {
-    use enigo::{Direction::{Click, Press, Release}, Key, Keyboard};
     #[cfg(target_os = "macos")]
     {
+        use enigo::{Direction::{Click, Press, Release}, Key, Keyboard};
         enigo.key(Key::Meta, Press).map_err(|e| e.to_string())?;
         enigo.key(Key::Unicode('v'), Click).map_err(|e| e.to_string())?;
         enigo.key(Key::Meta, Release).map_err(|e| e.to_string())?;
     }
     #[cfg(not(target_os = "macos"))]
     {
+        use enigo::{Direction::{Click, Press, Release}, Key, Keyboard};
         enigo.key(Key::Control, Press).map_err(|e| e.to_string())?;
         enigo.key(Key::Unicode('v'), Click).map_err(|e| e.to_string())?;
         enigo.key(Key::Control, Release).map_err(|e| e.to_string())?;
     }
     Ok(())
 }
+
+// ============= PRODUCT TRACE =============
+
+#[derive(Serialize, Deserialize)]
+pub struct ProductTraceInfo {
+    pub id: String,
+    pub code: String,
+    pub name: String,
+    pub barcode: Option<String>,
+    pub unit_symbol: String,
+    pub purchase_rate: f64,
+    pub sales_rate: f64,
+    pub mrp: f64,
+    pub current_stock: f64,
+    pub group_name: Option<String>,
+    pub brand_name: Option<String>,
+    pub supplier_name: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct ProductTraceTransaction {
+    pub voucher_id: String,
+    pub voucher_no: String,
+    pub voucher_type: String,
+    pub voucher_date: String,
+    pub party_name: Option<String>,
+    pub movement_type: String,
+    pub quantity: f64,
+    pub unit_symbol: String,
+    pub rate: f64,
+    pub discount_percent: f64,
+    pub discount_amount: f64,
+    pub total_amount: f64,
+    pub tax_amount: f64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ProductTraceSummary {
+    pub total_purchase_qty: f64,
+    pub total_purchase_amount: f64,
+    pub avg_purchase_rate: f64,
+    pub total_sales_qty: f64,
+    pub total_sales_amount: f64,
+    pub avg_sales_rate: f64,
+    pub current_stock: f64,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ProductTraceResponse {
+    pub product: ProductTraceInfo,
+    pub summary: ProductTraceSummary,
+    pub transactions: Vec<ProductTraceTransaction>,
+}
+
+#[tauri::command]
+pub async fn get_product_trace(
+    registry: State<'_, Arc<DbRegistry>>,
+    product_id: String,
+    from_date: Option<String>,
+    to_date: Option<String>,
+) -> Result<ProductTraceResponse, String> {
+    let pool = registry.active_pool().await?;
+
+    // 1. Fetch Product metadata
+    let product_row: Option<(
+        String,
+        String,
+        String,
+        Option<String>,
+        String,
+        f64,
+        f64,
+        f64,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    )> = sqlx::query_as(
+        "SELECT 
+            p.id, p.code, p.name, p.barcode,
+            u.symbol as unit_symbol,
+            CAST(p.purchase_rate AS REAL),
+            CAST(p.sales_rate AS REAL),
+            CAST(p.mrp AS REAL),
+            pg.name as group_name,
+            pb.name as brand_name,
+            coa.account_name as supplier_name
+         FROM products p
+         JOIN units u ON p.unit_id = u.id
+         LEFT JOIN product_groups pg ON p.group_id = pg.id
+         LEFT JOIN product_brands pb ON p.brand_id = pb.id
+         LEFT JOIN chart_of_accounts coa ON p.supplier_id = coa.id
+         WHERE p.id = ?"
+    )
+    .bind(&product_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let (p_id, p_code, p_name, p_barcode, p_unit_symbol, p_purchase_rate, p_sales_rate, p_mrp, p_group_name, p_brand_name, p_supplier_name) = 
+        product_row.ok_or_else(|| "Product not found".to_string())?;
+
+    // 2. Fetch current stock
+    let current_stock: f64 = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(
+            CASE
+                WHEN sm.movement_type = 'IN' THEN sm.quantity
+                WHEN sm.movement_type = 'OUT' THEN -sm.quantity
+                ELSE 0
+            END
+        ), 0) AS REAL)
+        FROM stock_movements sm
+        JOIN vouchers v ON sm.voucher_id = v.id
+        WHERE sm.product_id = ? AND v.deleted_at IS NULL"
+    )
+    .bind(&product_id)
+    .fetch_one(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    // 3. Fetch transactions from voucher_items
+    let mut query_str = String::from(
+        "SELECT
+            v.id as voucher_id,
+            v.voucher_no,
+            v.voucher_type,
+            v.voucher_date,
+            COALESCE(
+                (SELECT name FROM customers WHERE id = v.party_id),
+                (SELECT name FROM suppliers WHERE id = v.party_id),
+                (SELECT account_name FROM chart_of_accounts WHERE id = v.party_id),
+                (SELECT account_name FROM chart_of_accounts WHERE id = v.account_id),
+                'Counter / Cash'
+            ) as party_name,
+            CASE 
+                WHEN v.voucher_type IN ('purchase_invoice', 'sales_return', 'opening_stock') THEN 'IN'
+                WHEN v.voucher_type IN ('sales_invoice', 'purchase_return', 'delivery_note') THEN 'OUT'
+                ELSE 'IN'
+            END as movement_type,
+            CAST(COALESCE(NULLIF(vi.final_quantity, 0), vi.initial_quantity, 0) AS REAL) as quantity,
+            COALESCE(u.symbol, ?) as unit_symbol,
+            CAST(COALESCE(vi.rate, 0) AS REAL) as rate,
+            CAST(COALESCE(vi.discount_percent, 0) AS REAL) as discount_percent,
+            CAST(COALESCE(vi.discount_amount, 0) AS REAL) as discount_amount,
+            CAST(COALESCE(NULLIF(vi.net_amount, 0), vi.amount, 0) AS REAL) as total_amount,
+            CAST(COALESCE(vi.tax_amount, 0) AS REAL) as tax_amount
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        LEFT JOIN units u ON vi.unit_id = u.id
+        WHERE vi.product_id = ?
+          AND v.deleted_at IS NULL"
+    );
+
+    if from_date.is_some() {
+        query_str.push_str(" AND v.voucher_date >= ?");
+    }
+    if to_date.is_some() {
+        query_str.push_str(" AND v.voucher_date <= ?");
+    }
+
+    query_str.push_str(" ORDER BY v.voucher_date DESC, v.created_at DESC");
+
+    let mut query = sqlx::query_as::<_, ProductTraceTransaction>(&query_str)
+        .bind(&p_unit_symbol)
+        .bind(&product_id);
+
+    if let Some(ref fd) = from_date {
+        query = query.bind(fd);
+    }
+    if let Some(ref td) = to_date {
+        query = query.bind(td);
+    }
+
+    let transactions = query.fetch_all(&pool).await.map_err(|e| e.to_string())?;
+
+    // 4. Compute summary metrics
+    let mut total_purchase_qty = 0.0;
+    let mut total_purchase_amount = 0.0;
+    let mut total_sales_qty = 0.0;
+    let mut total_sales_amount = 0.0;
+
+    for tx in &transactions {
+        if tx.voucher_type == "purchase_invoice" {
+            total_purchase_qty += tx.quantity;
+            total_purchase_amount += tx.total_amount;
+        } else if tx.voucher_type == "sales_invoice" {
+            total_sales_qty += tx.quantity;
+            total_sales_amount += tx.total_amount;
+        }
+    }
+
+    let avg_purchase_rate = if total_purchase_qty > 0.0 {
+        total_purchase_amount / total_purchase_qty
+    } else {
+        p_purchase_rate
+    };
+
+    let avg_sales_rate = if total_sales_qty > 0.0 {
+        total_sales_amount / total_sales_qty
+    } else {
+        p_sales_rate
+    };
+
+    let product_info = ProductTraceInfo {
+        id: p_id,
+        code: p_code,
+        name: p_name,
+        barcode: p_barcode,
+        unit_symbol: p_unit_symbol,
+        purchase_rate: p_purchase_rate,
+        sales_rate: p_sales_rate,
+        mrp: p_mrp,
+        current_stock,
+        group_name: p_group_name,
+        brand_name: p_brand_name,
+        supplier_name: p_supplier_name,
+    };
+
+    let summary = ProductTraceSummary {
+        total_purchase_qty,
+        total_purchase_amount,
+        avg_purchase_rate,
+        total_sales_qty,
+        total_sales_amount,
+        avg_sales_rate,
+        current_stock,
+    };
+
+    Ok(ProductTraceResponse {
+        product: product_info,
+        summary,
+        transactions,
+    })
+}
+

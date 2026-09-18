@@ -6,16 +6,26 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * Format a date to dd/mm/yyyy format
+ * Format a date to DD-MM-YYYY format
  * @param date - Date object or date string
- * @returns Formatted date string in dd/mm/yyyy format
+ * @param separator - Separator character (default: '-')
+ * @returns Formatted date string in DD-MM-YYYY format
  */
-export function formatDate(date: Date | string): string {
+export function formatDate(date: Date | string, separator: string = '-'): string {
+  if (!date) return '';
+  if (typeof date === 'string') {
+    const cleanDate = date.trim().split('T')[0];
+    const parts = cleanDate.split('-');
+    if (parts.length === 3 && parts[0].length === 4 && parts[1].length === 2 && parts[2].length === 2) {
+      return `${parts[2]}${separator}${parts[1]}${separator}${parts[0]}`;
+    }
+  }
   const d = typeof date === 'string' ? new Date(date) : date;
+  if (isNaN(d.getTime())) return String(date);
   const day = String(d.getDate()).padStart(2, '0');
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const year = d.getFullYear();
-  return `${day}/${month}/${year}`;
+  return `${day}${separator}${month}${separator}${year}`;
 }
 
 export function round2(value: number): number {

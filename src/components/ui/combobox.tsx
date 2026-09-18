@@ -57,6 +57,8 @@ interface ComboboxProps {
   /** When set and the combobox has no selected value, pre-fill the search box with this string
    *  when the popover opens via ArrowDown key ("recall last search" behaviour). */
   initialSearchValue?: string
+  /** Called when user presses PageDown key on an option or while popover/button is focused. */
+  onPageDown?: (value: string | number) => void
 }
 
 const defaultComboboxFilter = (value: string, search: string, keywords?: string[]) => {
@@ -134,6 +136,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   filter,
   onSearchChange,
   initialSearchValue,
+  onPageDown,
 }, ref) => {
   const [open, setOpen] = React.useState(false)
   const [hasOpenedOnFocus, setHasOpenedOnFocus] = React.useState(false)
@@ -177,9 +180,54 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  // Intercept the first ArrowDown inside the CommandInput to recall the last
-  // search term rather than moving the selection cursor down the list.
+  const triggerPageDown = React.useCallback((e: React.KeyboardEvent) => {
+    if (!onPageDown) return false;
+
+    if (e.key !== 'PageDown' && e.code !== 'PageDown' && e.keyCode !== 34) {
+      return false;
+    }
+
+    let activeValue: string | number | undefined = undefined;
+
+    // 1. Check commandValue matching options
+    if (commandValue) {
+      const opt = options.find(o => (o.searchString || String(o.label)) === commandValue);
+      if (opt) activeValue = opt.value;
+    }
+
+    // 2. Check DOM aria-selected / data-selected / cmdk-item
+    if (activeValue === undefined) {
+      const el = document.querySelector('[cmdk-item][aria-selected="true"], [data-cmdk-item][aria-selected="true"], [aria-selected="true"], [data-selected="true"], [data-cmdk-item][data-selected="true"]') as HTMLElement | null;
+      const domVal = el?.getAttribute('data-option-value');
+      if (domVal) activeValue = domVal;
+    }
+
+    // 3. Fallback to current prop value
+    if (activeValue === undefined && value !== undefined && value !== null && value !== '') {
+      activeValue = value;
+    }
+
+    // 4. Fallback to first option if popover is open
+    if (activeValue === undefined && open && options.length > 0) {
+      activeValue = options[0].value;
+    }
+
+    if (activeValue !== undefined && activeValue !== null && activeValue !== '') {
+      e.preventDefault();
+      e.stopPropagation();
+      setOpen(false);
+      onPageDown(activeValue);
+      return true;
+    }
+    return false;
+  }, [onPageDown, commandValue, options, value, open]);
+
+  // Intercept keydowns on CommandInput
   const handleCommandInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (triggerPageDown(e)) {
+      return;
+    }
+
     if (e.key === 'ArrowDown' && awaitFirstArrowDown.current && !inputValue) {
       e.preventDefault();
       e.stopPropagation();
@@ -197,6 +245,9 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   const popoverWidthStyle = widthMatch ? { width: `${widthMatch[1]}px`, maxWidth: '95vw' } : undefined;
 
   const handleButtonKeyDown = (e: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (triggerPageDown(e)) {
+      return;
+    }
     onKeyDown?.(e);
   };
 
@@ -243,6 +294,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
           popoverClassName
         )}
         align="start"
+        onKeyDown={(e) => triggerPageDown(e)}
         onOpenAutoFocus={() => {
           // Allow auto-focusing the input
         }}
@@ -264,6 +316,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
           value={commandValue}
           onValueChange={(val) => setCommandValue(val)}
           filter={filter || defaultComboboxFilter}
+          onKeyDown={(e) => triggerPageDown(e)}
         >
           <CommandInput
             placeholder={searchPlaceholder}
@@ -343,6 +396,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
               {options.map((option) => (
                 <CommandItem
                   key={option.value}
+                  data-option-value={String(option.value)}
                   // cmdk uses the 'value' prop for internal filtering. 
                   // It should ideally be the label string.
                   value={option.searchString || String(option.label)}
