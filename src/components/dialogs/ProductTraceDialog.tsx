@@ -16,6 +16,7 @@ import {
     Package,
     Tag,
     Layers,
+    Boxes,
     Building2,
     RefreshCw,
     X,
@@ -168,7 +169,6 @@ export default function ProductTraceDialog({
     }, [data, tabFilter, searchQuery]);
 
     const product = data?.product;
-    const summary = data?.summary;
 
     const purchaseCount = useMemo(() => {
         return data?.transactions.filter(t => t.voucher_type === 'purchase_invoice' || t.voucher_type === 'sales_return' || t.voucher_type === 'opening_stock').length || 0;
