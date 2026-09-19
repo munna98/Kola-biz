@@ -117,7 +117,7 @@ pub(crate) async fn create_child_product_in_tx(
         "INSERT INTO products \
          (id, code, name, group_id, brand_id, color_id, supplier_id, unit_id, purchase_rate, sales_rate, mrp, \
           barcode, part_number, serial_number, imei, warranty_months, battery_health, hsn_sac_code, gst_slab_id, is_master, parent_product_id, is_active) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, 0, ?, 1)",
     )
     .bind(&child_id)
     .bind(&code)
