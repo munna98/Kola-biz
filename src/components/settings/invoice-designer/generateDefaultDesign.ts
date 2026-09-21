@@ -268,6 +268,7 @@ function generateThermalDesign(
                 { label: 'Subtotal', field: 'subtotal', format: 'currency', bold: false },
                 { label: 'Disc', field: 'bill_discount', format: 'currency', bold: false },
                 { label: 'Tax', field: 'tax_total', format: 'currency', bold: false },
+                { label: 'Freight', field: 'freight_charge', format: 'currency', bold: false },
                 { label: 'TOTAL', field: 'grand_total', format: 'currency', bold: true },
             ],
             labelAlign: 'left',
@@ -644,6 +645,7 @@ function generateA4Design(
             rows: [
                 { label: 'Disc', field: 'bill_discount', format: 'currency', bold: false },
                 { label: 'Tax', field: 'tax_total', format: 'currency', bold: false },
+                { label: 'Freight', field: 'freight_charge', format: 'currency', bold: false },
                 { label: 'Grand Total', field: 'grand_total', format: 'currency', bold: true },
             ],
             labelAlign: 'right',

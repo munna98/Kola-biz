@@ -52,6 +52,7 @@ interface VoucherSettings {
     priceCategoryFallback?: 'default_sales_rate' | 'show_zero'; // Fallback when no category price found
     autoFocusParty?: boolean; // Auto-focus party combobox when opening a new voucher
     autoFocusProduct?: boolean; // Auto-focus product input when opening a new voucher
+    enableFreightCharge?: boolean; // Enable Freight Charge input on vouchers
 }
 
 const AVAILABLE_COLUMNS = [
@@ -120,6 +121,7 @@ export default function VoucherSettingsPage() {
     const [allowTotalInput, setAllowTotalInput] = useState(false);
     const [autoFocusParty, setAutoFocusParty] = useState(false);
     const [autoFocusProduct, setAutoFocusProduct] = useState(false);
+    const [enableFreightCharge, setEnableFreightCharge] = useState(false);
     const [loading, setLoading] = useState(false);
 
     // ---- Reassign Voucher Numbers state ----
@@ -177,6 +179,7 @@ export default function VoucherSettingsPage() {
                 setAllowTotalInput(savedSettings.allowTotalInput || false);
                 setAutoFocusParty(savedSettings.autoFocusParty || false);
                 setAutoFocusProduct(savedSettings.autoFocusProduct !== undefined ? savedSettings.autoFocusProduct : (!savedSettings.autoFocusParty));
+                setEnableFreightCharge(savedSettings.enableFreightCharge || false);
 
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
@@ -232,6 +235,7 @@ export default function VoucherSettingsPage() {
                 setAllowTotalInput(false);
                 setAutoFocusParty(false);
                 setAutoFocusProduct(true);
+                setEnableFreightCharge(false);
                 initialColumns = availableCols.map((col, index) => ({
                     id: col.id,
                     label: col.label,
@@ -277,6 +281,7 @@ export default function VoucherSettingsPage() {
                 allowTotalInput: allowTotalInput,
                 autoFocusParty: autoFocusParty,
                 autoFocusProduct: autoFocusProduct,
+                enableFreightCharge: enableFreightCharge,
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -756,6 +761,25 @@ export default function VoucherSettingsPage() {
                                 </label>
                                 <p className="text-sm text-muted-foreground">
                                     Hovering over the serial number will display Stock, Purchase Rate, and MRP for the product in that row.
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4 mb-6">
+                            <Checkbox
+                                id="enable-freight-charge"
+                                checked={enableFreightCharge}
+                                onCheckedChange={(checked) => setEnableFreightCharge(checked as boolean)}
+                            />
+                            <div className="grid gap-1.5 leading-none">
+                                <label
+                                    htmlFor="enable-freight-charge"
+                                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                >
+                                    Enable Freight Charge
+                                </label>
+                                <p className="text-sm text-muted-foreground">
+                                    Show Freight Charge input field in the voucher summary footer to add shipping/transport charges to totals.
                                 </p>
                             </div>
                         </div>

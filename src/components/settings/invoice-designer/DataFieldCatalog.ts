@@ -53,6 +53,7 @@ export const DATA_FIELD_CATALOG: DataFieldCategory[] = [
             { key: 'discount_amount', label: 'Discount', example: '500.00', format: 'currency' },
             { key: 'discount_rate', label: 'Discount %', example: '5', format: 'number' },
             { key: 'tax_total', label: 'Total Tax', example: '1,710.00', format: 'currency' },
+            { key: 'freight_charge', label: 'Freight Charge', example: '150.00', format: 'currency' },
             { key: 'grand_total', label: 'Grand Total', example: '11,210.00', format: 'currency' },
             { key: 'grand_total_words', label: 'Amount in Words', example: 'Eleven Thousand Two Hundred Ten Rupees' },
         ],

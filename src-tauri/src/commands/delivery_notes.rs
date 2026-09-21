@@ -23,6 +23,7 @@ pub struct DeliveryNote {
     pub reference: Option<String>,
     pub total_amount: f64,
     pub tax_amount: f64,
+    pub freight_charge: f64,
     pub grand_total: f64,
     pub discount_rate: Option<f64>,
     pub discount_amount: Option<f64>,
@@ -106,6 +107,8 @@ pub struct CreateDeliveryNote {
     pub narration: Option<String>,
     pub discount_rate: Option<f64>,
     pub discount_amount: Option<f64>,
+    #[serde(default)]
+    pub freight_charge: Option<f64>,
     pub items: Vec<CreateDeliveryNoteItem>,
     pub user_id: Option<String>,
     pub tax_inclusive: Option<bool>,
@@ -133,7 +136,8 @@ pub async fn get_delivery_notes(
             v.reference,
             v.total_amount,
             ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
-            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as grand_total,
+            COALESCE(v.freight_charge, 0.0) as freight_charge,
+            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0), 2) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -268,7 +272,8 @@ pub async fn create_delivery_note(
     let total_igst = processed.total_igst;
     let total_amount = round2(subtotal - discount_amount);
     let total_tax = round2(total_cgst + total_sgst + total_igst);
-    let grand_total = round2(total_amount + total_tax);
+    let freight_charge = note.freight_charge.unwrap_or(0.0);
+    let grand_total = round2(total_amount + total_tax + freight_charge);
 
     let voucher_id = Uuid::now_v7().to_string();
     
@@ -276,12 +281,12 @@ pub async fn create_delivery_note(
     let metadata_json = metadata_obj.to_string();
 
     sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, metadata, gst_disabled)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, freight_charge, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, metadata, gst_disabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("delivery_note").bind(&note.voucher_date).bind(&note.customer_id)
     .bind(&note.salesperson_id).bind(&note.party_type).bind(&note.reference).bind(subtotal).bind(discount_rate)
-    .bind(discount_amount).bind(total_tax).bind(total_amount).bind(&note.narration)
+    .bind(discount_amount).bind(total_tax).bind(freight_charge).bind(total_amount).bind(&note.narration)
     .bind(&note.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total).bind(&metadata_json)
     .bind(gst_disabled as i64)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -421,7 +426,8 @@ pub async fn update_delivery_note(
     let total_igst = processed.total_igst;
     let total_amount = round2(subtotal - discount_amount);
     let total_tax = round2(total_cgst + total_sgst + total_igst);
-    let grand_total = round2(total_amount + total_tax);
+    let freight_charge = note.freight_charge.unwrap_or(0.0);
+    let grand_total = round2(total_amount + total_tax + freight_charge);
 
     let metadata_obj = serde_json::json!({ "ship_to": note.ship_to });
     let metadata_json = metadata_obj.to_string();
@@ -429,12 +435,12 @@ pub async fn update_delivery_note(
     sqlx::query(
         "UPDATE vouchers
          SET voucher_date = ?, party_id = ?, salesperson_id = ?, party_type = ?, reference = ?, subtotal = ?,
-             discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?,
+             discount_rate = ?, discount_amount = ?, tax_amount = ?, freight_charge = ?, total_amount = ?, narration = ?,
              tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, metadata = ?, gst_disabled = ?
          WHERE id = ? AND voucher_type = 'delivery_note'"
     )
     .bind(&note.voucher_date).bind(&note.customer_id).bind(&note.salesperson_id).bind(&note.party_type)
-    .bind(&note.reference).bind(subtotal).bind(discount_rate).bind(discount_amount).bind(total_tax)
+    .bind(&note.reference).bind(subtotal).bind(discount_rate).bind(discount_amount).bind(total_tax).bind(freight_charge)
     .bind(total_amount).bind(&note.narration).bind(tax_inclusive as i64).bind(total_cgst)
     .bind(total_sgst).bind(total_igst).bind(grand_total).bind(&metadata_json).bind(gst_disabled as i64).bind(&id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
@@ -559,7 +565,8 @@ pub async fn get_delivery_note_with_pool(
             v.reference,
             v.total_amount,
             ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
-            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as grand_total,
+            COALESCE(v.freight_charge, 0.0) as freight_charge,
+            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0), 2) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,

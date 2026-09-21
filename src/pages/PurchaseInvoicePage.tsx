@@ -9,6 +9,7 @@ import {
   setNarration,
   setDiscountRate,
   setDiscountAmount,
+  setFreightCharge,
   addItem,
   updateItem,
   removeItem,
@@ -97,7 +98,7 @@ export default function PurchaseInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean, updateCost?: boolean, updateSupplierOnPurchase?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, enableFreightCharge?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean, updateCost?: boolean, updateSupplierOnPurchase?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
   const [gstDisabled, setGstDisabled] = useState(false);
@@ -306,6 +307,7 @@ export default function PurchaseInvoicePage() {
       // Load discount fields from backend
       dispatch(setDiscountRate(voucher.discount_rate || 0));
       dispatch(setDiscountAmount(voucher.discount_amount || 0));
+      dispatch(setFreightCharge(voucher.freight_charge || 0));
 
       // Set Creator Name
       dispatch(setPurchaseCreatedByName(voucher.created_by_name));
@@ -368,7 +370,8 @@ export default function PurchaseInvoicePage() {
         mappedItems,
         voucher.discount_amount ? undefined : voucher.discount_rate,
         voucher.discount_amount || undefined,
-        loadedGstDisabled
+        loadedGstDisabled,
+        voucher.freight_charge || 0
       );
 
       dispatch(setPurchaseHasUnsavedChanges(false));
@@ -596,7 +599,7 @@ export default function PurchaseInvoicePage() {
     markUnsaved();
   };
 
-  const updateTotalsWithItems = (items: any[], discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean) => {
+  const updateTotalsWithItems = (items: any[], discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean, freightCharge?: number) => {
     const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
 
     // Slab-aware GST resolution
@@ -633,6 +636,8 @@ export default function PurchaseInvoicePage() {
       return item.tax_rate || 0;
     };
 
+    const effectiveFreight = freightCharge !== undefined ? freightCharge : (purchaseState.form.freight_charge || 0);
+
     const calculation = calculateVoucherDiscounts(items, {
       discountRate:
         discountRate !== undefined
@@ -646,12 +651,14 @@ export default function PurchaseInvoicePage() {
           : discountRate !== undefined
             ? undefined
             : (purchaseState.form.discount_amount || undefined),
+      freightCharge: effectiveFreight,
       taxInclusive: !!voucherSettings?.taxInclusive,
       resolveGstRate: resolveItemGstRate,
     });
 
     dispatch(setDiscountRate(calculation.discountRate));
     dispatch(setDiscountAmount(calculation.discountAmount));
+    dispatch(setFreightCharge(effectiveFreight));
     dispatch(setTotals({
       subtotal: calculation.subtotal,
       discount: calculation.discountAmount,
@@ -717,6 +724,7 @@ export default function PurchaseInvoicePage() {
             narration: purchaseState.form.narration || null,
             discount_rate: purchaseState.form.discount_rate || null,
             discount_amount: purchaseState.form.discount_amount || null,
+            freight_charge: purchaseState.form.freight_charge || null,
             currency_id: isMultiCurrencyEnabled ? purchaseState.currency_id : null,
             exchange_rate: isMultiCurrencyEnabled && purchaseState.currency_id ? purchaseState.exchange_rate : 1.0,
             items: purchaseState.items.map(item => ({
@@ -830,6 +838,7 @@ export default function PurchaseInvoicePage() {
             narration: purchaseState.form.narration || null,
             discount_rate: purchaseState.form.discount_rate || null,
             discount_amount: purchaseState.form.discount_amount || null,
+            freight_charge: purchaseState.form.freight_charge || null,
             currency_id: isMultiCurrencyEnabled ? purchaseState.currency_id : null,
             exchange_rate: isMultiCurrencyEnabled && purchaseState.currency_id ? purchaseState.exchange_rate : 1.0,
             items: purchaseState.items.map(item => ({
@@ -1638,6 +1647,31 @@ export default function PurchaseInvoicePage() {
                       id="voucher-discount-amount"
                     />
                   </div>
+                  {voucherSettings?.enableFreightCharge && (
+                    <div>
+                      <Label className="text-xs font-medium mb-1 block">Freight Charge{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
+                      <Input
+                        type="number"
+                        value={purchaseState.form.freight_charge || ''}
+                        onChange={(e) => {
+                          const fc = parseFloat(e.target.value) || 0;
+                          markUnsaved();
+                          updateTotalsWithItems(purchaseState.items, undefined, undefined, undefined, fc);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            document.getElementById('voucher-save-btn')?.focus();
+                          }
+                        }}
+                        placeholder="0.00"
+                        className="h-7 w-28 font-mono text-xs"
+                        step="0.01"
+                        disabled={isReadOnly}
+                        id="voucher-freight-charge"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
@@ -1654,6 +1688,14 @@ export default function PurchaseInvoicePage() {
                       {isMultiCurrencyEnabled && purchaseState.currency_id
                         ? forexMoney(purchaseState.totals.discount)
                         : money(purchaseState.totals.discount)}
+                    </div>
+                  )}
+                  {purchaseState.form.freight_charge > 0 && (
+                    <div className="text-xs font-mono text-muted-foreground">
+                      Freight Charge:{' '}
+                      {isMultiCurrencyEnabled && purchaseState.currency_id
+                        ? forexMoney(purchaseState.form.freight_charge)
+                        : money(purchaseState.form.freight_charge)}
                     </div>
                   )}
                   {purchaseState.totals.tax > 0 && (

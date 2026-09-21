@@ -294,6 +294,7 @@ export interface PurchaseInvoiceState extends VoucherNavigationState {
     narration: string;
     discount_rate: number;
     discount_amount: number;
+    freight_charge: number;
   };
   currency_id: string | null;
   exchange_rate: number;
@@ -324,6 +325,7 @@ const purchaseInitialState: PurchaseInvoiceState = {
     narration: '',
     discount_rate: 0,
     discount_amount: 0,
+    freight_charge: 0,
   },
   currency_id: null,
   exchange_rate: 1.0,
@@ -384,6 +386,9 @@ const purchaseInvoiceSlice = createSlice({
     setDiscountAmount: (state, action: PayloadAction<number>) => {
       state.form.discount_amount = action.payload;
     },
+    setFreightCharge: (state, action: PayloadAction<number>) => {
+      state.form.freight_charge = action.payload;
+    },
     addItem: (state, action: PayloadAction<PurchaseInvoiceItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       // Preserve existing id (from a loaded voucher); only generate temp id for new blank items
@@ -413,6 +418,7 @@ const purchaseInvoiceSlice = createSlice({
         narration: '',
         discount_rate: 0,
         discount_amount: 0,
+        freight_charge: 0,
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
@@ -460,6 +466,7 @@ export const {
   setNarration,
   setDiscountRate,
   setDiscountAmount,
+  setFreightCharge,
   addItem,
   updateItem,
   removeItem,
@@ -1142,6 +1149,7 @@ export interface SalesInvoiceState extends VoucherNavigationState {
     narration: string;
     discount_rate: number;
     discount_amount: number;
+    freight_charge: number;
     /** Whether this invoice uses the GST Margin Scheme */
     is_margin_scheme_invoice: boolean;
   };
@@ -1182,6 +1190,7 @@ const salesInitialState: SalesInvoiceState = {
     narration: '',
     discount_rate: 0,
     discount_amount: 0,
+    freight_charge: 0,
     is_margin_scheme_invoice: false,
   },
   currency_id: null,
@@ -1249,6 +1258,9 @@ const salesInvoiceSlice = createSlice({
     setSalesDiscountAmount: (state, action: PayloadAction<number>) => {
       state.form.discount_amount = action.payload;
     },
+    setSalesFreightCharge: (state, action: PayloadAction<number>) => {
+      state.form.freight_charge = action.payload;
+    },
     addSalesItem: (state, action: PayloadAction<SalesInvoiceItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
@@ -1283,6 +1295,7 @@ const salesInvoiceSlice = createSlice({
         narration: '',
         discount_rate: 0,
         discount_amount: 0,
+        freight_charge: 0,
         is_margin_scheme_invoice: false,
       };
       state.items = [];
@@ -1444,6 +1457,7 @@ export const {
   setSalesNarration,
   setSalesDiscountRate,
   setSalesDiscountAmount,
+  setSalesFreightCharge,
   addSalesItem,
   updateSalesItem,
   removeSalesItem,
@@ -1585,6 +1599,7 @@ export interface PurchaseReturnState extends VoucherNavigationState {
     narration: string;
     discount_rate: number;
     discount_amount: number;
+    freight_charge: number;
   };
   currency_id: string | null;
   exchange_rate: number;
@@ -1614,6 +1629,7 @@ const purchaseReturnInitialState: PurchaseReturnState = {
     narration: '',
     discount_rate: 0,
     discount_amount: 0,
+    freight_charge: 0,
   },
   currency_id: null,
   exchange_rate: 1.0,
@@ -1671,6 +1687,9 @@ const purchaseReturnSlice = createSlice({
     setPurchaseReturnDiscountAmount: (state, action: PayloadAction<number>) => {
       state.form.discount_amount = action.payload;
     },
+    setPurchaseReturnFreightCharge: (state, action: PayloadAction<number>) => {
+      state.form.freight_charge = action.payload;
+    },
     addPurchaseReturnItem: (state, action: PayloadAction<PurchaseReturnItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
@@ -1700,6 +1719,7 @@ const purchaseReturnSlice = createSlice({
         narration: '',
         discount_rate: 0,
         discount_amount: 0,
+        freight_charge: 0,
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
@@ -1746,6 +1766,7 @@ export const {
   setPurchaseReturnNarration,
   setPurchaseReturnDiscountRate,
   setPurchaseReturnDiscountAmount,
+  setPurchaseReturnFreightCharge,
   addPurchaseReturnItem,
   updatePurchaseReturnItem,
   removePurchaseReturnItem,
@@ -1798,6 +1819,7 @@ export interface SalesReturnState extends VoucherNavigationState {
     narration: string;
     discount_rate: number;
     discount_amount: number;
+    freight_charge: number;
     is_margin_scheme_invoice: boolean;
   };
   items: SalesReturnItem[];
@@ -1828,6 +1850,7 @@ const salesReturnInitialState: SalesReturnState = {
     narration: '',
     discount_rate: 0,
     discount_amount: 0,
+    freight_charge: 0,
     is_margin_scheme_invoice: false,
   },
   currency_id: null,
@@ -1886,6 +1909,9 @@ const salesReturnSlice = createSlice({
     setSalesReturnDiscountAmount: (state, action: PayloadAction<number>) => {
       state.form.discount_amount = action.payload;
     },
+    setSalesReturnFreightCharge: (state, action: PayloadAction<number>) => {
+      state.form.freight_charge = action.payload;
+    },
     addSalesReturnItem: (state, action: PayloadAction<SalesReturnItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
@@ -1915,6 +1941,7 @@ const salesReturnSlice = createSlice({
         narration: '',
         discount_rate: 0,
         discount_amount: 0,
+        freight_charge: 0,
         is_margin_scheme_invoice: false,
       };
       state.items = [];
@@ -1966,6 +1993,7 @@ export const {
   setSalesReturnNarration,
   setSalesReturnDiscountRate,
   setSalesReturnDiscountAmount,
+  setSalesReturnFreightCharge,
   addSalesReturnItem,
   updateSalesReturnItem,
   removeSalesReturnItem,
@@ -2147,6 +2175,7 @@ export interface SalesQuotationState extends VoucherNavigationState {
     narration: string;
     discount_rate: number;
     discount_amount: number;
+    freight_charge: number;
     valid_until?: string;
   };
   items: SalesQuotationItem[];
@@ -2180,6 +2209,7 @@ const quotationInitialState: SalesQuotationState = {
     narration: '',
     discount_rate: 0,
     discount_amount: 0,
+    freight_charge: 0,
   },
   items: [],
   loading: false,
@@ -2243,6 +2273,9 @@ const salesQuotationSlice = createSlice({
     setQuotationDiscountAmount: (state, action: PayloadAction<number>) => {
       state.form.discount_amount = action.payload;
     },
+    setQuotationFreightCharge: (state, action: PayloadAction<number>) => {
+      state.form.freight_charge = action.payload;
+    },
     addQuotationItem: (state, action: PayloadAction<SalesQuotationItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
@@ -2273,6 +2306,7 @@ const salesQuotationSlice = createSlice({
         narration: '',
         discount_rate: 0,
         discount_amount: 0,
+        freight_charge: 0,
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
@@ -2329,6 +2363,7 @@ const salesQuotationSlice = createSlice({
         narration: '',
         discount_rate: 0,
         discount_amount: 0,
+        freight_charge: 0,
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
@@ -2416,6 +2451,7 @@ const salesQuotationSlice = createSlice({
             narration: '',
             discount_rate: 0,
             discount_amount: 0,
+            freight_charge: 0,
           };
           state.items = [];
           state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
@@ -2602,6 +2638,7 @@ export const {
   setQuotationNarration,
   setQuotationDiscountRate,
   setQuotationDiscountAmount,
+  setQuotationFreightCharge,
   addQuotationItem,
   updateQuotationItem,
   removeQuotationItem,
@@ -2659,6 +2696,7 @@ export interface DeliveryNoteState extends VoucherNavigationState {
     narration: string;
     discount_rate: number;
     discount_amount: number;
+    freight_charge: number;
   };
   items: DeliveryNoteItem[];
   loading: boolean;
@@ -2691,6 +2729,7 @@ const deliveryNoteInitialState: DeliveryNoteState = {
     narration: '',
     discount_rate: 0,
     discount_amount: 0,
+    freight_charge: 0,
   },
   items: [],
   loading: false,
@@ -2751,6 +2790,9 @@ const deliveryNoteSlice = createSlice({
     setDeliveryNoteDiscountAmount: (state, action: PayloadAction<number>) => {
       state.form.discount_amount = action.payload;
     },
+    setDeliveryNoteFreightCharge: (state, action: PayloadAction<number>) => {
+      state.form.freight_charge = action.payload;
+    },
     addDeliveryNoteItem: (state, action: PayloadAction<DeliveryNoteItem & { insertAt?: number }>) => {
       const { insertAt, ...itemData } = action.payload as any;
       if (insertAt !== undefined) {
@@ -2781,6 +2823,7 @@ const deliveryNoteSlice = createSlice({
         narration: '',
         discount_rate: 0,
         discount_amount: 0,
+        freight_charge: 0,
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
@@ -2837,6 +2880,7 @@ const deliveryNoteSlice = createSlice({
         narration: '',
         discount_rate: 0,
         discount_amount: 0,
+        freight_charge: 0,
       };
       state.items = [];
       state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
@@ -2924,6 +2968,7 @@ const deliveryNoteSlice = createSlice({
             narration: '',
             discount_rate: 0,
             discount_amount: 0,
+            freight_charge: 0,
           };
           state.items = [];
           state.totals = { subtotal: 0, discount: 0, tax: 0, grandTotal: 0 };
@@ -2949,6 +2994,7 @@ export const {
   setDeliveryNoteNarration,
   setDeliveryNoteDiscountRate,
   setDeliveryNoteDiscountAmount,
+  setDeliveryNoteFreightCharge,
   addDeliveryNoteItem,
   updateDeliveryNoteItem,
   removeDeliveryNoteItem,

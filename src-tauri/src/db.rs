@@ -1266,6 +1266,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             exchange_rate REAL DEFAULT 1.0,
             foreign_total REAL DEFAULT 0,
             price_category_id TEXT REFERENCES price_categories(id),
+            freight_charge REAL DEFAULT 0.0,
             metadata TEXT,
             created_by TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1294,6 +1295,21 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN exchange_rate REAL DEFAULT 1.0").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN foreign_total REAL DEFAULT 0").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN price_category_id TEXT REFERENCES price_categories(id)").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN freight_charge REAL DEFAULT 0.0").execute(pool).await;
+
+    // Migration: Seed / ensure 'Freight Charges' ledger (5012) under 'Direct Expenses'
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, is_system)
+         VALUES (
+             hex(randomblob(16)),
+             '5012',
+             'Freight Charges',
+             'Expense',
+             'Direct Expenses',
+             'Freight and forwarding charges',
+             1
+         )"
+    ).execute(pool).await;
 
     // Migration: Add show_less_column if not exists
     let _ =
@@ -1695,6 +1711,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             show_discount_column INTEGER DEFAULT 0,
             show_amount_column INTEGER DEFAULT 1,
             show_balance_section INTEGER DEFAULT 1,
+            show_freight_charge INTEGER DEFAULT 1,
             auto_print INTEGER DEFAULT 0,
             copies INTEGER DEFAULT 1,
             is_default INTEGER DEFAULT 0,
@@ -1723,6 +1740,10 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             .await;
     let _ =
         sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_amount_column INTEGER DEFAULT 1")
+            .execute(pool)
+            .await;
+    let _ =
+        sqlx::query("ALTER TABLE invoice_templates ADD COLUMN show_freight_charge INTEGER DEFAULT 1")
             .execute(pool)
             .await;
 

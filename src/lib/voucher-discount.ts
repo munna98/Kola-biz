@@ -23,6 +23,7 @@ export interface VoucherDiscountCalculationResult {
   discountRate: number;
   discountAmount: number;
   tax: number;
+  freightCharge: number;
   grandTotal: number;
   lines: VoucherDiscountLineResult[];
 }
@@ -75,6 +76,7 @@ export function calculateVoucherDiscounts<T extends VoucherDiscountLineInput>(
   options: {
     discountRate?: number;
     discountAmount?: number;
+    freightCharge?: number;
     taxInclusive: boolean;
     resolveGstRate: (item: T) => number;
     isMarginScheme?: boolean;
@@ -106,6 +108,7 @@ export function calculateVoucherDiscounts<T extends VoucherDiscountLineInput>(
     preparedLines.reduce((sum, line) => sum + line.netBeforeInvoiceDiscount, 0)
   );
   const normalized = normalizeInvoiceDiscount(subtotal, options.discountRate, options.discountAmount);
+  const freightCharge = round2(options.freightCharge || 0);
   const allocations = allocateInvoiceDiscount(
     preparedLines.map((line) => line.netBeforeInvoiceDiscount),
     normalized.discountAmount
@@ -145,7 +148,8 @@ export function calculateVoucherDiscounts<T extends VoucherDiscountLineInput>(
     discountRate: normalized.discountRate,
     discountAmount: normalized.discountAmount,
     tax: totalTax,
-    grandTotal: round2(subtotal - normalized.discountAmount + totalTax),
+    freightCharge,
+    grandTotal: round2(subtotal - normalized.discountAmount + totalTax + freightCharge),
     lines,
   };
 }

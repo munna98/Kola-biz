@@ -9,6 +9,7 @@ import {
   setQuotationNarration,
   setQuotationDiscountRate,
   setQuotationDiscountAmount,
+  setQuotationFreightCharge,
   addQuotationItem,
   updateQuotationItem,
   removeQuotationItem,
@@ -93,7 +94,7 @@ export default function SalesQuotationPage() {
   const [showCreateProduct, setShowCreateProduct] = useState(false);
   const [newProductName, setNewProductName] = useState('');
   const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showShipTo?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableFreightCharge?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showShipTo?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
@@ -407,7 +408,7 @@ export default function SalesQuotationPage() {
     dispatch(setQuotationHasUnsavedChanges(true));
   };
 
-  const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean) => {
+  const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean, freightCharge?: number) => {
     const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
 
     // Slab-aware GST resolution
@@ -444,6 +445,8 @@ export default function SalesQuotationPage() {
       return item.tax_rate || 0;
     };
 
+    const effectiveFreight = freightCharge !== undefined ? freightCharge : (salesState.form.freight_charge || 0);
+
     const calculation = calculateVoucherDiscounts(items, {
       discountRate:
         discountRate !== undefined
@@ -457,12 +460,14 @@ export default function SalesQuotationPage() {
           : discountRate !== undefined
             ? undefined
             : (salesState.form.discount_amount || undefined),
+      freightCharge: effectiveFreight,
       taxInclusive: isTaxInclusive,
       resolveGstRate: resolveItemGstRate,
     });
 
     dispatch(setQuotationDiscountRate(calculation.discountRate));
     dispatch(setQuotationDiscountAmount(calculation.discountAmount));
+    dispatch(setQuotationFreightCharge(effectiveFreight));
     dispatch(setQuotationTotals({
       subtotal: calculation.subtotal,
       discount: calculation.discountAmount,
@@ -511,6 +516,7 @@ export default function SalesQuotationPage() {
             narration: salesState.form.narration || null,
             discount_rate: salesState.form.discount_rate || null,
             discount_amount: salesState.form.discount_amount || null,
+            freight_charge: salesState.form.freight_charge || null,
             items: salesState.items.map(item => ({
               item_type: item.item_type || 'product',
               product_id: item.item_type === 'service' ? null : (item.product_id || null),
@@ -546,6 +552,7 @@ export default function SalesQuotationPage() {
             narration: salesState.form.narration || null,
             discount_rate: salesState.form.discount_rate || null,
             discount_amount: salesState.form.discount_amount || null,
+            freight_charge: salesState.form.freight_charge || null,
             items: salesState.items.map(item => ({
               item_type: item.item_type || 'product',
               product_id: item.item_type === 'service' ? null : (item.product_id || null),
@@ -608,6 +615,7 @@ export default function SalesQuotationPage() {
       dispatch(setQuotationNarration(invoice.narration || ''));
       dispatch(setQuotationDiscountRate(invoice.discount_rate || 0));
       dispatch(setQuotationDiscountAmount(invoice.discount_amount || 0));
+      dispatch(setQuotationFreightCharge(invoice.freight_charge || 0));
       const loadedTaxInclusive = Boolean(invoice.tax_inclusive);
       setIsTaxInclusive(loadedTaxInclusive);
 
@@ -708,7 +716,8 @@ export default function SalesQuotationPage() {
         loadedItems,
         invoice.discount_amount ? undefined : invoice.discount_rate,
         invoice.discount_amount || undefined,
-        loadedGstDisabled
+        loadedGstDisabled,
+        invoice.freight_charge || 0
       );
 
       dispatch(setQuotationMode('viewing'));
@@ -1423,6 +1432,31 @@ export default function SalesQuotationPage() {
                       id="voucher-discount-amount"
                     />
                   </div>
+                  {voucherSettings?.enableFreightCharge && (
+                    <div>
+                      <Label className="text-xs font-medium mb-1 block">Freight Charge{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
+                      <Input
+                        type="number"
+                        value={salesState.form.freight_charge || ''}
+                        onChange={(e) => {
+                          const fc = parseFloat(e.target.value) || 0;
+                          dispatch(setQuotationHasUnsavedChanges(true));
+                          updateTotalsWithItems(salesState.items, undefined, undefined, undefined, fc);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            document.getElementById('voucher-save-btn')?.focus();
+                          }
+                        }}
+                        placeholder="0.00"
+                        className="h-7 w-28 font-mono text-xs"
+                        step="0.01"
+                        disabled={isReadOnly}
+                        id="voucher-freight-charge"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
@@ -1432,6 +1466,11 @@ export default function SalesQuotationPage() {
                   {salesState.totals.discount > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">
                       Discount: {money(salesState.totals.discount)}
+                    </div>
+                  )}
+                  {salesState.form.freight_charge > 0 && (
+                    <div className="text-xs font-mono text-muted-foreground">
+                      Freight Charge: {money(salesState.form.freight_charge)}
                     </div>
                   )}
                   {salesState.totals.tax > 0 && (

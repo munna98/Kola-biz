@@ -9,6 +9,7 @@ import {
     setPurchaseReturnNarration,
     setPurchaseReturnDiscountRate,
     setPurchaseReturnDiscountAmount,
+    setPurchaseReturnFreightCharge,
     addPurchaseReturnItem,
     updatePurchaseReturnItem,
     removePurchaseReturnItem,
@@ -83,7 +84,7 @@ export default function PurchaseReturnPage() {
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
     const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
-    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
+    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, enableFreightCharge?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
     const { print } = usePrint();
     const productUnitsByProduct = useMemo(
         () => buildProductUnitMap(productUnitConversions),
@@ -311,7 +312,7 @@ export default function PurchaseReturnPage() {
         dispatch(setPurchaseReturnHasUnsavedChanges(true));
     };
 
-    const updateTotalsWithItems = (items: typeof purchaseReturnState.items, discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean) => {
+    const updateTotalsWithItems = (items: typeof purchaseReturnState.items, discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean, freightCharge?: number) => {
         const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
 
         // Slab-aware GST resolution mapper
@@ -348,6 +349,8 @@ export default function PurchaseReturnPage() {
             return item.tax_rate || 0;
         };
 
+        const effectiveFreight = freightCharge !== undefined ? freightCharge : (purchaseReturnState.form.freight_charge || 0);
+
         const calculation = calculateVoucherDiscounts(items, {
             discountRate:
                 discountRate !== undefined
@@ -361,12 +364,14 @@ export default function PurchaseReturnPage() {
                     : discountRate !== undefined
                         ? undefined
                         : (purchaseReturnState.form.discount_amount || undefined),
+            freightCharge: effectiveFreight,
             taxInclusive: !!voucherSettings?.taxInclusive,
             resolveGstRate: resolveItemGstRate,
         });
 
         dispatch(setPurchaseReturnDiscountRate(calculation.discountRate));
         dispatch(setPurchaseReturnDiscountAmount(calculation.discountAmount));
+        dispatch(setPurchaseReturnFreightCharge(effectiveFreight));
         dispatch(setPurchaseReturnTotals({
             subtotal: calculation.subtotal,
             discount: calculation.discountAmount,
@@ -418,6 +423,7 @@ export default function PurchaseReturnPage() {
                         narration: purchaseReturnState.form.narration || null,
                         discount_rate: purchaseReturnState.form.discount_rate || null,
                         discount_amount: purchaseReturnState.form.discount_amount || null,
+                        freight_charge: purchaseReturnState.form.freight_charge || null,
                         items: purchaseReturnState.items.map(item => ({
                             product_id: item.product_id,
                             unit_id: item.unit_id || null,
@@ -446,6 +452,7 @@ export default function PurchaseReturnPage() {
                         narration: purchaseReturnState.form.narration || null,
                         discount_rate: purchaseReturnState.form.discount_rate || null,
                         discount_amount: purchaseReturnState.form.discount_amount || null,
+                        freight_charge: purchaseReturnState.form.freight_charge || null,
                         items: purchaseReturnState.items.map(item => ({
                             product_id: item.product_id,
                             unit_id: item.unit_id || null,
@@ -506,6 +513,7 @@ export default function PurchaseReturnPage() {
             dispatch(setPurchaseReturnNarration(invoice.narration || ''));
             dispatch(setPurchaseReturnDiscountRate(invoice.discount_rate || 0));
             dispatch(setPurchaseReturnDiscountAmount(invoice.discount_amount || 0));
+            dispatch(setPurchaseReturnFreightCharge(invoice.freight_charge || 0));
 
             if (invoice.currency_id) {
                 dispatch(
@@ -582,7 +590,8 @@ export default function PurchaseReturnPage() {
                 loadedItems,
                 invoice.discount_amount ? undefined : invoice.discount_rate,
                 invoice.discount_amount || undefined,
-                loadedGstDisabled
+                loadedGstDisabled,
+                invoice.freight_charge || 0
             );
 
             dispatch(setPurchaseReturnMode('viewing'));
@@ -971,6 +980,11 @@ export default function PurchaseReturnPage() {
                                         Discount: {money(purchaseReturnState.totals.discount)}
                                     </div>
                                 )}
+                                {purchaseReturnState.form.freight_charge > 0 && (
+                                    <div className="text-xs font-mono text-muted-foreground">
+                                        Freight Charge: {money(purchaseReturnState.form.freight_charge)}
+                                    </div>
+                                )}
                                 {purchaseReturnState.totals.tax > 0 && (
                                     <div className="text-xs font-mono text-muted-foreground">
                                         Tax: {money(purchaseReturnState.totals.tax)}
@@ -1019,6 +1033,31 @@ export default function PurchaseReturnPage() {
                                                 disabled={isReadOnly}
                                             />
                                         </div>
+                                        {voucherSettings?.enableFreightCharge && (
+                                            <div className="flex-1">
+                                                <Label className="text-xs font-medium mb-1 block">Freight Charge{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
+                                                <Input
+                                                    id="voucher-freight-charge"
+                                                    type="number"
+                                                    value={purchaseReturnState.form.freight_charge || ''}
+                                                    onChange={(e) => {
+                                                        const fc = parseFloat(e.target.value) || 0;
+                                                        dispatch(setPurchaseReturnHasUnsavedChanges(true));
+                                                        updateTotalsWithItems(purchaseReturnState.items, undefined, undefined, undefined, fc);
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            document.getElementById('voucher-save-btn')?.focus();
+                                                        }
+                                                    }}
+                                                    placeholder="0.00"
+                                                    className="h-6.5 font-mono text-xs"
+                                                    step="0.01"
+                                                    disabled={isReadOnly}
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="border-t pt-1.5 flex justify-between text-sm">

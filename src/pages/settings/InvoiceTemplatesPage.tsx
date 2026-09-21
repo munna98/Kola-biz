@@ -57,6 +57,7 @@ interface InvoiceTemplate {
     show_discount_column: number;
     show_amount_column: number;
     show_balance_section: number;
+    show_freight_charge: number;
     table_row_padding: number;
     // Balance section style (thermal only)
     balance_font_size: number;
@@ -82,6 +83,7 @@ const FEATURE_LABELS: Record<string, string> = {
     show_discount_column: 'Discount Amount Column',
     show_amount_column: 'Amount Column',
     show_balance_section: 'Customer Balance',
+    show_freight_charge: 'Freight Charge',
 };
 
 const VOUCHER_TYPE_OPTIONS = [

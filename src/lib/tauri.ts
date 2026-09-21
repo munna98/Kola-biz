@@ -462,6 +462,7 @@ export interface CreateSalesInvoice {
   narration?: string;
   discount_rate?: number;
   discount_amount?: number;
+  freight_charge?: number;
   items: CreateSalesInvoiceItem[];
   user_id?: string;
   created_by?: string;
@@ -478,6 +479,7 @@ export interface SalesInvoice {
   narration?: string;
   discount_rate?: number;
   discount_amount?: number;
+  freight_charge?: number;
   subtotal: number;
   tax: number;
   grand_total: number;

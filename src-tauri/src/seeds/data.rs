@@ -318,6 +318,13 @@ pub async fn seed_initial_data(pool: &SqlitePool) -> Result<(), Box<dyn std::err
             "Operating Expenses",
             "Cost of services purchased from vendors",
         ),
+        (
+            "5012",
+            "Freight Charges",
+            "Expense",
+            "Direct Expenses",
+            "Freight and forwarding charges",
+        ),
     ];
 
     for (code, name, acc_type, group, desc) in coas {

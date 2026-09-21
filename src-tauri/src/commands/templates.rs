@@ -48,6 +48,7 @@ pub struct InvoiceTemplate {
     pub show_discount_column: Option<i64>,
     pub show_amount_column: Option<i64>,
     pub show_balance_section: Option<i64>,
+    pub show_freight_charge: Option<i64>,
     pub balance_font_size: Option<i64>,  // pt — applies to balance section in thermal templates
     pub balance_bold: Option<i64>,        // 0 = normal, 1 = bold
 
@@ -134,6 +135,7 @@ pub struct TemplateSettingsUpdate {
     pub show_discount_column: Option<bool>,
     pub show_amount_column: Option<bool>,
     pub show_balance_section: Option<bool>,
+    pub show_freight_charge: Option<bool>,
     pub balance_font_size: Option<i64>,
     pub balance_bold: Option<bool>,
     // Letterhead settings
@@ -217,6 +219,10 @@ pub async fn update_template_settings(
     }
     if let Some(val) = settings.show_balance_section {
         separated.push("show_balance_section = ");
+        separated.push_bind_unseparated(if val { 1 } else { 0 });
+    }
+    if let Some(val) = settings.show_freight_charge {
+        separated.push("show_freight_charge = ");
         separated.push_bind_unseparated(if val { 1 } else { 0 });
     }
     if let Some(val) = settings.balance_font_size {
@@ -510,6 +516,7 @@ pub struct DesignerTemplateData {
     pub show_less_column: bool,
     pub show_discount_column: bool,
     pub show_amount_column: bool,
+    pub show_freight_charge: bool,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -531,6 +538,7 @@ struct DesignerTemplateRow {
     show_less_column: Option<i64>,
     show_discount_column: Option<i64>,
     show_amount_column: Option<i64>,
+    show_freight_charge: Option<i64>,
 }
 
 #[tauri::command]
@@ -542,7 +550,7 @@ pub async fn get_designer_template(
     let row = sqlx::query_as::<_, DesignerTemplateRow>(
         "SELECT name, layout_config, voucher_type, template_format, 
          show_logo, show_company_address, show_party_name, show_party_address, table_row_padding, show_gstin,
-         show_item_hsn, show_bank_details, show_signature, show_terms, show_less_column, show_discount_column, show_amount_column
+         show_item_hsn, show_bank_details, show_signature, show_terms, show_less_column, show_discount_column, show_amount_column, show_freight_charge
          FROM invoice_templates WHERE id = ?",
     )
     .bind(&template_id)
@@ -568,6 +576,7 @@ pub async fn get_designer_template(
         show_less_column: row.show_less_column.unwrap_or(0) == 1,
         show_discount_column: row.show_discount_column.unwrap_or(0) == 1,
         show_amount_column: row.show_amount_column.unwrap_or(1) == 1,
+        show_freight_charge: row.show_freight_charge.unwrap_or(1) == 1,
     })
 }
 
@@ -2982,6 +2991,7 @@ pub async fn render_custom_order_slip(
         show_discount_column: Some(0),
         show_amount_column: Some(1),
         show_balance_section: Some(0),
+        show_freight_charge: Some(1),
         balance_font_size: Some(10),
         balance_bold: Some(0),
         auto_print: Some(0),

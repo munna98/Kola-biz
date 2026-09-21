@@ -9,6 +9,7 @@ import {
   setSalesNarration,
   setSalesDiscountRate,
   setSalesDiscountAmount,
+  setSalesFreightCharge,
   addSalesItem,
   updateSalesItem,
   removeSalesItem,
@@ -112,7 +113,7 @@ export default function SalesInvoicePage() {
   const [savedPartyName, setSavedPartyName] = useState<string>('');
   const [, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost', showShipTo?: boolean, enablePriceCategory?: boolean, priceCategoryFallback?: 'default_sales_rate' | 'show_zero', allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, enableFreightCharge?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost', showShipTo?: boolean, enablePriceCategory?: boolean, priceCategoryFallback?: 'default_sales_rate' | 'show_zero', allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [partyForeignBalance, setPartyForeignBalance] = useState<number | null>(null);
@@ -691,7 +692,7 @@ export default function SalesInvoicePage() {
     dispatch(setSalesHasUnsavedChanges(true));
   };
 
-  const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number, isMarginSchemeOverride?: boolean, isGstDisabledOverride?: boolean) => {
+  const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number, isMarginSchemeOverride?: boolean, isGstDisabledOverride?: boolean, freightCharge?: number) => {
     const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
 
     // Slab-aware GST resolution
@@ -733,6 +734,8 @@ export default function SalesInvoicePage() {
       ? isMarginSchemeOverride
       : salesState.form.is_margin_scheme_invoice;
 
+    const effectiveFreight = freightCharge !== undefined ? freightCharge : (salesState.form.freight_charge || 0);
+
     const calculation = calculateVoucherDiscounts(items, {
       discountRate:
         discountRate !== undefined
@@ -746,6 +749,7 @@ export default function SalesInvoicePage() {
           : discountRate !== undefined
             ? undefined
             : (salesState.form.discount_amount || undefined),
+      freightCharge: effectiveFreight,
       taxInclusive: isTaxInclusive,
       resolveGstRate: resolveItemGstRate,
       isMarginScheme,
@@ -753,6 +757,7 @@ export default function SalesInvoicePage() {
 
     dispatch(setSalesDiscountRate(calculation.discountRate));
     dispatch(setSalesDiscountAmount(calculation.discountAmount));
+    dispatch(setSalesFreightCharge(effectiveFreight));
     dispatch(setSalesTotals({
       subtotal: calculation.subtotal,
       discount: calculation.discountAmount,
@@ -828,6 +833,7 @@ export default function SalesInvoicePage() {
             narration: salesState.form.narration || null,
             discount_rate: salesState.form.discount_rate || null,
             discount_amount: salesState.form.discount_amount || null,
+            freight_charge: salesState.form.freight_charge || null,
             items: salesState.items.map(item => ({
               item_type: item.item_type || 'product',
               product_id: item.item_type === 'service' ? null : (item.product_id || null),
@@ -885,6 +891,7 @@ export default function SalesInvoicePage() {
             narration: salesState.form.narration || null,
             discount_rate: salesState.form.discount_rate || null,
             discount_amount: salesState.form.discount_amount || null,
+            freight_charge: salesState.form.freight_charge || null,
             items: salesState.items.map(item => ({
               item_type: item.item_type || 'product',
               product_id: item.item_type === 'service' ? null : (item.product_id || null),
@@ -979,6 +986,7 @@ export default function SalesInvoicePage() {
       dispatch(setSalesNarration(quotation.narration || ''));
       dispatch(setSalesDiscountRate(quotation.discount_rate || 0));
       dispatch(setSalesDiscountAmount(quotation.discount_amount || 0));
+      dispatch(setSalesFreightCharge(quotation.freight_charge || 0));
       
       const loadedTaxInclusive = Boolean(quotation.tax_inclusive);
       setIsTaxInclusive(loadedTaxInclusive);
@@ -1058,6 +1066,7 @@ export default function SalesInvoicePage() {
       dispatch(setSalesNarration(invoice.narration || ''));
       dispatch(setSalesDiscountRate(invoice.discount_rate || 0));
       dispatch(setSalesDiscountAmount(invoice.discount_amount || 0));
+      dispatch(setSalesFreightCharge(invoice.freight_charge || 0));
       const loadedTaxInclusive = Boolean(invoice.tax_inclusive);
       setIsTaxInclusive(loadedTaxInclusive);
       const loadedIsMarginScheme = Boolean(invoice.is_margin_scheme_invoice);
@@ -1188,7 +1197,8 @@ export default function SalesInvoicePage() {
         invoice.discount_amount ? undefined : invoice.discount_rate,
         invoice.discount_amount || undefined,
         loadedIsMarginScheme,
-        loadedGstDisabled
+        loadedGstDisabled,
+        invoice.freight_charge || 0
       );
 
       dispatch(setSalesMode('viewing'));
@@ -2039,6 +2049,33 @@ export default function SalesInvoicePage() {
                       id="voucher-discount-amount"
                     />
                   </div>
+                  {voucherSettings?.enableFreightCharge && (
+                    <div>
+                      <Label className="text-xs font-medium mb-1 block">
+                        Freight Charge ({isExportBusiness && salesState.currency_id ? (salesState.foreign_currency_code || salesState.foreign_currency_symbol || '$') : (currencyLabel || 'INR')})
+                      </Label>
+                      <Input
+                        type="number"
+                        value={salesState.form.freight_charge || ''}
+                        onChange={(e) => {
+                          const fc = parseFloat(e.target.value) || 0;
+                          dispatch(setSalesHasUnsavedChanges(true));
+                          updateTotalsWithItems(salesState.items, undefined, undefined, undefined, undefined, fc);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            document.getElementById('voucher-save-btn')?.focus();
+                          }
+                        }}
+                        placeholder="0.00"
+                        className="h-7 w-28 font-mono text-xs"
+                        step="0.01"
+                        disabled={isReadOnly}
+                        id="voucher-freight-charge"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
@@ -2054,6 +2091,13 @@ export default function SalesInvoicePage() {
                       Discount: {isExportBusiness && salesState.currency_id
                         ? forexMoney(salesState.totals.discount)
                         : money(salesState.totals.discount)}
+                    </div>
+                  )}
+                  {salesState.form.freight_charge > 0 && (
+                    <div className="text-xs font-mono text-muted-foreground">
+                      Freight Charge: {isExportBusiness && salesState.currency_id
+                        ? forexMoney(salesState.form.freight_charge)
+                        : money(salesState.form.freight_charge)}
                     </div>
                   )}
                   {salesState.totals.tax > 0 && (

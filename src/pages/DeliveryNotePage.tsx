@@ -9,6 +9,7 @@ import {
   setDeliveryNoteNarration,
   setDeliveryNoteDiscountRate,
   setDeliveryNoteDiscountAmount,
+  setDeliveryNoteFreightCharge,
   addDeliveryNoteItem,
   updateDeliveryNoteItem,
   removeDeliveryNoteItem,
@@ -86,7 +87,7 @@ export default function DeliveryNotePage() {
   const [showCreateProduct, setShowCreateProduct] = useState(false);
   const [newProductName, setNewProductName] = useState('');
   const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showShipTo?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableFreightCharge?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, showShipTo?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
@@ -353,7 +354,7 @@ export default function DeliveryNotePage() {
     dispatch(setDeliveryNoteHasUnsavedChanges(true));
   };
 
-  const updateTotalsWithItems = (items: typeof noteState.items, discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean) => {
+  const updateTotalsWithItems = (items: typeof noteState.items, discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean, freightCharge?: number) => {
     const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
 
     const productMap: Record<string, Product> = {};
@@ -376,6 +377,8 @@ export default function DeliveryNotePage() {
       return item.tax_rate || 0;
     };
 
+    const effectiveFreight = freightCharge !== undefined ? freightCharge : (noteState.form.freight_charge || 0);
+
     const calculation = calculateVoucherDiscounts(items, {
       discountRate:
         discountRate !== undefined
@@ -389,12 +392,14 @@ export default function DeliveryNotePage() {
           : discountRate !== undefined
             ? undefined
             : (noteState.form.discount_amount || undefined),
+      freightCharge: effectiveFreight,
       taxInclusive: isTaxInclusive,
       resolveGstRate: resolveItemGstRate,
     });
 
     dispatch(setDeliveryNoteDiscountRate(calculation.discountRate));
     dispatch(setDeliveryNoteDiscountAmount(calculation.discountAmount));
+    dispatch(setDeliveryNoteFreightCharge(effectiveFreight));
     dispatch(setDeliveryNoteTotals({
       subtotal: calculation.subtotal,
       discount: calculation.discountAmount,
@@ -431,6 +436,7 @@ export default function DeliveryNotePage() {
       narration: noteState.form.narration || null,
       discount_rate: noteState.form.discount_rate || null,
       discount_amount: noteState.form.discount_amount || null,
+      freight_charge: noteState.form.freight_charge || null,
       items: noteState.items.map(item => ({
         item_type: item.item_type || 'product',
         product_id: item.item_type === 'service' ? null : (item.product_id || null),
@@ -496,6 +502,7 @@ export default function DeliveryNotePage() {
       dispatch(setDeliveryNoteNarration(note.narration || ''));
       dispatch(setDeliveryNoteDiscountRate(note.discount_rate || 0));
       dispatch(setDeliveryNoteDiscountAmount(note.discount_amount || 0));
+      dispatch(setDeliveryNoteFreightCharge(note.freight_charge || 0));
       const loadedTaxInclusive = Boolean(note.tax_inclusive);
       setIsTaxInclusive(loadedTaxInclusive);
       dispatch(setDeliveryNoteCreatedByName(note.created_by_name));
@@ -579,7 +586,7 @@ export default function DeliveryNotePage() {
         : (note.tax_amount === 0 && items.length > 0 && items.every((i: any) => i.resolved_gst_rate === 0 || i.tax_amount === 0));
       setGstDisabled(loadedGstDisabled);
 
-      updateTotalsWithItems(loadedItems, note.discount_amount ? undefined : note.discount_rate, note.discount_amount || undefined, loadedGstDisabled);
+      updateTotalsWithItems(loadedItems, note.discount_amount ? undefined : note.discount_rate, note.discount_amount || undefined, loadedGstDisabled, note.freight_charge || 0);
 
       dispatch(setDeliveryNoteMode('viewing'));
       dispatch(setDeliveryNoteHasUnsavedChanges(false));
@@ -1092,6 +1099,22 @@ export default function DeliveryNotePage() {
                       id="dn-discount-amount"
                     />
                   </div>
+                  {voucherSettings?.enableFreightCharge && (
+                    <div>
+                      <Label className="text-xs font-medium mb-1 block">Freight Charge{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
+                      <Input
+                        type="number"
+                        value={noteState.form.freight_charge || ''}
+                        onChange={(e) => { const fc = parseFloat(e.target.value) || 0; dispatch(setDeliveryNoteHasUnsavedChanges(true)); updateTotalsWithItems(noteState.items, undefined, undefined, undefined, fc); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); document.getElementById('dn-save-btn')?.focus(); } }}
+                        placeholder="0.00"
+                        className="h-7 w-28 font-mono text-xs"
+                        step="0.01"
+                        disabled={isReadOnly}
+                        id="dn-freight-charge"
+                      />
+                    </div>
+                  )}
                 </div>
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
@@ -1101,6 +1124,11 @@ export default function DeliveryNotePage() {
                   {noteState.totals.discount > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">
                       Discount: {money(noteState.totals.discount)}
+                    </div>
+                  )}
+                  {noteState.form.freight_charge > 0 && (
+                    <div className="text-xs font-mono text-muted-foreground">
+                      Freight Charge: {money(noteState.form.freight_charge)}
                     </div>
                   )}
                   {noteState.totals.tax > 0 && (

@@ -9,6 +9,7 @@ import {
     setSalesReturnNarration,
     setSalesReturnDiscountRate,
     setSalesReturnDiscountAmount,
+    setSalesReturnFreightCharge,
     addSalesReturnItem,
     updateSalesReturnItem,
     removeSalesReturnItem,
@@ -85,7 +86,7 @@ export default function SalesReturnPage() {
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
     const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
-    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
+    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, enableFreightCharge?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
     const { print } = usePrint();
     const productUnitsByProduct = useMemo(
         () => buildProductUnitMap(productUnitConversions),
@@ -360,7 +361,7 @@ export default function SalesReturnPage() {
         dispatch(setSalesReturnHasUnsavedChanges(true));
     };
 
-    const updateTotalsWithItems = (items: typeof salesReturnState.items, discountRate?: number, discountAmount?: number, isMarginSchemeOverride?: boolean, isGstDisabledOverride?: boolean) => {
+    const updateTotalsWithItems = (items: typeof salesReturnState.items, discountRate?: number, discountAmount?: number, isMarginSchemeOverride?: boolean, isGstDisabledOverride?: boolean, freightCharge?: number) => {
         const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
 
         // Slab-aware GST resolution mapper
@@ -402,6 +403,8 @@ export default function SalesReturnPage() {
             ? isMarginSchemeOverride
             : salesReturnState.form.is_margin_scheme_invoice;
 
+        const effectiveFreight = freightCharge !== undefined ? freightCharge : (salesReturnState.form.freight_charge || 0);
+
         const calculation = calculateVoucherDiscounts(items, {
             discountRate:
                 discountRate !== undefined
@@ -415,6 +418,7 @@ export default function SalesReturnPage() {
                     : discountRate !== undefined
                         ? undefined
                         : (salesReturnState.form.discount_amount || undefined),
+            freightCharge: effectiveFreight,
             taxInclusive: !!voucherSettings?.taxInclusive,
             resolveGstRate: resolveItemGstRate,
             isMarginScheme,
@@ -422,6 +426,7 @@ export default function SalesReturnPage() {
 
         dispatch(setSalesReturnDiscountRate(calculation.discountRate));
         dispatch(setSalesReturnDiscountAmount(calculation.discountAmount));
+        dispatch(setSalesReturnFreightCharge(effectiveFreight));
         dispatch(setSalesReturnTotals({
             subtotal: calculation.subtotal,
             discount: calculation.discountAmount,
@@ -491,6 +496,7 @@ export default function SalesReturnPage() {
                         narration: salesReturnState.form.narration || null,
                         discount_rate: salesReturnState.form.discount_rate || null,
                         discount_amount: salesReturnState.form.discount_amount || null,
+                        freight_charge: salesReturnState.form.freight_charge || null,
                         items: salesReturnState.items.map(item => ({
                             product_id: item.product_id,
                             unit_id: item.unit_id || null,
@@ -521,6 +527,7 @@ export default function SalesReturnPage() {
                         narration: salesReturnState.form.narration || null,
                         discount_rate: salesReturnState.form.discount_rate || null,
                         discount_amount: salesReturnState.form.discount_amount || null,
+                        freight_charge: salesReturnState.form.freight_charge || null,
                         items: salesReturnState.items.map(item => ({
                             product_id: item.product_id,
                             unit_id: item.unit_id || null,
@@ -595,6 +602,8 @@ export default function SalesReturnPage() {
             dispatch(setSalesReturnReference(invoice.reference || ''));
             dispatch(setSalesReturnNarration(invoice.narration || ''));
             dispatch(setSalesReturnDiscountRate(invoice.discount_rate || 0));
+            dispatch(setSalesReturnDiscountAmount(invoice.discount_amount || 0));
+            dispatch(setSalesReturnFreightCharge(invoice.freight_charge || 0));
             const loadedIsMarginScheme = Boolean(invoice.is_margin_scheme_invoice);
             dispatch(setSalesReturnMarginScheme(loadedIsMarginScheme));
 
@@ -676,7 +685,8 @@ export default function SalesReturnPage() {
                 invoice.discount_amount ? undefined : invoice.discount_rate,
                 invoice.discount_amount || undefined,
                 loadedIsMarginScheme,
-                loadedGstDisabled
+                loadedGstDisabled,
+                invoice.freight_charge || 0
             );
 
             dispatch(setSalesReturnMode('viewing'));
@@ -1055,6 +1065,11 @@ export default function SalesReturnPage() {
                                         Discount: {money(salesReturnState.totals.discount)}
                                     </div>
                                 )}
+                                {salesReturnState.form.freight_charge > 0 && (
+                                    <div className="text-xs font-mono text-muted-foreground">
+                                        Freight Charge: {money(salesReturnState.form.freight_charge)}
+                                    </div>
+                                )}
                                 {salesReturnState.totals.tax > 0 && (
                                     <div className="text-xs font-mono text-muted-foreground">
                                         Tax: {money(salesReturnState.totals.tax)}
@@ -1103,6 +1118,31 @@ export default function SalesReturnPage() {
                                                 disabled={isReadOnly}
                                             />
                                         </div>
+                                        {voucherSettings?.enableFreightCharge && (
+                                            <div className="flex-1">
+                                                <Label className="text-xs font-medium mb-1 block">Freight Charge{currencyLabel ? ` (${currencyLabel})` : ''}</Label>
+                                                <Input
+                                                    id="voucher-freight-charge"
+                                                    type="number"
+                                                    value={salesReturnState.form.freight_charge || ''}
+                                                    onChange={(e) => {
+                                                        const fc = parseFloat(e.target.value) || 0;
+                                                        dispatch(setSalesReturnHasUnsavedChanges(true));
+                                                        updateTotalsWithItems(salesReturnState.items, undefined, undefined, undefined, undefined, fc);
+                                                    }}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            document.getElementById('voucher-save-btn')?.focus();
+                                                        }
+                                                    }}
+                                                    placeholder="0.00"
+                                                    className="h-6.5 font-mono text-xs"
+                                                    step="0.01"
+                                                    disabled={isReadOnly}
+                                                />
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
                                 <div className="border-t pt-1.5 flex justify-between text-sm">
