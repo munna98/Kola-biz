@@ -44,6 +44,7 @@ export default function Topbar() {
 
     // Active company display
     const [companyName, setCompanyName] = useState<string>('');
+    const [coEnabled, setCoEnabled] = useState(false);
     const [switcherOpen, setSwitcherOpen] = useState(false);
     const [isBackingUp, setIsBackingUp] = useState(false);
 
@@ -81,7 +82,12 @@ export default function Topbar() {
             .catch(() => setCompanyName(''));
     };
 
-    useEffect(() => { fetchCompanyName(); }, []);
+    useEffect(() => {
+        fetchCompanyName();
+        invoke<string | null>('get_app_setting', { key: 'custom_orders_enabled' })
+            .then((val) => setCoEnabled(val === 'true'))
+            .catch(() => setCoEnabled(false));
+    }, []);
 
     const handleSwitched = () => {
         // Force re-login after company switch
@@ -187,6 +193,11 @@ export default function Topbar() {
                         <MenubarItem onClick={() => handleNavigation('day_book')}>Day Book</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('outstanding')}>Party Outstanding</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('ledger')}>Ledger Report</MenubarItem>
+                        {coEnabled && (
+                            <MenubarItem onClick={() => handleNavigation('custom_orders_report')}>
+                                CO Reports
+                            </MenubarItem>
+                        )}
                         <MenubarSeparator />
                         <MenubarItem onClick={() => handleNavigation('trial')}>Trial Balance</MenubarItem>
                         <MenubarItem onClick={() => handleNavigation('balance_sheet')}>Balance Sheet</MenubarItem>

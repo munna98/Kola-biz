@@ -48,11 +48,15 @@ export default function TransactionReportPage() {
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
   const [voucherType, setVoucherType] = useState<string>('all');
   const [selectedParty, setSelectedParty] = useState<string>(""); // Changed to string
+  const [coEnabled, setCoEnabled] = useState(false);
   const money = useMoney();
 
   useEffect(() => {
     loadParties();
     loadTransactions();
+    invoke<string | null>('get_app_setting', { key: 'custom_orders_enabled' })
+      .then((val) => setCoEnabled(val === 'true'))
+      .catch(() => setCoEnabled(false));
   }, []);
 
   const loadParties = async () => {
@@ -89,12 +93,7 @@ export default function TransactionReportPage() {
     d.setMonth(d.getMonth() - 1);
     setFromDate(d.toISOString().split('T')[0]);
     setToDate(new Date().toISOString().split('T')[0]);
-    // Optionally trigger reload here or rely on user to click Apply
-    // loadTransactions(); // If we want auto-reload
   };
-
-  // Trigger loadTransactions when filters are cleared if desired, but user might want 'Apply' button strictly.
-  // The UI has an 'Apply' button, so explicit load is fine.
 
   const handlePrint = () => window.print();
   const handleExport = () => toast.info('Export functionality coming soon');
@@ -102,6 +101,7 @@ export default function TransactionReportPage() {
   const getTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
       sales_invoice: 'Sales',
+      co_invoice: 'Custom Order',
       purchase_invoice: 'Purchase',
       payment: 'Payment',
       receipt: 'Receipt',
@@ -114,7 +114,7 @@ export default function TransactionReportPage() {
   const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
 
   const salesTotal = transactions
-    .filter(t => t.voucher_type === 'sales_invoice')
+    .filter(t => t.voucher_type === 'sales_invoice' || t.voucher_type === 'co_invoice')
     .reduce((sum, t) => sum + t.amount, 0);
 
   const purchaseTotal = transactions
@@ -178,6 +178,7 @@ export default function TransactionReportPage() {
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
                   <SelectItem value="sales_invoice">Sales</SelectItem>
+                  {coEnabled && <SelectItem value="co_invoice">Custom Order</SelectItem>}
                   <SelectItem value="purchase_invoice">Purchase</SelectItem>
                   <SelectItem value="payment">Payment</SelectItem>
                   <SelectItem value="receipt">Receipt</SelectItem>

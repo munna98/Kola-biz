@@ -328,7 +328,7 @@ pub async fn render_invoice(
     // 3. Get voucher data
     let voucher_data = match voucher_type.as_str() {
         "purchase_invoice" => get_purchase_invoice_data(&pool, voucher_id).await?,
-        "sales_invoice" => get_sales_invoice_data(&pool, voucher_id).await?,
+        "sales_invoice" | "co_invoice" => get_sales_invoice_data(&pool, voucher_id).await?,
         "sales_quotation" => get_sales_quotation_data(&pool, voucher_id).await?,
         "delivery_note" => get_delivery_note_data(&pool, voucher_id).await?,
         "sales_return" => get_sales_return_data(&pool, voucher_id).await?,
@@ -337,7 +337,7 @@ pub async fn render_invoice(
         _ => return Err("Unsupported voucher type".to_string()),
     };
 
-    let has_sales_returns = voucher_type == "sales_invoice"
+    let has_sales_returns = (voucher_type == "sales_invoice" || voucher_type == "co_invoice")
         && voucher_data
             .get("has_returns")
             .and_then(|v| v.as_bool())
@@ -3009,6 +3009,64 @@ pub async fn render_custom_order_slip(
     };
 
     // 7. Render via the shared template engine
+    let mut engine = TEMPLATE_ENGINE.lock().map_err(|e| e.to_string())?;
+    engine.render_invoice(&template, &company, voucher_data)
+}
+
+// ============= CO INVOICE PRINT =============
+
+/// Render the finalized Custom Order as a proper A4/thermal invoice.
+/// Uses the same invoice template engine as a regular sales invoice.
+/// Called from the frontend when the user clicks "Print Invoice" on a delivered CO.
+#[tauri::command]
+pub async fn render_co_invoice(
+    registry: State<'_, Arc<DbRegistry>>,
+    order_id: String,
+) -> Result<String, String> {
+    let pool = registry.active_pool().await?;
+
+    // Fetch the final_invoice_id linked to this custom order
+    let final_invoice_id: Option<String> = sqlx::query_scalar(
+        "SELECT final_invoice_id FROM custom_orders WHERE id = ? AND deleted_at IS NULL",
+    )
+    .bind(&order_id)
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?
+    .flatten();
+
+    let invoice_id = final_invoice_id.ok_or_else(|| {
+        "This order has not been finalized yet. Please finalize it first to generate an invoice."
+            .to_string()
+    })?;
+
+    // Get the default template for sales_invoice (reused for co_invoice)
+    let template: Option<InvoiceTemplate> = sqlx::query_as::<_, InvoiceTemplate>(
+        "SELECT * FROM invoice_templates WHERE voucher_type = 'sales_invoice' AND is_default = 1 AND is_active = 1 LIMIT 1",
+    )
+    .fetch_optional(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let template = match template {
+        Some(t) => t,
+        None => sqlx::query_as::<_, InvoiceTemplate>(
+            "SELECT * FROM invoice_templates WHERE voucher_type = 'sales_invoice' AND is_active = 1 ORDER BY is_default DESC LIMIT 1",
+        )
+        .fetch_optional(&pool)
+        .await
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| {
+            "No invoice template found. Please configure a Sales Invoice template.".to_string()
+        })?,
+    };
+
+    let company = crate::commands::company::get_company_profile_with_pool(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let voucher_data = get_sales_invoice_data(&pool, invoice_id).await?;
+
     let mut engine = TEMPLATE_ENGINE.lock().map_err(|e| e.to_string())?;
     engine.render_invoice(&template, &company, voucher_data)
 }

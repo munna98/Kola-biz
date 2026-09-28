@@ -832,7 +832,7 @@ pub async fn get_cash_flow(
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
         WHERE coa.account_name = 'Cash' 
-        AND v.voucher_type = 'sales_invoice'
+        AND v.voucher_type IN ('sales_invoice', 'co_invoice')
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
@@ -996,7 +996,7 @@ pub async fn get_cash_flow(
         JOIN chart_of_accounts coa ON je.account_id = coa.id
         WHERE coa.account_type IN ('Liability', 'Equity')
         AND coa.account_name NOT IN ('Accounts Payable', 'Accounts Receivable')
-        AND v.voucher_type NOT IN ('sales_invoice', 'purchase_invoice', 'receipt', 'payment')
+        AND v.voucher_type NOT IN ('sales_invoice', 'co_invoice', 'purchase_invoice', 'receipt', 'payment')
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
@@ -1093,14 +1093,14 @@ pub async fn get_day_book(
                 ) as account_name,
                 CAST(ROUND(
                     CASE
-                        WHEN v.voucher_type IN ('sales_invoice', 'receipt', 'purchase_return') THEN SUM(je.debit)
+                        WHEN v.voucher_type IN ('sales_invoice', 'co_invoice', 'receipt', 'purchase_return') THEN SUM(je.debit)
                         WHEN v.voucher_type IN ('purchase_invoice', 'payment', 'sales_return') THEN 0
                         ELSE SUM(je.debit)
                     END
                 , 2) AS REAL) as debit,
                 CAST(ROUND(
                     CASE
-                        WHEN v.voucher_type IN ('sales_invoice', 'receipt', 'purchase_return') THEN 0
+                        WHEN v.voucher_type IN ('sales_invoice', 'co_invoice', 'receipt', 'purchase_return') THEN 0
                         WHEN v.voucher_type IN ('purchase_invoice', 'payment', 'sales_return') THEN SUM(je.credit)
                         ELSE SUM(je.credit)
                     END
@@ -1267,7 +1267,7 @@ pub async fn get_party_outstanding(
     as_on_date: String,
 ) -> Result<Vec<PartyOutstanding>, String> {
     let pool = registry.active_pool().await?;
-    let (account_group, voucher_type, _code_prefix) = if party_type == "customer" {
+    let (account_group, _voucher_type, _code_prefix) = if party_type == "customer" {
         ("Accounts Receivable", "sales_invoice", "1003-")
     } else {
         ("Accounts Payable", "purchase_invoice", "2001-")
@@ -1334,7 +1334,7 @@ pub async fn get_party_outstanding(
                 SUM(COALESCE(v.grand_total, v.total_amount, 0.0)) as total_amount,
                 MIN(v.voucher_date) as oldest_invoice_date
             FROM vouchers v
-            WHERE v.voucher_type = ? AND v.party_type = ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+            WHERE v.voucher_type IN ('sales_invoice', 'co_invoice') AND v.party_type = ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
             GROUP BY v.party_id, v.party_type
         ) v_stats ON (
             coa.id = v_stats.party_id AND v_stats.party_type = ?
@@ -1349,7 +1349,6 @@ pub async fn get_party_outstanding(
     let rows =
         sqlx::query_as::<_, (String, String, i64, f64, f64, f64, Option<String>)>(query.as_str())
             .bind(&as_on_date)
-            .bind(voucher_type)
             .bind(&party_type)
             .bind(&as_on_date)
             .bind(&party_type)
@@ -1403,7 +1402,7 @@ pub async fn get_party_invoice_details(
     as_on_date: String,
 ) -> Result<Vec<InvoiceDetail>, String> {
     let pool = registry.active_pool().await?;
-    let (voucher_type, code_prefix) = if party_type == "customer" {
+    let (_voucher_type, code_prefix) = if party_type == "customer" {
         ("sales_invoice", "1003-")
     } else {
         ("purchase_invoice", "2001-")
@@ -1421,7 +1420,7 @@ pub async fn get_party_invoice_details(
             ), 0) AS REAL) as paid_amount
         FROM vouchers v
         JOIN chart_of_accounts coa ON coa.account_code = '{}' || v.party_id
-        WHERE coa.id = ? AND v.party_type = ? AND v.voucher_type = ?
+        WHERE coa.id = ? AND v.party_type = ? AND v.voucher_type IN ('sales_invoice', 'co_invoice')
         AND v.voucher_date <= ? AND v.deleted_at IS NULL
         GROUP BY v.id
         HAVING (total_amount - paid_amount) > 0.01
@@ -1433,7 +1432,6 @@ pub async fn get_party_invoice_details(
         .bind(&as_on_date)
         .bind(party_id)
         .bind(&party_type)
-        .bind(voucher_type)
         .bind(&as_on_date)
         .fetch_all(&pool)
         .await
@@ -2018,7 +2016,7 @@ pub async fn get_top_products(
         LEFT JOIN products parent ON p.parent_product_id = parent.id
         JOIN vouchers v ON sm.voucher_id = v.id
         WHERE sm.movement_type = 'OUT'
-        AND v.voucher_type = 'sales_invoice'
+        AND v.voucher_type IN ('sales_invoice', 'co_invoice')
         AND v.voucher_date >= ? AND v.voucher_date <= ?
         AND v.deleted_at IS NULL
         AND p.deleted_at IS NULL
@@ -2067,7 +2065,7 @@ pub async fn get_cash_flow_summary(
              JOIN chart_of_accounts coa ON je.account_id = coa.id
              WHERE coa.account_name = 'Cash'
              AND (
-                (v.voucher_type = 'sales_invoice')
+                (v.voucher_type IN ('sales_invoice', 'co_invoice'))
                 OR (v.voucher_type = 'receipt')
                 OR (v.voucher_type = 'journal' AND je.debit > 0)
              )

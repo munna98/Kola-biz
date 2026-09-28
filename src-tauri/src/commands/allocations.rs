@@ -349,7 +349,7 @@ pub async fn create_quick_payment(
     // Generate voucher number
     let voucher_type = if invoice.3 == "purchase_invoice" {
         "payment"
-    } else if invoice.3 == "sales_invoice" {
+    } else if invoice.3 == "sales_invoice" || invoice.3 == "co_invoice" {
         "receipt"
     } else {
         if invoice.1 == "supplier" {
@@ -569,7 +569,7 @@ pub async fn update_quick_payment(
 
     let voucher_type = if invoice.3 == "purchase_invoice" {
         "payment"
-    } else if invoice.3 == "sales_invoice" {
+    } else if invoice.3 == "sales_invoice" || invoice.3 == "co_invoice" {
         "receipt"
     } else {
         if invoice.1 == "supplier" {

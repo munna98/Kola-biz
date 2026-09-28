@@ -2443,6 +2443,10 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     // still carry the old generated text AND whose voucher has a non-empty narration).
     let _ = backfill_voucher_narrations(pool).await;
 
+    // Migrate existing custom order final invoices from 'sales_invoice' to 'co_invoice'
+    // and update their voucher_no to match order_no
+    let _ = migrate_co_invoices(pool).await;
+
     Ok(())
 }
 
@@ -2569,3 +2573,30 @@ async fn backfill_voucher_narrations(pool: &SqlitePool) -> Result<(), sqlx::Erro
 
     Ok(())
 }
+
+/// Migrate existing custom order final invoices from 'sales_invoice' to 'co_invoice'
+/// and update voucher_no to match the custom order number (order_no).
+async fn migrate_co_invoices(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE vouchers
+         SET voucher_type = 'co_invoice',
+             voucher_no = (
+                 SELECT co.order_no
+                 FROM custom_orders co
+                 WHERE co.final_invoice_id = vouchers.id
+                   AND co.deleted_at IS NULL
+             )
+         WHERE voucher_type = 'sales_invoice'
+           AND id IN (
+               SELECT final_invoice_id
+               FROM custom_orders
+               WHERE final_invoice_id IS NOT NULL
+                 AND deleted_at IS NULL
+           )",
+    )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+

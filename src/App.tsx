@@ -39,6 +39,7 @@ import ProductProfitPage from './pages/reports/ProductProfitPage';
 import TransactionReportPage from './pages/reports/TransactionReportPage';
 import SalesReturnReportPage from './pages/reports/SalesReturnReportPage';
 import ExpenseReportPage from './pages/reports/ExpenseReportPage';
+import CustomOrdersReportPage from './pages/reports/CustomOrdersReportPage';
 import LoginPage from './pages/LoginPage';
 import CompanySetupPage from './pages/CompanySetupPage';
 import FirstRunSetupPage from './pages/FirstRunSetupPage';
@@ -247,6 +248,7 @@ function AppContent() {
             case 'transactions': return <TransactionReportPage />;
             case 'sales_return_report': return <SalesReturnReportPage />;
             case 'expense_report': return <ExpenseReportPage />;
+            case 'custom_orders_report': return <CustomOrdersReportPage />;
             case 'gstr1': return <Gstr1ReportPage />;
             case 'gstr3b': return <Gstr3bReportPage />;
             case 'users': return <UsersPage />;

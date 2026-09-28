@@ -47,7 +47,7 @@ import {
     IconScissors, IconPackage, IconShoppingBag, IconTools,
     IconRefresh, IconCurrencyRupee, IconEye, IconClock,
     IconChevronLeft, IconChevronRight, IconList, IconDeviceFloppy,
-    IconX, IconCash, IconPrinter,
+    IconX, IconCash, IconPrinter, IconFileInvoice,
 } from "@tabler/icons-react";
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
@@ -183,6 +183,7 @@ export default function CustomOrdersPage() {
     const [newServiceLedgerName, setNewServiceLedgerName] = useState('');
     const [targetServiceRowIndex, setTargetServiceRowIndex] = useState<number | null>(null);
     const [printingSlip, setPrintingSlip] = useState(false);
+    const [printingInvoice, setPrintingInvoice] = useState(false);
 
     const matTotal = materials.filter(m => m.product_id).reduce((s, m) => s + m.amount, 0);
     const purTotal = purchases.filter(p => p.description).reduce((s, p) => s + p.amount, 0);
@@ -753,6 +754,41 @@ export default function CustomOrdersPage() {
         }
     };
 
+    const handlePrintCoInvoice = async (orderId: string, orderNo?: string) => {
+        if (!orderId) return;
+        try {
+            setPrintingInvoice(true);
+            const html = await invoke<string>('render_co_invoice', { orderId });
+            const iframe = document.createElement('iframe');
+            iframe.style.position = 'absolute';
+            iframe.style.left = '-9999px';
+            iframe.style.top = '-9999px';
+            iframe.style.border = 'none';
+            document.body.appendChild(iframe);
+            const doc = iframe.contentDocument || iframe.contentWindow?.document;
+            if (doc) {
+                doc.open();
+                doc.write(html);
+                doc.close();
+                setTimeout(() => {
+                    const prevTitle = document.title;
+                    if (orderNo) document.title = `Invoice-${orderNo}`;
+                    iframe.contentWindow?.focus();
+                    iframe.contentWindow?.print();
+                    setTimeout(() => {
+                        document.title = prevTitle;
+                        document.body.removeChild(iframe);
+                    }, 1500);
+                }, 500);
+            }
+        } catch (e) {
+            console.error('Failed to print CO invoice', e);
+            toast.error(typeof e === 'string' ? e : (e as any)?.message || 'Failed to generate invoice');
+        } finally {
+            setPrintingInvoice(false);
+        }
+    };
+
     const openAdvanceDialog = async (order: CustomOrder) => {
         setAdvanceOrder(order);
         setAdvanceDate(today());
@@ -1219,6 +1255,7 @@ export default function CustomOrdersPage() {
                                 <Button variant="outline" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={()=>{setDeleteId(currentOrder.id);setDeleteOrderNo(currentOrder.order_no);}} title="Delete" disabled={currentOrder.status==='delivered'}><IconTrash size={16}/></Button>
                             </div>
                             <Button variant="outline" size="icon" className="h-8 w-8" title="Print Order Slip" disabled={printingSlip} onClick={()=>handlePrintOrderSlip(currentOrder.id, currentOrder.order_no)}><IconPrinter size={16}/></Button>
+                            {currentOrder.status==='delivered'&&currentOrder.final_invoice_id&&<Button variant="outline" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700" title="Print Invoice" disabled={printingInvoice} onClick={()=>handlePrintCoInvoice(currentOrder.id, currentOrder.order_no)}><IconFileInvoice size={16}/></Button>}
                             {currentOrder.status==='pending'&&<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={()=>openAdvanceDialog(currentOrder)}><IconCash size={14}/> {currentOrder.advance_amount > 0 ? 'Collect Payment' : 'Advance'}</Button>}
                             {currentOrder.status==='pending'&&<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={()=>openFinalize(currentOrder)}><IconCheck size={14}/> Finalize</Button>}
                             {currentOrder.status==='delivered'&&(currentOrder.balance_due??0)>0&&currentOrder.final_invoice_id&&<Button size="sm" className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={()=>openCollectPayment(currentOrder)}><IconCurrencyRupee size={14}/> Collect (₹{fmt(currentOrder.balance_due||0)})</Button>}

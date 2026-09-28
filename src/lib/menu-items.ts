@@ -75,6 +75,7 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
     { id: 'balance_sheet', label: 'Balance Sheet', icon: IconScale, category: 'Report' },
     { id: 'profit_loss', label: 'Profit & Loss', icon: IconChartPie, category: 'Report' },
     { id: 'cash_flow', label: 'Cash Flow', icon: IconCurrencyRupee, category: 'Report' },
+    { id: 'custom_orders_report', label: 'CO Reports', icon: IconScissors, category: 'Report' },
     { id: 'gstr1', label: 'GSTR-1', icon: IconFileReport, category: 'Report' },
     { id: 'gstr3b', label: 'GSTR-3B', icon: IconFileReport, category: 'Report' },
 

@@ -2730,7 +2730,7 @@ pub async fn get_pending_invoices(
          FROM vouchers v
          LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
          WHERE v.party_id = ? 
-           AND v.voucher_type IN ('sales_invoice', 'purchase_invoice')
+           AND v.voucher_type IN ('sales_invoice', 'co_invoice', 'purchase_invoice')
            AND v.deleted_at IS NULL
            AND v.status = 'posted'
          GROUP BY v.id

@@ -299,6 +299,9 @@ export default function LedgerReportPage() {
       case 'sales_invoice':
         section = 'sales';
         break;
+      case 'co_invoice':
+        section = 'custom_orders';
+        break;
       case 'sales_return':
         section = 'sales_return';
         break;

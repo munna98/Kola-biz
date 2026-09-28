@@ -71,6 +71,9 @@ export default function DayBookPage() {
       case 'sales_invoice':
         section = 'sales';
         break;
+      case 'co_invoice':
+        section = 'custom_orders';
+        break;
       case 'sales_return':
         section = 'sales_return';
         break;
@@ -121,6 +124,7 @@ export default function DayBookPage() {
   const getVoucherTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
       'sales_invoice': 'Sales',
+      'co_invoice': 'Custom Order',
       'purchase_invoice': 'Purchase',
       'payment': 'Payment',
       'receipt': 'Receipt',

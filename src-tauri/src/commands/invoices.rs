@@ -1863,7 +1863,7 @@ pub(crate) async fn get_sales_invoice_with_pool(
         LEFT JOIN voucher_items vi ON v.id = vi.voucher_id
         LEFT JOIN users u ON v.created_by = u.id
         LEFT JOIN currencies cur ON v.currency_id = cur.id
-        WHERE v.id = ? AND v.voucher_type = 'sales_invoice' AND v.deleted_at IS NULL
+        WHERE v.id = ? AND v.voucher_type IN ('sales_invoice', 'co_invoice') AND v.deleted_at IS NULL
         GROUP BY v.id",
     )
     .bind(id)

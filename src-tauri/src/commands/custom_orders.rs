@@ -1280,7 +1280,8 @@ pub async fn finalize_custom_order(
     // Note: costs are already fully captured by individual GL entries created during the order.
     // No 6012 COGS rollup needed.
 
-    let inv_no = get_next_voucher_number_in_tx(&mut tx, "sales_invoice").await?;
+    // CO invoices reuse the order number as the invoice number — no separate sequence needed
+    let inv_no = order_no.clone();
     let inv_id = Uuid::now_v7().to_string();
     let narration = payload.narration.clone()
         .unwrap_or_else(|| format!("Custom order {} - final invoice", order_no));
@@ -1288,7 +1289,7 @@ pub async fn finalize_custom_order(
     sqlx::query(
         "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type,
           subtotal, tax_amount, total_amount, grand_total, narration, status, payment_status, created_by, gst_disabled)
-         VALUES (?, ?, 'sales_invoice', ?, ?, 'customer', ?, ?, ?, ?, ?, 'posted', 'unpaid', ?, ?)",
+         VALUES (?, ?, 'co_invoice', ?, ?, 'customer', ?, ?, ?, ?, ?, 'posted', 'unpaid', ?, ?)",
     )
     .bind(&inv_id).bind(&inv_no).bind(&payload.voucher_date).bind(&customer_account_id)
     .bind(sale_price).bind(tax_amount).bind(sale_price).bind(grand_total)
@@ -1543,3 +1544,135 @@ pub async fn get_custom_order_payments(
 
     Ok(list)
 }
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub struct CustomOrderMarginReportRow {
+    pub id: String,
+    pub order_no: String,
+    pub order_date: String,
+    pub delivery_date: Option<String>,
+    pub customer_id: String,
+    pub customer_name: String,
+    pub status: String,
+    pub finished_item_name: String,
+    pub finished_item_qty: f64,
+    pub finished_item_unit: Option<String>,
+    pub sale_price: f64,
+    pub total_material_cost: f64,
+    pub total_purchase_cost: f64,
+    pub total_service_cost: f64,
+    pub total_job_cost: f64,
+    pub margin_amount: f64,
+    pub margin_percentage: f64,
+    pub advance_amount: f64,
+    pub payment_status: String,
+    pub total_paid: f64,
+    pub balance_due: f64,
+    pub final_invoice_id: Option<String>,
+    pub final_invoice_no: Option<String>,
+}
+
+#[tauri::command]
+pub async fn get_custom_orders_margin_report(
+    registry: State<'_, Arc<DbRegistry>>,
+    from_date: Option<String>,
+    to_date: Option<String>,
+    status: Option<String>,
+    customer_id: Option<String>,
+) -> Result<Vec<CustomOrderMarginReportRow>, String> {
+    let pool = registry.active_pool().await?;
+
+    let mut query_str = String::from(
+        "SELECT 
+            co.id,
+            co.order_no,
+            co.order_date,
+            co.delivery_date,
+            co.customer_id,
+            coa.account_name as customer_name,
+            co.status,
+            co.finished_item_name,
+            COALESCE(co.finished_item_qty, 1.0) as finished_item_qty,
+            co.finished_item_unit,
+            COALESCE(co.sale_price, 0.0) as sale_price,
+            COALESCE(co.total_material_cost, 0.0) as total_material_cost,
+            COALESCE(co.total_purchase_cost, 0.0) as total_purchase_cost,
+            COALESCE(co.total_service_cost, 0.0) as total_service_cost,
+            COALESCE(co.total_job_cost, 0.0) as total_job_cost,
+            ROUND(COALESCE(co.sale_price, 0.0) - COALESCE(co.total_job_cost, 0.0), 2) as margin_amount,
+            CASE 
+                WHEN COALESCE(co.sale_price, 0.0) > 0 THEN 
+                    ROUND(((COALESCE(co.sale_price, 0.0) - COALESCE(co.total_job_cost, 0.0)) / co.sale_price) * 100.0, 2)
+                ELSE 0.0 
+            END as margin_percentage,
+            COALESCE(co.advance_amount, 0.0) as advance_amount,
+            CASE 
+                WHEN co.final_invoice_id IS NOT NULL THEN
+                    CASE 
+                        WHEN MAX(co.advance_amount, COALESCE((SELECT SUM(allocated_amount) FROM payment_allocations WHERE invoice_voucher_id = co.final_invoice_id), 0.0)) >= COALESCE(co.sale_price, 0.0) AND COALESCE(co.sale_price, 0.0) > 0 THEN 'paid'
+                        WHEN MAX(co.advance_amount, COALESCE((SELECT SUM(allocated_amount) FROM payment_allocations WHERE invoice_voucher_id = co.final_invoice_id), 0.0)) > 0 THEN 'partially_paid'
+                        ELSE 'unpaid'
+                    END
+                WHEN COALESCE(co.advance_amount, 0.0) >= COALESCE(co.sale_price, 0.0) AND COALESCE(co.sale_price, 0.0) > 0 THEN 'paid'
+                WHEN COALESCE(co.advance_amount, 0.0) > 0 THEN 'partially_paid'
+                ELSE 'unpaid'
+            END as payment_status,
+            CASE 
+                WHEN co.final_invoice_id IS NOT NULL THEN
+                    MAX(co.advance_amount, COALESCE((SELECT SUM(allocated_amount) FROM payment_allocations WHERE invoice_voucher_id = co.final_invoice_id), 0.0))
+                ELSE COALESCE(co.advance_amount, 0.0)
+            END as total_paid,
+            ROUND(COALESCE(co.sale_price, 0.0) - CASE 
+                WHEN co.final_invoice_id IS NOT NULL THEN
+                    MAX(co.advance_amount, COALESCE((SELECT SUM(allocated_amount) FROM payment_allocations WHERE invoice_voucher_id = co.final_invoice_id), 0.0))
+                ELSE COALESCE(co.advance_amount, 0.0)
+            END, 2) as balance_due,
+            co.final_invoice_id,
+            inv.voucher_no as final_invoice_no
+         FROM custom_orders co
+         LEFT JOIN chart_of_accounts coa ON co.customer_id = coa.id
+         LEFT JOIN vouchers inv ON co.final_invoice_id = inv.id
+         WHERE co.deleted_at IS NULL",
+    );
+
+    let mut bind_params = Vec::new();
+
+    if let Some(fd) = from_date {
+        if !fd.trim().is_empty() {
+            query_str.push_str(" AND co.order_date >= ?");
+            bind_params.push(fd);
+        }
+    }
+
+    if let Some(td) = to_date {
+        if !td.trim().is_empty() {
+            query_str.push_str(" AND co.order_date <= ?");
+            bind_params.push(td);
+        }
+    }
+
+    if let Some(s) = status {
+        if !s.trim().is_empty() && s != "all" {
+            query_str.push_str(" AND co.status = ?");
+            bind_params.push(s);
+        }
+    }
+
+    if let Some(cid) = customer_id {
+        if !cid.trim().is_empty() && cid != "all" {
+            query_str.push_str(" AND co.customer_id = ?");
+            bind_params.push(cid);
+        }
+    }
+
+    query_str.push_str(" ORDER BY co.order_date DESC, co.created_at DESC");
+
+    let mut query = sqlx::query_as::<_, CustomOrderMarginReportRow>(&query_str);
+
+    for p in bind_params {
+        query = query.bind(p);
+    }
+
+    query.fetch_all(&pool).await.map_err(|e| e.to_string())
+}
+
