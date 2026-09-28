@@ -47,8 +47,9 @@ import {
     IconScissors, IconPackage, IconShoppingBag, IconTools,
     IconRefresh, IconCurrencyRupee, IconEye, IconClock,
     IconChevronLeft, IconChevronRight, IconList, IconDeviceFloppy,
-    IconX, IconCash, IconPrinter, IconFileInvoice,
+    IconX, IconCash, IconPrinter,
 } from "@tabler/icons-react";
+import { PrinterCheck } from 'lucide-react';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
 import { useDispatch, useSelector } from "react-redux";
@@ -1255,7 +1256,7 @@ export default function CustomOrdersPage() {
                                 <Button variant="outline" size="icon" className="h-8 w-8 text-destructive hover:text-destructive hover:bg-destructive/10" onClick={()=>{setDeleteId(currentOrder.id);setDeleteOrderNo(currentOrder.order_no);}} title="Delete" disabled={currentOrder.status==='delivered'}><IconTrash size={16}/></Button>
                             </div>
                             <Button variant="outline" size="icon" className="h-8 w-8" title="Print Order Slip" disabled={printingSlip} onClick={()=>handlePrintOrderSlip(currentOrder.id, currentOrder.order_no)}><IconPrinter size={16}/></Button>
-                            {currentOrder.status==='delivered'&&currentOrder.final_invoice_id&&<Button variant="outline" size="icon" className="h-8 w-8 text-blue-600 hover:text-blue-700" title="Print Invoice" disabled={printingInvoice} onClick={()=>handlePrintCoInvoice(currentOrder.id, currentOrder.order_no)}><IconFileInvoice size={16}/></Button>}
+                            {currentOrder.status==='delivered'&&currentOrder.final_invoice_id&&<Button variant="outline" size="icon" className="h-8 w-8 text-emerald-600 hover:text-emerald-700" title="Print Invoice" disabled={printingInvoice} onClick={()=>handlePrintCoInvoice(currentOrder.id, currentOrder.order_no)}><PrinterCheck size={16}/></Button>}
                             {currentOrder.status==='pending'&&<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={()=>openAdvanceDialog(currentOrder)}><IconCash size={14}/> {currentOrder.advance_amount > 0 ? 'Collect Payment' : 'Advance'}</Button>}
                             {currentOrder.status==='pending'&&<Button variant="outline" size="sm" className="h-8 text-xs gap-1.5" onClick={()=>openFinalize(currentOrder)}><IconCheck size={14}/> Finalize</Button>}
                             {currentOrder.status==='delivered'&&(currentOrder.balance_due??0)>0&&currentOrder.final_invoice_id&&<Button size="sm" className="h-8 text-xs gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={()=>openCollectPayment(currentOrder)}><IconCurrencyRupee size={14}/> Collect (₹{fmt(currentOrder.balance_due||0)})</Button>}
