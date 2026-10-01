@@ -52,7 +52,7 @@ export function PrintPreviewDialog({
     useEffect(() => {
         if (open && voucherId) {
             loadContent();
-            if (voucherType === 'purchase_invoice') {
+            if (voucherType === 'purchase_invoice' || voucherType === 'opening_stock') {
                 loadBarcodeSettings();
                 loadInvoiceItems();
             }
@@ -80,7 +80,7 @@ export function PrintPreviewDialog({
     const loadBarcodeSettings = async () => {
         try {
             const settings = await invoke<VoucherSettings | null>('get_voucher_settings', {
-                voucherType: 'purchase_invoice'
+                voucherType
             });
             setEnableBarcode(settings?.enableBarcodePrinting || false);
         } catch (error) {
@@ -90,13 +90,29 @@ export function PrintPreviewDialog({
 
     const loadInvoiceItems = async () => {
         try {
-            const [items, voucher] = await Promise.all([
-                invoke<InvoiceItem[]>('get_purchase_invoice_items', { voucherId }),
-                invoke<any>('get_purchase_invoice', { id: voucherId }).catch(() => null),
-            ]);
-            setInvoiceItems(items);
-            if (voucher) {
-                setSupplierInfo({ code: voucher.supplier_id, name: voucher.supplier_name });
+            if (voucherType === 'purchase_invoice') {
+                const [items, voucher] = await Promise.all([
+                    invoke<any[]>('get_purchase_invoice_items', { voucherId }),
+                    invoke<any>('get_purchase_invoice', { id: voucherId }).catch(() => null),
+                ]);
+                setInvoiceItems(items.map((item: any) => ({
+                    product_code: item.product_code,
+                    product_name: item.product_name || item.description,
+                    rate: item.sales_rate !== undefined && item.sales_rate !== null ? item.sales_rate : item.rate,
+                    count: item.initial_quantity ? (item.initial_quantity - item.count * item.deduction_per_unit) : item.count,
+                })));
+                if (voucher) {
+                    setSupplierInfo({ code: voucher.supplier_id, name: voucher.supplier_name });
+                }
+            } else if (voucherType === 'opening_stock') {
+                const items = await invoke<any[]>('get_opening_stock_items', { voucherId });
+                setInvoiceItems(items.map((item: any) => ({
+                    product_code: item.product_code,
+                    product_name: item.product_name || item.description,
+                    rate: item.rate,
+                    count: item.quantity,
+                })));
+                setSupplierInfo({});
             }
         } catch (error) {
             console.error('Failed to load invoice items:', error);
@@ -149,7 +165,7 @@ export function PrintPreviewDialog({
                             <DialogDescription className="hidden">Preview of the document before printing</DialogDescription>
                         </div>
                         <div className="flex items-center gap-2">
-                            {enableBarcode && voucherType === 'purchase_invoice' && invoiceItems.length > 0 && (
+                            {enableBarcode && (voucherType === 'purchase_invoice' || voucherType === 'opening_stock') && invoiceItems.length > 0 && (
                                 <Button
                                     variant="outline"
                                     size="sm"

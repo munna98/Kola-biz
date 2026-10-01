@@ -493,26 +493,29 @@ export default function VoucherSettingsPage() {
                             </div>
                         )}
 
+                        {['purchase_invoice', 'opening_stock'].includes(selectedVoucher) && (
+                            <div className="flex items-center gap-4 mb-6">
+                                <Checkbox
+                                    id="enable-barcode"
+                                    checked={enableBarcodePrinting}
+                                    onCheckedChange={(checked) => setEnableBarcodePrinting(checked as boolean)}
+                                />
+                                <div className="grid gap-1.5 leading-none">
+                                    <label
+                                        htmlFor="enable-barcode"
+                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                    >
+                                        Enable Barcode Printing
+                                    </label>
+                                    <p className="text-sm text-muted-foreground">
+                                        Show "Print Labels" button in print preview for this voucher type.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
                         {selectedVoucher === 'purchase_invoice' && (
                             <>
-                                <div className="flex items-center gap-4 mb-6">
-                                    <Checkbox
-                                        id="enable-barcode"
-                                        checked={enableBarcodePrinting}
-                                        onCheckedChange={(checked) => setEnableBarcodePrinting(checked as boolean)}
-                                    />
-                                    <div className="grid gap-1.5 leading-none">
-                                        <label
-                                            htmlFor="enable-barcode"
-                                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                                        >
-                                            Enable Barcode Printing
-                                        </label>
-                                        <p className="text-sm text-muted-foreground">
-                                            Show "Print Labels" button in print preview for this voucher type.
-                                        </p>
-                                    </div>
-                                </div>
 
                                 <div className="flex items-start gap-4 mb-6">
                                     <Checkbox

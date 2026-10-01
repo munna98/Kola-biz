@@ -28,9 +28,10 @@ import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet'
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { usePrint } from '@/hooks/usePrint';
 import ProductDialog from '@/components/dialogs/ProductDialog';
+import BarcodeLabelDialog from '@/components/dialogs/BarcodeLabelDialog';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
-import { IconX, IconCheck } from '@tabler/icons-react';
+import { IconX, IconCheck, IconBarcode } from '@tabler/icons-react';
 import { Product, Unit, ProductGroup, ProductUnitConversion } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { useMoney } from '@/hooks/useMoney';
@@ -48,6 +49,10 @@ export default function OpeningStockPage() {
     const [units, setUnits] = useState<Unit[]>([]);
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
+    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, enableBarcodePrinting?: boolean } | undefined>(undefined);
+    const [showBarcodeDialog, setShowBarcodeDialog] = useState(false);
+    const [barcodeProducts, setBarcodeProducts] = useState<{ code: string; name: string; salesRate: number; quantity: number; supplierCode?: string; supplierName?: string }[]>([]);
+    const barcodePending = useRef(false);
     const { print: printVoucher } = usePrint();
 
     // Create Product State
@@ -70,18 +75,22 @@ export default function OpeningStockPage() {
     useEffect(() => {
         const loadDependencies = async () => {
             try {
-                const [productsData, unitsData, productUnitConversionsData, groupsData, masterSettingVal] = await Promise.all([
+                const [productsData, unitsData, productUnitConversionsData, groupsData, masterSettingVal, settingsData] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
                     invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
                     invoke<ProductGroup[]>('get_product_groups'),
                     invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
+                    invoke<any>('get_voucher_settings', { voucherType: 'opening_stock' }).catch(() => null),
                 ]);
                 setProducts(productsData);
                 setUnits(unitsData);
                 setProductUnitConversions(productUnitConversionsData);
                 setProductGroups(groupsData);
                 setMasterProductsEnabled(masterSettingVal === 'true');
+                if (settingsData) {
+                    setVoucherSettings(settingsData);
+                }
             } catch (error) {
                 console.error('Failed to load dependencies:', error);
                 toast.error('Failed to load products or units');
@@ -175,6 +184,24 @@ export default function OpeningStockPage() {
         dispatch(setOpeningStockTotal(total));
     }, [openingStockState.items, dispatch]);
 
+    const handlePrintBarcodes = () => {
+        const items = openingStockState.items
+            .filter(item => item.product_id)
+            .map(item => {
+                const product = products.find(p => String(p.id) === String(item.product_id));
+                return {
+                    code: product?.code || '',
+                    name: product?.name || item.product_name || '',
+                    salesRate: product?.sales_rate || item.rate || 0,
+                    quantity: item.quantity,
+                    supplierCode: product?.supplier_id ? String(product.supplier_id) : '',
+                    supplierName: product?.supplier_name || '',
+                };
+            });
+        setBarcodeProducts(items);
+        setShowBarcodeDialog(true);
+    };
+
     const handleSave = async (e?: React.FormEvent) => {
         e?.preventDefault();
 
@@ -185,6 +212,20 @@ export default function OpeningStockPage() {
 
         try {
             dispatch(setOpeningStockLoading(true));
+
+            const submittedItemsSnapshot = openingStockState.items
+                .filter(it => it.product_id)
+                .map(it => {
+                    const product = products.find(p => String(p.id) === String(it.product_id));
+                    return {
+                        code: product?.code || '',
+                        name: product?.name || it.product_name || '',
+                        salesRate: product?.sales_rate || it.rate || 0,
+                        quantity: it.quantity,
+                        supplierCode: product?.supplier_id ? String(product.supplier_id) : '',
+                        supplierName: product?.supplier_name || '',
+                    };
+                });
 
             const data = {
                 voucher_date: openingStockState.form.voucher_date,
@@ -200,18 +241,53 @@ export default function OpeningStockPage() {
                 user_id: user?.id,
             };
 
+            let savedId: string | null = null;
+            let savedVoucherNo = '';
+
             if (openingStockState.mode === 'editing' && openingStockState.currentVoucherId) {
                 await invoke('update_opening_stock', {
                     id: openingStockState.currentVoucherId,
                     data
                 });
                 toast.success('Opening stock updated successfully');
+                savedId = openingStockState.currentVoucherId;
+                savedVoucherNo = openingStockState.currentVoucherNo || '';
                 handleLoadVoucher(openingStockState.currentVoucherId);
             } else {
-                const id = await invoke('create_opening_stock', { data });
+                const id = await invoke<string>('create_opening_stock', { data });
                 toast.success('Opening stock created successfully');
-                handleLoadVoucher(id as string);
+                savedId = id;
+                try {
+                    const v: any = await invoke('get_opening_stock', { id });
+                    savedVoucherNo = v.voucher_no;
+                } catch {
+                    savedVoucherNo = '';
+                }
+                handleLoadVoucher(id);
                 nav.handleNew(true);
+            }
+
+            if (voucherSettings?.enableBarcodePrinting) {
+                setBarcodeProducts(submittedItemsSnapshot);
+                if (voucherSettings?.autoPrint) {
+                    barcodePending.current = true;
+                    if (savedId) {
+                        setTimeout(() => {
+                            printVoucher({ voucherId: savedId!, voucherType: 'opening_stock', filename: savedVoucherNo }).then(() => {
+                                if (barcodePending.current) {
+                                    barcodePending.current = false;
+                                    setShowBarcodeDialog(true);
+                                }
+                            });
+                        }, 100);
+                    }
+                } else {
+                    setShowBarcodeDialog(true);
+                }
+            } else if (voucherSettings?.autoPrint && savedId) {
+                setTimeout(() => {
+                    printVoucher({ voucherId: savedId!, voucherType: 'opening_stock', filename: savedVoucherNo });
+                }, 100);
             }
         } catch (error) {
             console.error('Failed to save opening stock:', error);
@@ -352,6 +428,20 @@ export default function OpeningStockPage() {
                 onPrint={handlePrint}
                 onListView={() => setShowListView(true)}
                 loading={openingStockState.loading}
+                customActionsPrefix={
+                    voucherSettings?.enableBarcodePrinting && openingStockState.mode !== 'new' && openingStockState.currentVoucherId ? (
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handlePrintBarcodes}
+                            className="h-8 text-xs gap-1.5"
+                            title="Print Barcode Labels"
+                        >
+                            <IconBarcode size={14} />
+                            Barcodes
+                        </Button>
+                    ) : undefined
+                }
             />
 
             <VoucherShortcutPanel show={showShortcuts} />
@@ -369,6 +459,12 @@ export default function OpeningStockPage() {
                 units={units}
                 groups={productGroups}
                 onSuccess={handleCreateProductSave}
+            />
+
+            <BarcodeLabelDialog
+                open={showBarcodeDialog}
+                onOpenChange={setShowBarcodeDialog}
+                products={barcodeProducts}
             />
 
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
