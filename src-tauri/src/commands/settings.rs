@@ -778,6 +778,7 @@ pub async fn reassign_voucher_numbers(
         "purchase_invoice",
         "sales_return",
         "purchase_return",
+        "opening_stock",
     ];
     if !ALLOWED.contains(&voucher_type.as_str()) {
         return Err(format!(

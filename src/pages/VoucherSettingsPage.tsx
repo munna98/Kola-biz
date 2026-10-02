@@ -83,6 +83,7 @@ const VOUCHER_TYPES = [
     { value: 'purchase_invoice', label: 'Purchase Invoice' },
     { value: 'sales_return', label: 'Sales Return' },
     { value: 'purchase_return', label: 'Purchase Return' },
+    { value: 'opening_stock', label: 'Opening Stock' },
 ];
 
 // Voucher types that support date-based renumbering (payment/receipt/journal excluded)
@@ -93,6 +94,7 @@ const REASSIGN_SUPPORTED_TYPES = [
     'purchase_invoice',
     'sales_return',
     'purchase_return',
+    'opening_stock',
 ];
 
 
