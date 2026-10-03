@@ -111,7 +111,6 @@ export default function DayBookPage() {
 
     try {
       const companyName = companyProfile?.company_name || 'Company';
-      const currencySymbol = companyProfile?.base_currency_symbol || '';
       const currencyCode = companyProfile?.base_currency || 'INR';
 
       const rows: any[][] = [];
