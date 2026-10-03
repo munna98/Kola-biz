@@ -745,3 +745,351 @@ pub async fn generate_profit_loss_pdf(
 
     Ok(output_path.to_string_lossy().to_string())
 }
+
+// ─── Day Book PDF ─────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct DayBookPdfEntry {
+    pub voucher_date: String,
+    pub voucher_no: String,
+    pub voucher_type: String,
+    pub party_name: String,
+    pub account_name: String,
+    pub narration: String,
+    pub debit: f64,
+    pub credit: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DayBookPdfData {
+    pub company_name: String,
+    pub period_from: String,
+    pub period_to: String,
+    pub detailed: bool,
+    pub currency_symbol: Option<String>,
+    pub total_debit: f64,
+    pub total_credit: f64,
+    pub entries: Vec<DayBookPdfEntry>,
+}
+
+#[tauri::command]
+pub async fn generate_day_book_pdf(
+    data: DayBookPdfData,
+    file_path: String,
+) -> Result<String, String> {
+    let output_path = PathBuf::from(&file_path);
+
+    let (document, page1, layer1) =
+        PdfDocument::new("Day Book", Mm(210.0), Mm(297.0), "Layer 1");
+    let font = document
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|e| e.to_string())?;
+    let font_bold = document
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|e| e.to_string())?;
+
+    let mut current_layer = document.get_page(page1).get_layer(layer1);
+
+    let left_margin = 12.0_f64;
+    let top_margin = 280.0_f64;
+    let mut y_pos = top_margin;
+    let line_height = 5.0_f64;
+    let cell_padding = 0.8_f64;
+    let currency_sym = data.currency_symbol.as_deref().unwrap_or("");
+
+    // ── Header ──────────────────────────────────────────────────────────────
+    current_layer.use_text(&data.company_name, 16.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    y_pos -= 7.0;
+
+    current_layer.use_text("DAY BOOK", 20.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    y_pos -= 6.0;
+
+    let period_info = format!("Period: {} to {}", data.period_from, data.period_to);
+    current_layer.use_text(&period_info, 9.0, Mm(left_margin), Mm(y_pos), &font);
+    y_pos -= 4.0;
+
+    let mode_info = format!("Mode: {}", if data.detailed { "Detailed" } else { "Summary" });
+    current_layer.use_text(&mode_info, 8.0, Mm(left_margin), Mm(y_pos), &font);
+    y_pos -= 7.0;
+
+    // ── Table columns: Date | Voucher | Type | Party | Account | Narration | Debit | Credit
+    // Total printable width ≈ 186mm (210 - 2×12mm margins)
+    let col_widths = [21.0_f64, 23.0, 16.0, 28.0, 30.0, 35.0, 18.0, 18.0];
+    let mut col_x: Vec<f64> = vec![left_margin];
+    for w in &col_widths[..col_widths.len() - 1] {
+        col_x.push(col_x.last().unwrap() + w);
+    }
+
+    let headers = ["Date", "Voucher No", "Type", "Party", "Account", "Narration", "Debit", "Credit"];
+
+    // Macro to draw column headers at a given y position
+    macro_rules! draw_headers {
+        ($layer:expr, $y:expr) => {
+            for (i, h) in headers.iter().enumerate() {
+                $layer.use_text(*h, 8.5, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
+            }
+        };
+    }
+
+    draw_headers!(current_layer, y_pos);
+    y_pos -= line_height + 1.0;
+
+    // ── Entry rows ───────────────────────────────────────────────────────────
+    for entry in &data.entries {
+        if y_pos < 30.0 {
+            let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+            current_layer = document.get_page(page).get_layer(layer);
+            y_pos = top_margin - 15.0;
+            draw_headers!(current_layer, y_pos);
+            y_pos -= line_height + 1.0;
+        }
+
+        // Date
+        current_layer.use_text(&entry.voucher_date, 7.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
+
+        // Voucher No
+        current_layer.use_text(&entry.voucher_no, 7.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+
+        // Type (formatted)
+        let vtype = format_voucher_type(&entry.voucher_type);
+        let vtype_trunc = if vtype.len() > 12 { format!("{}...", &vtype[..9]) } else { vtype };
+        current_layer.use_text(&vtype_trunc, 7.5, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
+
+        // Party (truncated)
+        let party = if entry.party_name.len() > 16 {
+            format!("{}...", &entry.party_name[..13])
+        } else {
+            entry.party_name.clone()
+        };
+        current_layer.use_text(&party, 7.5, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
+
+        // Account (truncated)
+        let account = if entry.account_name.len() > 18 {
+            format!("{}...", &entry.account_name[..15])
+        } else {
+            entry.account_name.clone()
+        };
+        current_layer.use_text(&account, 7.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
+
+        // Narration (truncated)
+        let narration = if entry.narration.len() > 22 {
+            format!("{}...", &entry.narration[..19])
+        } else {
+            entry.narration.clone()
+        };
+        current_layer.use_text(&narration, 7.5, Mm(col_x[5] + cell_padding), Mm(y_pos), &font);
+
+        // Debit
+        if entry.debit > 0.005 {
+            let debit_str = format!("{}{:.2}", currency_sym, entry.debit);
+            current_layer.use_text(&debit_str, 7.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font);
+        }
+
+        // Credit
+        if entry.credit > 0.005 {
+            let credit_str = format!("{}{:.2}", currency_sym, entry.credit);
+            current_layer.use_text(&credit_str, 7.5, Mm(col_x[7] + cell_padding), Mm(y_pos), &font);
+        }
+
+        y_pos -= line_height;
+    }
+
+    // ── Totals row ───────────────────────────────────────────────────────────
+    y_pos -= 2.0;
+    if y_pos < 30.0 {
+        let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+        current_layer = document.get_page(page).get_layer(layer);
+        y_pos = top_margin - 15.0;
+        draw_headers!(current_layer, y_pos);
+        y_pos -= line_height + 1.0;
+    }
+
+    current_layer.use_text("TOTAL", 9.0, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
+    let total_debit_str = format!("{}{:.2}", currency_sym, data.total_debit);
+    let total_credit_str = format!("{}{:.2}", currency_sym, data.total_credit);
+    current_layer.use_text(&total_debit_str, 9.0, Mm(col_x[6] + cell_padding), Mm(y_pos), &font_bold);
+    current_layer.use_text(&total_credit_str, 9.0, Mm(col_x[7] + cell_padding), Mm(y_pos), &font_bold);
+
+    // ── Save ─────────────────────────────────────────────────────────────────
+    document
+        .save(&mut BufWriter::new(
+            File::create(&output_path).map_err(|e| e.to_string())?,
+        ))
+        .map_err(|e| e.to_string())?;
+
+    Ok(output_path.to_string_lossy().to_string())
+}
+
+// ─── Stock Report PDF ─────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct StockReportPdfItem {
+    pub product_code: String,
+    pub product_name: String,
+    pub group_name: String,
+    pub unit_symbol: String,
+    pub current_stock: f64,
+    pub average_rate: f64,
+    pub stock_value: f64,
+    pub last_purchase_date: String,
+    pub last_sale_date: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StockReportPdfData {
+    pub company_name: String,
+    pub as_on_date: String,
+    pub currency_symbol: Option<String>,
+    pub total_products: usize,
+    pub total_qty: f64,
+    pub total_value: f64,
+    pub items: Vec<StockReportPdfItem>,
+}
+
+#[tauri::command]
+pub async fn generate_stock_report_pdf(
+    data: StockReportPdfData,
+    file_path: String,
+) -> Result<String, String> {
+    let output_path = PathBuf::from(&file_path);
+
+    let (document, page1, layer1) =
+        PdfDocument::new("Stock Report", Mm(210.0), Mm(297.0), "Layer 1");
+    let font = document
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|e| e.to_string())?;
+    let font_bold = document
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|e| e.to_string())?;
+
+    let mut current_layer = document.get_page(page1).get_layer(layer1);
+
+    let left_margin = 12.0_f64;
+    let top_margin = 280.0_f64;
+    let mut y_pos = top_margin;
+    let line_height = 5.0_f64;
+    let cell_padding = 0.8_f64;
+    let currency_sym = data.currency_symbol.as_deref().unwrap_or("");
+
+    // ── Header ───────────────────────────────────────────────────────────────
+    current_layer.use_text(&data.company_name, 16.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    y_pos -= 7.0;
+
+    current_layer.use_text("STOCK REPORT", 20.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    y_pos -= 6.0;
+
+    let as_on = format!("As On: {}", data.as_on_date);
+    current_layer.use_text(&as_on, 9.0, Mm(left_margin), Mm(y_pos), &font);
+    y_pos -= 8.0;
+
+    // ── Column layout
+    // Columns: Code | Product Name | Group | Unit | Stock | Avg Rate | Value | Last Purch | Last Sale
+    // Total printable ≈ 186mm
+    let col_widths = [16.0_f64, 40.0, 22.0, 10.0, 18.0, 22.0, 22.0, 18.0, 18.0];
+    let mut col_x: Vec<f64> = vec![left_margin];
+    for w in &col_widths[..col_widths.len() - 1] {
+        col_x.push(col_x.last().unwrap() + w);
+    }
+
+    let headers = ["Code", "Product Name", "Group", "Unit", "Stock", "Avg Rate", "Value", "Last Purch", "Last Sale"];
+
+    macro_rules! draw_headers {
+        ($layer:expr, $y:expr) => {
+            for (i, h) in headers.iter().enumerate() {
+                $layer.use_text(*h, 8.0, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
+            }
+        };
+    }
+
+    draw_headers!(current_layer, y_pos);
+    y_pos -= line_height + 1.0;
+
+    // ── Rows ─────────────────────────────────────────────────────────────────
+    for item in &data.items {
+        if y_pos < 30.0 {
+            let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+            current_layer = document.get_page(page).get_layer(layer);
+            y_pos = top_margin - 15.0;
+            draw_headers!(current_layer, y_pos);
+            y_pos -= line_height + 1.0;
+        }
+
+        // Code
+        current_layer.use_text(&item.product_code, 7.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
+
+        // Product Name (truncate)
+        let name = if item.product_name.len() > 24 {
+            format!("{}...", &item.product_name[..21])
+        } else {
+            item.product_name.clone()
+        };
+        current_layer.use_text(&name, 7.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+
+        // Group (truncate)
+        let group = if item.group_name.len() > 13 {
+            format!("{}...", &item.group_name[..10])
+        } else {
+            item.group_name.clone()
+        };
+        current_layer.use_text(&group, 7.5, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
+
+        // Unit
+        current_layer.use_text(&item.unit_symbol, 7.5, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
+
+        // Stock qty
+        let stock_str = format!("{:.2}", item.current_stock);
+        current_layer.use_text(&stock_str, 7.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
+
+        // Avg Rate
+        let rate_str = format!("{}{:.2}", currency_sym, item.average_rate);
+        current_layer.use_text(&rate_str, 7.5, Mm(col_x[5] + cell_padding), Mm(y_pos), &font);
+
+        // Stock Value
+        let value_str = format!("{}{:.2}", currency_sym, item.stock_value);
+        current_layer.use_text(&value_str, 7.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font);
+
+        // Last Purchase Date (truncate to DD-MM-YY if long)
+        let lp = if item.last_purchase_date.len() > 10 {
+            item.last_purchase_date[..10].to_string()
+        } else {
+            item.last_purchase_date.clone()
+        };
+        current_layer.use_text(if lp.is_empty() { "-" } else { &lp }, 7.0, Mm(col_x[7] + cell_padding), Mm(y_pos), &font);
+
+        // Last Sale Date
+        let ls = if item.last_sale_date.len() > 10 {
+            item.last_sale_date[..10].to_string()
+        } else {
+            item.last_sale_date.clone()
+        };
+        current_layer.use_text(if ls.is_empty() { "-" } else { &ls }, 7.0, Mm(col_x[8] + cell_padding), Mm(y_pos), &font);
+
+        y_pos -= line_height;
+    }
+
+    // ── Totals row ───────────────────────────────────────────────────────────
+    y_pos -= 2.0;
+    if y_pos < 30.0 {
+        let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+        current_layer = document.get_page(page).get_layer(layer);
+        y_pos = top_margin - 15.0;
+        draw_headers!(current_layer, y_pos);
+        y_pos -= line_height + 1.0;
+    }
+
+    let total_label = format!("TOTAL ({} items)", data.total_products);
+    current_layer.use_text(&total_label, 8.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
+    let total_qty_str = format!("{:.2}", data.total_qty);
+    current_layer.use_text(&total_qty_str, 8.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font_bold);
+    let total_val_str = format!("{}{:.2}", currency_sym, data.total_value);
+    current_layer.use_text(&total_val_str, 8.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font_bold);
+
+    // ── Save ─────────────────────────────────────────────────────────────────
+    document
+        .save(&mut BufWriter::new(
+            File::create(&output_path).map_err(|e| e.to_string())?,
+        ))
+        .map_err(|e| e.to_string())?;
+
+    Ok(output_path.to_string_lossy().to_string())
+}

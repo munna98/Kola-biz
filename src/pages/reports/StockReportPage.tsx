@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useDispatch } from 'react-redux';
-import { setActiveSectionWithParams } from '@/store';
+import { useDispatch, useSelector } from 'react-redux';
+import { setActiveSectionWithParams, RootState } from '@/store';
 import { invoke } from '@tauri-apps/api/core';
+import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -59,6 +60,7 @@ interface ProductGroup {
 
 export default function StockReportPage() {
     const dispatch = useDispatch();
+    const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
     const [stockData, setStockData] = useState<StockSummary[]>([]);
     const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
     const [loading, setLoading] = useState(false);
@@ -181,12 +183,129 @@ export default function StockReportPage() {
         );
     };
 
-    const handlePrint = () => {
-        window.print();
+    const handlePrint = async () => {
+        if (filteredStockData.length === 0) {
+            toast.error('No data to print');
+            return;
+        }
+
+        try {
+            const timestamp = new Date().toISOString().split('T')[0];
+            const fileName = `StockReport_${asOnDate}_${timestamp}.pdf`;
+            const downloadsPath = await invoke<string>('get_downloads_path');
+            const filePath = `${downloadsPath}/${fileName}`;
+
+            const pdfData = {
+                company_name: companyProfile?.company_name || 'Company',
+                as_on_date: asOnDate,
+                currency_symbol: companyProfile?.base_currency_symbol || '',
+                total_products: totalProducts,
+                total_qty: totalQty,
+                total_value: totalValue,
+                items: filteredStockData.map(s => ({
+                    product_code: s.product_code,
+                    product_name: s.product_name,
+                    group_name: s.group_name || '',
+                    unit_symbol: s.unit_symbol,
+                    current_stock: s.current_stock,
+                    average_rate: s.average_rate,
+                    stock_value: s.stock_value,
+                    last_purchase_date: s.last_purchase_date || '',
+                    last_sale_date: s.last_sale_date || '',
+                })),
+            };
+
+            await invoke('generate_stock_report_pdf', {
+                data: pdfData,
+                filePath,
+            });
+
+            toast.success(`PDF saved to: ${filePath}`);
+        } catch (error) {
+            toast.error('Failed to generate PDF');
+            console.error(error);
+        }
     };
 
     const handleExport = () => {
-        toast.info('Export functionality coming soon');
+        if (filteredStockData.length === 0) {
+            toast.error('No stock data to export');
+            return;
+        }
+
+        try {
+            const companyName = companyProfile?.company_name || 'Company';
+            const currencyCode = companyProfile?.base_currency || 'INR';
+
+            const rows: any[][] = [];
+
+            // Title & Header info
+            rows.push([`${companyName} - STOCK REPORT`]);
+            rows.push([`As On: ${formatDate(asOnDate)}`]);
+            rows.push([]);
+
+            // Column Headers
+            rows.push([
+                'Code',
+                'Product Name',
+                'Group',
+                'Unit',
+                'Stock Qty',
+                `Avg Rate (${currencyCode})`,
+                `Stock Value (${currencyCode})`,
+                'Last Purchase',
+                'Last Sale',
+            ]);
+
+            // Data Rows
+            for (const item of filteredStockData) {
+                rows.push([
+                    item.product_code,
+                    item.product_name,
+                    item.group_name || '-',
+                    item.unit_symbol,
+                    item.current_stock,
+                    item.average_rate,
+                    item.stock_value,
+                    item.last_purchase_date ? formatDate(item.last_purchase_date) : '-',
+                    item.last_sale_date ? formatDate(item.last_sale_date) : '-',
+                ]);
+            }
+
+            // Totals row
+            rows.push([
+                `TOTAL (${totalProducts} items)`, '', '', '',
+                totalQty,
+                '',
+                totalValue,
+                '', '',
+            ]);
+
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            ws['!cols'] = [
+                { wch: 14 }, // Code
+                { wch: 32 }, // Product Name
+                { wch: 20 }, // Group
+                { wch: 8  }, // Unit
+                { wch: 12 }, // Stock Qty
+                { wch: 18 }, // Avg Rate
+                { wch: 18 }, // Stock Value
+                { wch: 16 }, // Last Purchase
+                { wch: 14 }, // Last Sale
+            ];
+
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Stock Report');
+
+            const timestamp = new Date().toISOString().split('T')[0];
+            const fileName = `StockReport_${asOnDate}_${timestamp}.xlsx`;
+            XLSX.writeFile(wb, fileName);
+
+            toast.success(`Stock Report exported as ${fileName}`);
+        } catch (err) {
+            console.error('Export error:', err);
+            toast.error('Failed to export Stock Report to Excel');
+        }
     };
 
     // Filter stock data based on stock status and search query

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -9,8 +10,8 @@ import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
-import { useDispatch } from 'react-redux';
-import { setActiveSectionWithParams } from '@/store';
+import { useDispatch, useSelector } from 'react-redux';
+import { setActiveSectionWithParams, RootState } from '@/store';
 
 interface DayBookEntry {
   voucher_id: string;
@@ -26,6 +27,7 @@ interface DayBookEntry {
 
 export default function DayBookPage() {
   const dispatch = useDispatch();
+  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
   const [entries, setEntries] = useState<DayBookEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const [fromDate, setFromDate] = useState(new Date().toISOString().split('T')[0]);
@@ -57,12 +59,127 @@ export default function DayBookPage() {
   const totalDebit = entries.reduce((sum, row) => sum + row.debit, 0);
   const totalCredit = entries.reduce((sum, row) => sum + row.credit, 0);
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (entries.length === 0) {
+      toast.error('No data to print');
+      return;
+    }
+
+    try {
+      const timestamp = new Date().toISOString().split('T')[0];
+      const fileName = `DayBook_${fromDate}_to_${toDate}_${timestamp}.pdf`;
+      const downloadsPath = await invoke<string>('get_downloads_path');
+      const filePath = `${downloadsPath}/${fileName}`;
+
+      const pdfData = {
+        company_name: companyProfile?.company_name || 'Company',
+        period_from: formatDate(fromDate),
+        period_to: formatDate(toDate),
+        detailed,
+        currency_symbol: companyProfile?.base_currency_symbol || '',
+        total_debit: totalDebit,
+        total_credit: totalCredit,
+        entries: entries.map(e => ({
+          voucher_date: e.voucher_date,
+          voucher_no: e.voucher_no,
+          voucher_type: e.voucher_type,
+          party_name: e.party_name || '',
+          account_name: e.account_name,
+          narration: e.narration || '',
+          debit: e.debit,
+          credit: e.credit,
+        })),
+      };
+
+      await invoke('generate_day_book_pdf', {
+        data: pdfData,
+        filePath,
+      });
+
+      toast.success(`PDF saved to: ${filePath}`);
+    } catch (error) {
+      toast.error('Failed to generate PDF');
+      console.error(error);
+    }
   };
 
   const handleExport = () => {
-    toast.info('Export functionality coming soon');
+    if (entries.length === 0) {
+      toast.error('No day book data to export');
+      return;
+    }
+
+    try {
+      const companyName = companyProfile?.company_name || 'Company';
+      const currencySymbol = companyProfile?.base_currency_symbol || '';
+      const currencyCode = companyProfile?.base_currency || 'INR';
+
+      const rows: any[][] = [];
+
+      // Title & Header info
+      rows.push([`${companyName} - DAY BOOK`]);
+      rows.push([`Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`]);
+      rows.push([`Mode: ${detailed ? 'Detailed' : 'Summary'}`]);
+      rows.push([]);
+
+      // Column Headers
+      rows.push([
+        'Date',
+        'Voucher No',
+        'Type',
+        'Party',
+        'Account',
+        'Narration',
+        `Debit (${currencyCode})`,
+        `Credit (${currencyCode})`,
+      ]);
+
+      // Entry Rows
+      for (const entry of entries) {
+        rows.push([
+          formatDate(entry.voucher_date),
+          entry.voucher_no,
+          getVoucherTypeLabel(entry.voucher_type),
+          entry.party_name || '-',
+          entry.account_name,
+          entry.narration || '-',
+          entry.debit > 0 ? entry.debit : '',
+          entry.credit > 0 ? entry.credit : '',
+        ]);
+      }
+
+      // Totals Row
+      rows.push([
+        'TOTAL', '', '', '', '', '',
+        totalDebit,
+        totalCredit,
+      ]);
+
+      // Create sheet
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      ws['!cols'] = [
+        { wch: 14 }, // Date
+        { wch: 18 }, // Voucher No
+        { wch: 16 }, // Type
+        { wch: 24 }, // Party
+        { wch: 28 }, // Account
+        { wch: 36 }, // Narration
+        { wch: 16 }, // Debit
+        { wch: 16 }, // Credit
+      ];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Day Book');
+
+      const timestamp = new Date().toISOString().split('T')[0];
+      const fileName = `DayBook_${fromDate}_to_${toDate}_${timestamp}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast.success(`Day Book exported as ${fileName}`);
+    } catch (err) {
+      console.error('Export error:', err);
+      toast.error('Failed to export Day Book to Excel');
+    }
   };
 
   const handleVoucherClick = (id: string, type: string) => {

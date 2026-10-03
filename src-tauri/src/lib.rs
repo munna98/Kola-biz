@@ -309,6 +309,8 @@ pub fn run() {
             generate_ledger_pdf,
             generate_balance_sheet_pdf,
             generate_profit_loss_pdf,
+            generate_day_book_pdf,
+            generate_stock_report_pdf,
             get_downloads_path,
             save_invoice_pdf,
             // Employees
