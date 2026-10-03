@@ -790,11 +790,11 @@ pub async fn generate_day_book_pdf(
 
     let mut current_layer = document.get_page(page1).get_layer(layer1);
 
-    let left_margin = 12.0_f64;
-    let top_margin = 280.0_f64;
+    let left_margin = 12.0_f32;
+    let top_margin = 280.0_f32;
     let mut y_pos = top_margin;
-    let line_height = 5.0_f64;
-    let cell_padding = 0.8_f64;
+    let line_height = 5.0_f32;
+    let cell_padding = 0.8_f32;
     let currency_sym = data.currency_symbol.as_deref().unwrap_or("");
 
     // ── Header ──────────────────────────────────────────────────────────────
@@ -814,8 +814,8 @@ pub async fn generate_day_book_pdf(
 
     // ── Table columns: Date | Voucher | Type | Party | Account | Narration | Debit | Credit
     // Total printable width ≈ 186mm (210 - 2×12mm margins)
-    let col_widths = [21.0_f64, 23.0, 16.0, 28.0, 30.0, 35.0, 18.0, 18.0];
-    let mut col_x: Vec<f64> = vec![left_margin];
+    let col_widths = [21.0_f32, 23.0, 16.0, 28.0, 30.0, 35.0, 18.0, 18.0];
+    let mut col_x: Vec<f32> = vec![left_margin];
     for w in &col_widths[..col_widths.len() - 1] {
         col_x.push(col_x.last().unwrap() + w);
     }
@@ -964,11 +964,11 @@ pub async fn generate_stock_report_pdf(
 
     let mut current_layer = document.get_page(page1).get_layer(layer1);
 
-    let left_margin = 12.0_f64;
-    let top_margin = 280.0_f64;
+    let left_margin = 12.0_f32;
+    let top_margin = 280.0_f32;
     let mut y_pos = top_margin;
-    let line_height = 5.0_f64;
-    let cell_padding = 0.8_f64;
+    let line_height = 5.0_f32;
+    let cell_padding = 0.8_f32;
     let currency_sym = data.currency_symbol.as_deref().unwrap_or("");
 
     // ── Header ───────────────────────────────────────────────────────────────
@@ -985,8 +985,8 @@ pub async fn generate_stock_report_pdf(
     // ── Column layout
     // Columns: Code | Product Name | Group | Unit | Stock | Avg Rate | Value | Last Purch | Last Sale
     // Total printable ≈ 186mm
-    let col_widths = [16.0_f64, 40.0, 22.0, 10.0, 18.0, 22.0, 22.0, 18.0, 18.0];
-    let mut col_x: Vec<f64> = vec![left_margin];
+    let col_widths = [16.0_f32, 40.0, 22.0, 10.0, 18.0, 22.0, 22.0, 18.0, 18.0];
+    let mut col_x: Vec<f32> = vec![left_margin];
     for w in &col_widths[..col_widths.len() - 1] {
         col_x.push(col_x.last().unwrap() + w);
     }
