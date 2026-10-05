@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { Switch } from '@/components/ui/switch';
-import { IconScissors, IconCoins, IconPackages } from '@tabler/icons-react';
+import { IconScissors, IconCoins, IconPackages, IconBarcode } from '@tabler/icons-react';
 
 export default function FeaturesSettingsPage() {
     const [customOrdersEnabled, setCustomOrdersEnabled] = useState(false);
     const [multiCurrencyEnabled, setMultiCurrencyEnabled] = useState(false);
     const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
+    const [barcodePrintingEnabled, setBarcodePrintingEnabled] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -15,11 +16,13 @@ export default function FeaturesSettingsPage() {
             invoke<string | null>('get_app_setting', { key: 'custom_orders_enabled' }),
             invoke<string | null>('get_app_setting', { key: 'multi_currency_enabled' }),
             invoke<string | null>('get_app_setting', { key: 'enable_master_products' }),
+            invoke<string | null>('get_app_setting', { key: 'enable_barcode_printing' }),
         ])
-            .then(([customVal, multiVal, masterVal]) => {
+            .then(([customVal, multiVal, masterVal, barcodeVal]) => {
                 setCustomOrdersEnabled(customVal === 'true');
                 setMultiCurrencyEnabled(multiVal === 'true');
                 setMasterProductsEnabled(masterVal === 'true');
+                setBarcodePrintingEnabled(barcodeVal === 'true');
             })
             .catch(() => {})
             .finally(() => setLoading(false));
@@ -67,6 +70,20 @@ export default function FeaturesSettingsPage() {
         }
     };
 
+    const toggleBarcodePrinting = async (enabled: boolean) => {
+        try {
+            await invoke('set_app_setting', { key: 'enable_barcode_printing', value: enabled ? 'true' : 'false' });
+            setBarcodePrintingEnabled(enabled);
+            toast.success(
+                enabled
+                    ? 'Barcode Printing enabled globally. Voucher barcode printing settings will default to enabled.'
+                    : 'Barcode Printing disabled globally.'
+            );
+        } catch (err) {
+            toast.error(String(err));
+        }
+    };
+
     return (
         <div className="p-6 max-w-2xl">
             <h1 className="text-2xl font-semibold mb-1">Feature Settings</h1>
@@ -75,6 +92,35 @@ export default function FeaturesSettingsPage() {
             </p>
 
             <div className="border rounded-lg divide-y bg-card">
+                {/* Barcode Printing */}
+                <div className="flex items-start gap-4 p-4">
+                    <div className="mt-1 p-2 bg-primary/10 rounded-md">
+                        <IconBarcode size={20} className="text-primary" />
+                    </div>
+                    <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="font-medium">Barcode Label Printing</h3>
+                                <p className="text-sm text-muted-foreground mt-0.5">
+                                    Enable barcode label printing for inventory vouchers (Opening Stock, Purchase Invoice).
+                                    When enabled globally, barcode printing in voucher settings will be checked by default.
+                                </p>
+                            </div>
+                            <Switch
+                                checked={barcodePrintingEnabled}
+                                onCheckedChange={toggleBarcodePrinting}
+                                disabled={loading}
+                                className="ml-4 shrink-0"
+                            />
+                        </div>
+                        {barcodePrintingEnabled && (
+                            <p className="text-xs text-green-600 mt-2 font-medium">
+                                ✓ Enabled — Barcode printing active and defaulted in voucher settings
+                            </p>
+                        )}
+                    </div>
+                </div>
+
                 {/* Master Products */}
                 <div className="flex items-start gap-4 p-4">
                     <div className="mt-1 p-2 bg-amber-500/10 rounded-md">

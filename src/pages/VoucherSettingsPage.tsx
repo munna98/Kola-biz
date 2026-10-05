@@ -148,7 +148,11 @@ export default function VoucherSettingsPage() {
     const loadSettings = async (voucherType: string) => {
         setLoading(true);
         try {
-            const savedSettings = await invoke<VoucherSettings | null>('get_voucher_settings', { voucherType });
+            const [savedSettings, globalBarcodeVal] = await Promise.all([
+                invoke<VoucherSettings | null>('get_voucher_settings', { voucherType }),
+                invoke<string | null>('get_app_setting', { key: 'enable_barcode_printing' }).catch(() => null),
+            ]);
+            const isGlobalBarcodeEnabled = globalBarcodeVal === 'true';
 
             let initialColumns: ColumnSettings[] = [];
 
@@ -161,7 +165,7 @@ export default function VoucherSettingsPage() {
                 // Set Auto Print and Payment Modal
                 setAutoPrint(savedSettings.autoPrint || false);
                 setShowPaymentModal(savedSettings.showPaymentModal !== false); // Default true
-                setEnableBarcodePrinting(savedSettings.enableBarcodePrinting || false);
+                setEnableBarcodePrinting(savedSettings.enableBarcodePrinting !== undefined ? savedSettings.enableBarcodePrinting : isGlobalBarcodeEnabled);
                 setSkipToNextRowAfterQty(savedSettings.skipToNextRowAfterQty || false);
                 setSkipToNextRowAfterProduct(savedSettings.skipToNextRowAfterProduct || false);
                 setIncrementQtyOnDuplicate(savedSettings.incrementQtyOnDuplicate || false);
@@ -217,7 +221,7 @@ export default function VoucherSettingsPage() {
             } else {
                 setAutoPrint(voucherType === 'sales_invoice');
                 setShowPaymentModal(true);
-                setEnableBarcodePrinting(false);
+                setEnableBarcodePrinting(isGlobalBarcodeEnabled);
                 setSkipToNextRowAfterQty(false);
                 setSkipToNextRowAfterProduct(false);
                 setIncrementQtyOnDuplicate(false);

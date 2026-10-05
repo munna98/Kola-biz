@@ -75,12 +75,13 @@ export default function OpeningStockPage() {
     useEffect(() => {
         const loadDependencies = async () => {
             try {
-                const [productsData, unitsData, productUnitConversionsData, groupsData, masterSettingVal, settingsData] = await Promise.all([
+                const [productsData, unitsData, productUnitConversionsData, groupsData, masterSettingVal, globalBarcodeVal, settingsData] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
                     invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
                     invoke<ProductGroup[]>('get_product_groups'),
                     invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
+                    invoke<string | null>('get_app_setting', { key: 'enable_barcode_printing' }).catch(() => null),
                     invoke<any>('get_voucher_settings', { voucherType: 'opening_stock' }).catch(() => null),
                 ]);
                 setProducts(productsData);
@@ -88,8 +89,14 @@ export default function OpeningStockPage() {
                 setProductUnitConversions(productUnitConversionsData);
                 setProductGroups(groupsData);
                 setMasterProductsEnabled(masterSettingVal === 'true');
+                const isGlobalBarcodeEnabled = globalBarcodeVal === 'true';
                 if (settingsData) {
-                    setVoucherSettings(settingsData);
+                    setVoucherSettings({
+                        ...settingsData,
+                        enableBarcodePrinting: settingsData.enableBarcodePrinting !== undefined ? settingsData.enableBarcodePrinting : isGlobalBarcodeEnabled
+                    });
+                } else if (isGlobalBarcodeEnabled) {
+                    setVoucherSettings({ columns: [], enableBarcodePrinting: true });
                 }
             } catch (error) {
                 console.error('Failed to load dependencies:', error);

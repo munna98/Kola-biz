@@ -194,6 +194,12 @@
             <span>{{format_currency tax_total}}</span>
         </div>
         {{/if}}
+        {{#if freight_charge}}
+        <div class="totals-row">
+            <span>Freight Charge:</span>
+            <span>{{format_currency freight_charge}}</span>
+        </div>
+        {{/if}}
         <div class="totals-row grand-total">
             <span>Grand Total:</span>
             <span>{{format_currency grand_total}}</span>

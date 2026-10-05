@@ -1041,8 +1041,11 @@ async fn get_purchase_invoice_data(
 
             // Calculate subtotal for template
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
-            let subtotal = invoice.grand_total - invoice.tax_amount + bill_discount;
+            let freight_charge = invoice.freight_charge;
+            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge + bill_discount;
             obj.insert("subtotal".to_string(), json!(round2(subtotal)));
+            obj.insert("freight_charge".to_string(), json!(round2(freight_charge)));
+            obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
             obj.insert("bill_discount".to_string(), json!(round2(bill_discount)));
@@ -1389,8 +1392,11 @@ async fn get_sales_invoice_data(
 
             // Calculate subtotal for template
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
-            let subtotal = invoice.grand_total - invoice.tax_amount + bill_discount;
+            let freight_charge = invoice.freight_charge;
+            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge + bill_discount;
             obj.insert("subtotal".to_string(), json!(round2(subtotal)));
+            obj.insert("freight_charge".to_string(), json!(round2(freight_charge)));
+            obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
             obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
@@ -1782,8 +1788,11 @@ async fn get_sales_quotation_data(
 
             // Calculate subtotal for template
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
-            let subtotal = invoice.grand_total - invoice.tax_amount + bill_discount;
+            let freight_charge = invoice.freight_charge;
+            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge + bill_discount;
             obj.insert("subtotal".to_string(), json!(round2(subtotal)));
+            obj.insert("freight_charge".to_string(), json!(round2(freight_charge)));
+            obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
             obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
@@ -2030,8 +2039,11 @@ async fn get_delivery_note_data(
             obj.insert("has_ship_to".to_string(), json!(has_ship_to));
 
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
-            let subtotal = invoice.grand_total - invoice.tax_amount + bill_discount;
+            let freight_charge = invoice.freight_charge;
+            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge + bill_discount;
             obj.insert("subtotal".to_string(), json!(round2(subtotal)));
+            obj.insert("freight_charge".to_string(), json!(round2(freight_charge)));
+            obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
             obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
@@ -2326,8 +2338,11 @@ async fn get_sales_return_data(
             obj.insert("ship_to".to_string(), party_obj);
 
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
-            let subtotal = invoice.grand_total - invoice.tax_amount + bill_discount;
+            let freight_charge = invoice.freight_charge;
+            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge + bill_discount;
             obj.insert("subtotal".to_string(), json!(round2(subtotal)));
+            obj.insert("freight_charge".to_string(), json!(round2(freight_charge)));
+            obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
             obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));

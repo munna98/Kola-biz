@@ -165,23 +165,30 @@ export default function PurchaseInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, gstSettings, slabsData, servicesData, masterSettingVal] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, gstSettings, slabsData, servicesData, masterSettingVal, globalBarcodeVal] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
           invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable', 'Cash', 'Bank Account'] }),
-          invoke<any>('get_voucher_settings', { voucherType: 'purchase_invoice' }),
+          invoke<any>('get_voucher_settings', { voucherType: 'purchase_invoice' }).catch(() => null),
           invoke<ProductGroup[]>('get_product_groups'),
           api.gst.getSettings().catch(() => null),
           api.gst.getSlabs().catch(() => [] as GstTaxSlab[]),
           invoke<any[]>('get_services').catch(() => []),
           invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
+          invoke<string | null>('get_app_setting', { key: 'enable_barcode_printing' }).catch(() => null),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
         setProductUnitConversions(productUnitConversionsData);
+        const isGlobalBarcodeEnabled = globalBarcodeVal === 'true';
         if (settingsData) {
-          setVoucherSettings(settingsData);
+          setVoucherSettings({
+            ...settingsData,
+            enableBarcodePrinting: settingsData.enableBarcodePrinting !== undefined ? settingsData.enableBarcodePrinting : isGlobalBarcodeEnabled
+          });
+        } else if (isGlobalBarcodeEnabled) {
+          setVoucherSettings({ columns: [], enableBarcodePrinting: true });
         }
         setProductGroups(groupsData);
         setServices(servicesData);
