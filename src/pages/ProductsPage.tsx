@@ -447,6 +447,8 @@ export default function ProductsPage() {
                 {columnSettings.sales_rate && <th className="p-3">Sales</th>}
                 {columnSettings.mrp && <th className="p-3">MRP</th>}
                 {columnSettings.cost && <th className="p-3">Cost</th>}
+                {columnSettings.purchase_deduction && <th className="p-3">Purch. Ded.</th>}
+                {columnSettings.sales_deduction && <th className="p-3">Sales Ded.</th>}
                 {gstEnabled && columnSettings.tax_slab && <th className="p-3">Tax Slab</th>}
                 {columnSettings.vehicle_manufacturer && <th className="p-3">Manufacturer</th>}
                 {columnSettings.vehicle_model && <th className="p-3">Model</th>}
@@ -481,6 +483,8 @@ export default function ProductsPage() {
                       (columnSettings.sales_rate ? 1 : 0) +
                       (columnSettings.mrp ? 1 : 0) +
                       (columnSettings.cost ? 1 : 0) +
+                      (columnSettings.purchase_deduction ? 1 : 0) +
+                      (columnSettings.sales_deduction ? 1 : 0) +
                       (gstEnabled && columnSettings.tax_slab ? 1 : 0) +
                       (columnSettings.vehicle_manufacturer ? 1 : 0) +
                       (columnSettings.vehicle_model ? 1 : 0) +
@@ -541,6 +545,8 @@ export default function ProductsPage() {
                       {columnSettings.sales_rate && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.sales_rate)}</td>}
                       {columnSettings.mrp && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : money(p.mrp)}</td>}
                       {columnSettings.cost && <td className="p-3">{isMaster ? <span className="text-muted-foreground text-xs italic">—</span> : p.cost !== undefined && p.cost !== null ? money(p.cost) : '-'}</td>}
+                      {columnSettings.purchase_deduction && <td className="p-3 font-mono text-sm">{p.purchase_deduction ? p.purchase_deduction : '-'}</td>}
+                      {columnSettings.sales_deduction && <td className="p-3 font-mono text-sm">{p.sales_deduction ? p.sales_deduction : '-'}</td>}
                       {gstEnabled && columnSettings.tax_slab && (
                         <td className="p-3 text-sm">
                           {gstSlabs.find(s => s.id === p.gst_slab_id)?.name || '-'}

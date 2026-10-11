@@ -182,6 +182,8 @@ export interface Product {
   vehicle_owner?: string;
   vehicle_color?: string;
   is_margin_scheme_default: number;
+  purchase_deduction?: number;
+  sales_deduction?: number;
 }
 
 export interface ProductImage {
@@ -249,6 +251,8 @@ export interface CreateProduct {
   vehicle_owner?: string;
   vehicle_color?: string;
   is_margin_scheme_default?: boolean;
+  purchase_deduction?: number;
+  sales_deduction?: number;
 }
 
 // ======= PARTIES =======

@@ -293,29 +293,50 @@ export default function SalesQuotationPage() {
           product.sales_rate || 0
         );
         finalValue = value;
+
+        // Deduction precedence: Product > Voucher default
+        const getVoucherDefaultDeduction = () => {
+          const col = voucherSettings?.columns.find(c => c.id === 'deduction');
+          if (col && col.defaultValue !== undefined && col.defaultValue !== "") {
+            const parsed = typeof col.defaultValue === 'string' ? parseFloat(col.defaultValue) : col.defaultValue;
+            return isNaN(parsed) ? 1.0 : parsed;
+          }
+          return 1.0;
+        };
+
+        const resolvedDeduction = (product.sales_deduction && product.sales_deduction > 0)
+          ? product.sales_deduction
+          : getVoucherDefaultDeduction();
+
+        const currentItem = salesState.items[index];
+        const initialQty = options?.initialQuantity !== undefined ? options.initialQuantity : currentItem.initial_quantity;
+        const currentCount = currentItem.count ?? 1;
+        const grossAmount = (initialQty - currentCount * resolvedDeduction) * rate;
+        let discountAmount = currentItem.discount_amount;
+        if (currentItem.discount_percent > 0) {
+          discountAmount = parseFloat(((grossAmount * currentItem.discount_percent) / 100).toFixed(2));
+        }
+
         const updatedItems = [...salesState.items];
-        updatedItems[index] = {
-          ...updatedItems[index],
-          item_type: 'product',
+        const updatedItemData = {
+          item_type: 'product' as const,
           product_id: value,
           service_id: null,
           product_name: product.name,
           unit_id: defaultUnitId,
           rate,
+          deduction_per_unit: resolvedDeduction,
+          discount_amount: discountAmount,
           ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
+        };
+        updatedItems[index] = {
+          ...updatedItems[index],
+          ...updatedItemData,
         };
         dispatch(
           updateQuotationItem({
             index,
-            data: {
-              item_type: 'product',
-              product_id: value,
-              service_id: null,
-              product_name: product.name,
-              unit_id: defaultUnitId,
-              rate,
-              ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
-            },
+            data: updatedItemData,
           })
         );
         updateTotalsWithItems(updatedItems);

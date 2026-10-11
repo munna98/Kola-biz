@@ -67,9 +67,20 @@ const QuantityInput = React.forwardRef<HTMLInputElement, React.ComponentProps<ty
     }, [value, isFocused]);
 
     const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-        setIsFocused(true);
-        setLocalValue(value !== undefined && value !== null ? String(value) : '');
+        const el = e.currentTarget;
         onFocus?.(e);
+
+        requestAnimationFrame(() => {
+            if (document.activeElement === el) {
+                setIsFocused(true);
+                setLocalValue(value !== undefined && value !== null ? String(value) : '');
+                requestAnimationFrame(() => {
+                    if (document.activeElement === el) {
+                        el.select();
+                    }
+                });
+            }
+        });
     };
 
     const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -226,10 +237,20 @@ const FormattedNumberInput = React.forwardRef<HTMLInputElement, FormattedNumberI
         }, [blurredValue, isFocused]);
 
         const handleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
-            setIsFocused(true);
-            setLocalValue(value || value === 0 ? String(value) : '');
+            const el = e.currentTarget;
             onFocus?.(e);
-            requestAnimationFrame(() => e.currentTarget.select());
+
+            requestAnimationFrame(() => {
+                if (document.activeElement === el) {
+                    setIsFocused(true);
+                    setLocalValue(value || value === 0 ? String(value) : '');
+                    requestAnimationFrame(() => {
+                        if (document.activeElement === el) {
+                            el.select();
+                        }
+                    });
+                }
+            });
         };
 
         const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {

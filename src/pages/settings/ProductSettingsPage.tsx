@@ -36,6 +36,8 @@ export interface ProductTableColumns {
   vehicle_transmission: boolean;
   vehicle_owner: boolean;
   vehicle_color: boolean;
+  purchase_deduction: boolean;
+  sales_deduction: boolean;
 }
 
 export interface ProductDialogFields {
@@ -56,6 +58,8 @@ export interface ProductDialogFields {
   cost: boolean;
   barcode: boolean;
   supplier: boolean;
+  purchase_deduction: boolean;
+  sales_deduction: boolean;
   vehicle_manufacturer: boolean;
   vehicle_model: boolean;
   vehicle_year: boolean;
@@ -84,6 +88,8 @@ export const DEFAULT_TABLE_COLUMNS: ProductTableColumns = {
   cost: true,
   supplier: false,
   tax_slab: true,
+  purchase_deduction: false,
+  sales_deduction: false,
   vehicle_manufacturer: false,
   vehicle_model: false,
   vehicle_year: false,
@@ -112,6 +118,8 @@ export const DEFAULT_DIALOG_FIELDS: ProductDialogFields = {
   cost: true,
   barcode: true,
   supplier: false,
+  purchase_deduction: true,
+  sales_deduction: true,
   vehicle_manufacturer: false,
   vehicle_model: false,
   vehicle_year: false,
@@ -158,6 +166,8 @@ const TABLE_COLUMN_DEFS: { key: keyof ProductTableColumns; label: string; descri
   { key: 'cost', label: 'Cost', description: 'Product cost price column' },
   { key: 'supplier', label: 'Supplier', description: 'Assigned product supplier column' },
   { key: 'tax_slab', label: 'Tax Slab', description: 'GST tax slab (shown only if GST is enabled)' },
+  { key: 'purchase_deduction', label: 'Purchase Deduction', description: 'Default deduction per count on purchases' },
+  { key: 'sales_deduction', label: 'Sales Deduction', description: 'Default deduction per count on sales' },
   { key: 'vehicle_manufacturer', label: 'Vehicle Manufacturer', description: 'Vehicle manufacturer column' },
   { key: 'vehicle_model', label: 'Vehicle Model', description: 'Vehicle model column' },
   { key: 'vehicle_year', label: 'Vehicle Year', description: 'Vehicle manufacture year column' },
@@ -185,6 +195,8 @@ const DIALOG_FIELD_DEFS: { key: keyof ProductDialogFields; label: string; descri
   { key: 'cost', label: 'Cost', description: 'Product cost price field' },
   { key: 'barcode', label: 'Barcode', description: 'Barcode / scan field' },
   { key: 'supplier', label: 'Supplier', description: 'Assigned supplier selector' },
+  { key: 'purchase_deduction', label: 'Purchase Deduction', description: 'Default deduction per count on purchase vouchers' },
+  { key: 'sales_deduction', label: 'Sales Deduction', description: 'Default deduction per count on sales vouchers' },
   { key: 'vehicle_manufacturer', label: 'Vehicle Manufacturer', description: 'Vehicle manufacturer selection field' },
   { key: 'vehicle_model', label: 'Vehicle Model', description: 'Vehicle model input field' },
   { key: 'vehicle_year', label: 'Vehicle Year', description: 'Vehicle manufacture year input field' },

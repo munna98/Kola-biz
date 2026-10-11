@@ -225,39 +225,63 @@ export default function PurchaseReturnPage() {
         let finalValue = value;
 
         if (field === 'product_id') {
-            const product = products.find((p) => p.id === value);
+            const product = products.find((p) => String(p.id) === String(value));
             if (product) {
+                const productId = String(product.id);
                 const defaultUnitId = getDefaultProductUnitId(
-                    productUnitsByProduct[value],
+                    productUnitsByProduct[productId],
                     'purchase',
                     product.unit_id
                 );
                 const rate = getProductUnitRate(
-                    productUnitsByProduct[value],
+                    productUnitsByProduct[productId],
                     defaultUnitId,
                     'purchase',
                     product.purchase_rate || 0
                 );
                 finalValue = value;
+
+                // Deduction precedence: Product > Voucher default
+                const getVoucherDefaultDeduction = () => {
+                    const col = voucherSettings?.columns.find(c => c.id === 'deduction');
+                    if (col && col.defaultValue !== undefined && col.defaultValue !== "") {
+                        const parsed = typeof col.defaultValue === 'string' ? parseFloat(col.defaultValue) : col.defaultValue;
+                        return isNaN(parsed) ? 1.5 : parsed;
+                    }
+                    return 1.5;
+                };
+
+                const resolvedDeduction = (product.purchase_deduction && product.purchase_deduction > 0)
+                    ? product.purchase_deduction
+                    : getVoucherDefaultDeduction();
+
+                const currentItem = purchaseReturnState.items[index];
+                const initialQty = options?.initialQuantity !== undefined ? options.initialQuantity : currentItem.initial_quantity;
+                const currentCount = currentItem.count ?? 1;
+                const grossAmount = (initialQty - currentCount * resolvedDeduction) * rate;
+                let discountAmount = currentItem.discount_amount;
+                if (currentItem.discount_percent > 0) {
+                    discountAmount = parseFloat(((grossAmount * currentItem.discount_percent) / 100).toFixed(2));
+                }
+
                 const updatedItems = [...purchaseReturnState.items];
-                updatedItems[index] = {
-                    ...updatedItems[index],
+                const updatedItemData = {
                     product_id: value,
                     product_name: product.name,
                     unit_id: defaultUnitId,
                     rate,
+                    deduction_per_unit: resolvedDeduction,
+                    discount_amount: discountAmount,
                     ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
+                };
+                updatedItems[index] = {
+                    ...updatedItems[index],
+                    ...updatedItemData,
                 };
                 dispatch(
                     updatePurchaseReturnItem({
                         index,
-                        data: {
-                            product_id: value,
-                            product_name: product.name,
-                            unit_id: defaultUnitId,
-                            rate,
-                            ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
-                        },
+                        data: updatedItemData,
                     })
                 );
                 updateTotalsWithItems(updatedItems);

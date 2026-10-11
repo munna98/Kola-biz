@@ -857,6 +857,8 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             vehicle_year INTEGER,
             cost REAL,
             is_margin_scheme_default INTEGER DEFAULT 0,
+            purchase_deduction REAL DEFAULT 0,
+            sales_deduction REAL DEFAULT 0,
             is_active INTEGER DEFAULT 1,
             deleted_at DATETIME,
             deleted_by TEXT,
@@ -868,6 +870,14 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     )
     .execute(pool)
     .await?;
+
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN purchase_deduction REAL DEFAULT 0")
+        .execute(pool)
+        .await;
+
+    let _ = sqlx::query("ALTER TABLE products ADD COLUMN sales_deduction REAL DEFAULT 0")
+        .execute(pool)
+        .await;
 
     let _ = sqlx::query("ALTER TABLE products ADD COLUMN barcode TEXT")
         .execute(pool)

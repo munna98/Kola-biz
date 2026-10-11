@@ -176,6 +176,8 @@ export default function ProductDialog({
     vehicle_transmission: undefined,
     vehicle_owner: undefined,
     vehicle_color: undefined,
+    purchase_deduction: 0,
+    sales_deduction: 0,
   });
   const [isMaster, setIsMaster] = useState(false);
   const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
@@ -242,7 +244,7 @@ export default function ProductDialog({
   const orderedFields = [
     'code', 'name', 'group', 'brand', 'color', 'supplier', 'unit', 'part_number',
     'serial_number', 'imei', 'warranty', 'battery_health', 'hsn', 'gst_slab',
-    'purchase', 'sales', 'mrp', 'cost', 'barcode',
+    'purchase', 'sales', 'mrp', 'cost', 'barcode', 'purchase_deduction', 'sales_deduction',
     'vehicle_manufacturer', 'vehicle_model', 'vehicle_year', 'vehicle_fuel_type',
     'vehicle_transmission', 'vehicle_owner', 'vehicle_odometer', 'vehicle_color'
   ];
@@ -354,6 +356,8 @@ export default function ProductDialog({
           vehicle_transmission: product.vehicle_transmission,
           vehicle_owner: product.vehicle_owner,
           vehicle_color: product.vehicle_color,
+          purchase_deduction: product.purchase_deduction ?? 0,
+          sales_deduction: product.sales_deduction ?? 0,
         });
 
         try {
@@ -412,6 +416,8 @@ export default function ProductDialog({
           vehicle_transmission: undefined,
           vehicle_owner: undefined,
           vehicle_color: undefined,
+          purchase_deduction: 0,
+          sales_deduction: 0,
         });
         setConversionRows(initialUnitId ? [createBaseRow(initialUnitId, initialPurchaseRate, initialSalesRate)] : []);
       }
@@ -471,6 +477,8 @@ export default function ProductDialog({
       vehicle_transmission: undefined,
       vehicle_owner: undefined,
       vehicle_color: undefined,
+      purchase_deduction: 0,
+      sales_deduction: 0,
     });
     setConversionRows(unitId ? [createBaseRow(unitId)] : []);
     setShowUnitSection(false);
@@ -1094,6 +1102,41 @@ export default function ProductDialog({
                     onKeyDown={(e) => handleKeyDown(e, 'barcode')}
                     placeholder="Scan / Enter"
                     className="h-8 text-sm"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {(dialogFields.purchase_deduction || dialogFields.sales_deduction) && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {dialogFields.purchase_deduction && (
+                <div>
+                  <Label className="text-xs font-medium mb-1 block">Purchase Deduction</Label>
+                  <Input
+                    ref={register('purchase_deduction') as any}
+                    type="number"
+                    step="0.001"
+                    value={formatNumber(form.purchase_deduction)}
+                    onChange={e => setForm({ ...form, purchase_deduction: parseNumber(e.target.value) })}
+                    onKeyDown={(e) => handleKeyDown(e, 'purchase_deduction')}
+                    placeholder="0.00"
+                    className="h-8 text-sm text-right font-mono"
+                  />
+                </div>
+              )}
+              {dialogFields.sales_deduction && (
+                <div>
+                  <Label className="text-xs font-medium mb-1 block">Sales Deduction</Label>
+                  <Input
+                    ref={register('sales_deduction') as any}
+                    type="number"
+                    step="0.001"
+                    value={formatNumber(form.sales_deduction)}
+                    onChange={e => setForm({ ...form, sales_deduction: parseNumber(e.target.value) })}
+                    onKeyDown={(e) => handleKeyDown(e, 'sales_deduction')}
+                    placeholder="0.00"
+                    className="h-8 text-sm text-right font-mono"
                   />
                 </div>
               )}

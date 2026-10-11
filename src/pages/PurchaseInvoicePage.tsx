@@ -488,33 +488,52 @@ export default function PurchaseInvoicePage() {
         const salesRate = isMasterProduct ? undefined : product.sales_rate;
         const mrp = isMasterProduct ? undefined : product.mrp;
         finalValue = value;
+
+        // Deduction precedence: Product > Voucher default
+        const getVoucherDefaultDeduction = () => {
+          const col = voucherSettings?.columns.find(c => c.id === 'deduction');
+          if (col && col.defaultValue != null && col.defaultValue !== '') {
+            const parsed = typeof col.defaultValue === 'string' ? parseFloat(col.defaultValue) : col.defaultValue;
+            return isNaN(parsed) ? 1.5 : parsed;
+          }
+          return 1.5;
+        };
+
+        const resolvedDeduction = (product.purchase_deduction && product.purchase_deduction > 0)
+          ? product.purchase_deduction
+          : getVoucherDefaultDeduction();
+
+        const currentItem = purchaseState.items[index];
+        const initialQty = options?.initialQuantity !== undefined ? options.initialQuantity : currentItem.initial_quantity;
+        const currentCount = currentItem.count ?? 1;
+        const grossAmount = (initialQty - currentCount * resolvedDeduction) * rate;
+        let discountAmount = currentItem.discount_amount;
+        if (currentItem.discount_percent > 0) {
+          discountAmount = parseFloat(((grossAmount * currentItem.discount_percent) / 100).toFixed(2));
+        }
+
         const updatedItems = [...purchaseState.items];
-        updatedItems[index] = {
-          ...updatedItems[index],
-          item_type: 'product',
+        const updatedItemData = {
+          item_type: 'product' as const,
           product_id: value,
           service_id: null,
           product_name: product.name,
           unit_id: defaultUnitId,
           rate,
+          deduction_per_unit: resolvedDeduction,
+          discount_amount: discountAmount,
           sales_rate: salesRate,
           mrp,
           ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
         };
+        updatedItems[index] = {
+          ...updatedItems[index],
+          ...updatedItemData,
+        };
         dispatch(
           updateItem({
             index,
-            data: {
-              item_type: 'product',
-              product_id: value,
-              service_id: null,
-              product_name: product.name,
-              unit_id: defaultUnitId,
-              rate,
-              sales_rate: salesRate,
-              mrp,
-              ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
-            },
+            data: updatedItemData,
           })
         );
         updateTotalsWithItems(updatedItems);
