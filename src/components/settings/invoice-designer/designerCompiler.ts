@@ -349,6 +349,12 @@ function renderThermalTotals(el: DesignerElement): string {
                 valueHtml = `{{#if has_discount}}{{format_currency bill_discount}}{{/if}}`;
                 html += `{{#if has_discount}}<div style="display:flex;justify-content:space-between;padding:1px 0;color:#000;${fontFamily}${fontWeight}${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
                 continue;
+            } else if (row.field === 'total_discount' || row.field === 'total_item_discount') {
+                // Combined discount field — guard on has_any_discount
+                const discField = row.field === 'total_discount' ? 'total_discount' : 'total_item_discount';
+                valueHtml = `{{#if has_any_discount}}{{format_currency ${discField}}}{{/if}}`;
+                html += `{{#if has_any_discount}}<div style="display:flex;justify-content:space-between;padding:1px 0;color:#000;${fontFamily}${fontWeight}${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
+                continue;
             } else if (row.field === 'tax_total') {
                 valueHtml = `{{#if tax_total}}{{format_currency tax_total}}{{/if}}`;
                 html += `{{#if tax_total}}<div style="display:flex;justify-content:space-between;padding:1px 0;color:#000;${fontFamily}${fontWeight}${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
@@ -555,8 +561,13 @@ function renderA4TotalsElement(el: DesignerElement): string {
         const isBillDiscount = row.field === 'bill_discount'
             || row.field === 'invoice_discount_amount'
             || row.field === 'discount_amount';
-        const resolvedField = isBillDiscount ? 'bill_discount' : row.field;
-        const guardField = isBillDiscount ? 'has_discount' : (row.field === 'tax_total' ? 'tax_total' : (row.field === 'freight_charge' ? 'freight_charge' : null));
+        const isCombinedDiscount = row.field === 'total_discount' || row.field === 'total_item_discount';
+        const resolvedField = isBillDiscount ? 'bill_discount'
+            : isCombinedDiscount ? row.field
+            : row.field;
+        const guardField = isBillDiscount ? 'has_discount'
+            : isCombinedDiscount ? 'has_any_discount'
+            : (row.field === 'tax_total' ? 'tax_total' : (row.field === 'freight_charge' ? 'freight_charge' : null));
 
         let valueHtml: string;
         if (row.format === 'currency') {

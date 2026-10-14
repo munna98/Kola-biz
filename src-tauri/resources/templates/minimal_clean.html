@@ -124,13 +124,13 @@
     <div class="totals-rows">
         <div class="total-row">
             <span class="total-label">subtotal:</span>
-            <span class="total-value">{{format_currency subtotal}}</span>
+            <span class="total-value">{{format_currency subtotal_gross}}</span>
         </div>
 
-        {{#if has_discount}}
+        {{#if has_any_discount}}
         <div class="total-row">
-            <span class="total-label">discount:</span>
-            <span class="total-value">{{format_currency bill_discount}}</span>
+            <span class="total-label">total discount:</span>
+            <span class="total-value discount">{{format_currency total_discount}}</span>
         </div>
         {{/if}}
 
@@ -141,8 +141,15 @@
         </div>
         {{/if}}
 
+        {{#if freight_charge}}
+        <div class="total-row">
+            <span class="total-label">freight:</span>
+            <span class="total-value">{{format_currency freight_charge}}</span>
+        </div>
+        {{/if}}
+
         <div class="total-row grand-total">
-            <span class="total-label">Grand Total</span>
+            <span class="total-label">GRAND TOTAL</span>
             <span class="total-value">{{format_currency grand_total}}</span>
         </div>
         {{#if has_returns}}

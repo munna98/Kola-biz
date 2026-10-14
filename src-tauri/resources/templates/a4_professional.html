@@ -180,12 +180,12 @@
     <div class="totals-box">
         <div class="totals-row">
             <span>Subtotal:</span>
-            <span>{{format_currency subtotal}}</span>
+            <span>{{format_currency subtotal_gross}}</span>
         </div>
-        {{#if has_discount}}
+        {{#if has_any_discount}}
         <div class="totals-row">
-            <span>Discount {{#if discount_rate}}({{discount_rate}}%){{/if}}:</span>
-            <span class="discount">{{format_currency bill_discount}}</span>
+            <span>Total Discount:</span>
+            <span class="discount">{{format_currency total_discount}}</span>
         </div>
         {{/if}}
         {{#if tax_total}}
