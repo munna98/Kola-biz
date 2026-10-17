@@ -1222,6 +1222,19 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await?;
 
+    // Routes
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS routes (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL UNIQUE,
+            description TEXT,
+            is_active   INTEGER DEFAULT 1,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )",
+    )
+    .execute(pool)
+    .await?;
+
     // Opening Balances
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS opening_balances (
@@ -2456,6 +2469,12 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     // Migrate existing custom order final invoices from 'sales_invoice' to 'co_invoice'
     // and update their voucher_no to match order_no
     let _ = migrate_co_invoices(pool).await;
+
+    // Migration: Add route_id to customers
+    let _ = sqlx::query("ALTER TABLE customers ADD COLUMN route_id TEXT REFERENCES routes(id)").execute(pool).await;
+
+    // Migration: Add route_id to suppliers
+    let _ = sqlx::query("ALTER TABLE suppliers ADD COLUMN route_id TEXT REFERENCES routes(id)").execute(pool).await;
 
     Ok(())
 }

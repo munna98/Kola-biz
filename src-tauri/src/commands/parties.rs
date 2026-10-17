@@ -60,6 +60,7 @@ pub struct Customer {
     pub is_active: i64,
     pub deleted_at: Option<String>,
     pub created_at: String,
+    pub route_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -77,13 +78,14 @@ pub struct CreateCustomer {
     pub country: Option<String>,
     pub gstin: Option<String>,
     pub currency: Option<String>,
+    pub route_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn get_customers(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Customer>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Customer>(
-        "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at FROM customers WHERE deleted_at IS NULL ORDER BY name ASC",
+        "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at, route_id FROM customers WHERE deleted_at IS NULL ORDER BY name ASC",
     )
     .fetch_all(&pool)
     .await
@@ -96,7 +98,7 @@ pub async fn get_customer(
     id: String,
 ) -> Result<Customer, String> {
     let pool = registry.active_pool().await?;
-    sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at FROM customers WHERE id = ?")
+    sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at, route_id FROM customers WHERE id = ?")
         .bind(id)
         .fetch_one(&pool)
         .await
@@ -134,7 +136,7 @@ pub async fn create_customer(
     };
 
     let _ = sqlx::query(
-        "INSERT INTO customers (id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO customers (id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, route_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&code)
@@ -150,6 +152,7 @@ pub async fn create_customer(
     .bind(&customer.country)
     .bind(&customer.gstin)
     .bind(&customer.currency)
+    .bind(&customer.route_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -176,7 +179,7 @@ pub async fn create_customer(
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
-    sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at FROM customers WHERE id = ?")
+    sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at, route_id FROM customers WHERE id = ?")
         .bind(id)
         .fetch_one(&pool)
         .await
@@ -213,7 +216,7 @@ pub async fn batch_create_customers(
         };
 
         let _ = sqlx::query(
-            "INSERT INTO customers (id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO customers (id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, route_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(&code)
@@ -229,6 +232,7 @@ pub async fn batch_create_customers(
         .bind(&customer.country)
         .bind(&customer.gstin)
         .bind(&customer.currency)
+        .bind(&customer.route_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -267,7 +271,7 @@ pub async fn update_customer(
 ) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     sqlx::query(
-        "UPDATE customers SET name = ?, email = ?, phone = ?, address_line_1 = ?, address_line_2 = ?, address_line_3 = ?, city = ?, state = ?, postal_code = ?, country = ?, gstin = ?, currency = ? WHERE id = ?"
+        "UPDATE customers SET name = ?, email = ?, phone = ?, address_line_1 = ?, address_line_2 = ?, address_line_3 = ?, city = ?, state = ?, postal_code = ?, country = ?, gstin = ?, currency = ?, route_id = ? WHERE id = ?"
     )
     .bind(&customer.name)
     .bind(&customer.email)
@@ -281,6 +285,7 @@ pub async fn update_customer(
     .bind(&customer.country)
     .bind(&customer.gstin)
     .bind(&customer.currency)
+    .bind(&customer.route_id)
     .bind(&id)
     .execute(&pool)
     .await
@@ -361,7 +366,7 @@ pub async fn get_deleted_customers(
 ) -> Result<Vec<Customer>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Customer>(
-        "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at FROM customers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+        "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at, route_id FROM customers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
     )
     .fetch_all(&pool)
     .await
@@ -462,6 +467,7 @@ pub struct Supplier {
     pub is_active: i64,
     pub deleted_at: Option<String>,
     pub created_at: String,
+    pub route_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -479,13 +485,14 @@ pub struct CreateSupplier {
     pub country: Option<String>,
     pub gstin: Option<String>,
     pub currency: Option<String>,
+    pub route_id: Option<String>,
 }
 
 #[tauri::command]
 pub async fn get_suppliers(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Supplier>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Supplier>(
-        "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at FROM suppliers WHERE deleted_at IS NULL ORDER BY name ASC",
+        "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at, route_id FROM suppliers WHERE deleted_at IS NULL ORDER BY name ASC",
     )
     .fetch_all(&pool)
     .await
@@ -506,7 +513,7 @@ pub(crate) async fn get_supplier_with_pool(
     pool: &SqlitePool,
     id: &str,
 ) -> Result<Supplier, String> {
-    sqlx::query_as::<_, Supplier>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at FROM suppliers WHERE id = ?")
+    sqlx::query_as::<_, Supplier>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at, route_id FROM suppliers WHERE id = ?")
         .bind(id)
         .fetch_one(pool)
         .await
@@ -518,7 +525,7 @@ pub(crate) async fn get_customer_with_pool(
     pool: &SqlitePool,
     id: &str,
 ) -> Result<Customer, String> {
-    sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at FROM customers WHERE id = ?")
+    sqlx::query_as::<_, Customer>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at, route_id FROM customers WHERE id = ?")
         .bind(id)
         .fetch_one(pool)
         .await
@@ -556,7 +563,7 @@ pub async fn create_supplier(
     };
 
     let _ = sqlx::query(
-        "INSERT INTO suppliers (id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO suppliers (id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, route_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(&id)
     .bind(&code)
@@ -572,6 +579,7 @@ pub async fn create_supplier(
     .bind(&supplier.country)
     .bind(&supplier.gstin)
     .bind(&supplier.currency)
+    .bind(&supplier.route_id)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -598,7 +606,7 @@ pub async fn create_supplier(
 
     tx.commit().await.map_err(|e| e.to_string())?;
 
-    sqlx::query_as::<_, Supplier>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at FROM suppliers WHERE id = ?")
+    sqlx::query_as::<_, Supplier>("SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at, route_id FROM suppliers WHERE id = ?")
         .bind(id)
         .fetch_one(&pool)
         .await
@@ -635,7 +643,7 @@ pub async fn batch_create_suppliers(
         };
 
         let _ = sqlx::query(
-            "INSERT INTO suppliers (id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO suppliers (id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, route_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(&code)
@@ -651,6 +659,7 @@ pub async fn batch_create_suppliers(
         .bind(&supplier.country)
         .bind(&supplier.gstin)
         .bind(&supplier.currency)
+        .bind(&supplier.route_id)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -689,7 +698,7 @@ pub async fn update_supplier(
 ) -> Result<(), String> {
     let pool = registry.active_pool().await?;
     sqlx::query(
-        "UPDATE suppliers SET name = ?, email = ?, phone = ?, address_line_1 = ?, address_line_2 = ?, address_line_3 = ?, city = ?, state = ?, postal_code = ?, country = ?, gstin = ?, currency = ? WHERE id = ?"
+        "UPDATE suppliers SET name = ?, email = ?, phone = ?, address_line_1 = ?, address_line_2 = ?, address_line_3 = ?, city = ?, state = ?, postal_code = ?, country = ?, gstin = ?, currency = ?, route_id = ? WHERE id = ?"
     )
     .bind(&supplier.name)
     .bind(&supplier.email)
@@ -703,6 +712,7 @@ pub async fn update_supplier(
     .bind(&supplier.country)
     .bind(&supplier.gstin)
     .bind(&supplier.currency)
+    .bind(&supplier.route_id)
     .bind(&id)
     .execute(&pool)
     .await
@@ -783,7 +793,7 @@ pub async fn get_deleted_suppliers(
 ) -> Result<Vec<Supplier>, String> {
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Supplier>(
-        "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at FROM suppliers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+        "SELECT id, code, name, email, phone, address_line_1, address_line_2, address_line_3, city, state, postal_code, country, gstin, currency, is_active, deleted_at, created_at, route_id FROM suppliers WHERE deleted_at IS NOT NULL ORDER BY deleted_at DESC",
     )
     .fetch_all(&pool)
     .await

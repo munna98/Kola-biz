@@ -3,10 +3,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconArrowLeft, IconFileUpload } from '@tabler/icons-react';
-import { api, Supplier } from '@/lib/tauri';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconArrowLeft, IconFileUpload, IconMap2 } from '@tabler/icons-react';
+import { api, Supplier, Route } from '@/lib/tauri';
 import { toast } from 'sonner';
 import SupplierDialog from '@/components/dialogs/SupplierDialog';
+import RoutesDialog from '@/components/dialogs/RoutesDialog';
 import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
 import { usePermissions } from '@/lib/permissions';
 
@@ -17,11 +19,19 @@ export default function SuppliersPage() {
   const [supplierToEdit, setSupplierToEdit] = useState<Supplier | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [selectedRouteId, setSelectedRouteId] = useState('');
+  const [routesOpen, setRoutesOpen] = useState(false);
   const { can } = usePermissions();
 
   const load = async () => {
     try {
-      setSuppliers(showDeleted ? await api.suppliers.listDeleted() : await api.suppliers.list());
+      const [supplierData, routeData] = await Promise.all([
+        showDeleted ? api.suppliers.listDeleted() : api.suppliers.list(),
+        api.routes.list(),
+      ]);
+      setSuppliers(supplierData);
+      setRoutes(routeData);
     } catch (error) {
       toast.error('Failed to load suppliers');
       console.error(error);
@@ -88,6 +98,19 @@ export default function SuppliersPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-64"
           />
+          {routes.length > 0 && (
+            <Select value={selectedRouteId || 'all'} onValueChange={v => setSelectedRouteId(v === 'all' ? '' : v)}>
+              <SelectTrigger className="w-40 h-9 text-sm">
+                <SelectValue placeholder="All Routes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Routes</SelectItem>
+                {routes.map(r => (
+                  <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -110,6 +133,14 @@ export default function SuppliersPage() {
             </Tooltip>
             {!showDeleted && (
               <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => setRoutesOpen(true)}>
+                      <IconMap2 size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Manage Routes</TooltipContent>
+                </Tooltip>
                 {can('suppliers', 'create') && (
                   <>
                     <Tooltip>
@@ -141,21 +172,23 @@ export default function SuppliersPage() {
                 <th className="p-3">Email</th>
                 <th className="p-3">Phone</th>
                 <th className="p-3">Address</th>
+                <th className="p-3">Route</th>
                 <th className="p-3">Actions</th>
               </tr>
             </thead>
             <tbody>
               {(() => {
                 const filteredSuppliers = suppliers.filter(s =>
-                  s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   (s.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  (s.phone || '').includes(searchTerm)
+                  (s.phone || '').includes(searchTerm)) &&
+                  (!selectedRouteId || s.route_id === selectedRouteId)
                 );
 
                 if (filteredSuppliers.length === 0) {
                   return (
                     <tr>
-                      <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                      <td colSpan={7} className="p-6 text-center text-muted-foreground">
                         {searchTerm ? 'No suppliers match your search.' : 'No suppliers found. Add your first supplier to get started.'}
                       </td>
                     </tr>
@@ -169,6 +202,7 @@ export default function SuppliersPage() {
                     <td className="p-3 text-sm text-muted-foreground">{s.email || '-'}</td>
                     <td className="p-3 text-sm">{s.phone || '-'}</td>
                     <td className="p-3 text-sm">{s.address_line_1 || '-'}</td>
+                    <td className="p-3 text-sm">{routes.find(r => r.id === s.route_id)?.name || '-'}</td>
                     <td className="p-3 flex gap-2">
                       {!showDeleted ? (
                         <>
@@ -191,7 +225,7 @@ export default function SuppliersPage() {
                       )}
                     </td>
                   </tr>
-                ))
+                ));
               })()}
             </tbody>
           </table>
@@ -241,6 +275,12 @@ export default function SuppliersPage() {
           await api.suppliers.batchCreate(formatted);
           load();
         }}
+      />
+
+      <RoutesDialog
+        open={routesOpen}
+        onOpenChange={setRoutesOpen}
+        onRoutesChange={load}
       />
     </div>
   );

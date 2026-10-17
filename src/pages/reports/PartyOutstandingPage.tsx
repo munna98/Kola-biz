@@ -5,7 +5,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { IconDownload, IconPrinter, IconRefresh, IconUserDown, IconUserUp } from '@tabler/icons-react';
+import { api, Customer, Supplier, Route } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
@@ -33,6 +35,10 @@ interface InvoiceDetail {
 export default function PartyOutstandingPage() {
   const [customers, setCustomers] = useState<PartyOutstanding[]>([]);
   const [suppliers, setSuppliers] = useState<PartyOutstanding[]>([]);
+  const [allCustomers, setAllCustomers] = useState<Customer[]>([]);
+  const [allSuppliers, setAllSuppliers] = useState<Supplier[]>([]);
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [selectedRouteId, setSelectedRouteId] = useState('');
   const [loading, setLoading] = useState(false);
   const [asOnDate, setAsOnDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedParty, setSelectedParty] = useState<{ id: number; name: string; type: 'customer' | 'supplier' } | null>(null);
@@ -82,6 +88,9 @@ export default function PartyOutstandingPage() {
 
   useEffect(() => {
     loadReport();
+    api.routes.list().then(setRoutes).catch(console.error);
+    api.customers.list().then(setAllCustomers).catch(console.error);
+    api.suppliers.list().then(setAllSuppliers).catch(console.error);
   }, []);
 
   const handlePartyClick = (party: PartyOutstanding, type: 'customer' | 'supplier') => {
@@ -97,8 +106,22 @@ export default function PartyOutstandingPage() {
     toast.info('Export functionality coming soon');
   };
 
-  const totalReceivables = customers.reduce((sum, c) => sum + c.outstanding_amount, 0);
-  const totalPayables = suppliers.reduce((sum, s) => sum + s.outstanding_amount, 0);
+  const filteredCustomers = selectedRouteId
+    ? customers.filter(c => {
+        const party = allCustomers.find(ac => ac.name.toUpperCase() === c.party_name.toUpperCase());
+        return party?.route_id === selectedRouteId;
+      })
+    : customers;
+
+  const filteredSuppliers = selectedRouteId
+    ? suppliers.filter(s => {
+        const party = allSuppliers.find(as => as.name.toUpperCase() === s.party_name.toUpperCase());
+        return party?.route_id === selectedRouteId;
+      })
+    : suppliers;
+
+  const totalReceivables = filteredCustomers.reduce((sum, c) => sum + c.outstanding_amount, 0);
+  const totalPayables = filteredSuppliers.reduce((sum, s) => sum + s.outstanding_amount, 0);
 
   const PartyTable = ({ data, type }: { data: PartyOutstanding[]; type: 'customer' | 'supplier' }) => (
     <table className="w-full">
@@ -210,6 +233,22 @@ export default function PartyOutstandingPage() {
               className="h-9"
             />
           </div>
+          {routes.length > 0 && (
+            <div>
+              <Label className="text-xs mb-1 block">Route</Label>
+              <Select value={selectedRouteId || 'all'} onValueChange={v => setSelectedRouteId(v === 'all' ? '' : v)}>
+                <SelectTrigger className="h-9 w-44">
+                  <SelectValue placeholder="All Routes" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Routes</SelectItem>
+                  {routes.map(r => (
+                    <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <Button onClick={loadReport} size="sm">
             Generate Report
           </Button>
@@ -240,7 +279,7 @@ export default function PartyOutstandingPage() {
                     <p className="text-2xl font-bold font-mono">
                       {money(totalReceivables)}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">{customers.length} parties</p>
+                    <p className="text-xs text-muted-foreground mt-1">{filteredCustomers.length} parties</p>
                   </div>
                 </div>
               </CardContent>
@@ -257,7 +296,7 @@ export default function PartyOutstandingPage() {
                     <p className="text-2xl font-bold font-mono">
                       {money(totalPayables)}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1">{suppliers.length} parties</p>
+                    <p className="text-xs text-muted-foreground mt-1">{filteredSuppliers.length} parties</p>
                   </div>
                 </div>
               </CardContent>
@@ -273,18 +312,18 @@ export default function PartyOutstandingPage() {
               <TabsList className="grid w-full grid-cols-2">
                 <TabsTrigger value="customers" className="gap-2">
                   <IconUserDown size={16} />
-                  Customers ({customers.length})
+                  Customers ({filteredCustomers.length})
                 </TabsTrigger>
                 <TabsTrigger value="suppliers" className="gap-2">
                   <IconUserUp size={16} />
-                  Suppliers ({suppliers.length})
+                  Suppliers ({filteredSuppliers.length})
                 </TabsTrigger>
               </TabsList>
 
               <TabsContent value="customers">
                 <Card>
                   <CardContent className="p-0">
-                    <PartyTable data={customers} type="customer" />
+                    <PartyTable data={filteredCustomers} type="customer" />
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -292,7 +331,7 @@ export default function PartyOutstandingPage() {
               <TabsContent value="suppliers">
                 <Card>
                   <CardContent className="p-0">
-                    <PartyTable data={suppliers} type="supplier" />
+                    <PartyTable data={filteredSuppliers} type="supplier" />
                   </CardContent>
                 </Card>
               </TabsContent>

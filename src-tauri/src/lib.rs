@@ -139,6 +139,11 @@ pub fn run() {
             restore_supplier,
             hard_delete_supplier,
             get_next_supplier_code,
+            // Routes
+            list_routes,
+            create_route,
+            update_route,
+            delete_route,
             // Chart of Accounts
             get_chart_of_accounts,
             get_next_account_code,

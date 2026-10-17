@@ -3,10 +3,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconArrowLeft, IconFileUpload } from '@tabler/icons-react';
-import { api, Customer } from '@/lib/tauri';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { IconPlus, IconEdit, IconTrash, IconRefresh, IconTrashFilled, IconRecycle, IconArrowLeft, IconFileUpload, IconMap2 } from '@tabler/icons-react';
+import { api, Customer, Route } from '@/lib/tauri';
 import { toast } from 'sonner';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
+import RoutesDialog from '@/components/dialogs/RoutesDialog';
 import ImportExcelDialog from '@/components/dialogs/ImportExcelDialog';
 import { usePermissions } from '@/lib/permissions';
 
@@ -17,11 +19,19 @@ export default function CustomersPage() {
   const [customerToEdit, setCustomerToEdit] = useState<Customer | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [routes, setRoutes] = useState<Route[]>([]);
+  const [selectedRouteId, setSelectedRouteId] = useState('');
+  const [routesOpen, setRoutesOpen] = useState(false);
   const { can } = usePermissions();
 
   const load = async () => {
     try {
-      setCustomers(showDeleted ? await api.customers.listDeleted() : await api.customers.list());
+      const [customerData, routeData] = await Promise.all([
+        showDeleted ? api.customers.listDeleted() : api.customers.list(),
+        api.routes.list(),
+      ]);
+      setCustomers(customerData);
+      setRoutes(routeData);
     } catch (error) {
       toast.error('Failed to load customers');
       console.error(error);
@@ -88,6 +98,19 @@ export default function CustomersPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-64"
           />
+          {routes.length > 0 && (
+            <Select value={selectedRouteId || 'all'} onValueChange={v => setSelectedRouteId(v === 'all' ? '' : v)}>
+              <SelectTrigger className="w-40 h-9 text-sm">
+                <SelectValue placeholder="All Routes" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Routes</SelectItem>
+                {routes.map(r => (
+                  <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -110,6 +133,14 @@ export default function CustomersPage() {
             </Tooltip>
             {!showDeleted && (
               <>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button variant="outline" onClick={() => setRoutesOpen(true)}>
+                      <IconMap2 size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Manage Routes</TooltipContent>
+                </Tooltip>
                 {can('customers', 'create') && (
                   <>
                     <Tooltip>
@@ -141,21 +172,23 @@ export default function CustomersPage() {
                 <th className="p-3">Email</th>
                 <th className="p-3">Phone</th>
                 <th className="p-3">Address</th>
+                <th className="p-3">Route</th>
                 <th className="p-3">Actions</th>
               </tr>
             </thead>
             <tbody>
               {(() => {
                 const filteredCustomers = customers.filter(c =>
-                  c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                  (c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                   (c.email || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-                  (c.phone || '').includes(searchTerm)
+                  (c.phone || '').includes(searchTerm)) &&
+                  (!selectedRouteId || c.route_id === selectedRouteId)
                 );
 
                 if (filteredCustomers.length === 0) {
                   return (
                     <tr>
-                      <td colSpan={6} className="p-6 text-center text-muted-foreground">
+                      <td colSpan={7} className="p-6 text-center text-muted-foreground">
                         {searchTerm ? 'No customers match your search.' : 'No customers found. Add your first customer to get started.'}
                       </td>
                     </tr>
@@ -169,6 +202,7 @@ export default function CustomersPage() {
                     <td className="p-3 text-sm text-muted-foreground">{c.email || '-'}</td>
                     <td className="p-3 text-sm">{c.phone || '-'}</td>
                     <td className="p-3 text-sm">{c.address_line_1 || '-'}</td>
+                    <td className="p-3 text-sm">{routes.find(r => r.id === c.route_id)?.name || '-'}</td>
                     <td className="p-3 flex gap-2">
                       {!showDeleted ? (
                         <>
@@ -191,7 +225,7 @@ export default function CustomersPage() {
                       )}
                     </td>
                   </tr>
-                ))
+                ));
               })()}
             </tbody>
           </table>
@@ -243,6 +277,12 @@ export default function CustomersPage() {
           await api.customers.batchCreate(formatted);
           load();
         }}
+      />
+
+      <RoutesDialog
+        open={routesOpen}
+        onOpenChange={setRoutesOpen}
+        onRoutesChange={load}
       />
     </div>
   );

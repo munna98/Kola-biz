@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Combobox } from '@/components/ui/combobox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { api, Customer, CreateCustomer } from '@/lib/tauri';
+import { api, Customer, CreateCustomer, Route } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { useDialog } from '@/hooks/use-dialog';
 import { RootState } from '@/store';
@@ -31,6 +31,7 @@ const EMPTY_FORM: CreateCustomer = {
   code: '', name: '', email: '', phone: '',
   address_line_1: '', address_line_2: '', address_line_3: '',
   city: '', state: '', postal_code: '', country: '', gstin: '', currency: '',
+  route_id: '',
 };
 
 interface CustomerDialogProps {
@@ -46,14 +47,15 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
     const [countries, setCountries] = useState<Country[]>([]);
     const [currencies, setCurrencies] = useState<Currency[]>([]);
     const [priceCategories, setPriceCategories] = useState<PriceCategory[]>([]);
+    const [routes, setRoutes] = useState<Route[]>([]);
     const [selectedPriceCategoryId, setSelectedPriceCategoryId] = useState<string>('');
 
     const profile = useSelector((state: RootState) => state.companyProfile.profile);
     const isMultiCurrencyEnabled = useMultiCurrencyEnabled();
 
     const orderedFields = isMultiCurrencyEnabled
-        ? ['code', 'name', 'email', 'phone', 'gstin', 'addr1', 'addr2', 'addr3', 'city', 'state', 'postal', 'country', 'currency']
-        : ['code', 'name', 'email', 'phone', 'gstin', 'addr1', 'addr2', 'addr3', 'city', 'state', 'postal'];
+        ? ['code', 'name', 'email', 'phone', 'gstin', 'route', 'addr1', 'addr2', 'addr3', 'city', 'state', 'postal', 'country', 'currency']
+        : ['code', 'name', 'email', 'phone', 'gstin', 'route', 'addr1', 'addr2', 'addr3', 'city', 'state', 'postal'];
     const { register, handleKeyDown, handleSelectKeyDown } = useDialog(open, onOpenChange, orderedFields);
 
     // Fetch countries, currencies & price categories when dialog opens
@@ -62,6 +64,7 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
         invoke<Country[]>('get_countries').then(setCountries).catch(console.error);
         invoke<Currency[]>('get_currencies').then(setCurrencies).catch(console.error);
         invoke<PriceCategory[]>('list_price_categories').then(setPriceCategories).catch(console.error);
+        api.routes.list().then(setRoutes).catch(console.error);
     }, [open]);
 
     // Populate form when editing or creating
@@ -82,6 +85,7 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
                 country: customerToEdit.country || '',
                 gstin: customerToEdit.gstin || '',
                 currency: customerToEdit.currency || '',
+                route_id: customerToEdit.route_id || '',
             });
             setSelectedPriceCategoryId((customerToEdit as any).price_category_id || '');
         } else {
@@ -111,7 +115,7 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            const payload = { ...form, name: form.name.trim().toUpperCase() };
+            const payload = { ...form, name: form.name.trim().toUpperCase(), route_id: form.route_id || undefined };
             let result: Customer | undefined;
             if (customerToEdit) {
                 await api.customers.update(customerToEdit.id, payload);
@@ -175,6 +179,21 @@ export default function CustomerDialog({ open, onOpenChange, customerToEdit, onS
                     <div>
                         <Label className="text-xs font-medium">GSTIN</Label>
                         <Input ref={register('gstin') as any} value={form.gstin} onChange={e => setForm({ ...form, gstin: e.target.value.toUpperCase() })} onKeyDown={e => handleKeyDown(e, 'gstin')} placeholder="22AAAAA0000A1Z5" className="h-8 text-sm mt-1 font-mono" maxLength={15} />
+                    </div>
+
+                    <div>
+                        <Label className="text-xs font-medium">Route</Label>
+                        <Select value={form.route_id || ''} onValueChange={v => setForm({ ...form, route_id: v === '__none__' ? '' : v })}>
+                            <SelectTrigger ref={register('route') as any} className="h-8 text-sm mt-1" onKeyDown={e => handleSelectKeyDown(e, 'route')}>
+                                <SelectValue placeholder="Select route (optional)" />
+                            </SelectTrigger>
+                            <SelectContent>
+                                <SelectItem value="__none__">No Route</SelectItem>
+                                {routes.map(r => (
+                                    <SelectItem key={r.id} value={r.id}>{r.name}</SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
                     </div>
 
                     <div className="space-y-2">

@@ -255,6 +255,21 @@ export interface CreateProduct {
   sales_deduction?: number;
 }
 
+// ======= ROUTES =======
+
+export interface Route {
+  id: string;
+  name: string;
+  description?: string;
+  is_active: number;
+  created_at: string;
+}
+
+export interface CreateRoute {
+  name: string;
+  description?: string;
+}
+
 // ======= PARTIES =======
 
 export interface Customer {
@@ -272,6 +287,7 @@ export interface Customer {
   country?: string;
   gstin?: string;
   currency?: string;
+  route_id?: string;
   is_active: number;
   created_at: string;
 }
@@ -290,6 +306,7 @@ export interface CreateCustomer {
   country?: string;
   gstin?: string;
   currency?: string;
+  route_id?: string;
 }
 
 export interface Supplier {
@@ -307,6 +324,7 @@ export interface Supplier {
   country?: string;
   gstin?: string;
   currency?: string;
+  route_id?: string;
   is_active: number;
   created_at: string;
 }
@@ -325,6 +343,7 @@ export interface CreateSupplier {
   country?: string;
   gstin?: string;
   currency?: string;
+  route_id?: string;
 }
 
 // ======= CHART OF ACCOUNTS =======
@@ -620,6 +639,12 @@ export const api = {
     restore: (id: string) => invoke<void>('restore_customer', { id }),
     hardDelete: (id: string) => invoke<void>('hard_delete_customer', { id }),
     getNextCode: () => invoke<string>('get_next_customer_code'),
+  },
+  routes: {
+    list: () => invoke<Route[]>('list_routes'),
+    create: (data: CreateRoute) => invoke<Route>('create_route', { route: data }),
+    update: (id: string, data: CreateRoute) => invoke<void>('update_route', { id, route: data }),
+    delete: (id: string) => invoke<void>('delete_route', { id }),
   },
   suppliers: {
     list: () => invoke<Supplier[]>('get_suppliers'),
