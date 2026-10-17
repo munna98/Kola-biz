@@ -316,6 +316,7 @@ pub fn run() {
             generate_profit_loss_pdf,
             generate_day_book_pdf,
             generate_stock_report_pdf,
+            generate_outstanding_pdf,
             get_downloads_path,
             save_invoice_pdf,
             // Employees

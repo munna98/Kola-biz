@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import * as XLSX from 'xlsx';
 import { invoke } from '@tauri-apps/api/core';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -8,6 +9,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { IconDownload, IconPrinter, IconRefresh, IconUserDown, IconUserUp } from '@tabler/icons-react';
 import { api, Customer, Supplier, Route } from '@/lib/tauri';
+import { useSelector } from 'react-redux';
+import { RootState } from '@/store';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
@@ -45,6 +48,7 @@ export default function PartyOutstandingPage() {
   const [invoiceDetails, setInvoiceDetails] = useState<InvoiceDetail[]>([]);
   const [detailsLoading, setDetailsLoading] = useState(false);
   const money = useMoney();
+  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
 
   const loadReport = async () => {
     try {
@@ -98,12 +102,167 @@ export default function PartyOutstandingPage() {
     loadInvoiceDetails(party.party_id, type);
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handlePrint = async () => {
+    if (filteredCustomers.length === 0 && filteredSuppliers.length === 0) {
+      toast.error('No data to generate PDF');
+      return;
+    }
+    try {
+      const timestamp = new Date().toISOString().split('T')[0];
+      const routeSuffix = selectedRouteId
+        ? `_${(routes.find(r => r.id === selectedRouteId)?.name || '').replace(/\s+/g, '_')}`
+        : '';
+      const fileName = `Party_Outstanding${routeSuffix}_${timestamp}.pdf`;
+      const downloadsPath = await invoke<string>('get_downloads_path');
+      const filePath = `${downloadsPath}/${fileName}`;
+
+      const routeLabel = selectedRouteId
+        ? routes.find(r => r.id === selectedRouteId)?.name
+        : undefined;
+
+      await invoke('generate_outstanding_pdf', {
+        data: {
+          company_name: companyProfile?.company_name || 'Company',
+          as_on_date: formatDate(asOnDate),
+          route_label: routeLabel ?? null,
+          currency_symbol: companyProfile?.base_currency_symbol || '',
+          customers: filteredCustomers.map(c => ({
+            party_name: c.party_name,
+            total_invoices: c.total_invoices,
+            total_amount: c.total_amount,
+            paid_amount: c.paid_amount,
+            outstanding_amount: c.outstanding_amount,
+            oldest_invoice_date: c.oldest_invoice_date ?? null,
+            days_outstanding: c.days_outstanding ?? null,
+          })),
+          suppliers: filteredSuppliers.map(s => ({
+            party_name: s.party_name,
+            total_invoices: s.total_invoices,
+            total_amount: s.total_amount,
+            paid_amount: s.paid_amount,
+            outstanding_amount: s.outstanding_amount,
+            oldest_invoice_date: s.oldest_invoice_date ?? null,
+            days_outstanding: s.days_outstanding ?? null,
+          })),
+        },
+        filePath,
+      });
+
+      toast.success(`PDF saved to Downloads: ${fileName}`);
+    } catch (error) {
+      console.error('PDF error:', error);
+      toast.error('Failed to generate PDF');
+    }
   };
 
   const handleExport = () => {
-    toast.info('Export functionality coming soon');
+    if (filteredCustomers.length === 0 && filteredSuppliers.length === 0) {
+      toast.error('No data to export');
+      return;
+    }
+
+    try {
+      const companyName = companyProfile?.company_name || 'Company';
+      const routeLabel = selectedRouteId
+        ? routes.find(r => r.id === selectedRouteId)?.name || ''
+        : 'All Routes';
+      const dateLabel = `As on: ${formatDate(asOnDate)}`;
+
+      const buildSheet = (
+        data: PartyOutstanding[],
+        sheetTitle: string,
+        totalLabel: string,
+        totalAmt: number
+      ) => {
+        const rows: any[][] = [];
+
+        // Header block
+        rows.push([`${companyName} — PARTY OUTSTANDING REPORT`]);
+        rows.push([sheetTitle]);
+        rows.push([dateLabel, '', `Route: ${routeLabel}`]);
+        rows.push([]);
+
+        // Column headers
+        rows.push([
+          'Party Name',
+          'Invoices',
+          'Total Amount',
+          'Paid Amount',
+          'Outstanding Amount',
+          'Oldest Invoice Date',
+          'Days Outstanding',
+        ]);
+
+        // Data rows
+        for (const p of data) {
+          rows.push([
+            p.party_name,
+            p.total_invoices,
+            p.total_amount,
+            p.paid_amount,
+            Math.abs(p.outstanding_amount),
+            p.oldest_invoice_date ? formatDate(p.oldest_invoice_date) : '-',
+            p.days_outstanding ?? '-',
+          ]);
+        }
+
+        // Total row
+        rows.push([]);
+        rows.push([`TOTAL ${totalLabel}`, '', '', '', Math.abs(totalAmt)]);
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [
+          { wch: 32 }, // Party Name
+          { wch: 10 }, // Invoices
+          { wch: 18 }, // Total Amount
+          { wch: 18 }, // Paid Amount
+          { wch: 22 }, // Outstanding
+          { wch: 20 }, // Oldest Invoice
+          { wch: 18 }, // Days
+        ];
+        return ws;
+      };
+
+      const wb = XLSX.utils.book_new();
+
+      if (filteredCustomers.length > 0) {
+        XLSX.utils.book_append_sheet(
+          wb,
+          buildSheet(
+            filteredCustomers,
+            'Receivables (Customers)',
+            'RECEIVABLES',
+            totalReceivables
+          ),
+          'Customers'
+        );
+      }
+
+      if (filteredSuppliers.length > 0) {
+        XLSX.utils.book_append_sheet(
+          wb,
+          buildSheet(
+            filteredSuppliers,
+            'Payables (Suppliers)',
+            'PAYABLES',
+            totalPayables
+          ),
+          'Suppliers'
+        );
+      }
+
+      const timestamp = new Date().toISOString().split('T')[0];
+      const routeSuffix = selectedRouteId
+        ? `_${routeLabel.replace(/\s+/g, '_')}`
+        : '';
+      const fileName = `Party_Outstanding${routeSuffix}_${timestamp}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+
+      toast.success(`Exported as ${fileName}`);
+    } catch (err) {
+      console.error('Export error:', err);
+      toast.error('Failed to export Party Outstanding Report');
+    }
   };
 
   const filteredCustomers = selectedRouteId
@@ -211,11 +370,21 @@ export default function PartyOutstandingPage() {
               <IconRefresh size={16} />
               Refresh
             </Button>
-            <Button variant="outline" size="sm" onClick={handleExport}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              disabled={filteredCustomers.length === 0 && filteredSuppliers.length === 0}
+            >
               <IconDownload size={16} />
               Export
             </Button>
-            <Button variant="outline" size="sm" onClick={handlePrint}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrint}
+              disabled={filteredCustomers.length === 0 && filteredSuppliers.length === 0}
+            >
               <IconPrinter size={16} />
               Print
             </Button>
