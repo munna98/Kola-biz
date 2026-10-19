@@ -728,6 +728,11 @@ pub async fn reset_template_to_default(
             let css = include_str!("../../resources/templates/thermal_80mm.css");
             (html.to_string(), css.to_string())
         }
+        "TPL-PV-002" => {
+            let html = include_str!("../../resources/templates/thermal_payment.html");
+            let css = include_str!("../../resources/templates/thermal_80mm.css");
+            (html.to_string(), css.to_string())
+        }
         _ => return Ok(()), // Custom templates can't be reset to seed
     };
 
@@ -2549,15 +2554,31 @@ async fn get_payment_data(
 
     let mut val = serde_json::to_value(&voucher).map_err(|e| e.to_string())?;
     if let Some(obj) = val.as_object_mut() {
+        // Collect paid_to from items (mirrors received_from on receipts)
+        let paid_to = items
+            .iter()
+            .map(|i| i.description.clone())
+            .collect::<Vec<String>>()
+            .join(", ");
         obj.insert(
             "items".to_string(),
-            serde_json::to_value(items).unwrap_or(json!([])),
+            serde_json::to_value(&items).unwrap_or(json!([])),
         );
+        obj.insert("paid_to".to_string(), serde_json::json!(paid_to));
         obj.insert("old_balance".to_string(), json!(old_balance));
         obj.insert("balance_due".to_string(), json!(balance_due));
         obj.insert("total_balance".to_string(), json!(total_balance));
         obj.insert("paid_amount".to_string(), json!(voucher.grand_total));
         obj.insert("is_cash".to_string(), json!(is_cash));
+        // Capitalise payment_method (cash → Cash, bank → Bank)
+        if let Some(method) = obj.get("payment_method").and_then(|v| v.as_str()) {
+            let capitalized = match method {
+                "cash" => "Cash",
+                "bank" => "Bank",
+                other => other,
+            };
+            obj.insert("payment_method".to_string(), serde_json::json!(capitalized));
+        }
     }
     Ok(val)
 }

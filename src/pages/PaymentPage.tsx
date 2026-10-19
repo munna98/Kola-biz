@@ -38,6 +38,7 @@ import {
 import { VoucherPageHeader } from '@/components/voucher/VoucherPageHeader';
 import { VoucherShortcutPanel } from '@/components/voucher/VoucherShortcutPanel';
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
+import { usePrint } from '@/hooks/usePrint';
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherLedgerSection } from '@/components/voucher/VoucherLedgerSection';
@@ -82,6 +83,8 @@ export default function PaymentPage() {
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showQuickDialog, setShowQuickDialog] = useState(false);
     const [showListView, setShowListView] = useState(false);
+    const { print } = usePrint();
+    const [voucherSettings, setVoucherSettings] = useState<{ autoPrint?: boolean } | undefined>(undefined);
 
     // Create Account State
     const [showCreateAccount, setShowCreateAccount] = useState(false);
@@ -103,15 +106,17 @@ export default function PaymentPage() {
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [cashBankData, allLedgersData, allGroups, settingVal] = await Promise.all([
+                const [cashBankData, allLedgersData, allGroups, settingVal, settingsData] = await Promise.all([
                     invoke<AccountData[]>('get_cash_bank_accounts').catch(() => []),
                     invoke<LedgerAccount[]>('get_chart_of_accounts').catch(() => []),
                     api.accountGroups.list().catch(() => []),
                     invoke<string | null>('get_app_setting', { key: 'update_payment_to_product_cost' }).catch(() => null),
+                    invoke<any>('get_voucher_settings', { voucherType: 'payment' }).catch(() => undefined),
                 ]);
                 setPayFromAccounts(cashBankData);
                 setPayToLedgers(allLedgersData);
                 setAccountGroups(allGroups);
+                setVoucherSettings(settingsData);
 
                 const isEnabled = settingVal === 'true';
                 setUpdatePaymentToProductCost(isEnabled);
@@ -249,12 +254,16 @@ export default function PaymentPage() {
                 toast.success('Payment updated successfully');
                 dispatch(setPaymentLoading(false));
 
+                if (voucherSettings?.autoPrint) {
+                    print({ voucherId: paymentState.currentVoucherId, voucherType: 'payment' });
+                }
+
                 // Use handleNew(true) to reset + refresh the next voucher number preview
                 await handleNew(true);
                 return;
             }
 
-            await invoke('create_payment', {
+            const newVoucherId = await invoke<string>('create_payment', {
                 payment: {
                     ...paymentState.form,
                     items: paymentState.items,
@@ -264,6 +273,11 @@ export default function PaymentPage() {
                 }
             });
             toast.success('Payment saved successfully');
+
+            if (voucherSettings?.autoPrint) {
+                print({ voucherId: newVoucherId, voucherType: 'payment' });
+            }
+
             // Use handleNew(true) to reset + refresh the next voucher number preview
             await handleNew(true);
 
@@ -400,6 +414,14 @@ export default function PaymentPage() {
         }
     };
 
+    const handlePrint = () => {
+        if (paymentState.mode === 'new' || !paymentState.currentVoucherId) {
+            toast.error('Please save the payment before printing');
+            return;
+        }
+        print({ voucherId: paymentState.currentVoucherId, voucherType: 'payment' });
+    };
+
     // Global keyboard shortcuts hook
     useVoucherShortcuts({
         onSave: () => formRef.current?.requestSubmit(),
@@ -496,6 +518,7 @@ export default function PaymentPage() {
                 onSave={() => formRef.current?.requestSubmit()}
                 onCancel={handleCancel}
                 onDelete={handleDeleteVoucher}
+                onPrint={handlePrint}
                 onNew={handleNew}
                 onListView={() => setShowListView(true)}
                 editDisabled={!!paymentState.form.created_from_invoice_id}

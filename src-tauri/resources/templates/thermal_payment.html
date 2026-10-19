@@ -1,0 +1,91 @@
+<!-- [HEADER] -->
+<style>
+    /* Global bold override for better thermal print clarity */
+    body,
+    p,
+    span,
+    div,
+    td,
+    th,
+    h1,
+    h2,
+    h3,
+    h4,
+    h5,
+    h6 {
+        font-weight: bold !important;
+    }
+</style>
+<div class="thermal-header">
+    {{#if company.has_logo}}
+    <div class="logo-wrap">
+        <img src="{{company.logo}}" alt="Logo" class="logo" />
+    </div>
+    {{/if}}
+    <h1>{{company.name}}</h1>
+    <p>{{company.address}}</p>
+    <p>Ph: {{company.phone}}</p>
+    {{#if company.gstin}}
+    <p>GSTIN: {{company.gstin}}</p>
+    {{/if}}
+</div>
+<div class="separator"></div>
+<div class="invoice-info">
+    <div class="row">
+        <span>Payment No:</span>
+        <span><strong>{{voucher_no}}</strong></span>
+    </div>
+    <div class="row">
+        <span>Date:</span>
+        <span>{{format_date voucher_date}}</span>
+    </div>
+    {{#if paid_to}}
+    <div class="row" style="font-size: 12pt; font-weight: bold;">
+        <span>Paid To:</span>
+        <span>{{paid_to}}</span>
+    </div>
+    {{/if}}
+</div>
+<div class="separator"></div>
+
+<!-- [BODY] -->
+<div class="totals">
+    <div class="row">
+        <span>Payment Mode:</span>
+        <span>{{payment_method}}</span>
+    </div>
+    {{#if reference_number}}
+    <div class="row">
+        <span>Ref No:</span>
+        <span>{{reference_number}}</span>
+    </div>
+    {{/if}}
+    {{#unless is_cash}}
+    <div class="row">
+        <span>Old Balance:</span>
+        <span>{{format_currency old_balance}}</span>
+    </div>
+    {{/unless}}
+    <div class="row total">
+        <span>AMOUNT PAID:</span>
+        <span>{{format_currency grand_total}}</span>
+    </div>
+    {{#unless is_cash}}
+    <div class="row" style="font-size: 11pt; font-weight: bold; margin-top: 2px; border: none !important;">
+        <span>Bal. Due:</span>
+        <span>{{format_currency balance_due}}</span>
+    </div>
+    {{/unless}}
+</div>
+
+<!-- [FOOTER] -->
+<div class="separator"></div>
+<div class="footer">
+    <p class="center"><strong>Thank You!</strong></p>
+    {{#if narration}}
+    <p class="center small">Note: {{narration}}</p>
+    {{/if}}
+    {{#if company.website}}
+    <p class="center small">{{company.website}}</p>
+    {{/if}}
+</div>

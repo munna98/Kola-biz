@@ -10,6 +10,7 @@ const THERMAL_80MM_HTML: &str = include_str!("../../resources/templates/thermal_
 const THERMAL_80MM_CSS: &str = include_str!("../../resources/templates/thermal_80mm.css");
 
 const THERMAL_RECEIPT_HTML: &str = include_str!("../../resources/templates/thermal_receipt.html");
+const THERMAL_PAYMENT_HTML: &str = include_str!("../../resources/templates/thermal_payment.html");
 
 const MINIMAL_HTML: &str = include_str!("../../resources/templates/minimal_clean.html");
 const MINIMAL_CSS: &str = include_str!("../../resources/templates/minimal_clean.css");
@@ -676,6 +677,39 @@ pub async fn seed_handlebars_templates(
         .bind(&rc_h)
         .bind(&rc_b)
         .bind(&rc_f)
+        .bind(THERMAL_80MM_CSS)
+        .execute(pool)
+        .await?;
+
+    // ==================== PAYMENT TEMPLATES ====================
+
+    // Payment Thermal
+    let (pv_h, pv_b, pv_f) = split_template(THERMAL_PAYMENT_HTML);
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-PV-002")
+    .bind("Thermal Payment Slip")
+    .bind("Thermal print format for Payment Vouchers")
+    .bind("payment")
+    .bind("thermal_80mm")
+    .bind("compact")
+    .bind(&pv_h)
+    .bind(&pv_b)
+    .bind(&pv_f)
+    .bind(THERMAL_80MM_CSS)
+    .bind(1)
+    .execute(pool)
+    .await?;
+
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-PV-002' AND design_mode != 'designer'")
+        .bind(&pv_h)
+        .bind(&pv_b)
+        .bind(&pv_f)
         .bind(THERMAL_80MM_CSS)
         .execute(pool)
         .await?;
