@@ -109,23 +109,25 @@ export default function PartyOutstandingPage() {
     }
     try {
       const timestamp = new Date().toISOString().split('T')[0];
-      const routeSuffix = selectedRouteId
-        ? `_${(routes.find(r => r.id === selectedRouteId)?.name || '').replace(/\s+/g, '_')}`
+      const routeName = selectedRouteId
+        ? (routes.find(r => r.id === selectedRouteId)?.name || '')
         : '';
+      const routeSuffix = routeName ? `_${routeName.replace(/\s+/g, '_')}` : '';
       const fileName = `Party_Outstanding${routeSuffix}_${timestamp}.pdf`;
       const downloadsPath = await invoke<string>('get_downloads_path');
       const filePath = `${downloadsPath}/${fileName}`;
 
-      const routeLabel = selectedRouteId
-        ? routes.find(r => r.id === selectedRouteId)?.name
-        : undefined;
+      const totalReceivables = filteredCustomers.reduce((sum, c) => sum + c.outstanding_amount, 0);
+      const totalPayables = filteredSuppliers.reduce((sum, s) => sum + s.outstanding_amount, 0);
 
       await invoke('generate_outstanding_pdf', {
         data: {
           company_name: companyProfile?.company_name || 'Company',
           as_on_date: formatDate(asOnDate),
-          route_label: routeLabel ?? null,
+          route_label: routeName || 'All Routes',
           currency_symbol: companyProfile?.base_currency_symbol || '',
+          total_receivables: totalReceivables,
+          total_payables: totalPayables,
           customers: filteredCustomers.map(c => ({
             party_name: c.party_name,
             total_invoices: c.total_invoices,
