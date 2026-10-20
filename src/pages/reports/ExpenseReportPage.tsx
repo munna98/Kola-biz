@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -30,6 +31,8 @@ import { formatDate } from '@/lib/utils';
 import { api } from '@/lib/tauri';
 import type { Product } from '@/lib/tauri';
 import { useMoney } from '@/hooks/useMoney';
+import { useSelector } from 'react-redux';
+import type { RootState } from '@/store';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -69,6 +72,7 @@ function getMonthStart() {
 
 export default function ExpenseReportPage() {
   const fmt = useMoney();
+  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
 
   // Settings
   const [productCostEnabled, setProductCostEnabled] = useState(false);
@@ -252,8 +256,123 @@ export default function ExpenseReportPage() {
   const isProductEntryMode = !!(selectedProductId && productCostEnabled);
   const selectedProduct = products.find(p => p.id === selectedProductId);
 
-  const handlePrint = () => window.print();
-  const handleExport = () => toast.info('Export functionality coming soon');
+  const hasData = isProductEntryMode ? entryDetails.length > 0 : rows.length > 0;
+
+  const handlePrint = async () => {
+    if (!hasData) {
+      toast.error('No data to print');
+      return;
+    }
+    try {
+      const timestamp = new Date().toISOString().split('T')[0];
+      const fileName = `ExpenseReport-${timestamp}.pdf`;
+      const downloadsPath = await invoke<string>('get_downloads_path');
+      const filePath = `${downloadsPath}/${fileName}`;
+
+      const currencySymbol = companyProfile?.base_currency_symbol || '';
+      const companyName = companyProfile?.company_name || 'Company';
+
+      const pdfData = {
+        company_name: companyName,
+        period_from: isProductEntryMode ? '' : fromDate,
+        period_to: isProductEntryMode ? '' : toDate,
+        group_by: groupBy,
+        currency_symbol: currencySymbol || null,
+        total_amount: isProductEntryMode ? entryTotal : totalExpenses,
+        total_vouchers: isProductEntryMode ? entryDetails.length : totalVouchers,
+        rows: isProductEntryMode
+          ? []
+          : rows.map(r => ({
+              group_label: groupBy === 'day' ? formatDate(r.group_label) : r.group_label,
+              voucher_count: r.voucher_count,
+              total_amount: r.total_amount,
+            })),
+        details: isProductEntryMode
+          ? entryDetails.map(d => ({
+              voucher_no: d.voucher_no,
+              voucher_date: formatDate(d.voucher_date),
+              account_name: d.account_name,
+              product_name: d.product_name ?? null,
+              amount: d.amount,
+              narration: d.narration ?? null,
+            }))
+          : [],
+        is_product_mode: isProductEntryMode,
+        product_label: selectedProduct
+          ? `${selectedProduct.code} - ${selectedProduct.name}`
+          : null,
+        show_product_column: !isProductEntryMode && productCostEnabled && groupBy !== 'product',
+      };
+
+      await invoke('generate_expense_pdf', { data: pdfData, filePath });
+      toast.success(`PDF saved to: ${filePath}`);
+    } catch (error) {
+      toast.error('Failed to generate PDF');
+      console.error(error);
+    }
+  };
+
+  const handleExport = () => {
+    if (!hasData) {
+      toast.error('No data to export');
+      return;
+    }
+    try {
+      const companyName = companyProfile?.company_name || 'Company';
+      const currencyCode = companyProfile?.base_currency || 'INR';
+      const rows_data: any[][] = [];
+
+      rows_data.push([`${companyName} - EXPENSE REPORT`]);
+      if (isProductEntryMode && selectedProduct) {
+        rows_data.push([`Product: ${selectedProduct.code} - ${selectedProduct.name}`]);
+      } else {
+        rows_data.push([`Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`]);
+        rows_data.push([`Grouped by: ${groupBy}`]);
+      }
+      rows_data.push([]);
+
+      if (isProductEntryMode) {
+        rows_data.push(['Date', 'Voucher No', 'Expense Account', 'Narration', `Amount (${currencyCode})`]);
+        for (const d of entryDetails) {
+          rows_data.push([
+            formatDate(d.voucher_date),
+            d.voucher_no,
+            d.account_name,
+            d.narration || '-',
+            d.amount,
+          ]);
+        }
+        rows_data.push(['', '', '', 'TOTAL', entryTotal]);
+      } else {
+        const groupHeader = groupBy === 'day' ? 'Date' : groupBy === 'group' ? 'Account Group' : groupBy === 'product' ? 'Product' : 'Expense Account';
+        rows_data.push([groupHeader, 'Payments', `Total Amount (${currencyCode})`]);
+        for (const r of rows) {
+          rows_data.push([
+            groupBy === 'day' ? formatDate(r.group_label) : r.group_label,
+            r.voucher_count,
+            r.total_amount,
+          ]);
+        }
+        rows_data.push(['TOTAL', totalVouchers, totalExpenses]);
+      }
+
+      const ws = XLSX.utils.aoa_to_sheet(rows_data);
+      ws['!cols'] = isProductEntryMode
+        ? [{ wch: 14 }, { wch: 18 }, { wch: 28 }, { wch: 40 }, { wch: 16 }]
+        : [{ wch: 40 }, { wch: 12 }, { wch: 18 }];
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Expense Report');
+
+      const timestamp = new Date().toISOString().split('T')[0];
+      const fileName = `ExpenseReport_${timestamp}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+      toast.success(`Exported as ${fileName}`);
+    } catch (err) {
+      console.error('Export error:', err);
+      toast.error('Failed to export Expense Report to Excel');
+    }
+  };
 
   // ── Group label helper ─────────────────────────────────────────────────
 
@@ -281,13 +400,13 @@ export default function ExpenseReportPage() {
               <IconRefresh size={16} className="mr-1.5" />
               Refresh
             </Button>
-            <Button variant="outline" size="sm" onClick={handleExport}>
+            <Button variant="outline" size="sm" onClick={handleExport} disabled={!hasData}>
               <IconDownload size={16} className="mr-1.5" />
               Export
             </Button>
-            <Button variant="outline" size="sm" onClick={handlePrint}>
+            <Button variant="outline" size="sm" onClick={handlePrint} disabled={!hasData}>
               <IconPrinter size={16} className="mr-1.5" />
-              Print
+              Print PDF
             </Button>
           </div>
         </div>
