@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -110,7 +110,7 @@ export default function UserDialog({ open, onOpenChange, userToEdit, onSave, def
                 await api.permissions.saveForUser({ userId: userToEdit.id, roleId: selectedRoleId, overrides: JSON.stringify(overrides) });
                 toast.success("User updated successfully");
             } else {
-                await api.users.create({ username, password, full_name: fullName, role });
+                await api.users.create({ username, password, fullName, role });
                 toast.success("User created successfully");
             }
             onSave();

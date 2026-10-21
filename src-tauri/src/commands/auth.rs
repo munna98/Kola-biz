@@ -1,4 +1,4 @@
-﻿use crate::company_db::DbRegistry;
+use crate::company_db::DbRegistry;
 use bcrypt::{hash, verify, DEFAULT_COST};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

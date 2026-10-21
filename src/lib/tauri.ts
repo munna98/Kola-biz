@@ -684,7 +684,7 @@ export const api = {
   },
   users: {
     list: () => invoke<User[]>('get_users'),
-    create: (data: any) => invoke<void>('create_user', data),
+    create: (data: { username: string; password: string; fullName: string; role: string }) => invoke<void>('create_user', { username: data.username, password: data.password, fullName: data.fullName, role: data.role }),
     update: (data: UpdateUser) => invoke<void>('update_user', { data }),
     delete: (id: string) => invoke<void>('delete_user', { id }),
     resetPassword: (data: ResetPassword) => invoke<void>('reset_user_password', { data }),
