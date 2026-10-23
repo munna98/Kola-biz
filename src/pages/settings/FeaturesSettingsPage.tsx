@@ -2,13 +2,14 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { Switch } from '@/components/ui/switch';
-import { IconScissors, IconCoins, IconPackages, IconBarcode } from '@tabler/icons-react';
+import { IconScissors, IconCoins, IconPackages, IconBarcode, IconMathFunction } from '@tabler/icons-react';
 
 export default function FeaturesSettingsPage() {
     const [customOrdersEnabled, setCustomOrdersEnabled] = useState(false);
     const [multiCurrencyEnabled, setMultiCurrencyEnabled] = useState(false);
     const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
     const [barcodePrintingEnabled, setBarcodePrintingEnabled] = useState(false);
+    const [autoRoundOffEnabled, setAutoRoundOffEnabled] = useState(false);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -17,12 +18,14 @@ export default function FeaturesSettingsPage() {
             invoke<string | null>('get_app_setting', { key: 'multi_currency_enabled' }),
             invoke<string | null>('get_app_setting', { key: 'enable_master_products' }),
             invoke<string | null>('get_app_setting', { key: 'enable_barcode_printing' }),
+            invoke<string | null>('get_app_setting', { key: 'auto_round_off_vouchers' }),
         ])
-            .then(([customVal, multiVal, masterVal, barcodeVal]) => {
+            .then(([customVal, multiVal, masterVal, barcodeVal, roundOffVal]) => {
                 setCustomOrdersEnabled(customVal === 'true');
                 setMultiCurrencyEnabled(multiVal === 'true');
                 setMasterProductsEnabled(masterVal === 'true');
                 setBarcodePrintingEnabled(barcodeVal === 'true');
+                setAutoRoundOffEnabled(roundOffVal === 'true');
             })
             .catch(() => {})
             .finally(() => setLoading(false));
@@ -78,6 +81,20 @@ export default function FeaturesSettingsPage() {
                 enabled
                     ? 'Barcode Printing enabled globally. Voucher barcode printing settings will default to enabled.'
                     : 'Barcode Printing disabled globally.'
+            );
+        } catch (err) {
+            toast.error(String(err));
+        }
+    };
+
+    const toggleAutoRoundOff = async (enabled: boolean) => {
+        try {
+            await invoke('set_app_setting', { key: 'auto_round_off_vouchers', value: enabled ? 'true' : 'false' });
+            setAutoRoundOffEnabled(enabled);
+            toast.success(
+                enabled
+                    ? 'Auto Round Off enabled for vouchers (.00). New vouchers will default to rounded totals.'
+                    : 'Auto Round Off disabled.'
             );
         } catch (err) {
             toast.error(String(err));
@@ -207,6 +224,36 @@ export default function FeaturesSettingsPage() {
                         {customOrdersEnabled && (
                             <p className="text-xs text-green-600 mt-2 font-medium">
                                 ✓ Enabled — access via Sidebar or Menu
+                            </p>
+                        )}
+                    </div>
+                </div>
+
+                {/* Auto Round Off Vouchers */}
+                <div className="flex items-start gap-4 p-4">
+                    <div className="mt-1 p-2 bg-primary/10 rounded-md">
+                        <IconMathFunction size={20} className="text-primary" />
+                    </div>
+                    <div className="flex-1">
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h3 className="font-medium">Auto Round Off Vouchers (.00)</h3>
+                                <p className="text-sm text-muted-foreground mt-0.5">
+                                    Automatically round voucher grand totals to the nearest rupee (.00) so that totals
+                                    and customer balances end cleanly in .00. The difference is automatically balanced
+                                    via the Round Off (5013) ledger. Can still be checked, unchecked, or manually adjusted on individual vouchers.
+                                </p>
+                            </div>
+                            <Switch
+                                checked={autoRoundOffEnabled}
+                                onCheckedChange={toggleAutoRoundOff}
+                                disabled={loading}
+                                className="ml-4 shrink-0"
+                            />
+                        </div>
+                        {autoRoundOffEnabled && (
+                            <p className="text-xs text-green-600 mt-2 font-medium">
+                                ✓ Enabled — new vouchers will default to rounded totals
                             </p>
                         )}
                     </div>

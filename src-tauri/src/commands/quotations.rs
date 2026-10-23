@@ -24,6 +24,7 @@ pub struct SalesQuotation {
     pub total_amount: f64,
     pub tax_amount: f64,
     pub freight_charge: f64,
+    pub round_off: f64,
     pub grand_total: f64,
     pub discount_rate: Option<f64>,
     pub discount_amount: Option<f64>,
@@ -111,6 +112,8 @@ pub struct CreateSalesQuotation {
     pub discount_amount: Option<f64>,
     #[serde(default)]
     pub freight_charge: Option<f64>,
+    #[serde(default)]
+    pub round_off: Option<f64>,
     pub items: Vec<CreateSalesQuotationItem>,
     pub user_id: Option<String>,
     pub tax_inclusive: Option<bool>,
@@ -137,7 +140,8 @@ pub async fn get_sales_quotations(
             v.total_amount,
             ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
             COALESCE(v.freight_charge, 0.0) as freight_charge,
-            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0), 2) as grand_total,
+            COALESCE(v.round_off, 0.0) as round_off,
+            COALESCE(v.grand_total, ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0) + COALESCE(v.round_off, 0.0), 2)) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -272,7 +276,8 @@ pub async fn create_sales_quotation(
     let total_amount = round2(subtotal - discount_amount);
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let freight_charge = quotation.freight_charge.unwrap_or(0.0);
-    let grand_total = round2(total_amount + total_tax + freight_charge);
+    let round_off = quotation.round_off.unwrap_or(0.0);
+    let grand_total = round2(total_amount + total_tax + freight_charge + round_off);
 
     let mut meta_obj = serde_json::json!({});
     if let Some(date) = &quotation.valid_until {
@@ -285,12 +290,12 @@ pub async fn create_sales_quotation(
 
     let voucher_id = Uuid::now_v7().to_string();
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, freight_charge, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, metadata, gst_disabled)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, freight_charge, round_off, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, metadata, gst_disabled)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("sales_quotation").bind(&quotation.voucher_date).bind(&quotation.customer_id)
     .bind(&quotation.salesperson_id).bind(&quotation.party_type).bind(&quotation.reference).bind(subtotal).bind(discount_rate)
-    .bind(discount_amount).bind(total_tax).bind(freight_charge).bind(total_amount).bind(&quotation.narration)
+    .bind(discount_amount).bind(total_tax).bind(freight_charge).bind(round_off).bind(total_amount).bind(&quotation.narration)
     .bind(&quotation.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total).bind(&metadata).bind(gst_disabled as i64).execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
@@ -431,7 +436,8 @@ pub async fn update_sales_quotation(
     let total_amount = round2(subtotal - discount_amount);
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let freight_charge = quotation.freight_charge.unwrap_or(0.0);
-    let grand_total = round2(total_amount + total_tax + freight_charge);
+    let round_off = quotation.round_off.unwrap_or(0.0);
+    let grand_total = round2(total_amount + total_tax + freight_charge + round_off);
 
     let mut meta_obj = serde_json::json!({});
     if let Some(date) = &quotation.valid_until {
@@ -445,13 +451,13 @@ pub async fn update_sales_quotation(
     sqlx::query(
         "UPDATE vouchers 
          SET voucher_date = ?, party_id = ?, salesperson_id = ?, party_type = ?, reference = ?, subtotal = ?, 
-             discount_rate = ?, discount_amount = ?, tax_amount = ?, freight_charge = ?, total_amount = ?, narration = ?,
+             discount_rate = ?, discount_amount = ?, tax_amount = ?, freight_charge = ?, round_off = ?, total_amount = ?, narration = ?,
              tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, metadata = ?, gst_disabled = ?
          WHERE id = ? AND voucher_type = 'sales_quotation'"
     )
     .bind(&quotation.voucher_date).bind(&quotation.customer_id).bind(&quotation.salesperson_id).bind(&quotation.party_type)
     .bind(&quotation.reference).bind(subtotal).bind(discount_rate).bind(discount_amount).bind(total_tax).bind(freight_charge)
-    .bind(total_amount).bind(&quotation.narration).bind(tax_inclusive as i64).bind(total_cgst)
+    .bind(round_off).bind(total_amount).bind(&quotation.narration).bind(tax_inclusive as i64).bind(total_cgst)
     .bind(total_sgst).bind(total_igst).bind(grand_total).bind(&metadata).bind(gst_disabled as i64).bind(&id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
@@ -504,7 +510,8 @@ pub async fn get_sales_quotation_with_pool(
             v.total_amount,
             ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
             COALESCE(v.freight_charge, 0.0) as freight_charge,
-            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0), 2) as grand_total,
+            COALESCE(v.round_off, 0.0) as round_off,
+            COALESCE(v.grand_total, ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0) + COALESCE(v.round_off, 0.0), 2)) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,

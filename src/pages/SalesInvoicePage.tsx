@@ -50,6 +50,7 @@ import {
 } from '@tabler/icons-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 
 
 // Global Voucher Components & Hooks
@@ -202,6 +203,11 @@ export default function SalesInvoicePage() {
   const [customOrdersEnabled, setCustomOrdersEnabled] = useState(false);
   const [linkedCustomOrder, setLinkedCustomOrder] = useState<{ id: string; order_no: string } | null>(null);
 
+  // Auto Round Off State
+  const [globalAutoRoundOff, setGlobalAutoRoundOff] = useState(false);
+  const [autoRoundOff, setAutoRoundOff] = useState(false);
+  const [roundOffAmount, setRoundOffAmount] = useState<number | undefined>(undefined);
+
   // Refs for focus management
   const formRef = useRef<HTMLFormElement>(null);
   const customerRef = useRef<HTMLDivElement>(null);
@@ -213,7 +219,7 @@ export default function SalesInvoicePage() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData, servicesData, masterSettingVal, customOrdersSettingVal] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData, servicesData, masterSettingVal, customOrdersSettingVal, roundOffSettingVal] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -226,6 +232,7 @@ export default function SalesInvoicePage() {
           invoke<any[]>('get_services').catch(() => []),
           invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
           invoke<string | null>('get_app_setting', { key: 'custom_orders_enabled' }).catch(() => null),
+          invoke<string | null>('get_app_setting', { key: 'auto_round_off_vouchers' }).catch(() => null),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
@@ -239,6 +246,9 @@ export default function SalesInvoicePage() {
         setServices(servicesData);
         setMasterProductsEnabled(masterSettingVal === 'true');
         setCustomOrdersEnabled(customOrdersSettingVal === 'true');
+        const isRoundOffDefault = roundOffSettingVal === 'true';
+        setGlobalAutoRoundOff(isRoundOffDefault);
+        setAutoRoundOff(isRoundOffDefault);
         // Only show GST columns if GST is enabled in settings
         if (gstSettings?.gst_enabled) {
           setGstSlabs(slabsData);
@@ -711,7 +721,16 @@ export default function SalesInvoicePage() {
     dispatch(setSalesHasUnsavedChanges(true));
   };
 
-  const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number, isMarginSchemeOverride?: boolean, isGstDisabledOverride?: boolean, freightCharge?: number) => {
+  const updateTotalsWithItems = (
+    items: typeof salesState.items,
+    discountRate?: number,
+    discountAmount?: number,
+    isMarginSchemeOverride?: boolean,
+    isGstDisabledOverride?: boolean,
+    freightCharge?: number,
+    autoRoundOffOverride?: boolean,
+    manualRoundOffOverride?: number
+  ) => {
     const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
 
     // Slab-aware GST resolution
@@ -754,6 +773,8 @@ export default function SalesInvoicePage() {
       : salesState.form.is_margin_scheme_invoice;
 
     const effectiveFreight = freightCharge !== undefined ? freightCharge : (salesState.form.freight_charge || 0);
+    const effectiveAutoRoundOff = autoRoundOffOverride !== undefined ? autoRoundOffOverride : autoRoundOff;
+    const effectiveRoundOffAmount = manualRoundOffOverride !== undefined ? manualRoundOffOverride : roundOffAmount;
 
     const calculation = calculateVoucherDiscounts(items, {
       discountRate:
@@ -769,6 +790,8 @@ export default function SalesInvoicePage() {
             ? undefined
             : (salesState.form.discount_amount || undefined),
       freightCharge: effectiveFreight,
+      autoRoundOff: effectiveAutoRoundOff,
+      manualRoundOff: effectiveRoundOffAmount,
       taxInclusive: isTaxInclusive,
       resolveGstRate: resolveItemGstRate,
       isMarginScheme,
@@ -781,6 +804,7 @@ export default function SalesInvoicePage() {
       subtotal: calculation.subtotal,
       discount: calculation.discountAmount,
       tax: calculation.tax,
+      roundOff: calculation.roundOff,
       grandTotal: calculation.grandTotal
     }));
   };
@@ -853,6 +877,7 @@ export default function SalesInvoicePage() {
             discount_rate: salesState.form.discount_rate || null,
             discount_amount: salesState.form.discount_amount || null,
             freight_charge: salesState.form.freight_charge || null,
+            round_off: salesState.totals.roundOff || null,
             items: salesState.items.map(item => ({
               item_type: item.item_type || 'product',
               product_id: item.item_type === 'service' ? null : (item.product_id || null),
@@ -911,6 +936,7 @@ export default function SalesInvoicePage() {
             discount_rate: salesState.form.discount_rate || null,
             discount_amount: salesState.form.discount_amount || null,
             freight_charge: salesState.form.freight_charge || null,
+            round_off: salesState.totals.roundOff || null,
             items: salesState.items.map(item => ({
               item_type: item.item_type || 'product',
               product_id: item.item_type === 'service' ? null : (item.product_id || null),
@@ -1039,10 +1065,16 @@ export default function SalesInvoicePage() {
         }));
       });
 
+      const loadedRoundOff = typeof (quotation as any).round_off === 'number' ? (quotation as any).round_off : 0;
+      const hasRoundOff = Math.abs(loadedRoundOff) > 0.0001 || globalAutoRoundOff;
+      setAutoRoundOff(hasRoundOff);
+      setRoundOffAmount(Math.abs(loadedRoundOff) > 0.0001 ? loadedRoundOff : undefined);
+
       dispatch(setSalesTotals({
-        subtotal: quotation.grand_total - quotation.tax_amount + (quotation.discount_amount || 0),
+        subtotal: quotation.grand_total - quotation.tax_amount - loadedRoundOff + (quotation.discount_amount || 0) - (quotation.freight_charge || 0),
         discount: quotation.discount_amount || 0,
         tax: quotation.tax_amount,
+        roundOff: loadedRoundOff,
         grandTotal: quotation.grand_total,
       }));
       
@@ -1211,13 +1243,20 @@ export default function SalesInvoicePage() {
         : (invoice.tax === 0 && items.length > 0 && items.every((i: any) => i.resolved_gst_rate === 0 || i.tax_amount === 0));
       setGstDisabled(loadedGstDisabled);
 
+      const loadedRoundOff = typeof (invoice as any).round_off === 'number' ? (invoice as any).round_off : 0;
+      const hasRoundOff = Math.abs(loadedRoundOff) > 0.0001;
+      setAutoRoundOff(hasRoundOff);
+      setRoundOffAmount(hasRoundOff ? loadedRoundOff : undefined);
+
       updateTotalsWithItems(
         loadedItems,
         invoice.discount_amount ? undefined : invoice.discount_rate,
         invoice.discount_amount || undefined,
         loadedIsMarginScheme,
         loadedGstDisabled,
-        invoice.freight_charge || 0
+        invoice.freight_charge || 0,
+        hasRoundOff,
+        hasRoundOff ? loadedRoundOff : undefined
       );
 
       dispatch(setSalesMode('viewing'));
@@ -1274,6 +1313,8 @@ export default function SalesInvoicePage() {
     setLinkedReturnSummary(null);
     dispatch(setSalesReturnDraft(undefined));
     dispatch(clearSalesForex());
+    setAutoRoundOff(globalAutoRoundOff);
+    setRoundOffAmount(undefined);
     handleNew(skipConfirm);
   };
 
@@ -2095,6 +2136,76 @@ export default function SalesInvoicePage() {
                       />
                     </div>
                   )}
+                  <div className="flex flex-col justify-end">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Checkbox
+                        id="sales-round-off-toggle"
+                        checked={autoRoundOff}
+                        onCheckedChange={(checked) => {
+                          const val = !!checked;
+                          setAutoRoundOff(val);
+                          setRoundOffAmount(undefined);
+                          dispatch(setSalesHasUnsavedChanges(true));
+                          updateTotalsWithItems(
+                            salesState.items,
+                            undefined,
+                            undefined,
+                            undefined,
+                            undefined,
+                            undefined,
+                            val,
+                            undefined
+                          );
+                        }}
+                        disabled={isReadOnly}
+                      />
+                      <label htmlFor="sales-round-off-toggle" className="text-xs font-medium cursor-pointer select-none">
+                        Round Off (.00)
+                      </label>
+                    </div>
+                    {autoRoundOff && (
+                      <Input
+                        type="number"
+                        value={roundOffAmount !== undefined ? roundOffAmount : (salesState.totals.roundOff ?? '')}
+                        onChange={(e) => {
+                          dispatch(setSalesHasUnsavedChanges(true));
+                          if (e.target.value === '') {
+                            setRoundOffAmount(undefined);
+                            updateTotalsWithItems(
+                              salesState.items,
+                              undefined,
+                              undefined,
+                              undefined,
+                              undefined,
+                              undefined,
+                              true,
+                              undefined
+                            );
+                            return;
+                          }
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val)) {
+                            setRoundOffAmount(val);
+                            updateTotalsWithItems(
+                              salesState.items,
+                              undefined,
+                              undefined,
+                              undefined,
+                              undefined,
+                              undefined,
+                              true,
+                              val
+                            );
+                          }
+                        }}
+                        placeholder="0.00"
+                        className="h-7 w-24 font-mono text-xs"
+                        step="0.01"
+                        disabled={isReadOnly}
+                        title="Manual Round Off adjustment"
+                      />
+                    )}
+                  </div>
                 </div>
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
@@ -2124,6 +2235,17 @@ export default function SalesInvoicePage() {
                       Tax: {isExportBusiness && salesState.currency_id
                         ? forexMoney(salesState.totals.tax)
                         : money(salesState.totals.tax)}
+                    </div>
+                  )}
+                  {salesState.totals.roundOff !== undefined && Math.abs(salesState.totals.roundOff) > 0.0001 && (
+                    <div className="flex justify-between items-center gap-2 text-xs font-mono text-muted-foreground">
+                      <span>Round Off:</span>
+                      <span>
+                        {salesState.totals.roundOff > 0 ? '+' : ''}
+                        {isExportBusiness && salesState.currency_id
+                          ? forexMoney(salesState.totals.roundOff)
+                          : money(salesState.totals.roundOff)}
+                      </span>
                     </div>
                   )}
                   {linkedReturnTotal > 0 && (

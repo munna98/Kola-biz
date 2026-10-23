@@ -31,6 +31,7 @@ import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { Combobox } from '@/components/ui/combobox';
 import {
@@ -116,11 +117,16 @@ export default function DeliveryNotePage() {
   const partyComboRef = useRef<HTMLButtonElement>(null);
   const voucherItemsRef = useRef<VoucherItemsSectionRef>(null);
 
+  // Auto Round Off State
+  const [globalAutoRoundOff, setGlobalAutoRoundOff] = useState(false);
+  const [autoRoundOff, setAutoRoundOff] = useState(false);
+  const [roundOffAmount, setRoundOffAmount] = useState<number | undefined>(undefined);
+
   // Load initial data
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData, servicesData, masterSettingVal] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData, servicesData, masterSettingVal, roundOffSettingVal] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -132,6 +138,7 @@ export default function DeliveryNotePage() {
           api.gst.getSlabs().catch(() => [] as GstTaxSlab[]),
           invoke<any[]>('get_services').catch(() => []),
           invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
+          invoke<string | null>('get_app_setting', { key: 'auto_round_off_vouchers' }).catch(() => null),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
@@ -141,6 +148,12 @@ export default function DeliveryNotePage() {
           setIsTaxInclusive(!!settingsData.taxInclusive);
         }
         setProductGroups(groupsData);
+        setEmployees(employeesData.filter((e: Employee) => e.status === 'active'));
+        setServices(servicesData);
+        setMasterProductsEnabled(masterSettingVal === 'true');
+        const isRoundOffDefault = roundOffSettingVal === 'true';
+        setGlobalAutoRoundOff(isRoundOffDefault);
+        setAutoRoundOff(isRoundOffDefault);
         setEmployees(employeesData.filter((e: Employee) => e.status === 'active'));
         setServices(servicesData);
         setMasterProductsEnabled(masterSettingVal === 'true');
@@ -383,7 +396,15 @@ export default function DeliveryNotePage() {
     dispatch(setDeliveryNoteHasUnsavedChanges(true));
   };
 
-  const updateTotalsWithItems = (items: typeof noteState.items, discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean, freightCharge?: number) => {
+  const updateTotalsWithItems = (
+    items: typeof noteState.items,
+    discountRate?: number,
+    discountAmount?: number,
+    isGstDisabledOverride?: boolean,
+    freightCharge?: number,
+    autoRoundOffOverride?: boolean,
+    manualRoundOffOverride?: number
+  ) => {
     const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
 
     const productMap: Record<string, Product> = {};
@@ -407,6 +428,8 @@ export default function DeliveryNotePage() {
     };
 
     const effectiveFreight = freightCharge !== undefined ? freightCharge : (noteState.form.freight_charge || 0);
+    const effectiveAutoRoundOff = autoRoundOffOverride !== undefined ? autoRoundOffOverride : autoRoundOff;
+    const effectiveRoundOffAmount = manualRoundOffOverride !== undefined ? manualRoundOffOverride : roundOffAmount;
 
     const calculation = calculateVoucherDiscounts(items, {
       discountRate:
@@ -422,6 +445,8 @@ export default function DeliveryNotePage() {
             ? undefined
             : (noteState.form.discount_amount || undefined),
       freightCharge: effectiveFreight,
+      autoRoundOff: effectiveAutoRoundOff,
+      manualRoundOff: effectiveRoundOffAmount,
       taxInclusive: isTaxInclusive,
       resolveGstRate: resolveItemGstRate,
     });
@@ -433,6 +458,7 @@ export default function DeliveryNotePage() {
       subtotal: calculation.subtotal,
       discount: calculation.discountAmount,
       tax: calculation.tax,
+      roundOff: calculation.roundOff,
       grandTotal: calculation.grandTotal,
     }));
   };
@@ -466,6 +492,7 @@ export default function DeliveryNotePage() {
       discount_rate: noteState.form.discount_rate || null,
       discount_amount: noteState.form.discount_amount || null,
       freight_charge: noteState.form.freight_charge || null,
+      round_off: noteState.totals.roundOff || null,
       items: noteState.items.map(item => ({
         item_type: item.item_type || 'product',
         product_id: item.item_type === 'service' ? null : (item.product_id || null),
@@ -615,7 +642,20 @@ export default function DeliveryNotePage() {
         : (note.tax_amount === 0 && items.length > 0 && items.every((i: any) => i.resolved_gst_rate === 0 || i.tax_amount === 0));
       setGstDisabled(loadedGstDisabled);
 
-      updateTotalsWithItems(loadedItems, note.discount_amount ? undefined : note.discount_rate, note.discount_amount || undefined, loadedGstDisabled, note.freight_charge || 0);
+      const loadedRoundOff = typeof (note as any).round_off === 'number' ? (note as any).round_off : 0;
+      const hasRoundOff = Math.abs(loadedRoundOff) > 0.0001;
+      setAutoRoundOff(hasRoundOff);
+      setRoundOffAmount(hasRoundOff ? loadedRoundOff : undefined);
+
+      updateTotalsWithItems(
+        loadedItems,
+        note.discount_amount ? undefined : note.discount_rate,
+        note.discount_amount || undefined,
+        loadedGstDisabled,
+        note.freight_charge || 0,
+        hasRoundOff,
+        hasRoundOff ? loadedRoundOff : undefined
+      );
 
       dispatch(setDeliveryNoteMode('viewing'));
       dispatch(setDeliveryNoteHasUnsavedChanges(false));
@@ -659,7 +699,11 @@ export default function DeliveryNotePage() {
     onDelete: () => handleDeleteVoucher(),
   });
 
-  const handleNewNote = (skipConfirm?: boolean) => handleNew(skipConfirm);
+  const handleNewNote = (skipConfirm?: boolean) => {
+    setAutoRoundOff(globalAutoRoundOff);
+    setRoundOffAmount(undefined);
+    handleNew(skipConfirm);
+  };
 
   const handleDeleteVoucher = async () => {
     const confirmed = await handleDelete();
@@ -724,7 +768,7 @@ export default function DeliveryNotePage() {
   useVoucherShortcuts({
     onSave: () => formRef.current?.requestSubmit(),
     onNewItem: handleAddItem,
-    onClear: handleNew,
+    onClear: handleNewNote,
     onToggleShortcuts: () => setShowShortcuts(prev => !prev),
     onCloseShortcuts: () => setShowShortcuts(false),
     onNewTab: () => dispatch(createNewDeliveryNoteTab()),
@@ -1144,6 +1188,73 @@ export default function DeliveryNotePage() {
                       />
                     </div>
                   )}
+                  <div className="flex flex-col justify-end">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Checkbox
+                        id="dn-round-off-toggle"
+                        checked={autoRoundOff}
+                        onCheckedChange={(checked) => {
+                          const val = !!checked;
+                          setAutoRoundOff(val);
+                          setRoundOffAmount(undefined);
+                          dispatch(setDeliveryNoteHasUnsavedChanges(true));
+                          updateTotalsWithItems(
+                            noteState.items,
+                            undefined,
+                            undefined,
+                            undefined,
+                            undefined,
+                            val,
+                            undefined
+                          );
+                        }}
+                        disabled={isReadOnly}
+                      />
+                      <label htmlFor="dn-round-off-toggle" className="text-xs font-medium cursor-pointer select-none">
+                        Round Off (.00)
+                      </label>
+                    </div>
+                    {autoRoundOff && (
+                      <Input
+                        type="number"
+                        value={roundOffAmount !== undefined ? roundOffAmount : (noteState.totals.roundOff ?? '')}
+                        onChange={(e) => {
+                          dispatch(setDeliveryNoteHasUnsavedChanges(true));
+                          if (e.target.value === '') {
+                            setRoundOffAmount(undefined);
+                            updateTotalsWithItems(
+                              noteState.items,
+                              undefined,
+                              undefined,
+                              undefined,
+                              undefined,
+                              true,
+                              undefined
+                            );
+                            return;
+                          }
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val)) {
+                            setRoundOffAmount(val);
+                            updateTotalsWithItems(
+                              noteState.items,
+                              undefined,
+                              undefined,
+                              undefined,
+                              undefined,
+                              true,
+                              val
+                            );
+                          }
+                        }}
+                        placeholder="0.00"
+                        className="h-7 w-24 font-mono text-xs"
+                        step="0.01"
+                        disabled={isReadOnly}
+                        title="Manual Round Off adjustment"
+                      />
+                    )}
+                  </div>
                 </div>
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
@@ -1162,6 +1273,15 @@ export default function DeliveryNotePage() {
                   )}
                   {noteState.totals.tax > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">Tax: {money(noteState.totals.tax)}</div>
+                  )}
+                  {noteState.totals.roundOff !== undefined && Math.abs(noteState.totals.roundOff) > 0.0001 && (
+                    <div className="flex justify-between items-center gap-2 text-xs font-mono text-muted-foreground">
+                      <span>Round Off:</span>
+                      <span>
+                        {noteState.totals.roundOff > 0 ? '+' : ''}
+                        {money(noteState.totals.roundOff)}
+                      </span>
+                    </div>
                   )}
                   <div className="text-lg font-mono font-bold">{money(noteState.totals.grandTotal)}</div>
                 </div>

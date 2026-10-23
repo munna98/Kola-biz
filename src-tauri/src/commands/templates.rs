@@ -1047,7 +1047,8 @@ async fn get_purchase_invoice_data(
             // Calculate subtotal for template
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
             let freight_charge = invoice.freight_charge;
-            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge + bill_discount;
+            let round_off = invoice.round_off;
+            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge - round_off + bill_discount;
             // Total item-level discount (sum of per-line discount_amount)
             let total_item_discount: f64 = formatted_items.iter()
                 .filter_map(|item| item.get("discount_amount").and_then(|v| v.as_f64()))
@@ -1058,6 +1059,8 @@ async fn get_purchase_invoice_data(
             obj.insert("subtotal_gross".to_string(), json!(subtotal_gross));
             obj.insert("freight_charge".to_string(), json!(round2(freight_charge)));
             obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
+            obj.insert("round_off".to_string(), json!(round2(round_off)));
+            obj.insert("has_round_off".to_string(), json!(round_off.abs() > 0.001));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
             obj.insert("bill_discount".to_string(), json!(round2(bill_discount)));
@@ -1409,7 +1412,8 @@ async fn get_sales_invoice_data(
             // Calculate subtotal for template
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
             let freight_charge = invoice.freight_charge;
-            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge + bill_discount;
+            let round_off = invoice.round_off;
+            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge - round_off + bill_discount;
             // Total item-level discount (sum of per-line discount_amount)
             let total_item_discount: f64 = formatted_items.iter()
                 .filter_map(|item| item.get("discount_amount").and_then(|v| v.as_f64()))
@@ -1420,6 +1424,8 @@ async fn get_sales_invoice_data(
             obj.insert("subtotal_gross".to_string(), json!(subtotal_gross));
             obj.insert("freight_charge".to_string(), json!(round2(freight_charge)));
             obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
+            obj.insert("round_off".to_string(), json!(round2(round_off)));
+            obj.insert("has_round_off".to_string(), json!(round_off.abs() > 0.001));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
             obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
@@ -1816,7 +1822,8 @@ async fn get_sales_quotation_data(
             // Calculate subtotal for template
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
             let freight_charge = invoice.freight_charge;
-            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge + bill_discount;
+            let round_off = invoice.round_off;
+            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge - round_off + bill_discount;
             // Total item-level discount (sum of per-line discount_amount)
             let total_item_discount: f64 = formatted_items.iter()
                 .filter_map(|item| item.get("discount_amount").and_then(|v| v.as_f64()))
@@ -1827,6 +1834,8 @@ async fn get_sales_quotation_data(
             obj.insert("subtotal_gross".to_string(), json!(subtotal_gross));
             obj.insert("freight_charge".to_string(), json!(round2(freight_charge)));
             obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
+            obj.insert("round_off".to_string(), json!(round2(round_off)));
+            obj.insert("has_round_off".to_string(), json!(round_off.abs() > 0.001));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
             obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
@@ -2078,7 +2087,8 @@ async fn get_delivery_note_data(
 
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
             let freight_charge = invoice.freight_charge;
-            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge + bill_discount;
+            let round_off = invoice.round_off;
+            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge - round_off + bill_discount;
             // Total item-level discount (sum of per-line discount_amount)
             let total_item_discount: f64 = formatted_items.iter()
                 .filter_map(|item| item.get("discount_amount").and_then(|v| v.as_f64()))
@@ -2089,6 +2099,8 @@ async fn get_delivery_note_data(
             obj.insert("subtotal_gross".to_string(), json!(subtotal_gross));
             obj.insert("freight_charge".to_string(), json!(round2(freight_charge)));
             obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
+            obj.insert("round_off".to_string(), json!(round2(round_off)));
+            obj.insert("has_round_off".to_string(), json!(round_off.abs() > 0.001));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
             obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
@@ -2388,7 +2400,8 @@ async fn get_sales_return_data(
 
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
             let freight_charge = invoice.freight_charge;
-            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge + bill_discount;
+            let round_off = invoice.round_off;
+            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge - round_off + bill_discount;
             // Total item-level discount (sum of per-line discount_amount)
             let total_item_discount: f64 = formatted_items.iter()
                 .filter_map(|item| item.get("discount_amount").and_then(|v| v.as_f64()))
@@ -2399,6 +2412,8 @@ async fn get_sales_return_data(
             obj.insert("subtotal_gross".to_string(), json!(subtotal_gross));
             obj.insert("freight_charge".to_string(), json!(round2(freight_charge)));
             obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
+            obj.insert("round_off".to_string(), json!(round2(round_off)));
+            obj.insert("has_round_off".to_string(), json!(round_off.abs() > 0.001));
             obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
             obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));

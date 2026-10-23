@@ -357,11 +357,7 @@ fn format_indian_currency(num: f64) -> String {
 
     let rupees_str = format_indian_number(rupees);
 
-    if paise > 0 {
-        format!("{}.{:02}", rupees_str, paise)
-    } else {
-        rupees_str
-    }
+    format!("{}.{:02}", rupees_str, paise)
 }
 
 fn format_indian_number(mut num: i64) -> String {

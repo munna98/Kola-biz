@@ -308,6 +308,7 @@ export interface PurchaseInvoiceState extends VoucherNavigationState {
     subtotal: number;
     discount: number;
     tax: number;
+    roundOff?: number;
     grandTotal: number;
   };
 }
@@ -405,7 +406,7 @@ const purchaseInvoiceSlice = createSlice({
     removeItem: (state, action: PayloadAction<number>) => {
       state.items.splice(action.payload, 1);
     },
-    setTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; grandTotal: number }>) => {
+    setTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; roundOff?: number; grandTotal: number }>) => {
       state.totals = action.payload;
     },
     resetForm: (state) => {
@@ -1132,6 +1133,7 @@ export interface SalesInvoiceReturnDraft {
     subtotal: number;
     discount: number;
     tax: number;
+    roundOff?: number;
     grandTotal: number;
   };
 }
@@ -1166,6 +1168,7 @@ export interface SalesInvoiceState extends VoucherNavigationState {
     subtotal: number;
     discount: number;
     tax: number;
+    roundOff?: number;
     grandTotal: number;
   };
   activeTabId: string;
@@ -1277,7 +1280,7 @@ const salesInvoiceSlice = createSlice({
     removeSalesItem: (state, action: PayloadAction<number>) => {
       state.items.splice(action.payload, 1);
     },
-    setSalesTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; grandTotal: number }>) => {
+    setSalesTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; roundOff?: number; grandTotal: number }>) => {
       state.totals = action.payload;
     },
     setSalesReturnDraft: (state, action: PayloadAction<SalesInvoiceReturnDraft | undefined>) => {
@@ -1613,6 +1616,7 @@ export interface PurchaseReturnState extends VoucherNavigationState {
     subtotal: number;
     discount: number;
     tax: number;
+    roundOff?: number;
     grandTotal: number;
   };
 }
@@ -1706,7 +1710,7 @@ const purchaseReturnSlice = createSlice({
     removePurchaseReturnItem: (state, action: PayloadAction<number>) => {
       state.items.splice(action.payload, 1);
     },
-    setPurchaseReturnTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; grandTotal: number }>) => {
+    setPurchaseReturnTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; roundOff?: number; grandTotal: number }>) => {
       state.totals = action.payload;
     },
     resetPurchaseReturnForm: (state) => {
@@ -1834,6 +1838,7 @@ export interface SalesReturnState extends VoucherNavigationState {
     subtotal: number;
     discount: number;
     tax: number;
+    roundOff?: number;
     grandTotal: number;
   };
 }
@@ -1928,7 +1933,7 @@ const salesReturnSlice = createSlice({
     removeSalesReturnItem: (state, action: PayloadAction<number>) => {
       state.items.splice(action.payload, 1);
     },
-    setSalesReturnTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; grandTotal: number }>) => {
+    setSalesReturnTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; roundOff?: number; grandTotal: number }>) => {
       state.totals = action.payload;
     },
     resetSalesReturnForm: (state) => {
@@ -2185,6 +2190,7 @@ export interface SalesQuotationState extends VoucherNavigationState {
     subtotal: number;
     discount: number;
     tax: number;
+    roundOff?: number;
     grandTotal: number;
   };
   activeTabId: string;
@@ -2292,7 +2298,7 @@ const salesQuotationSlice = createSlice({
     removeQuotationItem: (state, action: PayloadAction<number>) => {
       state.items.splice(action.payload, 1);
     },
-    setQuotationTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; grandTotal: number }>) => {
+    setQuotationTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; roundOff?: number; grandTotal: number }>) => {
       state.totals = action.payload;
     },
     resetQuotationForm: (state) => {
@@ -2705,6 +2711,7 @@ export interface DeliveryNoteState extends VoucherNavigationState {
     subtotal: number;
     discount: number;
     tax: number;
+    roundOff?: number;
     grandTotal: number;
   };
   activeTabId: string;
@@ -2809,7 +2816,7 @@ const deliveryNoteSlice = createSlice({
     removeDeliveryNoteItem: (state, action: PayloadAction<number>) => {
       state.items.splice(action.payload, 1);
     },
-    setDeliveryNoteTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; grandTotal: number }>) => {
+    setDeliveryNoteTotals: (state, action: PayloadAction<{ subtotal: number; discount: number; tax: number; roundOff?: number; grandTotal: number }>) => {
       state.totals = action.payload;
     },
     resetDeliveryNoteForm: (state) => {

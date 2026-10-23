@@ -120,6 +120,7 @@ pub struct PurchaseInvoice {
     pub total_amount: f64,
     pub tax_amount: f64,
     pub freight_charge: f64,
+    pub round_off: f64,
     pub grand_total: f64,
     pub discount_rate: Option<f64>,
     pub discount_amount: Option<f64>,
@@ -550,6 +551,8 @@ pub struct CreatePurchaseInvoice {
     pub discount_amount: Option<f64>,
     #[serde(default)]
     pub freight_charge: Option<f64>,
+    #[serde(default)]
+    pub round_off: Option<f64>,
     pub items: Vec<CreatePurchaseInvoiceItem>,
     pub user_id: Option<String>,
     pub tax_inclusive: Option<bool>,
@@ -573,7 +576,8 @@ pub async fn get_purchase_invoices(
             v.total_amount,
             ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
             COALESCE(v.freight_charge, 0.0) as freight_charge,
-            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0), 2) as grand_total,
+            COALESCE(v.round_off, 0.0) as round_off,
+            COALESCE(v.grand_total, ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0) + COALESCE(v.round_off, 0.0), 2)) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -622,7 +626,8 @@ pub async fn get_purchase_invoice(
             v.total_amount,
             ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
             COALESCE(v.freight_charge, 0.0) as freight_charge,
-            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0), 2) as grand_total,
+            COALESCE(v.round_off, 0.0) as round_off,
+            COALESCE(v.grand_total, ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0) + COALESCE(v.round_off, 0.0), 2)) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -692,7 +697,8 @@ pub(crate) async fn get_purchase_invoice_with_pool(
             v.total_amount,
             ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
             COALESCE(v.freight_charge, 0.0) as freight_charge,
-            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0), 2) as grand_total,
+            COALESCE(v.round_off, 0.0) as round_off,
+            COALESCE(v.grand_total, ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0) + COALESCE(v.round_off, 0.0), 2)) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -878,14 +884,16 @@ pub async fn create_purchase_invoice(
     let subtotal_foreign = subtotal;
     let discount_amount_foreign = discount_amount;
     let freight_charge_foreign = invoice.freight_charge.unwrap_or(0.0);
+    let round_off_foreign = invoice.round_off.unwrap_or(0.0);
     let total_tax_foreign = round2(total_cgst + total_sgst + total_igst);
     let total_amount_foreign = round2(subtotal_foreign - discount_amount_foreign);
-    let grand_total_foreign = round2(total_amount_foreign + total_tax_foreign + freight_charge_foreign);
+    let grand_total_foreign = round2(total_amount_foreign + total_tax_foreign + freight_charge_foreign + round_off_foreign);
 
     // Base currency amounts (converted)
     let subtotal = if is_foreign_currency { round2(subtotal_foreign * exchange_rate) } else { subtotal_foreign };
     let discount_amount = if is_foreign_currency { round2(discount_amount_foreign * exchange_rate) } else { discount_amount_foreign };
     let freight_charge = if is_foreign_currency { round2(freight_charge_foreign * exchange_rate) } else { freight_charge_foreign };
+    let round_off = if is_foreign_currency { round2(round_off_foreign * exchange_rate) } else { round_off_foreign };
     let total_tax = if is_foreign_currency { round2(total_tax_foreign * exchange_rate) } else { total_tax_foreign };
     let total_amount = if is_foreign_currency { round2(total_amount_foreign * exchange_rate) } else { total_amount_foreign };
     let total_cgst = if is_foreign_currency { round2(total_cgst * exchange_rate) } else { total_cgst };
@@ -895,15 +903,15 @@ pub async fn create_purchase_invoice(
 
     let voucher_id = Uuid::now_v7().to_string();
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, gst_disabled, currency_id, exchange_rate, foreign_total, freight_charge)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, gst_disabled, currency_id, exchange_rate, foreign_total, freight_charge, round_off)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("purchase_invoice").bind(&invoice.voucher_date).bind(&invoice.supplier_id)
     .bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(discount_rate)
     .bind(discount_amount).bind(total_tax).bind(total_amount).bind(&invoice.narration)
     .bind(&invoice.user_id).bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst).bind(grand_total)
     .bind(gst_disabled as i64).bind(&invoice.currency_id).bind(exchange_rate).bind(grand_total_foreign)
-    .bind(freight_charge)
+    .bind(freight_charge).bind(round_off)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
@@ -1041,6 +1049,24 @@ pub async fn create_purchase_invoice(
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(freight_acc).bind(freight_charge).bind(0.0)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+
+    // Dr/Cr 5013 Round Off for purchase round off (base currency)
+    if round_off.abs() > 0.0001 {
+        let round_off_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5013'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        if round_off > 0.0 {
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
+                .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&round_off_acc).bind(round_off).bind(0.0)
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        } else {
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
+                .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&round_off_acc).bind(0.0).bind(round_off.abs())
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
     }
 
     // Stamp foreign amounts on journal entries
@@ -1277,13 +1303,15 @@ pub async fn update_purchase_invoice(
     let subtotal_foreign = subtotal;
     let discount_amount_foreign = discount_amount;
     let freight_charge_foreign = invoice.freight_charge.unwrap_or(0.0);
+    let round_off_foreign = invoice.round_off.unwrap_or(0.0);
     let total_tax_foreign = round2(total_cgst + total_sgst + total_igst);
     let total_amount_foreign = round2(subtotal_foreign - discount_amount_foreign);
-    let grand_total_foreign = round2(total_amount_foreign + total_tax_foreign + freight_charge_foreign);
+    let grand_total_foreign = round2(total_amount_foreign + total_tax_foreign + freight_charge_foreign + round_off_foreign);
 
     let subtotal = if is_foreign_currency { round2(subtotal_foreign * exchange_rate) } else { subtotal_foreign };
     let discount_amount = if is_foreign_currency { round2(discount_amount_foreign * exchange_rate) } else { discount_amount_foreign };
     let freight_charge = if is_foreign_currency { round2(freight_charge_foreign * exchange_rate) } else { freight_charge_foreign };
+    let round_off = if is_foreign_currency { round2(round_off_foreign * exchange_rate) } else { round_off_foreign };
     let total_tax = if is_foreign_currency { round2(total_tax_foreign * exchange_rate) } else { total_tax_foreign };
     let total_amount = if is_foreign_currency { round2(total_amount_foreign * exchange_rate) } else { total_amount_foreign };
     let total_cgst = if is_foreign_currency { round2(total_cgst * exchange_rate) } else { total_cgst };
@@ -1304,7 +1332,7 @@ pub async fn update_purchase_invoice(
          SET voucher_date = ?, party_id = ?, party_type = ?, reference = ?, subtotal = ?, 
              discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?,
              tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, gst_disabled = ?,
-             currency_id = ?, exchange_rate = ?, foreign_total = ?, freight_charge = ?
+             currency_id = ?, exchange_rate = ?, foreign_total = ?, freight_charge = ?, round_off = ?
          WHERE id = ?"
     )
     .bind(&invoice.voucher_date).bind(&invoice.supplier_id).bind(&invoice.party_type).bind(&invoice.reference)
@@ -1313,7 +1341,7 @@ pub async fn update_purchase_invoice(
     .bind(tax_inclusive as i64).bind(total_cgst).bind(total_sgst).bind(total_igst)
     .bind(grand_total).bind(gst_disabled as i64)
     .bind(&invoice.currency_id).bind(exchange_rate).bind(grand_total_foreign)
-    .bind(freight_charge)
+    .bind(freight_charge).bind(round_off)
     .bind(&voucher_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
@@ -1593,6 +1621,24 @@ pub async fn update_purchase_invoice(
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
     }
 
+    // Dr/Cr 5013 Round Off for purchase round off (base currency)
+    if round_off.abs() > 0.0001 {
+        let round_off_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5013'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        if round_off > 0.0 {
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
+                .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&round_off_acc).bind(round_off).bind(0.0)
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        } else {
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
+                .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&round_off_acc).bind(0.0).bind(round_off.abs())
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
+    }
+
     // Stamp foreign amounts on journal entries
     if is_foreign_currency {
         if let Some(ref cid) = invoice.currency_id {
@@ -1638,6 +1684,7 @@ pub struct SalesInvoice {
     pub total_amount: f64,
     pub tax_amount: f64,
     pub freight_charge: f64,
+    pub round_off: f64,
     pub grand_total: f64,
     pub discount_rate: Option<f64>,
     pub discount_amount: Option<f64>,
@@ -1740,6 +1787,8 @@ pub struct CreateSalesInvoice {
     pub discount_amount: Option<f64>,
     #[serde(default)]
     pub freight_charge: Option<f64>,
+    #[serde(default)]
+    pub round_off: Option<f64>,
     pub items: Vec<CreateSalesInvoiceItem>,
     pub user_id: Option<String>,
     pub tax_inclusive: Option<bool>,
@@ -1771,7 +1820,8 @@ pub async fn get_sales_invoices(
             v.total_amount,
             ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
             COALESCE(v.freight_charge, 0.0) as freight_charge,
-            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0), 2) as grand_total,
+            COALESCE(v.round_off, 0.0) as round_off,
+            COALESCE(v.grand_total, ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0) + COALESCE(v.round_off, 0.0), 2)) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -1841,7 +1891,8 @@ pub(crate) async fn get_sales_invoice_with_pool(
             v.total_amount,
             ROUND(COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0), 2) as tax_amount,
             COALESCE(v.freight_charge, 0.0) as freight_charge,
-            ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0), 2) as grand_total,
+            COALESCE(v.round_off, 0.0) as round_off,
+            COALESCE(v.grand_total, ROUND(COALESCE(v.subtotal, v.total_amount, 0) - COALESCE(v.discount_amount, 0) + COALESCE(v.tax_amount, COALESCE(SUM(vi.tax_amount), 0), 0) + COALESCE(v.freight_charge, 0.0) + COALESCE(v.round_off, 0.0), 2)) as grand_total,
             v.discount_rate,
             v.discount_amount,
             v.narration,
@@ -1955,6 +2006,7 @@ async fn create_draft_return_for_sales_invoice_in_tx(
         discount_rate: None,
         discount_amount: None,
         freight_charge: None,
+        round_off: None,
         items: return_items,
         tax_inclusive: invoice.tax_inclusive,
         gst_disabled: invoice.gst_disabled,
@@ -2080,7 +2132,8 @@ pub async fn create_sales_invoice(
     let total_amount = round2(subtotal - discount_amount);
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let freight_charge_foreign = invoice.freight_charge.unwrap_or(0.0);
-    let grand_total = round2(total_amount + total_tax + freight_charge_foreign);
+    let round_off_foreign = invoice.round_off.unwrap_or(0.0);
+    let grand_total = round2(total_amount + total_tax + freight_charge_foreign + round_off_foreign);
     let subtotal_foreign = subtotal;
     let discount_amount_foreign = discount_amount;
     let total_tax_foreign = total_tax;
@@ -2090,6 +2143,7 @@ pub async fn create_sales_invoice(
     let subtotal = if is_foreign_currency { round2(subtotal_foreign * exchange_rate) } else { subtotal_foreign };
     let discount_amount = if is_foreign_currency { round2(discount_amount_foreign * exchange_rate) } else { discount_amount_foreign };
     let freight_charge = if is_foreign_currency { round2(freight_charge_foreign * exchange_rate) } else { freight_charge_foreign };
+    let round_off = if is_foreign_currency { round2(round_off_foreign * exchange_rate) } else { round_off_foreign };
     let total_tax = if is_foreign_currency { round2(total_tax_foreign * exchange_rate) } else { total_tax_foreign };
     let total_amount = if is_foreign_currency { round2(total_amount_foreign * exchange_rate) } else { total_amount_foreign };
     let total_cgst = if is_foreign_currency { round2(total_cgst * exchange_rate) } else { total_cgst };
@@ -2103,8 +2157,8 @@ pub async fn create_sales_invoice(
     let metadata_json = metadata_obj.to_string();
 
     let _ = sqlx::query(
-        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, is_margin_scheme_invoice, metadata, currency_id, exchange_rate, foreign_total, gst_disabled, freight_charge)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, salesperson_id, party_type, reference, subtotal, discount_rate, discount_amount, tax_amount, total_amount, narration, status, created_by, tax_inclusive, cgst_amount, sgst_amount, igst_amount, grand_total, is_margin_scheme_invoice, metadata, currency_id, exchange_rate, foreign_total, gst_disabled, freight_charge, round_off)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'posted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(&voucher_id).bind(&voucher_no).bind("sales_invoice").bind(&invoice.voucher_date).bind(&invoice.customer_id)
     .bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference).bind(subtotal).bind(discount_rate)
@@ -2113,7 +2167,7 @@ pub async fn create_sales_invoice(
     .bind(invoice.is_margin_scheme_invoice as i64).bind(&metadata_json)
     .bind(&invoice.currency_id).bind(exchange_rate).bind(grand_total_foreign)
     .bind(gst_disabled as i64)
-    .bind(freight_charge)
+    .bind(freight_charge).bind(round_off)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Insert items
@@ -2276,6 +2330,24 @@ pub async fn create_sales_invoice(
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(freight_acc).bind(0.0).bind(freight_charge)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+
+    // Cr/Dr 5013 Round Off for sales round off (base currency)
+    if round_off.abs() > 0.0001 {
+        let round_off_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5013'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        if round_off > 0.0 {
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
+                .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&round_off_acc).bind(0.0).bind(round_off)
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        } else {
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
+                .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&round_off_acc).bind(round_off.abs()).bind(0.0)
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
     }
 
     // ============= PERPETUAL INVENTORY: COGS & INVENTORY =============
@@ -2520,7 +2592,8 @@ pub async fn update_sales_invoice(
     let total_amount = round2(subtotal - discount_amount);
     let total_tax = round2(total_cgst + total_sgst + total_igst);
     let freight_charge_foreign = invoice.freight_charge.unwrap_or(0.0);
-    let grand_total = round2(total_amount + total_tax + freight_charge_foreign);
+    let round_off_foreign = invoice.round_off.unwrap_or(0.0);
+    let grand_total = round2(total_amount + total_tax + freight_charge_foreign + round_off_foreign);
 
     let exchange_rate = invoice.exchange_rate.unwrap_or(1.0).max(0.0001);
     let is_foreign_currency = invoice.currency_id.is_some() && exchange_rate != 1.0;
@@ -2534,6 +2607,7 @@ pub async fn update_sales_invoice(
     let subtotal = if is_foreign_currency { round2(subtotal_foreign * exchange_rate) } else { subtotal_foreign };
     let discount_amount = if is_foreign_currency { round2(discount_amount_foreign * exchange_rate) } else { discount_amount_foreign };
     let freight_charge = if is_foreign_currency { round2(freight_charge_foreign * exchange_rate) } else { freight_charge_foreign };
+    let round_off = if is_foreign_currency { round2(round_off_foreign * exchange_rate) } else { round_off_foreign };
     let total_tax = if is_foreign_currency { round2(total_tax_foreign * exchange_rate) } else { total_tax_foreign };
     let total_amount = if is_foreign_currency { round2(total_amount_foreign * exchange_rate) } else { total_amount_foreign };
     let total_cgst = if is_foreign_currency { round2(total_cgst * exchange_rate) } else { total_cgst };
@@ -2557,7 +2631,7 @@ pub async fn update_sales_invoice(
          SET voucher_date = ?, party_id = ?, salesperson_id = ?, party_type = ?, reference = ?, subtotal = ?, 
              discount_rate = ?, discount_amount = ?, tax_amount = ?, total_amount = ?, narration = ?,
              tax_inclusive = ?, cgst_amount = ?, sgst_amount = ?, igst_amount = ?, grand_total = ?, metadata = ?,
-             currency_id = ?, exchange_rate = ?, foreign_total = ?, is_margin_scheme_invoice = ?, gst_disabled = ?, freight_charge = ?
+             currency_id = ?, exchange_rate = ?, foreign_total = ?, is_margin_scheme_invoice = ?, gst_disabled = ?, freight_charge = ?, round_off = ?
          WHERE id = ?"
     )
     .bind(&invoice.voucher_date).bind(&invoice.customer_id).bind(&invoice.salesperson_id).bind(&invoice.party_type).bind(&invoice.reference)
@@ -2567,7 +2641,7 @@ pub async fn update_sales_invoice(
     .bind(grand_total).bind(&metadata_json)
     .bind(&invoice.currency_id).bind(exchange_rate).bind(grand_total_foreign)
     .bind(invoice.is_margin_scheme_invoice as i64).bind(gst_disabled as i64)
-    .bind(freight_charge)
+    .bind(freight_charge).bind(round_off)
     .bind(&voucher_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
@@ -2874,6 +2948,24 @@ pub async fn update_sales_invoice(
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
             .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(freight_acc).bind(0.0).bind(freight_charge)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+
+    // Cr/Dr 5013 Round Off for sales round off (base currency)
+    if round_off.abs() > 0.0001 {
+        let round_off_acc: String =
+            sqlx::query_scalar("SELECT id FROM chart_of_accounts WHERE account_code = '5013'")
+                .fetch_one(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?;
+        if round_off > 0.0 {
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
+                .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&round_off_acc).bind(0.0).bind(round_off)
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        } else {
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit) VALUES (?, ?, ?, ?, ?)")
+                .bind(Uuid::now_v7().to_string()).bind(&voucher_id).bind(&round_off_acc).bind(round_off.abs()).bind(0.0)
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
     }
 
     // ============= PERPETUAL INVENTORY: COGS & INVENTORY =============

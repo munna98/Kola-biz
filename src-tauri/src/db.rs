@@ -1290,6 +1290,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             foreign_total REAL DEFAULT 0,
             price_category_id TEXT REFERENCES price_categories(id),
             freight_charge REAL DEFAULT 0.0,
+            round_off REAL DEFAULT 0.0,
             metadata TEXT,
             created_by TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1319,6 +1320,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN foreign_total REAL DEFAULT 0").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN price_category_id TEXT REFERENCES price_categories(id)").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN freight_charge REAL DEFAULT 0.0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE vouchers ADD COLUMN round_off REAL DEFAULT 0.0").execute(pool).await;
 
     // Migration: Seed / ensure 'Freight Charges' ledger (5012) under 'Direct Expenses'
     let _ = sqlx::query(
@@ -1330,6 +1332,20 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
              'Expense',
              'Direct Expenses',
              'Freight and forwarding charges',
+             1
+         )"
+    ).execute(pool).await;
+
+    // Migration: Seed / ensure 'Round Off' ledger (5013) under 'Indirect Expenses'
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, is_system)
+         VALUES (
+             hex(randomblob(16)),
+             '5013',
+             'Round Off',
+             'Expense',
+             'Indirect Expenses',
+             'Rounding off difference on vouchers',
              1
          )"
     ).execute(pool).await;

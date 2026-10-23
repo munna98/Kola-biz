@@ -24,6 +24,7 @@ export interface VoucherDiscountCalculationResult {
   discountAmount: number;
   tax: number;
   freightCharge: number;
+  roundOff: number;
   grandTotal: number;
   lines: VoucherDiscountLineResult[];
 }
@@ -77,6 +78,8 @@ export function calculateVoucherDiscounts<T extends VoucherDiscountLineInput>(
     discountRate?: number;
     discountAmount?: number;
     freightCharge?: number;
+    autoRoundOff?: boolean;
+    manualRoundOff?: number;
     taxInclusive: boolean;
     resolveGstRate: (item: T) => number;
     isMarginScheme?: boolean;
@@ -143,13 +146,26 @@ export function calculateVoucherDiscounts<T extends VoucherDiscountLineInput>(
   });
 
   const totalTax = round2(lines.reduce((sum, line) => sum + line.taxAmount, 0));
+  const rawGrandTotal = round2(subtotal - normalized.discountAmount + totalTax + freightCharge);
+  let roundOff = 0;
+  let grandTotal = rawGrandTotal;
+
+  if (options.manualRoundOff !== undefined && options.manualRoundOff !== null && !Number.isNaN(options.manualRoundOff)) {
+    roundOff = round2(options.manualRoundOff);
+    grandTotal = round2(rawGrandTotal + roundOff);
+  } else if (options.autoRoundOff) {
+    grandTotal = Math.round(rawGrandTotal);
+    roundOff = round2(grandTotal - rawGrandTotal);
+  }
+
   return {
     subtotal,
     discountRate: normalized.discountRate,
     discountAmount: normalized.discountAmount,
     tax: totalTax,
     freightCharge,
-    grandTotal: round2(subtotal - normalized.discountAmount + totalTax + freightCharge),
+    roundOff,
+    grandTotal,
     lines,
   };
 }

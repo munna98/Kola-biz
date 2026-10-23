@@ -32,6 +32,7 @@ import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { Combobox } from '@/components/ui/combobox';
 import {
@@ -127,11 +128,16 @@ export default function SalesQuotationPage() {
   const partyComboRef = useRef<HTMLButtonElement>(null);
   const voucherItemsRef = useRef<VoucherItemsSectionRef>(null);
 
+  // Auto Round Off State
+  const [globalAutoRoundOff, setGlobalAutoRoundOff] = useState(false);
+  const [autoRoundOff, setAutoRoundOff] = useState(false);
+  const [roundOffAmount, setRoundOffAmount] = useState<number | undefined>(undefined);
+
   // Load initial data
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData, servicesData, masterSettingVal] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData, servicesData, masterSettingVal, roundOffSettingVal] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -143,6 +149,7 @@ export default function SalesQuotationPage() {
           api.gst.getSlabs().catch(() => [] as GstTaxSlab[]),
           invoke<any[]>('get_services').catch(() => []),
           invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
+          invoke<string | null>('get_app_setting', { key: 'auto_round_off_vouchers' }).catch(() => null),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
@@ -152,6 +159,12 @@ export default function SalesQuotationPage() {
           setIsTaxInclusive(!!settingsData.taxInclusive);
         }
         setProductGroups(groupsData);
+        setEmployees(employeesData.filter((e: Employee) => e.status === 'active'));
+        setServices(servicesData);
+        setMasterProductsEnabled(masterSettingVal === 'true');
+        const isRoundOffDefault = roundOffSettingVal === 'true';
+        setGlobalAutoRoundOff(isRoundOffDefault);
+        setAutoRoundOff(isRoundOffDefault);
         setEmployees(employeesData.filter((e: Employee) => e.status === 'active'));
         setServices(servicesData);
         setMasterProductsEnabled(masterSettingVal === 'true');
@@ -429,7 +442,15 @@ export default function SalesQuotationPage() {
     dispatch(setQuotationHasUnsavedChanges(true));
   };
 
-  const updateTotalsWithItems = (items: typeof salesState.items, discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean, freightCharge?: number) => {
+  const updateTotalsWithItems = (
+    items: typeof salesState.items,
+    discountRate?: number,
+    discountAmount?: number,
+    isGstDisabledOverride?: boolean,
+    freightCharge?: number,
+    autoRoundOffOverride?: boolean,
+    manualRoundOffOverride?: number
+  ) => {
     const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
 
     // Slab-aware GST resolution
@@ -467,6 +488,8 @@ export default function SalesQuotationPage() {
     };
 
     const effectiveFreight = freightCharge !== undefined ? freightCharge : (salesState.form.freight_charge || 0);
+    const effectiveAutoRoundOff = autoRoundOffOverride !== undefined ? autoRoundOffOverride : autoRoundOff;
+    const effectiveRoundOffAmount = manualRoundOffOverride !== undefined ? manualRoundOffOverride : roundOffAmount;
 
     const calculation = calculateVoucherDiscounts(items, {
       discountRate:
@@ -482,6 +505,8 @@ export default function SalesQuotationPage() {
             ? undefined
             : (salesState.form.discount_amount || undefined),
       freightCharge: effectiveFreight,
+      autoRoundOff: effectiveAutoRoundOff,
+      manualRoundOff: effectiveRoundOffAmount,
       taxInclusive: isTaxInclusive,
       resolveGstRate: resolveItemGstRate,
     });
@@ -493,6 +518,7 @@ export default function SalesQuotationPage() {
       subtotal: calculation.subtotal,
       discount: calculation.discountAmount,
       tax: calculation.tax,
+      roundOff: calculation.roundOff,
       grandTotal: calculation.grandTotal
     }));
   };
@@ -538,6 +564,7 @@ export default function SalesQuotationPage() {
             discount_rate: salesState.form.discount_rate || null,
             discount_amount: salesState.form.discount_amount || null,
             freight_charge: salesState.form.freight_charge || null,
+            round_off: salesState.totals.roundOff || null,
             items: salesState.items.map(item => ({
               item_type: item.item_type || 'product',
               product_id: item.item_type === 'service' ? null : (item.product_id || null),
@@ -574,6 +601,7 @@ export default function SalesQuotationPage() {
             discount_rate: salesState.form.discount_rate || null,
             discount_amount: salesState.form.discount_amount || null,
             freight_charge: salesState.form.freight_charge || null,
+            round_off: salesState.totals.roundOff || null,
             items: salesState.items.map(item => ({
               item_type: item.item_type || 'product',
               product_id: item.item_type === 'service' ? null : (item.product_id || null),
@@ -733,12 +761,19 @@ export default function SalesQuotationPage() {
         : (invoice.tax_amount === 0 && items.length > 0 && items.every((i: any) => i.resolved_gst_rate === 0 || i.tax_amount === 0));
       setGstDisabled(loadedGstDisabled);
 
+      const loadedRoundOff = typeof (invoice as any).round_off === 'number' ? (invoice as any).round_off : 0;
+      const hasRoundOff = Math.abs(loadedRoundOff) > 0.0001;
+      setAutoRoundOff(hasRoundOff);
+      setRoundOffAmount(hasRoundOff ? loadedRoundOff : undefined);
+
       updateTotalsWithItems(
         loadedItems,
         invoice.discount_amount ? undefined : invoice.discount_rate,
         invoice.discount_amount || undefined,
         loadedGstDisabled,
-        invoice.freight_charge || 0
+        invoice.freight_charge || 0,
+        hasRoundOff,
+        hasRoundOff ? loadedRoundOff : undefined
       );
 
       dispatch(setQuotationMode('viewing'));
@@ -785,6 +820,8 @@ export default function SalesQuotationPage() {
   });
 
   const handleNewInvoice = (skipConfirm?: boolean) => {
+    setAutoRoundOff(globalAutoRoundOff);
+    setRoundOffAmount(undefined);
     handleNew(skipConfirm);
   };
 
@@ -886,7 +923,7 @@ export default function SalesQuotationPage() {
   useVoucherShortcuts({
     onSave: () => formRef.current?.requestSubmit(),
     onNewItem: handleAddItem,
-    onClear: handleNew,
+    onClear: handleNewInvoice,
     onToggleShortcuts: () => setShowShortcuts(prev => !prev),
     onCloseShortcuts: () => setShowShortcuts(false),
     onNewTab: () => dispatch(createNewQuotationTab()),
@@ -1478,6 +1515,73 @@ export default function SalesQuotationPage() {
                       />
                     </div>
                   )}
+                  <div className="flex flex-col justify-end">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Checkbox
+                        id="quotation-round-off-toggle"
+                        checked={autoRoundOff}
+                        onCheckedChange={(checked) => {
+                          const val = !!checked;
+                          setAutoRoundOff(val);
+                          setRoundOffAmount(undefined);
+                          dispatch(setQuotationHasUnsavedChanges(true));
+                          updateTotalsWithItems(
+                            salesState.items,
+                            undefined,
+                            undefined,
+                            undefined,
+                            undefined,
+                            val,
+                            undefined
+                          );
+                        }}
+                        disabled={isReadOnly}
+                      />
+                      <label htmlFor="quotation-round-off-toggle" className="text-xs font-medium cursor-pointer select-none">
+                        Round Off (.00)
+                      </label>
+                    </div>
+                    {autoRoundOff && (
+                      <Input
+                        type="number"
+                        value={roundOffAmount !== undefined ? roundOffAmount : (salesState.totals.roundOff ?? '')}
+                        onChange={(e) => {
+                          dispatch(setQuotationHasUnsavedChanges(true));
+                          if (e.target.value === '') {
+                            setRoundOffAmount(undefined);
+                            updateTotalsWithItems(
+                              salesState.items,
+                              undefined,
+                              undefined,
+                              undefined,
+                              undefined,
+                              true,
+                              undefined
+                            );
+                            return;
+                          }
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val)) {
+                            setRoundOffAmount(val);
+                            updateTotalsWithItems(
+                              salesState.items,
+                              undefined,
+                              undefined,
+                              undefined,
+                              undefined,
+                              true,
+                              val
+                            );
+                          }
+                        }}
+                        placeholder="0.00"
+                        className="h-7 w-24 font-mono text-xs"
+                        step="0.01"
+                        disabled={isReadOnly}
+                        title="Manual Round Off adjustment"
+                      />
+                    )}
+                  </div>
                 </div>
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
@@ -1496,6 +1600,15 @@ export default function SalesQuotationPage() {
                   )}
                   {salesState.totals.tax > 0 && (
                     <div className="text-xs font-mono text-muted-foreground">Tax: {money(salesState.totals.tax)}</div>
+                  )}
+                  {salesState.totals.roundOff !== undefined && Math.abs(salesState.totals.roundOff) > 0.0001 && (
+                    <div className="flex justify-between items-center gap-2 text-xs font-mono text-muted-foreground">
+                      <span>Round Off:</span>
+                      <span>
+                        {salesState.totals.roundOff > 0 ? '+' : ''}
+                        {money(salesState.totals.roundOff)}
+                      </span>
+                    </div>
                   )}
                   <div className="text-lg font-mono font-bold">{money(salesState.totals.grandTotal)}</div>
                 </div>

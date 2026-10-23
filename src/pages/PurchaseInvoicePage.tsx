@@ -32,6 +32,7 @@ import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { Combobox } from '@/components/ui/combobox';
 import {
@@ -161,11 +162,16 @@ export default function PurchaseInvoicePage() {
   const barcodePending = useRef(false);
   const loadingVoucherIdRef = useRef<string | null>(null);
 
+  // Auto Round Off State
+  const [globalAutoRoundOff, setGlobalAutoRoundOff] = useState(false);
+  const [autoRoundOff, setAutoRoundOff] = useState(false);
+  const [roundOffAmount, setRoundOffAmount] = useState<number | undefined>(undefined);
+
   // Load initial data
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, gstSettings, slabsData, servicesData, masterSettingVal, globalBarcodeVal] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, gstSettings, slabsData, servicesData, masterSettingVal, globalBarcodeVal, roundOffSettingVal] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -177,10 +183,14 @@ export default function PurchaseInvoicePage() {
           invoke<any[]>('get_services').catch(() => []),
           invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
           invoke<string | null>('get_app_setting', { key: 'enable_barcode_printing' }).catch(() => null),
+          invoke<string | null>('get_app_setting', { key: 'auto_round_off_vouchers' }).catch(() => null),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
         setProductUnitConversions(productUnitConversionsData);
+        const isRoundOffDefault = roundOffSettingVal === 'true';
+        setGlobalAutoRoundOff(isRoundOffDefault);
+        setAutoRoundOff(isRoundOffDefault);
         const isGlobalBarcodeEnabled = globalBarcodeVal === 'true';
         if (settingsData) {
           setVoucherSettings({
@@ -372,13 +382,20 @@ export default function PurchaseInvoicePage() {
         : (voucher.tax_amount === 0 && items.length > 0 && items.every((i: any) => i.resolved_gst_rate === 0 || i.tax_amount === 0));
       setGstDisabled(loadedGstDisabled);
 
+      const loadedRoundOff = typeof (voucher as any).round_off === 'number' ? (voucher as any).round_off : 0;
+      const hasRoundOff = Math.abs(loadedRoundOff) > 0.0001;
+      setAutoRoundOff(hasRoundOff);
+      setRoundOffAmount(hasRoundOff ? loadedRoundOff : undefined);
+
       // Recalculate totals from the exact saved discount amount when present.
       updateTotalsWithItems(
         mappedItems,
         voucher.discount_amount ? undefined : voucher.discount_rate,
         voucher.discount_amount || undefined,
         loadedGstDisabled,
-        voucher.freight_charge || 0
+        voucher.freight_charge || 0,
+        hasRoundOff,
+        hasRoundOff ? loadedRoundOff : undefined
       );
 
       dispatch(setPurchaseHasUnsavedChanges(false));
@@ -625,7 +642,15 @@ export default function PurchaseInvoicePage() {
     markUnsaved();
   };
 
-  const updateTotalsWithItems = (items: any[], discountRate?: number, discountAmount?: number, isGstDisabledOverride?: boolean, freightCharge?: number) => {
+  const updateTotalsWithItems = (
+    items: any[],
+    discountRate?: number,
+    discountAmount?: number,
+    isGstDisabledOverride?: boolean,
+    freightCharge?: number,
+    autoRoundOffOverride?: boolean,
+    manualRoundOffOverride?: number
+  ) => {
     const isGstDisabledEffective = isGstDisabledOverride !== undefined ? isGstDisabledOverride : gstDisabled;
 
     // Slab-aware GST resolution
@@ -663,6 +688,8 @@ export default function PurchaseInvoicePage() {
     };
 
     const effectiveFreight = freightCharge !== undefined ? freightCharge : (purchaseState.form.freight_charge || 0);
+    const effectiveAutoRoundOff = autoRoundOffOverride !== undefined ? autoRoundOffOverride : autoRoundOff;
+    const effectiveRoundOffAmount = manualRoundOffOverride !== undefined ? manualRoundOffOverride : roundOffAmount;
 
     const calculation = calculateVoucherDiscounts(items, {
       discountRate:
@@ -678,6 +705,8 @@ export default function PurchaseInvoicePage() {
             ? undefined
             : (purchaseState.form.discount_amount || undefined),
       freightCharge: effectiveFreight,
+      autoRoundOff: effectiveAutoRoundOff,
+      manualRoundOff: effectiveRoundOffAmount,
       taxInclusive: !!voucherSettings?.taxInclusive,
       resolveGstRate: resolveItemGstRate,
     });
@@ -689,6 +718,7 @@ export default function PurchaseInvoicePage() {
       subtotal: calculation.subtotal,
       discount: calculation.discountAmount,
       tax: calculation.tax,
+      roundOff: calculation.roundOff,
       grandTotal: calculation.grandTotal
     }));
   };
@@ -751,6 +781,7 @@ export default function PurchaseInvoicePage() {
             discount_rate: purchaseState.form.discount_rate || null,
             discount_amount: purchaseState.form.discount_amount || null,
             freight_charge: purchaseState.form.freight_charge || null,
+            round_off: purchaseState.totals.roundOff || null,
             currency_id: isMultiCurrencyEnabled ? purchaseState.currency_id : null,
             exchange_rate: isMultiCurrencyEnabled && purchaseState.currency_id ? purchaseState.exchange_rate : 1.0,
             items: purchaseState.items.map(item => ({
@@ -865,6 +896,7 @@ export default function PurchaseInvoicePage() {
             discount_rate: purchaseState.form.discount_rate || null,
             discount_amount: purchaseState.form.discount_amount || null,
             freight_charge: purchaseState.form.freight_charge || null,
+            round_off: purchaseState.totals.roundOff || null,
             currency_id: isMultiCurrencyEnabled ? purchaseState.currency_id : null,
             exchange_rate: isMultiCurrencyEnabled && purchaseState.currency_id ? purchaseState.exchange_rate : 1.0,
             items: purchaseState.items.map(item => ({
@@ -1071,7 +1103,7 @@ export default function PurchaseInvoicePage() {
       }
 
       dispatch(setPurchaseHasUnsavedChanges(false));
-      nav.handleNew(true);
+      handleNewInvoice(true);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || 'Unknown error');
       toast.error(`Failed to save purchase invoice: ${message}`);
@@ -1079,6 +1111,12 @@ export default function PurchaseInvoicePage() {
     } finally {
       dispatch(setLoading(false));
     }
+  };
+
+  const handleNewInvoice = (skipConfirm?: boolean) => {
+    setAutoRoundOff(globalAutoRoundOff);
+    setRoundOffAmount(undefined);
+    nav.handleNew(skipConfirm);
   };
 
   const handleDelete = async () => {
@@ -1089,7 +1127,7 @@ export default function PurchaseInvoicePage() {
         // Delete the invoice (backend will handle cleanup of related data)
         await invoke('delete_purchase_invoice', { id: purchaseState.currentVoucherId });
         toast.success('Voucher and all associated entries deleted');
-        nav.handleNew();
+        handleNewInvoice();
       } catch (e) {
         toast.error('Failed to delete voucher');
         console.error(e);
@@ -1130,7 +1168,7 @@ export default function PurchaseInvoicePage() {
   useVoucherShortcuts({
     onSave: () => formRef.current?.requestSubmit(),
     onNewItem: handleAddItem,
-    onClear: nav.handleNew,
+    onClear: handleNewInvoice,
     onToggleShortcuts: () => setShowShortcuts(prev => !prev),
     onCloseShortcuts: () => setShowShortcuts(false),
     showShortcuts
@@ -1300,7 +1338,7 @@ export default function PurchaseInvoicePage() {
         onNavigatePrevious={nav.handleNavigatePrevious}
         onNavigateNext={nav.handleNavigateNext}
         onNavigateToLast={nav.handleNavigateToLast}
-        onNew={nav.handleNew}
+        onNew={handleNewInvoice}
         onEdit={nav.handleEdit}
         onCancel={nav.handleCancel}
         onSave={() => formRef.current?.requestSubmit()}
@@ -1698,6 +1736,73 @@ export default function PurchaseInvoicePage() {
                       />
                     </div>
                   )}
+                  <div className="flex flex-col justify-end">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Checkbox
+                        id="purchase-round-off-toggle"
+                        checked={autoRoundOff}
+                        onCheckedChange={(checked) => {
+                          const val = !!checked;
+                          setAutoRoundOff(val);
+                          setRoundOffAmount(undefined);
+                          markUnsaved();
+                          updateTotalsWithItems(
+                            purchaseState.items,
+                            undefined,
+                            undefined,
+                            undefined,
+                            undefined,
+                            val,
+                            undefined
+                          );
+                        }}
+                        disabled={isReadOnly}
+                      />
+                      <label htmlFor="purchase-round-off-toggle" className="text-xs font-medium cursor-pointer select-none">
+                        Round Off (.00)
+                      </label>
+                    </div>
+                    {autoRoundOff && (
+                      <Input
+                        type="number"
+                        value={roundOffAmount !== undefined ? roundOffAmount : (purchaseState.totals.roundOff ?? '')}
+                        onChange={(e) => {
+                          markUnsaved();
+                          if (e.target.value === '') {
+                            setRoundOffAmount(undefined);
+                            updateTotalsWithItems(
+                              purchaseState.items,
+                              undefined,
+                              undefined,
+                              undefined,
+                              undefined,
+                              true,
+                              undefined
+                            );
+                            return;
+                          }
+                          const val = parseFloat(e.target.value);
+                          if (!isNaN(val)) {
+                            setRoundOffAmount(val);
+                            updateTotalsWithItems(
+                              purchaseState.items,
+                              undefined,
+                              undefined,
+                              undefined,
+                              undefined,
+                              true,
+                              val
+                            );
+                          }
+                        }}
+                        placeholder="0.00"
+                        className="h-7 w-24 font-mono text-xs"
+                        step="0.01"
+                        disabled={isReadOnly}
+                        title="Manual Round Off adjustment"
+                      />
+                    )}
+                  </div>
                 </div>
                 <div className="text-right space-y-0.5">
                   <div className="flex justify-between items-center gap-2 text-xs">
@@ -1730,6 +1835,17 @@ export default function PurchaseInvoicePage() {
                       {isMultiCurrencyEnabled && purchaseState.currency_id
                         ? forexMoney(purchaseState.totals.tax)
                         : money(purchaseState.totals.tax)}
+                    </div>
+                  )}
+                  {purchaseState.totals.roundOff !== undefined && Math.abs(purchaseState.totals.roundOff) > 0.0001 && (
+                    <div className="flex justify-between items-center gap-2 text-xs font-mono text-muted-foreground">
+                      <span>Round Off:</span>
+                      <span>
+                        {purchaseState.totals.roundOff > 0 ? '+' : ''}
+                        {isMultiCurrencyEnabled && purchaseState.currency_id
+                          ? forexMoney(purchaseState.totals.roundOff)
+                          : money(purchaseState.totals.roundOff)}
+                      </span>
                     </div>
                   )}
                   <div className="text-lg font-mono font-bold">

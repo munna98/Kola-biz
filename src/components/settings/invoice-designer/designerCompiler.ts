@@ -363,6 +363,10 @@ function renderThermalTotals(el: DesignerElement): string {
                 valueHtml = `{{#if freight_charge}}{{format_currency freight_charge}}{{/if}}`;
                 html += `{{#if freight_charge}}<div style="display:flex;justify-content:space-between;padding:1px 0;color:#000;${fontFamily}${fontWeight}${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
                 continue;
+            } else if (row.field === 'round_off') {
+                valueHtml = `{{#if has_round_off}}{{format_currency round_off}}{{/if}}`;
+                html += `{{#if has_round_off}}<div style="display:flex;justify-content:space-between;padding:1px 0;color:#000;${fontFamily}${fontWeight}${extraStyle}"><span>${escapeHtml(row.label)}:</span><span>${valueHtml}</span></div>{{/if}}`;
+                continue;
             } else if (row.field === 'old_balance' || row.field === 'balance_due' || row.field === 'total_balance') {
                 valueHtml = `{{format_currency ${row.field}}}`;
             } else {
@@ -567,7 +571,7 @@ function renderA4TotalsElement(el: DesignerElement): string {
             : row.field;
         const guardField = isBillDiscount ? 'has_discount'
             : isCombinedDiscount ? 'has_any_discount'
-            : (row.field === 'tax_total' ? 'tax_total' : (row.field === 'freight_charge' ? 'freight_charge' : null));
+            : (row.field === 'tax_total' ? 'tax_total' : (row.field === 'freight_charge' ? 'freight_charge' : (row.field === 'round_off' ? 'has_round_off' : null)));
 
         let valueHtml: string;
         if (row.format === 'currency') {
