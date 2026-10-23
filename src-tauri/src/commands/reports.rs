@@ -1202,6 +1202,97 @@ pub async fn get_transaction_report(
     query.fetch_all(&pool).await.map_err(|e| e.to_string())
 }
 
+// ============= PRODUCT TRANSACTION REPORT =============
+#[derive(Serialize, Deserialize, sqlx::FromRow)]
+pub struct ProductTransactionRow {
+    pub voucher_id: String,
+    pub voucher_no: String,
+    pub voucher_type: String,
+    pub voucher_date: String,
+    pub party_name: Option<String>,
+    pub product_id: String,
+    pub product_name: String,
+    pub product_code: String,
+    pub unit_symbol: String,
+    pub quantity: f64,
+    pub rate: f64,
+    pub amount: f64,
+    pub net_amount: f64,
+}
+
+#[tauri::command]
+pub async fn get_product_transaction_report(
+    registry: State<'_, Arc<DbRegistry>>,
+    from_date: String,
+    to_date: String,
+    voucher_type: Option<String>,
+    party_id: Option<String>,
+    product_id: Option<String>,
+) -> Result<Vec<ProductTransactionRow>, String> {
+    let pool = registry.active_pool().await?;
+    let mut checklist: Vec<String> = Vec::new();
+
+    let mut query_str = String::from(
+        "SELECT
+            v.id as voucher_id,
+            v.voucher_no,
+            v.voucher_type,
+            v.voucher_date,
+            CASE
+                WHEN v.party_type = 'customer' THEN (SELECT name FROM customers WHERE id = v.party_id)
+                WHEN v.party_type = 'supplier' THEN (SELECT name FROM suppliers WHERE id = v.party_id)
+                ELSE NULL
+            END as party_name,
+            p.id as product_id,
+            p.name as product_name,
+            COALESCE(p.code, '') as product_code,
+            COALESCE(
+                (SELECT symbol FROM units WHERE id = vi.unit_id),
+                (SELECT symbol FROM units WHERE id = p.unit_id),
+                ''
+            ) as unit_symbol,
+            CAST(COALESCE(vi.base_quantity, vi.initial_quantity, 0) AS REAL) as quantity,
+            CAST(vi.rate AS REAL) as rate,
+            CAST(vi.amount AS REAL) as amount,
+            CAST(COALESCE(vi.net_amount, vi.amount, 0) AS REAL) as net_amount
+        FROM voucher_items vi
+        JOIN vouchers v ON vi.voucher_id = v.id
+        JOIN products p ON vi.product_id = p.id
+        WHERE vi.item_type = 'product'
+          AND vi.product_id IS NOT NULL
+          AND v.deleted_at IS NULL
+          AND v.voucher_date >= ? AND v.voucher_date <= ?"
+    );
+
+    checklist.push(from_date);
+    checklist.push(to_date);
+
+    if let Some(vt) = voucher_type {
+        query_str.push_str(" AND v.voucher_type = ?");
+        checklist.push(vt);
+    }
+
+    if let Some(pid) = party_id {
+        query_str.push_str(" AND v.party_id = ?");
+        checklist.push(pid);
+    }
+
+    if let Some(prod_id) = product_id {
+        query_str.push_str(" AND vi.product_id = ?");
+        checklist.push(prod_id);
+    }
+
+    query_str.push_str(" ORDER BY v.voucher_date DESC, v.created_at DESC, p.name ASC");
+
+    let mut query = sqlx::query_as::<_, ProductTransactionRow>(&query_str);
+
+    for param in checklist {
+        query = query.bind(param);
+    }
+
+    query.fetch_all(&pool).await.map_err(|e| e.to_string())
+}
+
 // ============= SALES & RETURNS REPORT =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct SalesReturnReportRow {

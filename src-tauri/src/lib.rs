@@ -247,6 +247,7 @@ pub fn run() {
             get_stock_movements,
             get_product_stock_qty,
             get_transaction_report,
+            get_product_transaction_report,
             get_sales_return_report,
             get_product_profit_report,
             get_product_profit_invoices,
