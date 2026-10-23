@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { IconDownload, IconPrinter, IconRefresh, IconFilter, IconX, IconPackage, IconReceipt } from '@tabler/icons-react';
+import { IconDownload, IconPrinter, IconRefresh, IconFilter, IconX } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
@@ -57,10 +57,8 @@ interface SimpleProduct {
   code: string;
 }
 
-type ViewMode = 'vouchers' | 'products';
-
 export default function TransactionReportPage() {
-  const [viewMode, setViewMode] = useState<ViewMode>('vouchers');
+  const [showProducts, setShowProducts] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [productRows, setProductRows] = useState<ProductTransactionRow[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
@@ -144,10 +142,10 @@ export default function TransactionReportPage() {
   };
 
   const handleApply = () => {
-    if (viewMode === 'vouchers') {
-      loadTransactions();
-    } else {
+    if (showProducts) {
       loadProductRows();
+    } else {
+      loadTransactions();
     }
   };
 
@@ -161,22 +159,19 @@ export default function TransactionReportPage() {
     setToDate(new Date().toISOString().split('T')[0]);
   };
 
-  const handleViewModeChange = (mode: ViewMode) => {
-    setViewMode(mode);
-    // Reset product filter when switching away from products mode
-    if (mode === 'vouchers') {
-      setSelectedProduct('');
-    }
+  // When the show-products checkbox changes, reload the appropriate data
+  const handleShowProductsChange = (checked: boolean) => {
+    setShowProducts(checked);
+    if (!checked) setSelectedProduct('');
   };
 
-  // Reload data when view mode changes
   useEffect(() => {
-    if (viewMode === 'vouchers') {
-      loadTransactions();
-    } else {
+    if (showProducts) {
       loadProductRows();
+    } else {
+      loadTransactions();
     }
-  }, [viewMode]);
+  }, [showProducts]);
 
   const handlePrint = () => window.print();
   const handleExport = () => toast.info('Export functionality coming soon');
@@ -215,7 +210,6 @@ export default function TransactionReportPage() {
   const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
   const productTotalValue = productRows.reduce((sum, r) => sum + r.net_amount, 0);
 
-
   return (
     <div className="h-full flex flex-col bg-background">
       {/* Header */}
@@ -243,34 +237,8 @@ export default function TransactionReportPage() {
           </div>
         </div>
 
-        {/* View Mode Toggle */}
-        <div className="mt-4 flex gap-1 p-1 bg-muted rounded-lg w-fit">
-          <button
-            onClick={() => handleViewModeChange('vouchers')}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-              viewMode === 'vouchers'
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <IconReceipt size={14} />
-            Vouchers
-          </button>
-          <button
-            onClick={() => handleViewModeChange('products')}
-            className={`flex items-center gap-1.5 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${
-              viewMode === 'products'
-                ? 'bg-background text-foreground shadow-sm'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            <IconPackage size={14} />
-            Products
-          </button>
-        </div>
-
         {/* Filters */}
-        <div className="mt-3 space-y-3">
+        <div className="mt-4 space-y-3">
           <div className="flex gap-3 items-end flex-wrap">
             <div className="flex-1 min-w-[140px] max-w-[180px]">
               <Label className="text-xs mb-1 block">From Date</Label>
@@ -301,18 +269,14 @@ export default function TransactionReportPage() {
                   <SelectItem value="sales_invoice">Sales</SelectItem>
                   {coEnabled && <SelectItem value="co_invoice">Custom Order</SelectItem>}
                   <SelectItem value="purchase_invoice">Purchase</SelectItem>
-                  {viewMode === 'vouchers' && (
+                  <SelectItem value="sales_return">Sales Return</SelectItem>
+                  <SelectItem value="purchase_return">Purchase Return</SelectItem>
+                  {!showProducts && (
                     <>
                       <SelectItem value="payment">Payment</SelectItem>
                       <SelectItem value="receipt">Receipt</SelectItem>
                       <SelectItem value="journal">Journal</SelectItem>
                       <SelectItem value="opening_balance">Opening Balance</SelectItem>
-                    </>
-                  )}
-                  {viewMode === 'products' && (
-                    <>
-                      <SelectItem value="sales_return">Sales Return</SelectItem>
-                      <SelectItem value="purchase_return">Purchase Return</SelectItem>
                     </>
                   )}
                 </SelectContent>
@@ -334,7 +298,7 @@ export default function TransactionReportPage() {
                 searchPlaceholder="Search parties..."
               />
             </div>
-            {viewMode === 'products' && (
+            {showProducts && (
               <div className="flex-1 min-w-[160px] max-w-[220px]">
                 <Label className="text-xs mb-1 block">Product</Label>
                 <Combobox
@@ -360,6 +324,16 @@ export default function TransactionReportPage() {
               <IconX size={16} />
               Clear
             </Button>
+            {/* Show Products checkbox */}
+            <label className="flex items-center gap-2 cursor-pointer select-none self-end pb-1.5">
+              <input
+                type="checkbox"
+                checked={showProducts}
+                onChange={(e) => handleShowProductsChange(e.target.checked)}
+                className="w-4 h-4 rounded accent-primary cursor-pointer"
+              />
+              <span className="text-sm font-medium">Show Products</span>
+            </label>
           </div>
         </div>
       </div>
@@ -371,17 +345,15 @@ export default function TransactionReportPage() {
           <div className="hidden print:block mb-6 text-center">
             <h1 className="text-2xl font-bold">Transaction Report</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {viewMode === 'products' ? 'Products View — ' : ''}Period: {formatDate(fromDate)} to {formatDate(toDate)}
+              {showProducts ? 'Products View — ' : ''}Period: {formatDate(fromDate)} to {formatDate(toDate)}
             </p>
           </div>
-
-
 
           {loading ? (
             <div className="flex items-center justify-center h-64">
               <p className="text-muted-foreground">Loading...</p>
             </div>
-          ) : viewMode === 'vouchers' ? (
+          ) : !showProducts ? (
             /* ─── VOUCHERS TABLE ─── */
             <Card>
               <CardContent className="p-0">

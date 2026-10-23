@@ -25,6 +25,8 @@ import {
   IconReceipt,
   IconCalendar,
   IconPackage,
+  IconTag,
+  IconCalculator,
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
@@ -280,6 +282,7 @@ export default function ExpenseReportPage() {
         currency_symbol: currencySymbol || null,
         total_amount: isProductEntryMode ? entryTotal : totalExpenses,
         total_vouchers: isProductEntryMode ? entryDetails.length : totalVouchers,
+        purchase_rate: isProductEntryMode ? (selectedProduct?.purchase_rate ?? 0) : 0,
         rows: isProductEntryMode
           ? []
           : rows.map(r => ({
@@ -577,37 +580,75 @@ export default function ExpenseReportPage() {
           </div>
         )}
 
-        {/* ── Product entry mode — summary card ── */}
-        {isProductEntryMode && !detailLoading && entryDetails.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Card>
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="p-2 bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg">
-                  <IconReceipt size={20} />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                    Total for {selectedProduct ? `${selectedProduct.code} - ${selectedProduct.name}` : 'Product'}
-                  </p>
-                  <p className="text-xl font-bold font-mono mt-0.5 text-rose-600 dark:text-rose-400">
-                    {fmt(entryTotal)}
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4 flex items-center gap-3">
-                <div className="p-2 bg-muted text-muted-foreground rounded-lg">
-                  <IconCalendar size={20} />
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Entries</p>
-                  <p className="text-xl font-bold font-mono mt-0.5">{entryDetails.length}</p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        )}
+        {/* ── Product entry mode — summary cards ── */}
+        {isProductEntryMode && !detailLoading && entryDetails.length > 0 && (() => {
+          const purchaseRate = selectedProduct?.purchase_rate ?? 0;
+          const totalCost = purchaseRate + entryTotal;
+          return (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Purchase Rate */}
+              <Card>
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="p-2 bg-blue-100 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 rounded-lg">
+                    <IconTag size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Purchase Rate</p>
+                    <p className="text-xl font-bold font-mono mt-0.5 text-blue-600 dark:text-blue-400">
+                      {fmt(purchaseRate)}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Expenses */}
+              <Card>
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="p-2 bg-rose-100 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 rounded-lg">
+                    <IconReceipt size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Expenses</p>
+                    <p className="text-xl font-bold font-mono mt-0.5 text-rose-600 dark:text-rose-400">
+                      {fmt(entryTotal)}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Entries */}
+              <Card>
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="p-2 bg-muted text-muted-foreground rounded-lg">
+                    <IconCalendar size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Entries</p>
+                    <p className="text-xl font-bold font-mono mt-0.5">{entryDetails.length}</p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Total Cost */}
+              <Card>
+                <CardContent className="p-4 flex items-center gap-3">
+                  <div className="p-2 bg-emerald-100 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-lg">
+                    <IconCalculator size={20} />
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Total Cost</p>
+                    <p className="text-xl font-bold font-mono mt-0.5 text-emerald-600 dark:text-emerald-400">
+                      {fmt(totalCost)}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Rate + Expenses
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          );
+        })()}
 
         {/* ── Table ── */}
         <Card className="shadow-sm overflow-hidden">
@@ -669,16 +710,37 @@ export default function ExpenseReportPage() {
                       ))
                     )}
                   </tbody>
-                  {entryDetails.length > 0 && (
-                    <tfoot className="bg-muted/30 border-t-2 border-foreground/20">
-                      <tr>
-                        <td colSpan={4} className="p-3 font-bold text-sm">TOTAL</td>
-                        <td className="p-3 text-right font-mono font-bold text-sm text-rose-600 dark:text-rose-400">
-                          {fmt(entryTotal)}
-                        </td>
-                      </tr>
-                    </tfoot>
-                  )}
+                  {entryDetails.length > 0 && (() => {
+                    const purchaseRate = selectedProduct?.purchase_rate ?? 0;
+                    const totalCost = purchaseRate + entryTotal;
+                    return (
+                      <tfoot className="bg-muted/30 border-t-2 border-foreground/20">
+                        <tr className="border-b border-foreground/10">
+                          <td colSpan={4} className="p-3 text-sm text-muted-foreground">
+                            Purchase Rate
+                          </td>
+                          <td className="p-3 text-right font-mono text-sm text-blue-600 dark:text-blue-400">
+                            {fmt(purchaseRate)}
+                          </td>
+                        </tr>
+                        <tr className="border-b border-foreground/10">
+                          <td colSpan={4} className="p-3 text-sm text-muted-foreground">
+                            Expenses
+                          </td>
+                          <td className="p-3 text-right font-mono text-sm text-rose-600 dark:text-rose-400">
+                            {fmt(entryTotal)}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td colSpan={4} className="p-3 font-bold text-sm">Total Cost</td>
+                          <td className="p-3 text-right font-mono font-bold text-sm text-emerald-600 dark:text-emerald-400">
+                            {fmt(totalCost)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    );
+                  })()}
+
                 </table>
               </div>
             )
