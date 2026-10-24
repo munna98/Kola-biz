@@ -26,6 +26,8 @@ import {
     IconAdjustments,
     IconReceiptTax,
     IconScissors,
+    IconDeviceMobile,
+    IconUserCheck,
 } from '@tabler/icons-react';
 
 export interface MenuItem {
@@ -48,6 +50,7 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
     { id: 'coa', label: 'Ledgers', icon: IconNotebook, category: 'Master' },
 
     // Vouchers
+    { id: 'service_orders', label: 'Service Orders', icon: IconDeviceMobile, category: 'Voucher' },
     { id: 'purchase', label: 'Purchase Invoice', icon: IconTruck, category: 'Voucher' },
     { id: 'purchase_return', label: 'Purchase Return', icon: IconTruckReturn, category: 'Voucher' },
     { id: 'sales_quotation', label: 'Sales Quotation', icon: IconShoppingBag, category: 'Voucher' },
@@ -63,6 +66,7 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
     { id: 'stock_journal', label: 'Stock Journal', icon: IconExchange, category: 'Voucher' },
 
     // Reports
+    { id: 'technician_report', label: 'Tech Commission', icon: IconUserCheck, category: 'Report' },
     { id: 'stock_report', label: 'Stock Report', icon: IconReportAnalytics, category: 'Report' },
     { id: 'product_profit', label: 'Product Profit', icon: IconReportAnalytics, category: 'Report' },
     { id: 'transactions', label: 'Transaction Report', icon: IconHistory, category: 'Report' },
@@ -85,8 +89,8 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
 ];
 
 export const DEFAULT_SIDEBAR_ITEMS = [
-    'dashboard', 'products', 'customers', 'suppliers', 'employees',
+    'dashboard', 'service_orders', 'products', 'customers', 'suppliers', 'employees',
     'purchase', 'sales', 'payments', 'receipts', 'journal',
-    'stock_report', 'product_profit', 'transactions', 'day_book', 'outstanding',
+    'technician_report', 'stock_report', 'product_profit', 'transactions', 'day_book', 'outstanding',
     'users', 'roles',
 ];

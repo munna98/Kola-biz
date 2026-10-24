@@ -28,6 +28,7 @@ pub mod price_categories;
 pub mod templates;
 pub mod voucher_units;
 pub mod custom_orders;
+pub mod service_orders;
 pub mod routes;
 
 pub use accounts::*;
@@ -58,5 +59,5 @@ pub use price_categories::*;
 pub use templates::*;
 pub use voucher_units::*;
 pub use custom_orders::*;
+pub use service_orders::*;
 pub use routes::*;
-

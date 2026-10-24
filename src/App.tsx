@@ -62,6 +62,8 @@ import { LicenseProvider } from './components/providers/LicenseProvider';
 import { LicenseGuard } from './components/LicenseGuard';
 import LicensePage from './pages/LicensePage';
 import CustomOrdersPage from './pages/CustomOrdersPage';
+import ServiceOrdersPage from './pages/ServiceOrdersPage';
+import TechnicianCommissionReportPage from './pages/reports/TechnicianCommissionReportPage';
 import FeaturesSettingsPage from './pages/settings/FeaturesSettingsPage';
 import ExitConfirmDialog from './components/dialogs/ExitConfirmDialog';
 import { IconLock } from '@tabler/icons-react';
@@ -227,6 +229,7 @@ function AppContent() {
             case 'purchase_return': return <PurchaseReturnPage />;
             case 'sales_quotation': return <SalesQuotationPage />;
             case 'delivery_note': return <DeliveryNotePage />;
+            case 'service_orders': return <ServiceOrdersPage />;
             case 'custom_orders': return <CustomOrdersPage />;
             case 'sales': return <SalesInvoicePage />;
             case 'sales_return': return <SalesReturnPage />;
@@ -249,6 +252,7 @@ function AppContent() {
             case 'sales_return_report': return <SalesReturnReportPage />;
             case 'expense_report': return <ExpenseReportPage />;
             case 'custom_orders_report': return <CustomOrdersReportPage />;
+            case 'technician_report': return <TechnicianCommissionReportPage />;
             case 'gstr1': return <Gstr1ReportPage />;
             case 'gstr3b': return <Gstr3bReportPage />;
             case 'users': return <UsersPage />;

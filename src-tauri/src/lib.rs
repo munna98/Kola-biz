@@ -412,6 +412,16 @@ pub fn run() {
             commands::custom_orders::get_custom_orders_margin_report,
             commands::templates::render_custom_order_slip,
             commands::templates::render_co_invoice,
+            // Service Orders (Mobile Repair Module)
+            commands::service_orders::list_service_orders,
+            commands::service_orders::get_service_order,
+            commands::service_orders::create_service_order,
+            commands::service_orders::update_service_order,
+            commands::service_orders::update_service_order_status,
+            commands::service_orders::record_service_advance,
+            commands::service_orders::finalize_service_order,
+            commands::service_orders::delete_service_order,
+            commands::service_orders::get_technician_commission_report,
 
         ])
         .plugin(tauri_plugin_opener::init())

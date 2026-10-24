@@ -1936,6 +1936,132 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     .execute(pool)
     .await;
 
+    // ==================== SERVICE ORDERS (MOBILE REPAIR MODULE) ====================
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS service_orders (
+            id                   TEXT PRIMARY KEY,
+            order_no             TEXT UNIQUE NOT NULL,
+            order_date           DATE NOT NULL,
+            expected_date        DATE,
+            customer_id          TEXT NOT NULL,
+            device_brand         TEXT,
+            device_model         TEXT,
+            device_imei          TEXT,
+            device_color         TEXT,
+            device_condition     TEXT,
+            security_pin_pattern TEXT,
+            complaint            TEXT NOT NULL,
+            technician_notes     TEXT,
+            assigned_to          TEXT,
+            commission_type      TEXT DEFAULT 'percentage',
+            commission_rate      REAL DEFAULT 0,
+            commission_amount    REAL DEFAULT 0,
+            estimated_cost       REAL DEFAULT 0,
+            advance_amount       REAL DEFAULT 0,
+            advance_voucher_id   TEXT,
+            total_parts_cost     REAL DEFAULT 0,
+            total_parts_billed   REAL DEFAULT 0,
+            total_labour_cost    REAL DEFAULT 0,
+            total_amount         REAL DEFAULT 0,
+            final_invoice_id     TEXT,
+            final_invoice_no     TEXT,
+            status               TEXT DEFAULT 'received',
+            reference            TEXT,
+            narration            TEXT,
+            created_by           TEXT,
+            created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at           DATETIME,
+            FOREIGN KEY (customer_id) REFERENCES chart_of_accounts(id),
+            FOREIGN KEY (assigned_to) REFERENCES employees(id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS service_order_parts (
+            id               TEXT PRIMARY KEY,
+            order_id         TEXT NOT NULL,
+            product_id       TEXT NOT NULL,
+            description      TEXT,
+            quantity         REAL NOT NULL DEFAULT 1,
+            unit_id          TEXT,
+            cost_rate        REAL NOT NULL DEFAULT 0,
+            cost_amount      REAL NOT NULL DEFAULT 0,
+            selling_rate     REAL NOT NULL DEFAULT 0,
+            selling_amount   REAL NOT NULL DEFAULT 0,
+            stock_journal_id TEXT,
+            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (order_id)   REFERENCES service_orders(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS service_order_labour (
+            id              TEXT PRIMARY KEY,
+            order_id        TEXT NOT NULL,
+            service_id      TEXT,
+            description     TEXT NOT NULL,
+            quantity        REAL NOT NULL DEFAULT 1,
+            rate            REAL NOT NULL DEFAULT 0,
+            amount          REAL NOT NULL DEFAULT 0,
+            created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (order_id) REFERENCES service_orders(id) ON DELETE CASCADE
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS service_order_status_log (
+            id          TEXT PRIMARY KEY,
+            order_id    TEXT NOT NULL,
+            old_status  TEXT,
+            new_status  TEXT NOT NULL,
+            notes       TEXT,
+            changed_by  TEXT,
+            changed_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (order_id) REFERENCES service_orders(id) ON DELETE CASCADE
+        )",
+    )
+    .execute(pool)
+    .await?;
+
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_service_orders_customer ON service_orders(customer_id)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_service_orders_status ON service_orders(status)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_service_orders_date ON service_orders(order_date)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_service_orders_imei ON service_orders(device_imei)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_service_order_parts_order ON service_order_parts(order_id)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_service_order_labour_order ON service_order_labour(order_id)")
+        .execute(pool).await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_service_order_status_log_order ON service_order_status_log(order_id)")
+        .execute(pool).await?;
+
+    // Seed voucher sequence for service orders (default SVO-00001) and service invoice (default SVI-00001)
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO voucher_sequences (id, voucher_type, prefix, suffix, separator, next_number, padding, include_financial_year, reset_yearly)
+         VALUES (hex(randomblob(16)), 'service_order', 'SVO', '', '-', 1, 5, 0, 0)",
+    )
+    .execute(pool)
+    .await;
+
+    let _ = sqlx::query(
+        "INSERT OR IGNORE INTO voucher_sequences (id, voucher_type, prefix, suffix, separator, next_number, padding, include_financial_year, reset_yearly)
+         VALUES (hex(randomblob(16)), 'service_invoice', 'SVI', '', '-', 1, 5, 0, 0)",
+    )
+    .execute(pool)
+    .await;
+
     // ==================== SETTINGS & CONFIG ====================
 
     // Voucher Sequences
