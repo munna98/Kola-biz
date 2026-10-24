@@ -113,7 +113,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
     y_pos -= 6.0;
 
     // Table configuration - optimized for full page width (186mm available with 12mm margins)
-    let col_widths = [21.0, 23.0, 22.0, 46.0, 23.0, 23.0, 28.0];
+    let col_widths = [23.0, 22.0, 24.0, 40.0, 24.0, 24.0, 29.0];
     let mut col_x = vec![left_margin];
     for width in &col_widths[0..col_widths.len() - 1] {
         col_x.push(col_x.last().unwrap() + width);
@@ -128,14 +128,14 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         "Credit",
         "Balance",
     ];
-    let line_height = 5.6;
+    let line_height = 6.2;
     let cell_padding = 0.8;
 
     // Draw header text
     for (i, header) in headers.iter().enumerate() {
         current_layer.use_text(
             *header,
-            9.5,
+            10.5,
             Mm(col_x[i] + cell_padding),
             Mm(y_pos),
             &font_bold,
@@ -148,7 +148,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
     if data.opening_balance.abs() > 0.01 {
         current_layer.use_text(
             "Opening Balance",
-            8.5,
+            10.0,
             Mm(col_x[0] + cell_padding),
             Mm(y_pos),
             &font_bold,
@@ -162,7 +162,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         };
         current_layer.use_text(
             &format!("{} {}", balance_str, dr_cr),
-            8.5,
+            10.0,
             Mm(col_x[6] + cell_padding),
             Mm(y_pos),
             &font_bold,
@@ -182,7 +182,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
             for (i, header) in headers.iter().enumerate() {
                 current_layer.use_text(
                     *header,
-                    9.5,
+                    10.5,
                     Mm(col_x[i] + cell_padding),
                     Mm(y_pos),
                     &font_bold,
@@ -195,7 +195,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         // Date
         current_layer.use_text(
             &entry.date,
-            8.5,
+            10.0,
             Mm(col_x[0] + cell_padding),
             Mm(y_pos),
             &font,
@@ -204,7 +204,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         // Voucher No
         current_layer.use_text(
             &entry.voucher_no,
-            8.5,
+            10.0,
             Mm(col_x[1] + cell_padding),
             Mm(y_pos),
             &font,
@@ -214,7 +214,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         let formatted_type = format_voucher_type(&entry.voucher_type);
         current_layer.use_text(
             &formatted_type,
-            8.5,
+            10.0,
             Mm(col_x[2] + cell_padding),
             Mm(y_pos),
             &font,
@@ -228,7 +228,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         };
         current_layer.use_text(
             &narration,
-            8.5,
+            10.0,
             Mm(col_x[3] + cell_padding),
             Mm(y_pos),
             &font,
@@ -239,7 +239,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
             let debit_text = format!("{:>12.2}", entry.debit);
             current_layer.use_text(
                 &debit_text,
-                8.5,
+                10.0,
                 Mm(col_x[4] + cell_padding),
                 Mm(y_pos),
                 &font,
@@ -251,7 +251,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
             let credit_text = format!("{:>12.2}", entry.credit);
             current_layer.use_text(
                 &credit_text,
-                8.5,
+                10.0,
                 Mm(col_x[5] + cell_padding),
                 Mm(y_pos),
                 &font,
@@ -264,7 +264,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
             format_pdf_currency(entry.balance.abs(), &data),
             if entry.balance >= 0.0 { "Dr" } else { "Cr" }
         );
-        current_layer.use_text(&balance_str, 8.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&balance_str, 10.0, Mm(col_x[6] + cell_padding), Mm(y_pos), &font);
 
         y_pos -= line_height;
     }
@@ -279,7 +279,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         for (i, header) in headers.iter().enumerate() {
             current_layer.use_text(
                 *header,
-                9.5,
+                10.5,
                 Mm(col_x[i] + cell_padding),
                 Mm(y_pos),
                 &font_bold,
@@ -291,7 +291,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
 
     current_layer.use_text(
         "Closing Balance",
-        9.5,
+        10.5,
         Mm(col_x[0] + cell_padding),
         Mm(y_pos),
         &font_bold,
@@ -305,7 +305,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
     };
     current_layer.use_text(
         &format!("{} {}", closing_str, dr_cr),
-        9.5,
+        10.5,
         Mm(col_x[6] + cell_padding),
         Mm(y_pos),
         &font_bold,
