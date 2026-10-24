@@ -121,7 +121,8 @@ export default function FeaturesSettingsPage() {
     };
 
     return (
-        <div className="p-6 max-w-2xl">
+        <div className="h-full overflow-y-auto">
+            <div className="p-6 max-w-2xl">
             <h1 className="text-2xl font-semibold mb-1">Feature Settings</h1>
             <p className="text-muted-foreground text-sm mb-6">
                 Enable or disable optional industry-specific modules for this company.
@@ -309,6 +310,7 @@ export default function FeaturesSettingsPage() {
                     </div>
                 </div>
             </div>
+        </div>
         </div>
     );
 }
