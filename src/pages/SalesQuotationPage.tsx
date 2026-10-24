@@ -55,6 +55,7 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings, VoucherItemsSectionRef } from '@/components/voucher/VoucherItemsSection';
+import { VoucherPartyBalance } from '@/components/voucher/VoucherPartyBalance';
 
 import { usePrint } from '@/hooks/usePrint';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
@@ -132,12 +133,13 @@ export default function SalesQuotationPage() {
   const [globalAutoRoundOff, setGlobalAutoRoundOff] = useState(false);
   const [autoRoundOff, setAutoRoundOff] = useState(false);
   const [roundOffAmount, setRoundOffAmount] = useState<number | undefined>(undefined);
+  const [roundOffStrategy, setRoundOffStrategy] = useState<'standard' | 'down'>('standard');
 
   // Load initial data
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData, servicesData, masterSettingVal, roundOffSettingVal] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, employeesData, gstSettings, slabsData, servicesData, masterSettingVal, roundOffSettingVal, roundOffStrategyVal] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -150,6 +152,7 @@ export default function SalesQuotationPage() {
           invoke<any[]>('get_services').catch(() => []),
           invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
           invoke<string | null>('get_app_setting', { key: 'auto_round_off_vouchers' }).catch(() => null),
+          invoke<string | null>('get_app_setting', { key: 'round_off_strategy' }).catch(() => null),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
@@ -165,6 +168,9 @@ export default function SalesQuotationPage() {
         const isRoundOffDefault = roundOffSettingVal === 'true';
         setGlobalAutoRoundOff(isRoundOffDefault);
         setAutoRoundOff(isRoundOffDefault);
+        if (roundOffStrategyVal === 'down') {
+          setRoundOffStrategy('down');
+        }
         setEmployees(employeesData.filter((e: Employee) => e.status === 'active'));
         setServices(servicesData);
         setMasterProductsEnabled(masterSettingVal === 'true');
@@ -507,6 +513,7 @@ export default function SalesQuotationPage() {
       freightCharge: effectiveFreight,
       autoRoundOff: effectiveAutoRoundOff,
       manualRoundOff: effectiveRoundOffAmount,
+      roundOffStrategy,
       taxInclusive: isTaxInclusive,
       resolveGstRate: resolveItemGstRate,
     });
@@ -1110,6 +1117,7 @@ export default function SalesQuotationPage() {
   const currentPartyIsCashBank = currentCustomerParty?.group === 'Cash' || currentCustomerParty?.group === 'Bank Account';
   const isCashOrBankParty = currentPartyIsCashBank || ['cash', 'bank'].includes(currentCustomerParty?.name.trim().toLowerCase() || '');
   const shouldShowPartyBalance = currentCustomerParty ? !isCashOrBankParty : false;
+  const newEffectiveBalance = partyBalance !== null ? partyBalance + salesState.totals.grandTotal : null;
 
   const handleConvertToInvoice = () => {
     if (salesState.currentVoucherId && !salesState.hasUnsavedChanges) {
@@ -1387,9 +1395,11 @@ export default function SalesQuotationPage() {
             taxInclusive={isTaxInclusive}
             footerRightContent={
               partyBalance !== null && shouldShowPartyBalance ? (
-                <div className={`text-base font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  Balance: {money(Math.abs(partyBalance), { minimumFractionDigits: 0, maximumFractionDigits: 0 })} {partyBalance >= 0 ? 'Dr' : 'Cr'}
-                </div>
+                <VoucherPartyBalance
+                  balance={partyBalance}
+                  newBalance={newEffectiveBalance}
+                  moneyFormatter={money}
+                />
               ) : null
             }
             footerLeftContent={

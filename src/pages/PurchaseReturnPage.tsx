@@ -51,6 +51,7 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings, VoucherItemsSectionRef } from '@/components/voucher/VoucherItemsSection';
+import { VoucherPartyBalance } from '@/components/voucher/VoucherPartyBalance';
 import { Product, ProductUnitConversion, Unit, GstTaxSlab, api } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
@@ -62,6 +63,7 @@ interface Party {
     name: string;
     type: 'customer' | 'supplier';
     address_line_1?: string;
+    group?: string;
 }
 
 export default function PurchaseReturnPage() {
@@ -79,6 +81,11 @@ export default function PurchaseReturnPage() {
     const [productUnitConversions, setProductUnitConversions] = useState<ProductUnitConversion[]>([]);
     const [units, setUnits] = useState<Unit[]>([]);
     const [parties, setParties] = useState<Party[]>([]);
+    const [partyBalance, setPartyBalance] = useState<number | null>(null);
+    const [partyForeignBalance, setPartyForeignBalance] = useState<number | null>(null);
+    const [savedReturnAmount, setSavedReturnAmount] = useState<number>(0);
+    const [savedReturnForeignAmount, setSavedReturnForeignAmount] = useState<number>(0);
+    const [savedPartyId, setSavedPartyId] = useState<number | undefined>(undefined);
     const [gstSlabs, setGstSlabs] = useState<GstTaxSlab[]>([]);
     const [gstDisabled, setGstDisabled] = useState(false);
     const [isInitializing, setIsInitializing] = useState(true);
@@ -103,12 +110,13 @@ export default function PurchaseReturnPage() {
     const [globalAutoRoundOff, setGlobalAutoRoundOff] = useState(false);
     const [autoRoundOff, setAutoRoundOff] = useState(false);
     const [roundOffAmount, setRoundOffAmount] = useState<number | undefined>(undefined);
+    const [roundOffStrategy, setRoundOffStrategy] = useState<'standard' | 'down'>('standard');
 
     // Load initial data
     useEffect(() => {
         const loadData = async () => {
             try {
-                const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, gstSettings, slabsData, masterSettingVal, roundOffSettingVal] = await Promise.all([
+                const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, gstSettings, slabsData, masterSettingVal, roundOffSettingVal, roundOffStrategyVal] = await Promise.all([
                     invoke<Product[]>('get_products'),
                     invoke<Unit[]>('get_units'),
                     invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -118,6 +126,7 @@ export default function PurchaseReturnPage() {
                     api.gst.getSlabs().catch(() => [] as GstTaxSlab[]),
                     invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
                     invoke<string | null>('get_app_setting', { key: 'auto_round_off_vouchers' }).catch(() => null),
+                    invoke<string | null>('get_app_setting', { key: 'round_off_strategy' }).catch(() => null),
                 ]);
                 setProducts(productsData);
                 setUnits(unitsData);
@@ -126,6 +135,9 @@ export default function PurchaseReturnPage() {
                 const isRoundOffDefault = roundOffSettingVal === 'true';
                 setGlobalAutoRoundOff(isRoundOffDefault);
                 setAutoRoundOff(isRoundOffDefault);
+                if (roundOffStrategyVal === 'down') {
+                    setRoundOffStrategy('down');
+                }
                 if (gstSettings?.gst_enabled) {
                     setGstSlabs(slabsData);
                 }
@@ -136,6 +148,7 @@ export default function PurchaseReturnPage() {
                     name: acc.account_name,
                     type: acc.account_group === 'Accounts Payable' ? 'supplier' as const : 'customer' as const,
                     address_line_1: acc.address_line_1 as string | undefined,
+                    group: acc.account_group as string | undefined,
                 }));
                 setParties(combinedParties);
 
@@ -186,6 +199,24 @@ export default function PurchaseReturnPage() {
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [purchaseReturnState.mode, purchaseReturnState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct]);
+
+    // Fetch supplier balance whenever supplier_id changes
+    useEffect(() => {
+        if (purchaseReturnState.form.supplier_id) {
+            invoke<{ base_balance: number; foreign_balance: number }>('get_account_balance_info', { accountId: purchaseReturnState.form.supplier_id })
+                .then(info => {
+                    setPartyBalance(info.base_balance);
+                    setPartyForeignBalance(info.foreign_balance);
+                })
+                .catch(() => {
+                    setPartyBalance(null);
+                    setPartyForeignBalance(null);
+                });
+        } else {
+            setPartyBalance(null);
+            setPartyForeignBalance(null);
+        }
+    }, [purchaseReturnState.form.supplier_id]);
 
     const handleAddItem = (insertAt?: number) => {
         // Get defaults from settings
@@ -411,6 +442,7 @@ export default function PurchaseReturnPage() {
             freightCharge: effectiveFreight,
             autoRoundOff: effectiveAutoRoundOff,
             manualRoundOff: effectiveRoundOffAmount,
+            roundOffStrategy,
             taxInclusive: !!voucherSettings?.taxInclusive,
             resolveGstRate: resolveItemGstRate,
         });
@@ -557,6 +589,9 @@ export default function PurchaseReturnPage() {
 
             // Populate Form
             dispatch(setPurchaseReturnSupplier({ id: invoice.supplier_id, name: invoice.supplier_name, type: invoice.party_type }));
+            setSavedReturnAmount(invoice.grand_total || 0);
+            setSavedReturnForeignAmount(invoice.foreign_total || 0);
+            setSavedPartyId(invoice.supplier_id);
             dispatch(setPurchaseReturnVoucherDate(invoice.voucher_date));
             dispatch(setPurchaseReturnReference(invoice.reference || ''));
             dispatch(setPurchaseReturnNarration(invoice.narration || ''));
@@ -701,6 +736,9 @@ export default function PurchaseReturnPage() {
     const handleNewReturn = (skipConfirm?: boolean) => {
         setAutoRoundOff(globalAutoRoundOff);
         setRoundOffAmount(undefined);
+        setSavedReturnAmount(0);
+        setSavedReturnForeignAmount(0);
+        setSavedPartyId(undefined);
         handleNew(skipConfirm);
     };
 
@@ -791,6 +829,27 @@ export default function PurchaseReturnPage() {
 
     // Determine if form should be disabled (viewing mode)
     const isReadOnly = purchaseReturnState.mode === 'viewing';
+
+    const currentSupplierParty = parties.find(p => p.id === purchaseReturnState.form.supplier_id);
+    const currentPartyIsCashBank = currentSupplierParty?.group === 'Cash' || currentSupplierParty?.group === 'Bank Account';
+    const isCashOrBankParty = currentPartyIsCashBank || ['cash', 'bank'].includes(currentSupplierParty?.name.trim().toLowerCase() || '');
+    const shouldShowPartyBalance = currentSupplierParty ? !isCashOrBankParty : false;
+
+    const isSameParty = purchaseReturnState.mode !== 'new' && Boolean(purchaseReturnState.currentVoucherId) && String(purchaseReturnState.form.supplier_id) === String(savedPartyId);
+    const isForexDisplay = Boolean(isMultiCurrencyEnabled && purchaseReturnState.currency_id && partyForeignBalance !== null && partyForeignBalance !== 0);
+
+    // Purchase return debits supplier (reduces credit owed / increases balance toward Dr)
+    const currentEffectiveBalance = isForexDisplay
+        ? (partyForeignBalance !== null ? (isSameParty ? partyForeignBalance - savedReturnForeignAmount : partyForeignBalance) : null)
+        : (partyBalance !== null ? (isSameParty ? partyBalance - savedReturnAmount : partyBalance) : null);
+
+    const voucherPartyImpact = isForexDisplay
+        ? purchaseReturnState.totals.grandTotal
+        : (isMultiCurrencyEnabled && purchaseReturnState.currency_id ? purchaseReturnState.totals.grandTotal * (purchaseReturnState.exchange_rate || 1) : purchaseReturnState.totals.grandTotal);
+
+    const newEffectiveBalance = currentEffectiveBalance !== null
+        ? currentEffectiveBalance + voucherPartyImpact
+        : null;
 
     return (
         <div className="h-full flex flex-col bg-background">
@@ -977,6 +1036,15 @@ export default function PurchaseReturnPage() {
                         gstSlabs={gstDisabled ? [] : gstSlabs}
                         fullProducts={products as any}
                         taxInclusive={voucherSettings?.taxInclusive}
+                        footerRightContent={
+                            currentEffectiveBalance !== null && shouldShowPartyBalance ? (
+                                <VoucherPartyBalance
+                                    balance={currentEffectiveBalance}
+                                    newBalance={newEffectiveBalance}
+                                    moneyFormatter={isForexDisplay ? forexMoney : money}
+                                />
+                            ) : null
+                        }
                         footerLeftContent={
                           !isReadOnly && gstSlabs.length > 0 ? (
                             <Popover>

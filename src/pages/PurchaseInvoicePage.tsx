@@ -52,6 +52,7 @@ import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherItemsSection, ColumnSettings, VoucherItemsSectionRef } from '@/components/voucher/VoucherItemsSection';
+import { VoucherPartyBalance } from '@/components/voucher/VoucherPartyBalance';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import { usePrint } from '@/hooks/usePrint';
 import SupplierDialog from '@/components/dialogs/SupplierDialog';
@@ -97,7 +98,7 @@ export default function PurchaseInvoicePage() {
   const [savedInvoiceNo, setSavedInvoiceNo] = useState<string | undefined>(undefined);
   const [savedInvoiceDate, setSavedInvoiceDate] = useState<string | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
-  const [, setSavedPartyId] = useState<number | undefined>(undefined);
+  const [savedPartyId, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, enableBarcodePrinting?: boolean, enableFreightCharge?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, updateRatesOnPurchase?: boolean, updatePurchaseRate?: boolean, updateSalesRate?: boolean, updateMrp?: boolean, updateCost?: boolean, updateSupplierOnPurchase?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
@@ -166,12 +167,13 @@ export default function PurchaseInvoicePage() {
   const [globalAutoRoundOff, setGlobalAutoRoundOff] = useState(false);
   const [autoRoundOff, setAutoRoundOff] = useState(false);
   const [roundOffAmount, setRoundOffAmount] = useState<number | undefined>(undefined);
+  const [roundOffStrategy, setRoundOffStrategy] = useState<'standard' | 'down'>('standard');
 
   // Load initial data
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, gstSettings, slabsData, servicesData, masterSettingVal, globalBarcodeVal, roundOffSettingVal] = await Promise.all([
+        const [productsData, unitsData, productUnitConversionsData, accountsData, settingsData, groupsData, gstSettings, slabsData, servicesData, masterSettingVal, globalBarcodeVal, roundOffSettingVal, roundOffStrategyVal] = await Promise.all([
           invoke<Product[]>('get_products'),
           invoke<Unit[]>('get_units'),
           invoke<ProductUnitConversion[]>('get_all_product_unit_conversions'),
@@ -184,6 +186,7 @@ export default function PurchaseInvoicePage() {
           invoke<string | null>('get_app_setting', { key: 'enable_master_products' }).catch(() => null),
           invoke<string | null>('get_app_setting', { key: 'enable_barcode_printing' }).catch(() => null),
           invoke<string | null>('get_app_setting', { key: 'auto_round_off_vouchers' }).catch(() => null),
+          invoke<string | null>('get_app_setting', { key: 'round_off_strategy' }).catch(() => null),
         ]);
         setProducts(productsData);
         setUnits(unitsData);
@@ -191,6 +194,9 @@ export default function PurchaseInvoicePage() {
         const isRoundOffDefault = roundOffSettingVal === 'true';
         setGlobalAutoRoundOff(isRoundOffDefault);
         setAutoRoundOff(isRoundOffDefault);
+        if (roundOffStrategyVal === 'down') {
+          setRoundOffStrategy('down');
+        }
         const isGlobalBarcodeEnabled = globalBarcodeVal === 'true';
         if (settingsData) {
           setVoucherSettings({
@@ -317,6 +323,8 @@ export default function PurchaseInvoicePage() {
       invoke<number>('get_account_balance', { accountId: voucher.supplier_id })
         .then(bal => setPartyBalance(bal))
         .catch(console.error);
+      setSavedInvoiceAmount(voucher.grand_total || 0);
+      setSavedPartyId(voucher.supplier_id);
       dispatch(setVoucherDate(voucher.voucher_date));
       dispatch(setReference(voucher.reference || ''));
       dispatch(setNarration(voucher.narration || ''));
@@ -707,6 +715,7 @@ export default function PurchaseInvoicePage() {
       freightCharge: effectiveFreight,
       autoRoundOff: effectiveAutoRoundOff,
       manualRoundOff: effectiveRoundOffAmount,
+      roundOffStrategy,
       taxInclusive: !!voucherSettings?.taxInclusive,
       resolveGstRate: resolveItemGstRate,
     });
@@ -1116,6 +1125,8 @@ export default function PurchaseInvoicePage() {
   const handleNewInvoice = (skipConfirm?: boolean) => {
     setAutoRoundOff(globalAutoRoundOff);
     setRoundOffAmount(undefined);
+    setSavedInvoiceAmount(0);
+    setSavedPartyId(undefined);
     nav.handleNew(skipConfirm);
   };
 
@@ -1319,6 +1330,13 @@ export default function PurchaseInvoicePage() {
   const shouldShowPartyBalance = currentSupplierParty ? !isCashOrBankParty : false;
   const isShowingSavedInvoiceContext = !!savedInvoiceId;
   const effectiveIsCashBankParty = isShowingSavedInvoiceContext ? savedIsCashBankParty : currentPartyIsCashBank;
+
+  const isSameSavedParty = purchaseState.mode !== 'new' && Boolean(purchaseState.currentVoucherId) && String(purchaseState.form.supplier_id) === String(savedPartyId);
+  const invoiceBaseTotal = isMultiCurrencyEnabled && purchaseState.currency_id ? purchaseState.totals.grandTotal * (purchaseState.exchange_rate || 1) : purchaseState.totals.grandTotal;
+
+  // Purchase credits supplier account (increases credit owed / decreases balance)
+  const currentEffectiveBalance = partyBalance !== null ? (isSameSavedParty ? partyBalance + savedInvoiceAmount : partyBalance) : null;
+  const newEffectiveBalance = currentEffectiveBalance !== null ? currentEffectiveBalance - invoiceBaseTotal : null;
 
 
   return (
@@ -1600,10 +1618,12 @@ export default function PurchaseInvoicePage() {
               setShowPriceCatDialog(true);
             }}
             footerRightContent={
-              partyBalance !== null && shouldShowPartyBalance ? (
-                <div className={`text-base font-mono font-bold ${partyBalance >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  Balance: {money(Math.abs(partyBalance), { minimumFractionDigits: 0, maximumFractionDigits: 0 })} {partyBalance >= 0 ? 'Dr' : 'Cr'}
-                </div>
+              currentEffectiveBalance !== null && shouldShowPartyBalance ? (
+                <VoucherPartyBalance
+                  balance={currentEffectiveBalance}
+                  newBalance={newEffectiveBalance}
+                  moneyFormatter={money}
+                />
               ) : null
             }
             footerLeftContent={

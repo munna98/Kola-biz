@@ -42,6 +42,7 @@ import { usePrint } from '@/hooks/usePrint';
 import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet';
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
 import { VoucherLedgerSection } from '@/components/voucher/VoucherLedgerSection';
+import { VoucherPartyBalance } from '@/components/voucher/VoucherPartyBalance';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
 import BillAllocationDialog, { AllocationData } from '@/components/dialogs/BillAllocationDialog';
 import ChartOfAccountDialog from '@/components/dialogs/ChartOfAccountDialog';
@@ -88,6 +89,7 @@ export default function PaymentPage() {
 
     // Create Account State
     const [showCreateAccount, setShowCreateAccount] = useState(false);
+    const [savedItemAmounts, setSavedItemAmounts] = useState<Record<number, number>>({});
     const [newAccountName, setNewAccountName] = useState('');
     const [creatingForIndex, setCreatingForIndex] = useState<number | null>(null);
 
@@ -342,6 +344,20 @@ export default function PaymentPage() {
                 product_id: item.product_id || undefined,
             }))));
 
+            const initialAmounts: Record<number, number> = {};
+            items.forEach((item, index) => {
+                initialAmounts[index] = item.amount || 0;
+                if (item.ledger_id) {
+                    invoke<{ base_balance: number; foreign_balance: number }>('get_account_balance_info', { accountId: item.ledger_id })
+                        .then(info => {
+                            setRowBalances(prev => ({ ...prev, [index]: info.base_balance }));
+                            setRowForeignBalances(prev => ({ ...prev, [index]: info.foreign_balance }));
+                        })
+                        .catch(console.error);
+                }
+            });
+            setSavedItemAmounts(initialAmounts);
+
             // Use totals from backend
             const useForex = !!payment.currency_id;
             dispatch(setPaymentTotals({
@@ -496,6 +512,20 @@ export default function PaymentPage() {
             </div>
         );
     }
+
+    const isExistingPayment = paymentState.mode !== 'new' && Boolean(paymentState.currentVoucherId);
+    const focusedSavedRowAmount = (isExistingPayment && focusedRowIndex !== null) ? (savedItemAmounts[focusedRowIndex] || 0) : 0;
+    const focusedCurrentRowAmount = (focusedRowIndex !== null && paymentState.items[focusedRowIndex]) ? (Number(paymentState.items[focusedRowIndex].amount) || 0) : 0;
+
+    const focusedBaseBalance = focusedRowIndex !== null ? rowBalances[focusedRowIndex] : undefined;
+    const focusedBaseBefore = focusedBaseBalance !== undefined ? focusedBaseBalance - focusedSavedRowAmount : undefined;
+    const focusedNewBaseBalance = focusedBaseBefore !== undefined ? focusedBaseBefore + focusedCurrentRowAmount : undefined;
+
+    const focusedForeignBalance = focusedRowIndex !== null ? rowForeignBalances[focusedRowIndex] : undefined;
+    const focusedForeignBefore = focusedForeignBalance !== undefined ? focusedForeignBalance - focusedSavedRowAmount : undefined;
+    const focusedNewForeignBalance = focusedForeignBefore !== undefined ? focusedForeignBefore + focusedCurrentRowAmount : undefined;
+
+    const isPaymentForexDisplay = Boolean(isExportBusiness && forexCurrencyId && focusedForeignBalance !== undefined && focusedForeignBalance !== 0);
 
     return (
         <div className="h-full flex flex-col bg-background">
@@ -662,11 +692,11 @@ export default function PaymentPage() {
                         products={products}
                         footerRightContent={
                             focusedRowIndex !== null && rowBalances[focusedRowIndex] !== undefined ? (
-                                <div className={`text-base font-mono font-bold ${rowBalances[focusedRowIndex] >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                    Balance: {isExportBusiness && forexCurrencyId && rowForeignBalances[focusedRowIndex] !== undefined && rowForeignBalances[focusedRowIndex] !== 0
-                                        ? forexMoney(Math.abs(rowForeignBalances[focusedRowIndex]), { minimumFractionDigits: 0, maximumFractionDigits: 0 })
-                                        : money(Math.abs(rowBalances[focusedRowIndex]), { minimumFractionDigits: 0, maximumFractionDigits: 0 })} {rowBalances[focusedRowIndex] >= 0 ? 'Dr' : 'Cr'}
-                                </div>
+                                <VoucherPartyBalance
+                                    balance={isPaymentForexDisplay ? focusedForeignBefore : focusedBaseBefore}
+                                    newBalance={isPaymentForexDisplay ? focusedNewForeignBalance : focusedNewBaseBalance}
+                                    moneyFormatter={isPaymentForexDisplay ? forexMoney : money}
+                                />
                             ) : null
                         }
                     />

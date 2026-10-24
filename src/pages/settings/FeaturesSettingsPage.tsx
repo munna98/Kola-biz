@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { IconScissors, IconCoins, IconPackages, IconBarcode, IconMathFunction } from '@tabler/icons-react';
 
 export default function FeaturesSettingsPage() {
@@ -10,6 +12,7 @@ export default function FeaturesSettingsPage() {
     const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
     const [barcodePrintingEnabled, setBarcodePrintingEnabled] = useState(false);
     const [autoRoundOffEnabled, setAutoRoundOffEnabled] = useState(false);
+    const [roundOffStrategy, setRoundOffStrategy] = useState<'standard' | 'down'>('standard');
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -19,13 +22,15 @@ export default function FeaturesSettingsPage() {
             invoke<string | null>('get_app_setting', { key: 'enable_master_products' }),
             invoke<string | null>('get_app_setting', { key: 'enable_barcode_printing' }),
             invoke<string | null>('get_app_setting', { key: 'auto_round_off_vouchers' }),
+            invoke<string | null>('get_app_setting', { key: 'round_off_strategy' }),
         ])
-            .then(([customVal, multiVal, masterVal, barcodeVal, roundOffVal]) => {
+            .then(([customVal, multiVal, masterVal, barcodeVal, roundOffVal, strategyVal]) => {
                 setCustomOrdersEnabled(customVal === 'true');
                 setMultiCurrencyEnabled(multiVal === 'true');
                 setMasterProductsEnabled(masterVal === 'true');
                 setBarcodePrintingEnabled(barcodeVal === 'true');
                 setAutoRoundOffEnabled(roundOffVal === 'true');
+                setRoundOffStrategy(strategyVal === 'down' ? 'down' : 'standard');
             })
             .catch(() => {})
             .finally(() => setLoading(false));
@@ -95,6 +100,20 @@ export default function FeaturesSettingsPage() {
                 enabled
                     ? 'Auto Round Off enabled for vouchers (.00). New vouchers will default to rounded totals.'
                     : 'Auto Round Off disabled.'
+            );
+        } catch (err) {
+            toast.error(String(err));
+        }
+    };
+
+    const handleRoundOffStrategyChange = async (strategy: 'standard' | 'down') => {
+        try {
+            await invoke('set_app_setting', { key: 'round_off_strategy', value: strategy });
+            setRoundOffStrategy(strategy);
+            toast.success(
+                strategy === 'down'
+                    ? 'Rounding method set to Always Round Down.'
+                    : 'Rounding method set to Standard Rounding (nearest rupee).'
             );
         } catch (err) {
             toast.error(String(err));
@@ -252,9 +271,40 @@ export default function FeaturesSettingsPage() {
                             />
                         </div>
                         {autoRoundOffEnabled && (
-                            <p className="text-xs text-green-600 mt-2 font-medium">
-                                ✓ Enabled — new vouchers will default to rounded totals
-                            </p>
+                            <div className="mt-4 pt-3 border-t space-y-2.5">
+                                <div>
+                                    <Label className="text-xs font-semibold text-foreground block">
+                                        Rounding Method
+                                    </Label>
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                        Choose how voucher grand totals should be rounded to the rupee (.00):
+                                    </p>
+                                </div>
+                                <RadioGroup
+                                    value={roundOffStrategy}
+                                    onValueChange={(val) => handleRoundOffStrategyChange(val as 'standard' | 'down')}
+                                    className="grid gap-2.5 sm:grid-cols-2 pt-1"
+                                >
+                                    <div className={`flex items-start space-x-2.5 p-2.5 rounded-md border transition-colors cursor-pointer ${roundOffStrategy === 'standard' ? 'border-primary bg-primary/5' : 'border-border bg-background hover:bg-muted/40'}`}>
+                                        <RadioGroupItem value="standard" id="round-standard" className="mt-0.5" />
+                                        <Label htmlFor="round-standard" className="cursor-pointer text-xs space-y-0.5 leading-snug">
+                                            <span className="font-medium block text-foreground">Standard Rounding</span>
+                                            <span className="text-[11px] text-muted-foreground block">
+                                                Nearest rupee (&lt; 0.50 rounds down, ≥ 0.50 rounds up)
+                                            </span>
+                                        </Label>
+                                    </div>
+                                    <div className={`flex items-start space-x-2.5 p-2.5 rounded-md border transition-colors cursor-pointer ${roundOffStrategy === 'down' ? 'border-primary bg-primary/5' : 'border-border bg-background hover:bg-muted/40'}`}>
+                                        <RadioGroupItem value="down" id="round-down" className="mt-0.5" />
+                                        <Label htmlFor="round-down" className="cursor-pointer text-xs space-y-0.5 leading-snug">
+                                            <span className="font-medium block text-foreground">Always rounds down</span>
+                                            <span className="text-[11px] text-muted-foreground block">
+                                                Drops all paise (e.g. ₹ 1,234.90 → ₹ 1,234.00)
+                                            </span>
+                                        </Label>
+                                    </div>
+                                </RadioGroup>
+                            </div>
                         )}
                     </div>
                 </div>

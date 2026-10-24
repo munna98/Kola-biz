@@ -80,6 +80,7 @@ export function calculateVoucherDiscounts<T extends VoucherDiscountLineInput>(
     freightCharge?: number;
     autoRoundOff?: boolean;
     manualRoundOff?: number;
+    roundOffStrategy?: 'standard' | 'down';
     taxInclusive: boolean;
     resolveGstRate: (item: T) => number;
     isMarginScheme?: boolean;
@@ -154,7 +155,11 @@ export function calculateVoucherDiscounts<T extends VoucherDiscountLineInput>(
     roundOff = round2(options.manualRoundOff);
     grandTotal = round2(rawGrandTotal + roundOff);
   } else if (options.autoRoundOff) {
-    grandTotal = Math.round(rawGrandTotal);
+    if (options.roundOffStrategy === 'down') {
+      grandTotal = Math.floor(round2(rawGrandTotal) + 0.00001);
+    } else {
+      grandTotal = Math.round(rawGrandTotal);
+    }
     roundOff = round2(grandTotal - rawGrandTotal);
   }
 
