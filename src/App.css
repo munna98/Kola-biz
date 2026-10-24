@@ -163,3 +163,12 @@ html, body, #root {
     display: none;               /* Chrome, Safari, Opera */
   }
 }
+@media print {
+  body {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  table td {
+    font-size: 0.95rem;
+  }
+}

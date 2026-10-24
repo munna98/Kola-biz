@@ -113,7 +113,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
     y_pos -= 6.0;
 
     // Table configuration - optimized for full page width (186mm available with 12mm margins)
-    let col_widths = [21.0, 23.0, 18.0, 50.0, 23.0, 23.0, 28.0];
+    let col_widths = [21.0, 23.0, 22.0, 46.0, 23.0, 23.0, 28.0];
     let mut col_x = vec![left_margin];
     for width in &col_widths[0..col_widths.len() - 1] {
         col_x.push(col_x.last().unwrap() + width);
@@ -128,14 +128,14 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         "Credit",
         "Balance",
     ];
-    let line_height = 5.0;
+    let line_height = 5.6;
     let cell_padding = 0.8;
 
     // Draw header text
     for (i, header) in headers.iter().enumerate() {
         current_layer.use_text(
             *header,
-            9.0,
+            9.5,
             Mm(col_x[i] + cell_padding),
             Mm(y_pos),
             &font_bold,
@@ -148,7 +148,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
     if data.opening_balance.abs() > 0.01 {
         current_layer.use_text(
             "Opening Balance",
-            8.0,
+            8.5,
             Mm(col_x[0] + cell_padding),
             Mm(y_pos),
             &font_bold,
@@ -162,7 +162,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         };
         current_layer.use_text(
             &format!("{} {}", balance_str, dr_cr),
-            8.0,
+            8.5,
             Mm(col_x[6] + cell_padding),
             Mm(y_pos),
             &font_bold,
@@ -182,7 +182,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
             for (i, header) in headers.iter().enumerate() {
                 current_layer.use_text(
                     *header,
-                    9.0,
+                    9.5,
                     Mm(col_x[i] + cell_padding),
                     Mm(y_pos),
                     &font_bold,
@@ -195,7 +195,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         // Date
         current_layer.use_text(
             &entry.date,
-            7.5,
+            8.5,
             Mm(col_x[0] + cell_padding),
             Mm(y_pos),
             &font,
@@ -204,7 +204,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         // Voucher No
         current_layer.use_text(
             &entry.voucher_no,
-            7.5,
+            8.5,
             Mm(col_x[1] + cell_padding),
             Mm(y_pos),
             &font,
@@ -214,7 +214,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         let formatted_type = format_voucher_type(&entry.voucher_type);
         current_layer.use_text(
             &formatted_type,
-            7.5,
+            8.5,
             Mm(col_x[2] + cell_padding),
             Mm(y_pos),
             &font,
@@ -228,7 +228,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         };
         current_layer.use_text(
             &narration,
-            7.5,
+            8.5,
             Mm(col_x[3] + cell_padding),
             Mm(y_pos),
             &font,
@@ -239,7 +239,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
             let debit_text = format!("{:>12.2}", entry.debit);
             current_layer.use_text(
                 &debit_text,
-                7.5,
+                8.5,
                 Mm(col_x[4] + cell_padding),
                 Mm(y_pos),
                 &font,
@@ -251,7 +251,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
             let credit_text = format!("{:>12.2}", entry.credit);
             current_layer.use_text(
                 &credit_text,
-                7.5,
+                8.5,
                 Mm(col_x[5] + cell_padding),
                 Mm(y_pos),
                 &font,
@@ -264,7 +264,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
             format_pdf_currency(entry.balance.abs(), &data),
             if entry.balance >= 0.0 { "Dr" } else { "Cr" }
         );
-        current_layer.use_text(&balance_str, 7.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&balance_str, 8.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font);
 
         y_pos -= line_height;
     }
@@ -279,7 +279,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
         for (i, header) in headers.iter().enumerate() {
             current_layer.use_text(
                 *header,
-                9.0,
+                9.5,
                 Mm(col_x[i] + cell_padding),
                 Mm(y_pos),
                 &font_bold,
@@ -291,7 +291,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
 
     current_layer.use_text(
         "Closing Balance",
-        9.0,
+        9.5,
         Mm(col_x[0] + cell_padding),
         Mm(y_pos),
         &font_bold,
@@ -305,7 +305,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
     };
     current_layer.use_text(
         &format!("{} {}", closing_str, dr_cr),
-        9.0,
+        9.5,
         Mm(col_x[6] + cell_padding),
         Mm(y_pos),
         &font_bold,
@@ -395,16 +395,16 @@ pub async fn generate_balance_sheet_pdf(
 
     let currency_sym = data.currency_symbol.as_deref().unwrap_or("");
     let col_x = [left_margin, left_margin + 25.0, left_margin + 110.0, left_margin + 155.0];
-    let line_height = 5.0;
+    let line_height = 5.6;
 
     // 1. ASSETS
     current_layer.use_text("ASSETS", 11.0, Mm(left_margin), Mm(y_pos), &font_bold);
     y_pos -= 6.0;
 
-    current_layer.use_text("Code", 8.5, Mm(col_x[0]), Mm(y_pos), &font_bold);
-    current_layer.use_text("Particulars / Account Name", 8.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
-    current_layer.use_text("Account Group", 8.5, Mm(col_x[2]), Mm(y_pos), &font_bold);
-    current_layer.use_text("Amount", 8.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+    current_layer.use_text("Code", 9.0, Mm(col_x[0]), Mm(y_pos), &font_bold);
+    current_layer.use_text("Particulars / Account Name", 9.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+    current_layer.use_text("Account Group", 9.0, Mm(col_x[2]), Mm(y_pos), &font_bold);
+    current_layer.use_text("Amount", 9.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
     y_pos -= line_height;
 
     for item in &data.assets {
@@ -412,30 +412,30 @@ pub async fn generate_balance_sheet_pdf(
             let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
             current_layer = document.get_page(page).get_layer(layer);
             y_pos = top_margin - 15.0;
-            current_layer.use_text("Code", 8.5, Mm(col_x[0]), Mm(y_pos), &font_bold);
-            current_layer.use_text("Particulars / Account Name", 8.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
-            current_layer.use_text("Account Group", 8.5, Mm(col_x[2]), Mm(y_pos), &font_bold);
-            current_layer.use_text("Amount", 8.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Code", 9.0, Mm(col_x[0]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Particulars / Account Name", 9.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Account Group", 9.0, Mm(col_x[2]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Amount", 9.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
             y_pos -= line_height;
         }
 
-        current_layer.use_text(&item.account_code, 8.0, Mm(col_x[0]), Mm(y_pos), &font);
+        current_layer.use_text(&item.account_code, 9.0, Mm(col_x[0]), Mm(y_pos), &font);
         let name = if item.account_name.len() > 40 {
             format!("{}...", &item.account_name[..37])
         } else {
             item.account_name.clone()
         };
-        current_layer.use_text(&name, 8.0, Mm(col_x[1]), Mm(y_pos), &font);
-        current_layer.use_text(&item.account_group, 8.0, Mm(col_x[2]), Mm(y_pos), &font);
+        current_layer.use_text(&name, 9.0, Mm(col_x[1]), Mm(y_pos), &font);
+        current_layer.use_text(&item.account_group, 9.0, Mm(col_x[2]), Mm(y_pos), &font);
         let amt_str = format!("{} {:.2}", currency_sym, item.amount);
-        current_layer.use_text(&amt_str, 8.0, Mm(col_x[3]), Mm(y_pos), &font);
+        current_layer.use_text(&amt_str, 9.0, Mm(col_x[3]), Mm(y_pos), &font);
         y_pos -= line_height;
     }
 
     y_pos -= 2.0;
-    current_layer.use_text("TOTAL ASSETS", 9.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
+    current_layer.use_text("TOTAL ASSETS", 10.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
     let total_assets_str = format!("{} {:.2}", currency_sym, data.total_assets);
-    current_layer.use_text(&total_assets_str, 9.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+    current_layer.use_text(&total_assets_str, 10.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
     y_pos -= 9.0;
 
     // 2. LIABILITIES
@@ -447,10 +447,10 @@ pub async fn generate_balance_sheet_pdf(
     current_layer.use_text("LIABILITIES", 11.0, Mm(left_margin), Mm(y_pos), &font_bold);
     y_pos -= 6.0;
 
-    current_layer.use_text("Code", 8.5, Mm(col_x[0]), Mm(y_pos), &font_bold);
-    current_layer.use_text("Particulars / Account Name", 8.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
-    current_layer.use_text("Account Group", 8.5, Mm(col_x[2]), Mm(y_pos), &font_bold);
-    current_layer.use_text("Amount", 8.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+    current_layer.use_text("Code", 9.0, Mm(col_x[0]), Mm(y_pos), &font_bold);
+    current_layer.use_text("Particulars / Account Name", 9.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+    current_layer.use_text("Account Group", 9.0, Mm(col_x[2]), Mm(y_pos), &font_bold);
+    current_layer.use_text("Amount", 9.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
     y_pos -= line_height;
 
     for item in &data.liabilities {
@@ -458,30 +458,30 @@ pub async fn generate_balance_sheet_pdf(
             let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
             current_layer = document.get_page(page).get_layer(layer);
             y_pos = top_margin - 15.0;
-            current_layer.use_text("Code", 8.5, Mm(col_x[0]), Mm(y_pos), &font_bold);
-            current_layer.use_text("Particulars / Account Name", 8.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
-            current_layer.use_text("Account Group", 8.5, Mm(col_x[2]), Mm(y_pos), &font_bold);
-            current_layer.use_text("Amount", 8.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Code", 9.0, Mm(col_x[0]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Particulars / Account Name", 9.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Account Group", 9.0, Mm(col_x[2]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Amount", 9.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
             y_pos -= line_height;
         }
 
-        current_layer.use_text(&item.account_code, 8.0, Mm(col_x[0]), Mm(y_pos), &font);
+        current_layer.use_text(&item.account_code, 9.0, Mm(col_x[0]), Mm(y_pos), &font);
         let name = if item.account_name.len() > 40 {
             format!("{}...", &item.account_name[..37])
         } else {
             item.account_name.clone()
         };
-        current_layer.use_text(&name, 8.0, Mm(col_x[1]), Mm(y_pos), &font);
-        current_layer.use_text(&item.account_group, 8.0, Mm(col_x[2]), Mm(y_pos), &font);
+        current_layer.use_text(&name, 9.0, Mm(col_x[1]), Mm(y_pos), &font);
+        current_layer.use_text(&item.account_group, 9.0, Mm(col_x[2]), Mm(y_pos), &font);
         let amt_str = format!("{} {:.2}", currency_sym, item.amount);
-        current_layer.use_text(&amt_str, 8.0, Mm(col_x[3]), Mm(y_pos), &font);
+        current_layer.use_text(&amt_str, 9.0, Mm(col_x[3]), Mm(y_pos), &font);
         y_pos -= line_height;
     }
 
     y_pos -= 2.0;
-    current_layer.use_text("TOTAL LIABILITIES", 9.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
+    current_layer.use_text("TOTAL LIABILITIES", 10.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
     let total_liab_str = format!("{} {:.2}", currency_sym, data.total_liabilities);
-    current_layer.use_text(&total_liab_str, 9.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+    current_layer.use_text(&total_liab_str, 10.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
     y_pos -= 9.0;
 
     // 3. CAPITAL & EQUITY
@@ -493,10 +493,10 @@ pub async fn generate_balance_sheet_pdf(
     current_layer.use_text("CAPITAL & EQUITY", 11.0, Mm(left_margin), Mm(y_pos), &font_bold);
     y_pos -= 6.0;
 
-    current_layer.use_text("Code", 8.5, Mm(col_x[0]), Mm(y_pos), &font_bold);
-    current_layer.use_text("Particulars / Account Name", 8.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
-    current_layer.use_text("Account Group", 8.5, Mm(col_x[2]), Mm(y_pos), &font_bold);
-    current_layer.use_text("Amount", 8.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+    current_layer.use_text("Code", 9.0, Mm(col_x[0]), Mm(y_pos), &font_bold);
+    current_layer.use_text("Particulars / Account Name", 9.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+    current_layer.use_text("Account Group", 9.0, Mm(col_x[2]), Mm(y_pos), &font_bold);
+    current_layer.use_text("Amount", 9.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
     y_pos -= line_height;
 
     for item in &data.equity {
@@ -504,30 +504,30 @@ pub async fn generate_balance_sheet_pdf(
             let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
             current_layer = document.get_page(page).get_layer(layer);
             y_pos = top_margin - 15.0;
-            current_layer.use_text("Code", 8.5, Mm(col_x[0]), Mm(y_pos), &font_bold);
-            current_layer.use_text("Particulars / Account Name", 8.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
-            current_layer.use_text("Account Group", 8.5, Mm(col_x[2]), Mm(y_pos), &font_bold);
-            current_layer.use_text("Amount", 8.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Code", 9.0, Mm(col_x[0]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Particulars / Account Name", 9.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Account Group", 9.0, Mm(col_x[2]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Amount", 9.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
             y_pos -= line_height;
         }
 
-        current_layer.use_text(&item.account_code, 8.0, Mm(col_x[0]), Mm(y_pos), &font);
+        current_layer.use_text(&item.account_code, 9.0, Mm(col_x[0]), Mm(y_pos), &font);
         let name = if item.account_name.len() > 40 {
             format!("{}...", &item.account_name[..37])
         } else {
             item.account_name.clone()
         };
-        current_layer.use_text(&name, 8.0, Mm(col_x[1]), Mm(y_pos), &font);
-        current_layer.use_text(&item.account_group, 8.0, Mm(col_x[2]), Mm(y_pos), &font);
+        current_layer.use_text(&name, 9.0, Mm(col_x[1]), Mm(y_pos), &font);
+        current_layer.use_text(&item.account_group, 9.0, Mm(col_x[2]), Mm(y_pos), &font);
         let amt_str = format!("{} {:.2}", currency_sym, item.amount);
-        current_layer.use_text(&amt_str, 8.0, Mm(col_x[3]), Mm(y_pos), &font);
+        current_layer.use_text(&amt_str, 9.0, Mm(col_x[3]), Mm(y_pos), &font);
         y_pos -= line_height;
     }
 
     y_pos -= 2.0;
-    current_layer.use_text("TOTAL CAPITAL & EQUITY", 9.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
+    current_layer.use_text("TOTAL CAPITAL & EQUITY", 10.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
     let total_eq_str = format!("{} {:.2}", currency_sym, data.total_equity);
-    current_layer.use_text(&total_eq_str, 9.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+    current_layer.use_text(&total_eq_str, 10.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
     y_pos -= 9.0;
 
     // Balance Sheet Verification Footer
@@ -541,9 +541,9 @@ pub async fn generate_balance_sheet_pdf(
     let diff = (data.total_assets - total_liab_eq).abs();
     let is_balanced = diff < 0.01;
 
-    current_layer.use_text("TOTAL LIABILITIES & EQUITY", 10.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+    current_layer.use_text("TOTAL LIABILITIES & EQUITY", 10.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
     let total_liab_eq_str = format!("{} {:.2}", currency_sym, total_liab_eq);
-    current_layer.use_text(&total_liab_eq_str, 10.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
+    current_layer.use_text(&total_liab_eq_str, 10.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
     y_pos -= 6.0;
 
     let status_str = if is_balanced {
@@ -551,7 +551,7 @@ pub async fn generate_balance_sheet_pdf(
     } else {
         format!("STATUS: UNBALANCED (Diff: {} {:.2})", currency_sym, diff)
     };
-    current_layer.use_text(&status_str, 10.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    current_layer.use_text(&status_str, 10.5, Mm(left_margin), Mm(y_pos), &font_bold);
 
     document
         .save(&mut BufWriter::new(
@@ -596,7 +596,7 @@ pub async fn generate_profit_loss_pdf(
     y_pos -= 8.0;
 
     let currency_sym = data.currency_symbol.as_deref().unwrap_or("");
-    let line_height = 5.0;
+    let line_height = 5.6;
 
     // 1. TRADING ACCOUNT SUMMARY
     current_layer.use_text("1. TRADING ACCOUNT SUMMARY", 11.0, Mm(left_margin), Mm(y_pos), &font_bold);
@@ -611,17 +611,17 @@ pub async fn generate_profit_loss_pdf(
     ];
 
     for (label, val) in trading_items {
-        current_layer.use_text(label, 8.5, Mm(left_margin + 5.0), Mm(y_pos), &font);
+        current_layer.use_text(label, 9.5, Mm(left_margin + 5.0), Mm(y_pos), &font);
         let val_str = format!("{} {:.2}", currency_sym, val);
-        current_layer.use_text(&val_str, 8.5, Mm(left_margin + 120.0), Mm(y_pos), &font);
+        current_layer.use_text(&val_str, 9.5, Mm(left_margin + 120.0), Mm(y_pos), &font);
         y_pos -= line_height;
     }
 
     y_pos -= 2.0;
     let gp_label = if data.gross_profit >= 0.0 { "GROSS PROFIT" } else { "GROSS LOSS" };
-    current_layer.use_text(gp_label, 10.0, Mm(left_margin + 5.0), Mm(y_pos), &font_bold);
+    current_layer.use_text(gp_label, 10.5, Mm(left_margin + 5.0), Mm(y_pos), &font_bold);
     let gp_str = format!("{} {:.2}", currency_sym, data.gross_profit.abs());
-    current_layer.use_text(&gp_str, 10.0, Mm(left_margin + 120.0), Mm(y_pos), &font_bold);
+    current_layer.use_text(&gp_str, 10.5, Mm(left_margin + 120.0), Mm(y_pos), &font_bold);
     y_pos -= 8.0;
 
     // 2. PROFIT & LOSS SUMMARY
@@ -634,17 +634,17 @@ pub async fn generate_profit_loss_pdf(
     ];
 
     for (label, val) in pl_summary_items {
-        current_layer.use_text(label, 8.5, Mm(left_margin + 5.0), Mm(y_pos), &font);
+        current_layer.use_text(label, 9.5, Mm(left_margin + 5.0), Mm(y_pos), &font);
         let val_str = format!("{} {:.2}", currency_sym, val);
-        current_layer.use_text(&val_str, 8.5, Mm(left_margin + 120.0), Mm(y_pos), &font);
+        current_layer.use_text(&val_str, 9.5, Mm(left_margin + 120.0), Mm(y_pos), &font);
         y_pos -= line_height;
     }
 
     y_pos -= 2.0;
     let np_label = if data.net_profit >= 0.0 { "NET PROFIT" } else { "NET LOSS" };
-    current_layer.use_text(np_label, 10.5, Mm(left_margin + 5.0), Mm(y_pos), &font_bold);
+    current_layer.use_text(np_label, 11.0, Mm(left_margin + 5.0), Mm(y_pos), &font_bold);
     let np_str = format!("{} {:.2}", currency_sym, data.net_profit.abs());
-    current_layer.use_text(&np_str, 10.5, Mm(left_margin + 120.0), Mm(y_pos), &font_bold);
+    current_layer.use_text(&np_str, 11.0, Mm(left_margin + 120.0), Mm(y_pos), &font_bold);
     y_pos -= 10.0;
 
     // 3. DETAILED ACCOUNT BREAKDOWN
@@ -661,10 +661,10 @@ pub async fn generate_profit_loss_pdf(
         current_layer.use_text("DETAILED REVENUE / INCOME ACCOUNTS", 11.0, Mm(left_margin), Mm(y_pos), &font_bold);
         y_pos -= 6.0;
 
-        current_layer.use_text("Code", 8.5, Mm(col_x[0]), Mm(y_pos), &font_bold);
-        current_layer.use_text("Particulars / Account Name", 8.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
-        current_layer.use_text("Account Group", 8.5, Mm(col_x[2]), Mm(y_pos), &font_bold);
-        current_layer.use_text("Amount", 8.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+        current_layer.use_text("Code", 9.0, Mm(col_x[0]), Mm(y_pos), &font_bold);
+        current_layer.use_text("Particulars / Account Name", 9.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+        current_layer.use_text("Account Group", 9.0, Mm(col_x[2]), Mm(y_pos), &font_bold);
+        current_layer.use_text("Amount", 9.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
         y_pos -= line_height;
 
         for item in &data.income_items {
@@ -672,23 +672,23 @@ pub async fn generate_profit_loss_pdf(
                 let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
                 current_layer = document.get_page(page).get_layer(layer);
                 y_pos = top_margin - 15.0;
-                current_layer.use_text("Code", 8.5, Mm(col_x[0]), Mm(y_pos), &font_bold);
-                current_layer.use_text("Particulars / Account Name", 8.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
-                current_layer.use_text("Account Group", 8.5, Mm(col_x[2]), Mm(y_pos), &font_bold);
-                current_layer.use_text("Amount", 8.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+                current_layer.use_text("Code", 9.0, Mm(col_x[0]), Mm(y_pos), &font_bold);
+                current_layer.use_text("Particulars / Account Name", 9.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+                current_layer.use_text("Account Group", 9.0, Mm(col_x[2]), Mm(y_pos), &font_bold);
+                current_layer.use_text("Amount", 9.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
                 y_pos -= line_height;
             }
 
-            current_layer.use_text(&item.account_code, 8.0, Mm(col_x[0]), Mm(y_pos), &font);
+            current_layer.use_text(&item.account_code, 9.0, Mm(col_x[0]), Mm(y_pos), &font);
             let name = if item.account_name.len() > 40 {
                 format!("{}...", &item.account_name[..37])
             } else {
                 item.account_name.clone()
             };
-            current_layer.use_text(&name, 8.0, Mm(col_x[1]), Mm(y_pos), &font);
-            current_layer.use_text(&item.account_group, 8.0, Mm(col_x[2]), Mm(y_pos), &font);
+            current_layer.use_text(&name, 9.0, Mm(col_x[1]), Mm(y_pos), &font);
+            current_layer.use_text(&item.account_group, 9.0, Mm(col_x[2]), Mm(y_pos), &font);
             let amt_str = format!("{} {:.2}", currency_sym, item.amount);
-            current_layer.use_text(&amt_str, 8.0, Mm(col_x[3]), Mm(y_pos), &font);
+            current_layer.use_text(&amt_str, 9.0, Mm(col_x[3]), Mm(y_pos), &font);
             y_pos -= line_height;
         }
         y_pos -= 6.0;
@@ -705,10 +705,10 @@ pub async fn generate_profit_loss_pdf(
         current_layer.use_text("DETAILED EXPENSE ACCOUNTS", 11.0, Mm(left_margin), Mm(y_pos), &font_bold);
         y_pos -= 6.0;
 
-        current_layer.use_text("Code", 8.5, Mm(col_x[0]), Mm(y_pos), &font_bold);
-        current_layer.use_text("Particulars / Account Name", 8.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
-        current_layer.use_text("Account Group", 8.5, Mm(col_x[2]), Mm(y_pos), &font_bold);
-        current_layer.use_text("Amount", 8.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+        current_layer.use_text("Code", 9.0, Mm(col_x[0]), Mm(y_pos), &font_bold);
+        current_layer.use_text("Particulars / Account Name", 9.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+        current_layer.use_text("Account Group", 9.0, Mm(col_x[2]), Mm(y_pos), &font_bold);
+        current_layer.use_text("Amount", 9.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
         y_pos -= line_height;
 
         for item in &data.expense_items {
@@ -716,23 +716,23 @@ pub async fn generate_profit_loss_pdf(
                 let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
                 current_layer = document.get_page(page).get_layer(layer);
                 y_pos = top_margin - 15.0;
-                current_layer.use_text("Code", 8.5, Mm(col_x[0]), Mm(y_pos), &font_bold);
-                current_layer.use_text("Particulars / Account Name", 8.5, Mm(col_x[1]), Mm(y_pos), &font_bold);
-                current_layer.use_text("Account Group", 8.5, Mm(col_x[2]), Mm(y_pos), &font_bold);
-                current_layer.use_text("Amount", 8.5, Mm(col_x[3]), Mm(y_pos), &font_bold);
+                current_layer.use_text("Code", 9.0, Mm(col_x[0]), Mm(y_pos), &font_bold);
+                current_layer.use_text("Particulars / Account Name", 9.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+                current_layer.use_text("Account Group", 9.0, Mm(col_x[2]), Mm(y_pos), &font_bold);
+                current_layer.use_text("Amount", 9.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
                 y_pos -= line_height;
             }
 
-            current_layer.use_text(&item.account_code, 8.0, Mm(col_x[0]), Mm(y_pos), &font);
+            current_layer.use_text(&item.account_code, 9.0, Mm(col_x[0]), Mm(y_pos), &font);
             let name = if item.account_name.len() > 40 {
                 format!("{}...", &item.account_name[..37])
             } else {
                 item.account_name.clone()
             };
-            current_layer.use_text(&name, 8.0, Mm(col_x[1]), Mm(y_pos), &font);
-            current_layer.use_text(&item.account_group, 8.0, Mm(col_x[2]), Mm(y_pos), &font);
+            current_layer.use_text(&name, 9.0, Mm(col_x[1]), Mm(y_pos), &font);
+            current_layer.use_text(&item.account_group, 9.0, Mm(col_x[2]), Mm(y_pos), &font);
             let amt_str = format!("{} {:.2}", currency_sym, item.amount);
-            current_layer.use_text(&amt_str, 8.0, Mm(col_x[3]), Mm(y_pos), &font);
+            current_layer.use_text(&amt_str, 9.0, Mm(col_x[3]), Mm(y_pos), &font);
             y_pos -= line_height;
         }
     }
@@ -793,7 +793,7 @@ pub async fn generate_day_book_pdf(
     let left_margin = 12.0_f32;
     let top_margin = 280.0_f32;
     let mut y_pos = top_margin;
-    let line_height = 5.0_f32;
+    let line_height = 5.6_f32;
     let cell_padding = 0.8_f32;
     let currency_sym = data.currency_symbol.as_deref().unwrap_or("");
 
@@ -813,8 +813,8 @@ pub async fn generate_day_book_pdf(
     y_pos -= 7.0;
 
     // ── Table columns: Date | Voucher | Type | Party | Account | Narration | Debit | Credit
-    // Total printable width ≈ 186mm (210 - 2×12mm margins)
-    let col_widths = [21.0_f32, 23.0, 16.0, 28.0, 30.0, 35.0, 18.0, 18.0];
+    // Total printable width ≈ 185mm (210 - 12mm left - 13mm right)
+    let col_widths = [21.0_f32, 22.0, 16.0, 25.0, 26.0, 31.0, 22.0, 22.0];
     let mut col_x: Vec<f32> = vec![left_margin];
     for w in &col_widths[..col_widths.len() - 1] {
         col_x.push(col_x.last().unwrap() + w);
@@ -826,7 +826,7 @@ pub async fn generate_day_book_pdf(
     macro_rules! draw_headers {
         ($layer:expr, $y:expr) => {
             for (i, h) in headers.iter().enumerate() {
-                $layer.use_text(*h, 8.5, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
+                $layer.use_text(*h, 9.0, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
             }
         };
     }
@@ -845,15 +845,15 @@ pub async fn generate_day_book_pdf(
         }
 
         // Date
-        current_layer.use_text(&entry.voucher_date, 7.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&entry.voucher_date, 8.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
 
         // Voucher No
-        current_layer.use_text(&entry.voucher_no, 7.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&entry.voucher_no, 8.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
 
         // Type (formatted)
         let vtype = format_voucher_type(&entry.voucher_type);
         let vtype_trunc = if vtype.len() > 12 { format!("{}...", &vtype[..9]) } else { vtype };
-        current_layer.use_text(&vtype_trunc, 7.5, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&vtype_trunc, 8.5, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
 
         // Party (truncated)
         let party = if entry.party_name.len() > 16 {
@@ -861,7 +861,7 @@ pub async fn generate_day_book_pdf(
         } else {
             entry.party_name.clone()
         };
-        current_layer.use_text(&party, 7.5, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&party, 8.5, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
 
         // Account (truncated)
         let account = if entry.account_name.len() > 18 {
@@ -869,7 +869,7 @@ pub async fn generate_day_book_pdf(
         } else {
             entry.account_name.clone()
         };
-        current_layer.use_text(&account, 7.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&account, 8.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
 
         // Narration (truncated)
         let narration = if entry.narration.len() > 22 {
@@ -877,18 +877,18 @@ pub async fn generate_day_book_pdf(
         } else {
             entry.narration.clone()
         };
-        current_layer.use_text(&narration, 7.5, Mm(col_x[5] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&narration, 8.5, Mm(col_x[5] + cell_padding), Mm(y_pos), &font);
 
         // Debit
         if entry.debit > 0.005 {
             let debit_str = format!("{}{:.2}", currency_sym, entry.debit);
-            current_layer.use_text(&debit_str, 7.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&debit_str, 8.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font);
         }
 
         // Credit
         if entry.credit > 0.005 {
             let credit_str = format!("{}{:.2}", currency_sym, entry.credit);
-            current_layer.use_text(&credit_str, 7.5, Mm(col_x[7] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&credit_str, 8.5, Mm(col_x[7] + cell_padding), Mm(y_pos), &font);
         }
 
         y_pos -= line_height;
@@ -904,11 +904,11 @@ pub async fn generate_day_book_pdf(
         y_pos -= line_height + 1.0;
     }
 
-    current_layer.use_text("TOTAL", 9.0, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
+    current_layer.use_text("TOTAL", 9.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
     let total_debit_str = format!("{}{:.2}", currency_sym, data.total_debit);
     let total_credit_str = format!("{}{:.2}", currency_sym, data.total_credit);
-    current_layer.use_text(&total_debit_str, 9.0, Mm(col_x[6] + cell_padding), Mm(y_pos), &font_bold);
-    current_layer.use_text(&total_credit_str, 9.0, Mm(col_x[7] + cell_padding), Mm(y_pos), &font_bold);
+    current_layer.use_text(&total_debit_str, 9.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font_bold);
+    current_layer.use_text(&total_credit_str, 9.5, Mm(col_x[7] + cell_padding), Mm(y_pos), &font_bold);
 
     // ── Save ─────────────────────────────────────────────────────────────────
     document
@@ -967,7 +967,7 @@ pub async fn generate_stock_report_pdf(
     let left_margin = 12.0_f32;
     let top_margin = 280.0_f32;
     let mut y_pos = top_margin;
-    let line_height = 5.0_f32;
+    let line_height = 5.6_f32;
     let cell_padding = 0.8_f32;
     let currency_sym = data.currency_symbol.as_deref().unwrap_or("");
 
@@ -996,7 +996,7 @@ pub async fn generate_stock_report_pdf(
     macro_rules! draw_headers {
         ($layer:expr, $y:expr) => {
             for (i, h) in headers.iter().enumerate() {
-                $layer.use_text(*h, 8.0, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
+                $layer.use_text(*h, 8.5, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
             }
         };
     }
@@ -1015,7 +1015,7 @@ pub async fn generate_stock_report_pdf(
         }
 
         // Code
-        current_layer.use_text(&item.product_code, 7.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&item.product_code, 8.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
 
         // Product Name (truncate)
         let name = if item.product_name.len() > 24 {
@@ -1023,7 +1023,7 @@ pub async fn generate_stock_report_pdf(
         } else {
             item.product_name.clone()
         };
-        current_layer.use_text(&name, 7.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&name, 8.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
 
         // Group (truncate)
         let group = if item.group_name.len() > 13 {
@@ -1031,22 +1031,22 @@ pub async fn generate_stock_report_pdf(
         } else {
             item.group_name.clone()
         };
-        current_layer.use_text(&group, 7.5, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&group, 8.5, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
 
         // Unit
-        current_layer.use_text(&item.unit_symbol, 7.5, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&item.unit_symbol, 8.5, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
 
         // Stock qty
         let stock_str = format!("{:.2}", item.current_stock);
-        current_layer.use_text(&stock_str, 7.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&stock_str, 8.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
 
         // Avg Rate
         let rate_str = format!("{}{:.2}", currency_sym, item.average_rate);
-        current_layer.use_text(&rate_str, 7.5, Mm(col_x[5] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&rate_str, 8.5, Mm(col_x[5] + cell_padding), Mm(y_pos), &font);
 
         // Stock Value
         let value_str = format!("{}{:.2}", currency_sym, item.stock_value);
-        current_layer.use_text(&value_str, 7.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&value_str, 8.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font);
 
         // Last Purchase Date (truncate to DD-MM-YY if long)
         let lp = if item.last_purchase_date.len() > 10 {
@@ -1054,7 +1054,7 @@ pub async fn generate_stock_report_pdf(
         } else {
             item.last_purchase_date.clone()
         };
-        current_layer.use_text(if lp.is_empty() { "-" } else { &lp }, 7.0, Mm(col_x[7] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(if lp.is_empty() { "-" } else { &lp }, 8.0, Mm(col_x[7] + cell_padding), Mm(y_pos), &font);
 
         // Last Sale Date
         let ls = if item.last_sale_date.len() > 10 {
@@ -1062,7 +1062,7 @@ pub async fn generate_stock_report_pdf(
         } else {
             item.last_sale_date.clone()
         };
-        current_layer.use_text(if ls.is_empty() { "-" } else { &ls }, 7.0, Mm(col_x[8] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(if ls.is_empty() { "-" } else { &ls }, 8.0, Mm(col_x[8] + cell_padding), Mm(y_pos), &font);
 
         y_pos -= line_height;
     }
@@ -1078,11 +1078,11 @@ pub async fn generate_stock_report_pdf(
     }
 
     let total_label = format!("TOTAL ({} items)", data.total_products);
-    current_layer.use_text(&total_label, 8.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
+    current_layer.use_text(&total_label, 9.0, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
     let total_qty_str = format!("{:.2}", data.total_qty);
-    current_layer.use_text(&total_qty_str, 8.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font_bold);
+    current_layer.use_text(&total_qty_str, 9.0, Mm(col_x[4] + cell_padding), Mm(y_pos), &font_bold);
     let total_val_str = format!("{}{:.2}", currency_sym, data.total_value);
-    current_layer.use_text(&total_val_str, 8.5, Mm(col_x[6] + cell_padding), Mm(y_pos), &font_bold);
+    current_layer.use_text(&total_val_str, 9.0, Mm(col_x[6] + cell_padding), Mm(y_pos), &font_bold);
 
     // ── Save ─────────────────────────────────────────────────────────────────
     document
@@ -1139,7 +1139,7 @@ pub async fn generate_outstanding_pdf(
 
     let left_margin = 12.0_f32;
     let top_margin = 280.0_f32;
-    let line_height = 5.0_f32;
+    let line_height = 5.6_f32;
     let cell_pad = 0.8_f32;
     let currency_sym = data.currency_symbol.as_deref().unwrap_or("");
 
@@ -1175,12 +1175,12 @@ pub async fn generate_outstanding_pdf(
     y_pos -= 6.0;
 
     for (i, h) in headers.iter().enumerate() {
-        current_layer.use_text(*h, 8.5, Mm(col_x[i] + cell_pad), Mm(y_pos), &font_bold);
+        current_layer.use_text(*h, 9.0, Mm(col_x[i] + cell_pad), Mm(y_pos), &font_bold);
     }
     y_pos -= line_height + 0.5;
 
     if data.customers.is_empty() {
-        current_layer.use_text("No receivables outstanding", 8.0, Mm(left_margin + cell_pad), Mm(y_pos), &font);
+        current_layer.use_text("No receivables outstanding", 8.5, Mm(left_margin + cell_pad), Mm(y_pos), &font);
         y_pos -= line_height;
     } else {
         for row in &data.customers {
@@ -1189,7 +1189,7 @@ pub async fn generate_outstanding_pdf(
                 current_layer = document.get_page(page).get_layer(layer);
                 y_pos = top_margin;
                 for (i, h) in headers.iter().enumerate() {
-                    current_layer.use_text(*h, 8.5, Mm(col_x[i] + cell_pad), Mm(y_pos), &font_bold);
+                    current_layer.use_text(*h, 9.0, Mm(col_x[i] + cell_pad), Mm(y_pos), &font_bold);
                 }
                 y_pos -= line_height + 0.5;
             }
@@ -1198,23 +1198,23 @@ pub async fn generate_outstanding_pdf(
             } else {
                 row.party_name.clone()
             };
-            current_layer.use_text(&name, 7.5, Mm(col_x[0] + cell_pad), Mm(y_pos), &font);
-            current_layer.use_text(&row.total_invoices.to_string(), 7.5, Mm(col_x[1] + cell_pad), Mm(y_pos), &font);
-            current_layer.use_text(&format!("{:.2}", row.total_amount), 7.5, Mm(col_x[2] + cell_pad), Mm(y_pos), &font);
-            current_layer.use_text(&format!("{:.2}", row.paid_amount), 7.5, Mm(col_x[3] + cell_pad), Mm(y_pos), &font);
-            current_layer.use_text(&format!("{:.2}", row.outstanding_amount.abs()), 7.5, Mm(col_x[4] + cell_pad), Mm(y_pos), &font_bold);
+            current_layer.use_text(&name, 8.5, Mm(col_x[0] + cell_pad), Mm(y_pos), &font);
+            current_layer.use_text(&row.total_invoices.to_string(), 8.5, Mm(col_x[1] + cell_pad), Mm(y_pos), &font);
+            current_layer.use_text(&format!("{:.2}", row.total_amount), 8.5, Mm(col_x[2] + cell_pad), Mm(y_pos), &font);
+            current_layer.use_text(&format!("{:.2}", row.paid_amount), 8.5, Mm(col_x[3] + cell_pad), Mm(y_pos), &font);
+            current_layer.use_text(&format!("{:.2}", row.outstanding_amount.abs()), 8.5, Mm(col_x[4] + cell_pad), Mm(y_pos), &font_bold);
             let oldest = row.oldest_invoice_date.as_deref().unwrap_or("-");
-            current_layer.use_text(oldest, 7.5, Mm(col_x[5] + cell_pad), Mm(y_pos), &font);
+            current_layer.use_text(oldest, 8.5, Mm(col_x[5] + cell_pad), Mm(y_pos), &font);
             let days = row.days_outstanding.map(|d| d.to_string()).unwrap_or_else(|| "-".to_string());
-            current_layer.use_text(&days, 7.5, Mm(col_x[6] + cell_pad), Mm(y_pos), &font);
+            current_layer.use_text(&days, 8.5, Mm(col_x[6] + cell_pad), Mm(y_pos), &font);
             y_pos -= line_height;
         }
     }
     y_pos -= 2.0;
-    current_layer.use_text("TOTAL RECEIVABLES", 9.0, Mm(col_x[0] + cell_pad), Mm(y_pos), &font_bold);
+    current_layer.use_text("TOTAL RECEIVABLES", 9.5, Mm(col_x[0] + cell_pad), Mm(y_pos), &font_bold);
     current_layer.use_text(
         &format!("{} {:.2}", currency_sym, data.total_receivables.abs()),
-        9.0, Mm(col_x[4] + cell_pad), Mm(y_pos), &font_bold,
+        9.5, Mm(col_x[4] + cell_pad), Mm(y_pos), &font_bold,
     );
     y_pos -= 12.0;
 
@@ -1227,12 +1227,12 @@ pub async fn generate_outstanding_pdf(
     y_pos -= 6.0;
 
     for (i, h) in headers.iter().enumerate() {
-        current_layer.use_text(*h, 8.5, Mm(col_x[i] + cell_pad), Mm(y_pos), &font_bold);
+        current_layer.use_text(*h, 9.0, Mm(col_x[i] + cell_pad), Mm(y_pos), &font_bold);
     }
     y_pos -= line_height + 0.5;
 
     if data.suppliers.is_empty() {
-        current_layer.use_text("No payables outstanding", 8.0, Mm(left_margin + cell_pad), Mm(y_pos), &font);
+        current_layer.use_text("No payables outstanding", 8.5, Mm(left_margin + cell_pad), Mm(y_pos), &font);
         y_pos -= line_height;
     } else {
         for row in &data.suppliers {
@@ -1241,7 +1241,7 @@ pub async fn generate_outstanding_pdf(
                 current_layer = document.get_page(page).get_layer(layer);
                 y_pos = top_margin;
                 for (i, h) in headers.iter().enumerate() {
-                    current_layer.use_text(*h, 8.5, Mm(col_x[i] + cell_pad), Mm(y_pos), &font_bold);
+                    current_layer.use_text(*h, 9.0, Mm(col_x[i] + cell_pad), Mm(y_pos), &font_bold);
                 }
                 y_pos -= line_height + 0.5;
             }
@@ -1250,23 +1250,23 @@ pub async fn generate_outstanding_pdf(
             } else {
                 row.party_name.clone()
             };
-            current_layer.use_text(&name, 7.5, Mm(col_x[0] + cell_pad), Mm(y_pos), &font);
-            current_layer.use_text(&row.total_invoices.to_string(), 7.5, Mm(col_x[1] + cell_pad), Mm(y_pos), &font);
-            current_layer.use_text(&format!("{:.2}", row.total_amount), 7.5, Mm(col_x[2] + cell_pad), Mm(y_pos), &font);
-            current_layer.use_text(&format!("{:.2}", row.paid_amount), 7.5, Mm(col_x[3] + cell_pad), Mm(y_pos), &font);
-            current_layer.use_text(&format!("{:.2}", row.outstanding_amount.abs()), 7.5, Mm(col_x[4] + cell_pad), Mm(y_pos), &font_bold);
+            current_layer.use_text(&name, 8.5, Mm(col_x[0] + cell_pad), Mm(y_pos), &font);
+            current_layer.use_text(&row.total_invoices.to_string(), 8.5, Mm(col_x[1] + cell_pad), Mm(y_pos), &font);
+            current_layer.use_text(&format!("{:.2}", row.total_amount), 8.5, Mm(col_x[2] + cell_pad), Mm(y_pos), &font);
+            current_layer.use_text(&format!("{:.2}", row.paid_amount), 8.5, Mm(col_x[3] + cell_pad), Mm(y_pos), &font);
+            current_layer.use_text(&format!("{:.2}", row.outstanding_amount.abs()), 8.5, Mm(col_x[4] + cell_pad), Mm(y_pos), &font_bold);
             let oldest = row.oldest_invoice_date.as_deref().unwrap_or("-");
-            current_layer.use_text(oldest, 7.5, Mm(col_x[5] + cell_pad), Mm(y_pos), &font);
+            current_layer.use_text(oldest, 8.5, Mm(col_x[5] + cell_pad), Mm(y_pos), &font);
             let days = row.days_outstanding.map(|d| d.to_string()).unwrap_or_else(|| "-".to_string());
-            current_layer.use_text(&days, 7.5, Mm(col_x[6] + cell_pad), Mm(y_pos), &font);
+            current_layer.use_text(&days, 8.5, Mm(col_x[6] + cell_pad), Mm(y_pos), &font);
             y_pos -= line_height;
         }
     }
     y_pos -= 2.0;
-    current_layer.use_text("TOTAL PAYABLES", 9.0, Mm(col_x[0] + cell_pad), Mm(y_pos), &font_bold);
+    current_layer.use_text("TOTAL PAYABLES", 9.5, Mm(col_x[0] + cell_pad), Mm(y_pos), &font_bold);
     current_layer.use_text(
         &format!("{} {:.2}", currency_sym, data.total_payables.abs()),
-        9.0, Mm(col_x[4] + cell_pad), Mm(y_pos), &font_bold,
+        9.5, Mm(col_x[4] + cell_pad), Mm(y_pos), &font_bold,
     );
     y_pos -= 12.0;
 
@@ -1278,16 +1278,16 @@ pub async fn generate_outstanding_pdf(
     }
     current_layer.use_text("SUMMARY", 11.0, Mm(left_margin), Mm(y_pos), &font_bold);
     y_pos -= 6.0;
-    current_layer.use_text("Total Receivables (From Customers):", 9.0, Mm(left_margin), Mm(y_pos), &font);
+    current_layer.use_text("Total Receivables (From Customers):", 9.5, Mm(left_margin), Mm(y_pos), &font);
     current_layer.use_text(
         &format!("{} {:.2}", currency_sym, data.total_receivables.abs()),
-        9.0, Mm(left_margin + 100.0), Mm(y_pos), &font_bold,
+        9.5, Mm(left_margin + 100.0), Mm(y_pos), &font_bold,
     );
     y_pos -= 5.5;
-    current_layer.use_text("Total Payables (To Suppliers):", 9.0, Mm(left_margin), Mm(y_pos), &font);
+    current_layer.use_text("Total Payables (To Suppliers):", 9.5, Mm(left_margin), Mm(y_pos), &font);
     current_layer.use_text(
         &format!("{} {:.2}", currency_sym, data.total_payables.abs()),
-        9.0, Mm(left_margin + 100.0), Mm(y_pos), &font_bold,
+        9.5, Mm(left_margin + 100.0), Mm(y_pos), &font_bold,
     );
 
     document
@@ -1420,7 +1420,7 @@ pub async fn generate_expense_pdf(
     let left_margin = 12.0_f32;
     let top_margin = 280.0_f32;
     let mut y_pos = top_margin;
-    let line_height = 5.8_f32;
+    let line_height = 6.2_f32;
     let cell_padding = 0.8_f32;
     let currency_sym = data.currency_symbol.as_deref().unwrap_or("");
 
@@ -1484,9 +1484,9 @@ pub async fn generate_expense_pdf(
         };
 
         // Table headers
-        current_layer.use_text(group_col_header, 9.5, Mm(col_x_g[0] + cell_padding), Mm(y_pos), &font_bold);
-        current_layer.use_text("Payments", 9.5, Mm(col_x_g[1] + cell_padding), Mm(y_pos), &font_bold);
-        draw_text_right(&current_layer, "Total Amount", 9.5, col_amount_g_right, y_pos, &font_bold, true);
+        current_layer.use_text(group_col_header, 10.0, Mm(col_x_g[0] + cell_padding), Mm(y_pos), &font_bold);
+        current_layer.use_text("Payments", 10.0, Mm(col_x_g[1] + cell_padding), Mm(y_pos), &font_bold);
+        draw_text_right(&current_layer, "Total Amount", 10.0, col_amount_g_right, y_pos, &font_bold, true);
         y_pos -= line_height;
         y_pos -= 1.0;
 
@@ -1495,9 +1495,9 @@ pub async fn generate_expense_pdf(
                 let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
                 current_layer = document.get_page(page).get_layer(layer);
                 y_pos = top_margin - 15.0;
-                current_layer.use_text(group_col_header, 9.5, Mm(col_x_g[0] + cell_padding), Mm(y_pos), &font_bold);
-                current_layer.use_text("Payments", 9.5, Mm(col_x_g[1] + cell_padding), Mm(y_pos), &font_bold);
-                draw_text_right(&current_layer, "Total Amount", 9.5, col_amount_g_right, y_pos, &font_bold, true);
+                current_layer.use_text(group_col_header, 10.0, Mm(col_x_g[0] + cell_padding), Mm(y_pos), &font_bold);
+                current_layer.use_text("Payments", 10.0, Mm(col_x_g[1] + cell_padding), Mm(y_pos), &font_bold);
+                draw_text_right(&current_layer, "Total Amount", 10.0, col_amount_g_right, y_pos, &font_bold, true);
                 y_pos -= line_height;
                 y_pos -= 1.0;
             }
@@ -1507,16 +1507,16 @@ pub async fn generate_expense_pdf(
             } else {
                 row.group_label.clone()
             };
-            current_layer.use_text(&label, 8.5, Mm(col_x_g[0] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&label, 9.5, Mm(col_x_g[0] + cell_padding), Mm(y_pos), &font);
             current_layer.use_text(
                 &row.voucher_count.to_string(),
-                8.5,
+                9.5,
                 Mm(col_x_g[1] + cell_padding),
                 Mm(y_pos),
                 &font,
             );
             let amt_str = format_pdf_amount(currency_sym, row.total_amount);
-            draw_text_right(&current_layer, &amt_str, 8.5, col_amount_g_right, y_pos, &font, false);
+            draw_text_right(&current_layer, &amt_str, 9.5, col_amount_g_right, y_pos, &font, false);
             y_pos -= line_height;
         }
 
@@ -1527,16 +1527,16 @@ pub async fn generate_expense_pdf(
             current_layer = document.get_page(page).get_layer(layer);
             y_pos = top_margin - 15.0;
         }
-        current_layer.use_text("TOTAL", 9.5, Mm(col_x_g[0] + cell_padding), Mm(y_pos), &font_bold);
+        current_layer.use_text("TOTAL", 10.0, Mm(col_x_g[0] + cell_padding), Mm(y_pos), &font_bold);
         current_layer.use_text(
             &data.total_vouchers.to_string(),
-            9.5,
+            10.0,
             Mm(col_x_g[1] + cell_padding),
             Mm(y_pos),
             &font_bold,
         );
         let total_str = format_pdf_amount(currency_sym, data.total_amount);
-        draw_text_right(&current_layer, &total_str, 9.5, col_amount_g_right, y_pos, &font_bold, true);
+        draw_text_right(&current_layer, &total_str, 10.0, col_amount_g_right, y_pos, &font_bold, true);
     }
 
     // ── Flat Detail Table (product entry mode or detail-only mode) ───────────
@@ -1564,14 +1564,14 @@ pub async fn generate_expense_pdf(
         let col_amount_right = 210.0_f32 - left_margin - cell_padding;
 
         // Headers
-        current_layer.use_text("Date", 9.0, Mm(col_date + cell_padding), Mm(y_pos), &font_bold);
-        current_layer.use_text("Voucher No", 9.0, Mm(col_voucher + cell_padding), Mm(y_pos), &font_bold);
-        current_layer.use_text("Account", 9.0, Mm(col_account + cell_padding), Mm(y_pos), &font_bold);
+        current_layer.use_text("Date", 9.5, Mm(col_date + cell_padding), Mm(y_pos), &font_bold);
+        current_layer.use_text("Voucher No", 9.5, Mm(col_voucher + cell_padding), Mm(y_pos), &font_bold);
+        current_layer.use_text("Account", 9.5, Mm(col_account + cell_padding), Mm(y_pos), &font_bold);
         if data.show_product_column {
-            current_layer.use_text("Product", 9.0, Mm(col_product + cell_padding), Mm(y_pos), &font_bold);
+            current_layer.use_text("Product", 9.5, Mm(col_product + cell_padding), Mm(y_pos), &font_bold);
         }
-        current_layer.use_text("Narration", 9.0, Mm(col_narration + cell_padding), Mm(y_pos), &font_bold);
-        draw_text_right(&current_layer, "Amount", 9.0, col_amount_right, y_pos, &font_bold, true);
+        current_layer.use_text("Narration", 9.5, Mm(col_narration + cell_padding), Mm(y_pos), &font_bold);
+        draw_text_right(&current_layer, "Amount", 9.5, col_amount_right, y_pos, &font_bold, true);
         y_pos -= line_height;
         y_pos -= 1.0;
 
@@ -1581,33 +1581,33 @@ pub async fn generate_expense_pdf(
                 let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
                 current_layer = document.get_page(page).get_layer(layer);
                 y_pos = top_margin - 15.0;
-                current_layer.use_text("Date", 9.0, Mm(col_date + cell_padding), Mm(y_pos), &font_bold);
-                current_layer.use_text("Voucher No", 9.0, Mm(col_voucher + cell_padding), Mm(y_pos), &font_bold);
-                current_layer.use_text("Account", 9.0, Mm(col_account + cell_padding), Mm(y_pos), &font_bold);
+                current_layer.use_text("Date", 9.5, Mm(col_date + cell_padding), Mm(y_pos), &font_bold);
+                current_layer.use_text("Voucher No", 9.5, Mm(col_voucher + cell_padding), Mm(y_pos), &font_bold);
+                current_layer.use_text("Account", 9.5, Mm(col_account + cell_padding), Mm(y_pos), &font_bold);
                 if data.show_product_column {
-                    current_layer.use_text("Product", 9.0, Mm(col_product + cell_padding), Mm(y_pos), &font_bold);
+                    current_layer.use_text("Product", 9.5, Mm(col_product + cell_padding), Mm(y_pos), &font_bold);
                 }
-                current_layer.use_text("Narration", 9.0, Mm(col_narration + cell_padding), Mm(y_pos), &font_bold);
-                draw_text_right(&current_layer, "Amount", 9.0, col_amount_right, y_pos, &font_bold, true);
+                current_layer.use_text("Narration", 9.5, Mm(col_narration + cell_padding), Mm(y_pos), &font_bold);
+                draw_text_right(&current_layer, "Amount", 9.5, col_amount_right, y_pos, &font_bold, true);
                 y_pos -= line_height;
                 y_pos -= 1.0;
             }
 
-            current_layer.use_text(&d.voucher_date, 8.5, Mm(col_date + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&d.voucher_date, 9.5, Mm(col_date + cell_padding), Mm(y_pos), &font);
 
             let vno = if d.voucher_no.len() > 14 {
                 format!("{}...", &d.voucher_no[..11])
             } else {
                 d.voucher_no.clone()
             };
-            current_layer.use_text(&vno, 8.5, Mm(col_voucher + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&vno, 9.5, Mm(col_voucher + cell_padding), Mm(y_pos), &font);
 
             let acc = if d.account_name.len() > 22 {
                 format!("{}...", &d.account_name[..19])
             } else {
                 d.account_name.clone()
             };
-            current_layer.use_text(&acc, 8.5, Mm(col_account + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&acc, 9.5, Mm(col_account + cell_padding), Mm(y_pos), &font);
 
             if data.show_product_column {
                 let prod = d.product_name.as_deref().unwrap_or("—");
@@ -1616,7 +1616,7 @@ pub async fn generate_expense_pdf(
                 } else {
                     prod.to_string()
                 };
-                current_layer.use_text(&prod_str, 8.5, Mm(col_product + cell_padding), Mm(y_pos), &font);
+                current_layer.use_text(&prod_str, 9.5, Mm(col_product + cell_padding), Mm(y_pos), &font);
             }
 
             let narr = d.narration.as_deref().unwrap_or("—");
@@ -1625,10 +1625,10 @@ pub async fn generate_expense_pdf(
             } else {
                 narr.to_string()
             };
-            current_layer.use_text(&narr_str, 8.5, Mm(col_narration + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&narr_str, 9.5, Mm(col_narration + cell_padding), Mm(y_pos), &font);
 
             let amt_str = format_pdf_amount(currency_sym, d.amount);
-            draw_text_right(&current_layer, &amt_str, 8.5, col_amount_right, y_pos, &font, false);
+            draw_text_right(&current_layer, &amt_str, 9.5, col_amount_right, y_pos, &font, false);
 
             detail_total += d.amount;
             y_pos -= line_height;
@@ -1644,26 +1644,26 @@ pub async fn generate_expense_pdf(
 
         if data.is_product_mode && data.purchase_rate > 0.0 {
             // Row 1: Purchase Rate
-            current_layer.use_text("Purchase Rate", 9.0, Mm(col_date + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text("Purchase Rate", 9.5, Mm(col_date + cell_padding), Mm(y_pos), &font);
             let pr_str = format_pdf_amount(currency_sym, data.purchase_rate);
-            draw_text_right(&current_layer, &pr_str, 9.0, col_amount_right, y_pos, &font, false);
+            draw_text_right(&current_layer, &pr_str, 9.5, col_amount_right, y_pos, &font, false);
             y_pos -= line_height;
 
             // Row 2: Expenses
-            current_layer.use_text("Expenses", 9.0, Mm(col_date + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text("Expenses", 9.5, Mm(col_date + cell_padding), Mm(y_pos), &font);
             let exp_str = format_pdf_amount(currency_sym, detail_total);
-            draw_text_right(&current_layer, &exp_str, 9.0, col_amount_right, y_pos, &font, false);
+            draw_text_right(&current_layer, &exp_str, 9.5, col_amount_right, y_pos, &font, false);
             y_pos -= line_height;
 
             // Row 3: Total Cost (bold)
             let total_cost = data.purchase_rate + detail_total;
-            current_layer.use_text("Total Cost", 9.5, Mm(col_date + cell_padding), Mm(y_pos), &font_bold);
+            current_layer.use_text("Total Cost", 10.0, Mm(col_date + cell_padding), Mm(y_pos), &font_bold);
             let total_cost_str = format_pdf_amount(currency_sym, total_cost);
-            draw_text_right(&current_layer, &total_cost_str, 9.5, col_amount_right, y_pos, &font_bold, true);
+            draw_text_right(&current_layer, &total_cost_str, 10.0, col_amount_right, y_pos, &font_bold, true);
         } else {
-            current_layer.use_text("TOTAL", 9.5, Mm(col_date + cell_padding), Mm(y_pos), &font_bold);
+            current_layer.use_text("TOTAL", 10.0, Mm(col_date + cell_padding), Mm(y_pos), &font_bold);
             let total_str = format_pdf_amount(currency_sym, detail_total);
-            draw_text_right(&current_layer, &total_str, 9.5, col_amount_right, y_pos, &font_bold, true);
+            draw_text_right(&current_layer, &total_str, 10.0, col_amount_right, y_pos, &font_bold, true);
         }
     }
 
