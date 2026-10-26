@@ -2022,3 +2022,253 @@ pub async fn generate_transaction_report_pdf(
 
     Ok(output_path.to_string_lossy().to_string())
 }
+
+
+// ── Product Profit Report PDF ────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct ProductProfitPdfItem {
+    pub product_code: String,
+    pub product_name: String,
+    pub group_name: Option<String>,
+    pub qty_sold: f64,
+    pub unit_symbol: String,
+    pub total_revenue: f64,
+    pub total_cost: f64,
+    pub gross_profit: f64,
+    pub margin_percent: f64,
+    pub avg_selling_price: f64,
+    pub avg_cost_price: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProductProfitPdfData {
+    pub company_name: String,
+    pub period_from: String,
+    pub period_to: String,
+    pub group_label: Option<String>,
+    pub search_query: Option<String>,
+    pub currency_symbol: Option<String>,
+    pub total_revenue: f64,
+    pub total_cost: f64,
+    pub gross_profit: f64,
+    pub overall_margin: f64,
+    pub total_products: usize,
+    pub items: Vec<ProductProfitPdfItem>,
+}
+
+#[tauri::command]
+pub async fn generate_product_profit_pdf(
+    data: ProductProfitPdfData,
+    file_path: String,
+) -> Result<String, String> {
+    let output_path = PathBuf::from(&file_path);
+
+    let (document, page1, layer1) =
+        PdfDocument::new("Product Profit Report", Mm(210.0), Mm(297.0), "Layer 1");
+    let font = document
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|e| e.to_string())?;
+    let font_bold = document
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|e| e.to_string())?;
+
+    let mut current_layer = document.get_page(page1).get_layer(layer1);
+
+    let left_margin = 12.0_f32;
+    let top_margin = 280.0_f32;
+    let mut y_pos = top_margin;
+    let line_height = 5.8_f32;
+    let cell_padding = 0.8_f32;
+
+    // Normalize currency symbol (replace '₹' with "Rs." for BuiltinFont Helvetica)
+    let raw_sym = data.currency_symbol.as_deref().unwrap_or("");
+    let currency_sym = if raw_sym.contains('₹') {
+        "Rs."
+    } else {
+        raw_sym
+    };
+
+    // Helper closure to sanitize text into ASCII printable range
+    let clean = |s: &str| -> String {
+        s.chars()
+            .map(|c| {
+                if c == '₹' {
+                    'R'
+                } else if c.is_ascii() && (c as u32) >= 32 && (c as u32) <= 126 {
+                    c
+                } else {
+                    ' '
+                }
+            })
+            .collect()
+    };
+
+    // ── Header ───────────────────────────────────────────────────────────────
+    current_layer.use_text(&clean(&data.company_name), 16.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    y_pos -= 7.0;
+
+    current_layer.use_text("PRODUCT PROFIT REPORT", 20.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    y_pos -= 6.0;
+
+    let period_info = format!("Period: {} to {}", data.period_from, data.period_to);
+    current_layer.use_text(&clean(&period_info), 9.0, Mm(left_margin), Mm(y_pos), &font);
+    y_pos -= 4.5;
+
+    // Filters line
+    let mut filter_items = Vec::new();
+    if let Some(ref g) = data.group_label {
+        filter_items.push(format!("Group: {}", g));
+    }
+    if let Some(ref q) = data.search_query {
+        if !q.trim().is_empty() {
+            filter_items.push(format!("Search: \"{}\"", q.trim()));
+        }
+    }
+    if !filter_items.is_empty() {
+        let f_str = filter_items.join("  |  ");
+        current_layer.use_text(&clean(&f_str), 8.5, Mm(left_margin), Mm(y_pos), &font);
+        y_pos -= 4.5;
+    }
+
+    // KPI Summary Banner
+    let kpi_str = format!(
+        "Revenue: {}   |   Cost: {}   |   Profit: {}   |   Margin: {:.1}%",
+        format_pdf_amount(currency_sym, data.total_revenue),
+        format_pdf_amount(currency_sym, data.total_cost),
+        format_pdf_amount(currency_sym, data.gross_profit),
+        data.overall_margin
+    );
+    current_layer.use_text(&clean(&kpi_str), 9.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    y_pos -= 7.0;
+
+    // ── Columns ───────────────────────────────────────────────────────────────
+    // Total printable width = 186mm (12mm margins on both sides of 210mm page)
+    // Widths: Product (44), Group (20), Qty (18), Revenue (23), Cost (23), Profit (23), Margin (15), Avg Rates (20)
+    let col_widths = [44.0_f32, 20.0, 18.0, 23.0, 23.0, 23.0, 15.0, 20.0];
+    let mut col_x = vec![left_margin];
+    for w in &col_widths[..col_widths.len() - 1] {
+        col_x.push(col_x.last().unwrap() + w);
+    }
+    let col_qty_right = col_x[2] + col_widths[2] - cell_padding;
+    let col_rev_right = col_x[3] + col_widths[3] - cell_padding;
+    let col_cost_right = col_x[4] + col_widths[4] - cell_padding;
+    let col_profit_right = col_x[5] + col_widths[5] - cell_padding;
+    let col_margin_right = col_x[6] + col_widths[6] - cell_padding;
+    let col_rates_right = col_x[7] + col_widths[7] - cell_padding;
+
+    let headers_left = ["Product Details", "Group"];
+
+    macro_rules! draw_profit_headers {
+        ($layer:expr, $y:expr) => {
+            for (i, h) in headers_left.iter().enumerate() {
+                $layer.use_text(*h, 8.5, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
+            }
+            draw_text_right(&$layer, "Qty Sold", 8.5, col_qty_right, $y, &font_bold, true);
+            draw_text_right(&$layer, "Revenue", 8.5, col_rev_right, $y, &font_bold, true);
+            draw_text_right(&$layer, "Cost", 8.5, col_cost_right, $y, &font_bold, true);
+            draw_text_right(&$layer, "Profit", 8.5, col_profit_right, $y, &font_bold, true);
+            draw_text_right(&$layer, "Margin", 8.5, col_margin_right, $y, &font_bold, true);
+            draw_text_right(&$layer, "Sell/Cost", 8.5, col_rates_right, $y, &font_bold, true);
+        };
+    }
+
+    draw_profit_headers!(current_layer, y_pos);
+    y_pos -= line_height + 1.0;
+
+    for item in &data.items {
+        if y_pos < 25.0 {
+            let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+            current_layer = document.get_page(page).get_layer(layer);
+            y_pos = top_margin - 15.0;
+            draw_profit_headers!(current_layer, y_pos);
+            y_pos -= line_height + 1.0;
+        }
+
+        // Product Details (Name + Code)
+        let prod_display = if !item.product_code.trim().is_empty() {
+            format!("{} ({})", item.product_name, item.product_code)
+        } else {
+            item.product_name.clone()
+        };
+        let prod = clean(&prod_display);
+        let prod_trunc = if prod.len() > 24 { format!("{}...", &prod[..21]) } else { prod };
+        current_layer.use_text(&prod_trunc, 8.0, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
+
+        // Group
+        let group_raw = item.group_name.as_deref().unwrap_or("-");
+        let group = clean(group_raw);
+        let group_trunc = if group.len() > 11 { format!("{}...", &group[..8]) } else { group };
+        current_layer.use_text(&group_trunc, 8.0, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+
+        // Qty Sold
+        let qty_str = if item.qty_sold.fract() == 0.0 {
+            format!("{:.0}", item.qty_sold)
+        } else {
+            format!("{:.2}", item.qty_sold)
+        };
+        let qty_with_unit = if !item.unit_symbol.is_empty() {
+            format!("{} {}", qty_str, item.unit_symbol)
+        } else {
+            qty_str
+        };
+        draw_text_right(&current_layer, &clean(&qty_with_unit), 8.0, col_qty_right, y_pos, &font, false);
+
+        // Revenue
+        let rev_str = format_pdf_amount(currency_sym, item.total_revenue);
+        draw_text_right(&current_layer, &rev_str, 8.0, col_rev_right, y_pos, &font, false);
+
+        // Cost
+        let cost_str = format_pdf_amount(currency_sym, item.total_cost);
+        draw_text_right(&current_layer, &cost_str, 8.0, col_cost_right, y_pos, &font, false);
+
+        // Gross Profit
+        let profit_str = format_pdf_amount(currency_sym, item.gross_profit);
+        draw_text_right(&current_layer, &profit_str, 8.0, col_profit_right, y_pos, &font, false);
+
+        // Margin %
+        let margin_str = format!("{:.1}%", item.margin_percent);
+        draw_text_right(&current_layer, &margin_str, 8.0, col_margin_right, y_pos, &font, false);
+
+        // Avg Rates (Sell / Cost)
+        let rates_str = format!("{:.0}/{:.0}", item.avg_selling_price, item.avg_cost_price);
+        draw_text_right(&current_layer, &rates_str, 8.0, col_rates_right, y_pos, &font, false);
+
+        y_pos -= line_height;
+    }
+
+    // Totals row
+    y_pos -= 2.0;
+    if y_pos < 25.0 {
+        let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+        current_layer = document.get_page(page).get_layer(layer);
+        y_pos = top_margin - 15.0;
+        draw_profit_headers!(current_layer, y_pos);
+        y_pos -= line_height + 1.0;
+    }
+
+    current_layer.use_text("TOTAL", 9.0, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
+    let count_str = format!("({} products)", data.total_products);
+    current_layer.use_text(&count_str, 8.0, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+
+    let tot_rev = format_pdf_amount(currency_sym, data.total_revenue);
+    draw_text_right(&current_layer, &tot_rev, 9.0, col_rev_right, y_pos, &font_bold, true);
+
+    let tot_cost = format_pdf_amount(currency_sym, data.total_cost);
+    draw_text_right(&current_layer, &tot_cost, 9.0, col_cost_right, y_pos, &font_bold, true);
+
+    let tot_profit = format_pdf_amount(currency_sym, data.gross_profit);
+    draw_text_right(&current_layer, &tot_profit, 9.0, col_profit_right, y_pos, &font_bold, true);
+
+    let tot_margin = format!("{:.1}%", data.overall_margin);
+    draw_text_right(&current_layer, &tot_margin, 9.0, col_margin_right, y_pos, &font_bold, true);
+
+    // Save document
+    document
+        .save(&mut BufWriter::new(
+            File::create(&output_path).map_err(|e| e.to_string())?,
+        ))
+        .map_err(|e| e.to_string())?;
+
+    Ok(output_path.to_string_lossy().to_string())
+}

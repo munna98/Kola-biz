@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { invoke } from '@tauri-apps/api/core';
+import { useSelector } from 'react-redux';
+import { RootState } from '@/store';
+import { openPath } from '@tauri-apps/plugin-opener';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -85,6 +88,8 @@ export default function ProductProfitPage() {
     const [invoiceBreakdown, setInvoiceBreakdown] = useState<Record<string, ProductProfitInvoiceRow[]>>({});
     const [invoicesLoading, setInvoicesLoading] = useState<Record<string, boolean>>({});
     const money = useMoney();
+    const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
+    const [isPrinting, setIsPrinting] = useState(false);
 
     useEffect(() => {
         loadProductGroups();
@@ -192,8 +197,75 @@ export default function ProductProfitPage() {
 
 
 
-    const handlePrint = () => {
-        window.print();
+    const handlePrint = async () => {
+        if (filteredAndSortedData.length === 0) {
+            toast.error('No product profit data to print');
+            return;
+        }
+
+        try {
+            setIsPrinting(true);
+            const timestamp = new Date().toISOString().split('T')[0];
+            const fileName = `ProductProfitReport_${fromDate}_to_${toDate}_${timestamp}.pdf`;
+            const downloadsPath = await invoke<string>('get_downloads_path');
+            const filePath = `${downloadsPath}/${fileName}`;
+
+            const companyName = companyProfile?.company_name || 'Company';
+            const currencySymbol = companyProfile?.base_currency_symbol || companyProfile?.base_currency || 'Rs.';
+
+            const groupObj = selectedGroup !== 'all' ? productGroups.find(g => g.id.toString() === selectedGroup) : null;
+            const groupLabel = groupObj ? groupObj.name : 'All Groups';
+
+            const pdfData = {
+                company_name: companyName,
+                period_from: formatDate(fromDate),
+                period_to: formatDate(toDate),
+                group_label: groupLabel,
+                search_query: searchQuery.trim() || null,
+                currency_symbol: currencySymbol,
+                total_revenue: totalRevenue,
+                total_cost: totalCost,
+                gross_profit: grossProfit,
+                overall_margin: overallMargin,
+                total_products: filteredAndSortedData.length,
+                items: filteredAndSortedData.map(r => ({
+                    product_code: r.product_code || '',
+                    product_name: r.product_name,
+                    group_name: r.group_name || null,
+                    qty_sold: r.qty_sold,
+                    unit_symbol: r.base_unit_symbol || '',
+                    total_revenue: r.total_revenue,
+                    total_cost: r.total_cost,
+                    gross_profit: r.gross_profit,
+                    margin_percent: r.margin_percent,
+                    avg_selling_price: r.avg_selling_price,
+                    avg_cost_price: r.avg_cost_price,
+                })),
+            };
+
+            await invoke('generate_product_profit_pdf', {
+                data: pdfData,
+                filePath,
+            });
+
+            try {
+                await openPath(filePath);
+                toast.success(`PDF generated and opened: ${fileName}`);
+            } catch (openErr) {
+                console.warn('Could not auto-open PDF:', openErr);
+                toast.success(`PDF saved to: ${filePath}`, {
+                    action: {
+                        label: 'Open',
+                        onClick: () => openPath(filePath).catch(console.error),
+                    },
+                });
+            }
+        } catch (error) {
+            console.error('Failed to generate PDF:', error);
+            toast.error('Failed to generate PDF');
+        } finally {
+            setIsPrinting(false);
+        }
     };
 
     const handleExport = () => {
@@ -265,13 +337,27 @@ export default function ProductProfitPage() {
                             <IconRefresh size={16} className="mr-1.5" />
                             Refresh
                         </Button>
-                        <Button variant="outline" size="sm" onClick={handleExport}>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handleExport}
+                            disabled={filteredAndSortedData.length === 0}
+                        >
                             <IconDownload size={16} className="mr-1.5" />
                             Export
                         </Button>
-                        <Button variant="outline" size="sm" onClick={handlePrint}>
-                            <IconPrinter size={16} className="mr-1.5" />
-                            Print
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={handlePrint}
+                            disabled={loading || isPrinting || filteredAndSortedData.length === 0}
+                        >
+                            {isPrinting ? (
+                                <IconRefresh size={16} className="mr-1.5 animate-spin" />
+                            ) : (
+                                <IconPrinter size={16} className="mr-1.5" />
+                            )}
+                            Print PDF
                         </Button>
                     </div>
                 </div>
