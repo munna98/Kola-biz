@@ -87,7 +87,6 @@ export default function LedgerReportPage() {
 
   const loadAccounts = async () => {
     try {
-      setIsPrinting(true);
       const result = await invoke<LedgerAccount[]>('get_chart_of_accounts');
       setAccounts(result);
     } catch (error) {
@@ -103,7 +102,6 @@ export default function LedgerReportPage() {
     }
 
     try {
-      setIsPrinting(true);
       setLoading(true);
       const result = await invoke<{
         entries: LedgerEntry[];
@@ -190,9 +188,16 @@ export default function LedgerReportPage() {
       });
 
       toast.success(`PDF generated at: ${filePath}`);
+      try {
+        await openPath(filePath);
+      } catch (err) {
+        console.error('Failed to open PDF:', err);
+      }
     } catch (error) {
       toast.error('Failed to generate PDF');
       console.error(error);
+    } finally {
+      setIsPrinting(false);
     }
   };
 
@@ -203,7 +208,6 @@ export default function LedgerReportPage() {
     }
 
     try {
-      setIsPrinting(true);
       const companyName = companyProfile?.company_name || 'Company';
       const currencySymbol = isViewingForeign ? (foreignCurrencySymbol || '') : (companyProfile.base_currency_symbol || '');
       const currencyCode = isViewingForeign ? foreignCurrencyCode : (companyProfile.base_currency || 'INR');
@@ -379,9 +383,9 @@ export default function LedgerReportPage() {
               <IconDownload size={16} />
               Export
             </Button>
-            <Button variant="outline" size="sm" onClick={handlePrint} disabled={entries.length === 0}>
+            <Button variant="outline" size="sm" onClick={handlePrint} disabled={entries.length === 0 || isPrinting}>
               <IconPrinter size={16} />
-              Print
+              {isPrinting ? 'Printing...' : 'Print'}
             </Button>
           </div>
         </div>
