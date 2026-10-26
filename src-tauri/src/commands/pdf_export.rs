@@ -44,6 +44,16 @@ fn format_voucher_type(vtype: &str) -> String {
         .join(" ")
 }
 
+fn format_date_str(date_str: &str) -> String {
+    let clean = date_str.trim().split('T').next().unwrap_or(date_str);
+    let parts: Vec<&str> = clean.split('-').collect();
+    if parts.len() == 3 && parts[0].len() == 4 && parts[1].len() == 2 && parts[2].len() == 2 {
+        format!("{}-{}-{}", parts[2], parts[1], parts[0])
+    } else {
+        date_str.to_string()
+    }
+}
+
 fn format_pdf_currency(amount: f64, data: &LedgerPdfData) -> String {
     let value = format!("{:.2}", amount);
     match data.currency_display.as_deref().unwrap_or("symbol") {
@@ -108,7 +118,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
     y_pos -= 5.0;
 
     // Period Information
-    let period_info = format!("Period: {} to {}", data.period_from, data.period_to);
+    let period_info = format!("Period: {} to {}", format_date_str(&data.period_from), format_date_str(&data.period_to));
     current_layer.use_text(&period_info, 9.0, Mm(left_margin), Mm(y_pos), &font);
     y_pos -= 6.0;
 
@@ -194,7 +204,7 @@ pub async fn generate_ledger_pdf(data: LedgerPdfData, file_path: String) -> Resu
 
         // Date
         current_layer.use_text(
-            &entry.date,
+            &format_date_str(&entry.date),
             10.0,
             Mm(col_x[0] + cell_padding),
             Mm(y_pos),
@@ -591,7 +601,7 @@ pub async fn generate_profit_loss_pdf(
     current_layer.use_text("PROFIT & LOSS STATEMENT", 20.0, Mm(left_margin), Mm(y_pos), &font_bold);
     y_pos -= 6.0;
 
-    let period_info = format!("Period: {} to {}", data.period_from, data.period_to);
+    let period_info = format!("Period: {} to {}", format_date_str(&data.period_from), format_date_str(&data.period_to));
     current_layer.use_text(&period_info, 9.0, Mm(left_margin), Mm(y_pos), &font);
     y_pos -= 8.0;
 
@@ -804,7 +814,7 @@ pub async fn generate_day_book_pdf(
     current_layer.use_text("DAY BOOK", 20.0, Mm(left_margin), Mm(y_pos), &font_bold);
     y_pos -= 6.0;
 
-    let period_info = format!("Period: {} to {}", data.period_from, data.period_to);
+    let period_info = format!("Period: {} to {}", format_date_str(&data.period_from), format_date_str(&data.period_to));
     current_layer.use_text(&period_info, 9.0, Mm(left_margin), Mm(y_pos), &font);
     y_pos -= 4.0;
 
@@ -1437,7 +1447,7 @@ pub async fn generate_expense_pdf(
             current_layer.use_text(&sub, 9.0, Mm(left_margin), Mm(y_pos), &font);
         }
     } else {
-        let period_info = format!("Period: {} to {}", data.period_from, data.period_to);
+        let period_info = format!("Period: {} to {}", format_date_str(&data.period_from), format_date_str(&data.period_to));
         current_layer.use_text(&period_info, 9.0, Mm(left_margin), Mm(y_pos), &font);
     }
     y_pos -= 5.0;
@@ -1785,7 +1795,7 @@ pub async fn generate_transaction_report_pdf(
     current_layer.use_text(main_title, 20.0, Mm(left_margin), Mm(y_pos), &font_bold);
     y_pos -= 6.0;
 
-    let period_info = format!("Period: {} to {}", data.period_from, data.period_to);
+    let period_info = format!("Period: {} to {}", format_date_str(&data.period_from), format_date_str(&data.period_to));
     current_layer.use_text(&clean(&period_info), 9.0, Mm(left_margin), Mm(y_pos), &font);
     y_pos -= 4.5;
 
@@ -2111,7 +2121,7 @@ pub async fn generate_product_profit_pdf(
     current_layer.use_text("PRODUCT PROFIT REPORT", 20.0, Mm(left_margin), Mm(y_pos), &font_bold);
     y_pos -= 6.0;
 
-    let period_info = format!("Period: {} to {}", data.period_from, data.period_to);
+    let period_info = format!("Period: {} to {}", format_date_str(&data.period_from), format_date_str(&data.period_to));
     current_layer.use_text(&clean(&period_info), 9.0, Mm(left_margin), Mm(y_pos), &font);
     y_pos -= 4.5;
 

@@ -9,6 +9,7 @@ import { Combobox } from '@/components/ui/combobox';
 import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { openPath } from '@tauri-apps/plugin-opener';
 import { useSelector, useDispatch } from 'react-redux';
 import {
   RootState,
@@ -64,6 +65,7 @@ export default function LedgerReportPage() {
 
   const [accounts, setAccounts] = useState<LedgerAccount[]>([]);
   const [loading, setLoading] = useState(false);
+  const [isPrinting, setIsPrinting] = useState(false);
   // 'base' = INR view, anything else (e.g. 'USD') = foreign currency view
   const [viewCurrency, setViewCurrency] = useState<'base' | string>('base');
 
@@ -85,6 +87,7 @@ export default function LedgerReportPage() {
 
   const loadAccounts = async () => {
     try {
+      setIsPrinting(true);
       const result = await invoke<LedgerAccount[]>('get_chart_of_accounts');
       setAccounts(result);
     } catch (error) {
@@ -100,6 +103,7 @@ export default function LedgerReportPage() {
     }
 
     try {
+      setIsPrinting(true);
       setLoading(true);
       const result = await invoke<{
         entries: LedgerEntry[];
@@ -152,6 +156,7 @@ export default function LedgerReportPage() {
     }
 
     try {
+      setIsPrinting(true);
       const timestamp = new Date().toISOString().split('T')[0];
       const fileName = `Ledger-${selectedAccountData.account_code}-${timestamp}.pdf`;
       
@@ -161,15 +166,15 @@ export default function LedgerReportPage() {
       const pdfData = {
         account_code: selectedAccountData.account_code,
         account_name: selectedAccountData.account_name,
-        period_from: fromDate || 'Beginning',
-        period_to: toDate,
+        period_from: fromDate ? formatDate(fromDate) : 'Beginning',
+        period_to: formatDate(toDate),
         opening_balance: isViewingForeign ? foreignOpeningBalance : openingBalance,
         closing_balance: isViewingForeign ? foreignClosingBalance : closingBalance,
         currency_code: isViewingForeign ? foreignCurrencyCode : (companyProfile.base_currency || 'INR'),
         currency_symbol: isViewingForeign ? foreignCurrencySymbol : (companyProfile.base_currency_symbol || ''),
         currency_display: companyProfile.currency_display || 'symbol',
         entries: displayedEntries.map(e => ({
-          date: e.date,
+          date: formatDate(e.date),
           voucher_no: e.voucher_no,
           voucher_type: e.voucher_type,
           narration: e.narration || '-',
@@ -198,6 +203,7 @@ export default function LedgerReportPage() {
     }
 
     try {
+      setIsPrinting(true);
       const companyName = companyProfile?.company_name || 'Company';
       const currencySymbol = isViewingForeign ? (foreignCurrencySymbol || '') : (companyProfile.base_currency_symbol || '');
       const currencyCode = isViewingForeign ? foreignCurrencyCode : (companyProfile.base_currency || 'INR');
