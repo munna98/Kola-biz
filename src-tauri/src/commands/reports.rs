@@ -1923,7 +1923,7 @@ pub async fn get_dashboard_metrics(
                       CASE WHEN coa.opening_balance_type = 'Dr' THEN coa.opening_balance ELSE -coa.opening_balance END)
         ), 0) AS REAL)
          FROM chart_of_accounts coa
-         WHERE coa.account_group IN ('Cash', 'Bank Accounts')
+         WHERE coa.account_group IN ('Cash', 'Bank Account', 'Bank Accounts')
          AND coa.deleted_at IS NULL",
     )
     .fetch_optional(&pool)
