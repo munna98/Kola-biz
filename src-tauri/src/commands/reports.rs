@@ -1202,8 +1202,8 @@ pub async fn get_transaction_report(
     query.fetch_all(&pool).await.map_err(|e| e.to_string())
 }
 
-// ============= PRODUCT TRANSACTION REPORT =============
-#[derive(Serialize, Deserialize, sqlx::FromRow)]
+// ============= PRODUCT / VOUCHER ITEMS TRANSACTION REPORT =============
+#[derive(Serialize, Deserialize, sqlx::FromRow, Clone)]
 pub struct ProductTransactionRow {
     pub voucher_id: String,
     pub voucher_no: String,
@@ -1218,6 +1218,7 @@ pub struct ProductTransactionRow {
     pub rate: f64,
     pub amount: f64,
     pub net_amount: f64,
+    pub description: Option<String>,
 }
 
 #[tauri::command]
@@ -1232,57 +1233,195 @@ pub async fn get_product_transaction_report(
     let pool = registry.active_pool().await?;
     let mut checklist: Vec<String> = Vec::new();
 
-    let mut query_str = String::from(
-        "SELECT
-            v.id as voucher_id,
-            v.voucher_no,
-            v.voucher_type,
-            v.voucher_date,
-            CASE
-                WHEN v.party_type = 'customer' THEN (SELECT name FROM customers WHERE id = v.party_id)
-                WHEN v.party_type = 'supplier' THEN (SELECT name FROM suppliers WHERE id = v.party_id)
-                ELSE NULL
-            END as party_name,
-            p.id as product_id,
-            p.name as product_name,
-            COALESCE(p.code, '') as product_code,
-            COALESCE(
-                (SELECT symbol FROM units WHERE id = vi.unit_id),
-                (SELECT symbol FROM units WHERE id = p.unit_id),
-                ''
-            ) as unit_symbol,
-            CAST(COALESCE(vi.base_quantity, vi.initial_quantity, 0) AS REAL) as quantity,
-            CAST(vi.rate AS REAL) as rate,
-            CAST(vi.amount AS REAL) as amount,
-            CAST(COALESCE(vi.net_amount, vi.amount, 0) AS REAL) as net_amount
-        FROM voucher_items vi
-        JOIN vouchers v ON vi.voucher_id = v.id
-        JOIN products p ON vi.product_id = p.id
-        WHERE vi.item_type = 'product'
-          AND vi.product_id IS NOT NULL
-          AND v.deleted_at IS NULL
-          AND v.voucher_date >= ? AND v.voucher_date <= ?"
-    );
+    let vt_ref = voucher_type.as_deref().unwrap_or("all");
 
-    checklist.push(from_date);
-    checklist.push(to_date);
+    let query_str = if vt_ref == "payment" {
+        checklist.push(from_date);
+        checklist.push(to_date);
 
-    if let Some(vt) = voucher_type {
-        query_str.push_str(" AND v.voucher_type = ?");
-        checklist.push(vt);
-    }
+        let mut q = String::from(
+            "SELECT
+                v.id as voucher_id,
+                v.voucher_no,
+                v.voucher_type,
+                v.voucher_date,
+                coa_bank.account_name as party_name,
+                COALESCE(vi.ledger_id, '') as product_id,
+                COALESCE(coa_item.account_name, vi.description, 'Payment') as product_name,
+                '' as product_code,
+                '' as unit_symbol,
+                0.0 as quantity,
+                0.0 as rate,
+                CAST(COALESCE(vi.amount, 0) AS REAL) as amount,
+                CAST(COALESCE(vi.net_amount, vi.amount, 0) AS REAL) as net_amount,
+                COALESCE(NULLIF(vi.description, ''), vi.remarks, '') as description
+            FROM voucher_items vi
+            JOIN vouchers v ON vi.voucher_id = v.id
+            LEFT JOIN chart_of_accounts coa_bank ON v.party_id = coa_bank.id
+            LEFT JOIN chart_of_accounts coa_item ON vi.ledger_id = coa_item.id
+            WHERE v.voucher_type = 'payment'
+              AND v.deleted_at IS NULL
+              AND v.voucher_date >= ? AND v.voucher_date <= ?"
+        );
 
-    if let Some(pid) = party_id {
-        query_str.push_str(" AND v.party_id = ?");
-        checklist.push(pid);
-    }
+        if let Some(pid) = party_id {
+            q.push_str(" AND (v.party_id = ? OR vi.ledger_id = ?)");
+            checklist.push(pid.clone());
+            checklist.push(pid);
+        }
 
-    if let Some(prod_id) = product_id {
-        query_str.push_str(" AND vi.product_id = ?");
-        checklist.push(prod_id);
-    }
+        if let Some(prod_id) = product_id {
+            q.push_str(" AND (vi.ledger_id = ? OR vi.product_id = ?)");
+            checklist.push(prod_id.clone());
+            checklist.push(prod_id);
+        }
 
-    query_str.push_str(" ORDER BY v.voucher_date DESC, v.created_at DESC, p.name ASC");
+        q.push_str(" ORDER BY v.voucher_date DESC, v.created_at DESC, vi.id ASC");
+        q
+    } else if vt_ref == "receipt" {
+        checklist.push(from_date);
+        checklist.push(to_date);
+
+        let mut q = String::from(
+            "SELECT
+                v.id as voucher_id,
+                v.voucher_no,
+                v.voucher_type,
+                v.voucher_date,
+                coa_bank.account_name as party_name,
+                COALESCE(vi.ledger_id, '') as product_id,
+                COALESCE(coa_item.account_name, vi.description, 'Receipt') as product_name,
+                '' as product_code,
+                '' as unit_symbol,
+                0.0 as quantity,
+                0.0 as rate,
+                CAST(COALESCE(vi.amount, 0) AS REAL) as amount,
+                CAST(COALESCE(vi.net_amount, vi.amount, 0) AS REAL) as net_amount,
+                COALESCE(NULLIF(vi.description, ''), vi.remarks, '') as description
+            FROM voucher_items vi
+            JOIN vouchers v ON vi.voucher_id = v.id
+            LEFT JOIN chart_of_accounts coa_bank ON v.party_id = coa_bank.id
+            LEFT JOIN chart_of_accounts coa_item ON vi.ledger_id = coa_item.id
+            WHERE v.voucher_type = 'receipt'
+              AND v.deleted_at IS NULL
+              AND v.voucher_date >= ? AND v.voucher_date <= ?"
+        );
+
+        if let Some(pid) = party_id {
+            q.push_str(" AND (v.party_id = ? OR vi.ledger_id = ?)");
+            checklist.push(pid.clone());
+            checklist.push(pid);
+        }
+
+        if let Some(prod_id) = product_id {
+            q.push_str(" AND (vi.ledger_id = ? OR vi.product_id = ?)");
+            checklist.push(prod_id.clone());
+            checklist.push(prod_id);
+        }
+
+        q.push_str(" ORDER BY v.voucher_date DESC, v.created_at DESC, vi.id ASC");
+        q
+    } else if vt_ref == "journal" || vt_ref == "opening_balance" {
+        checklist.push(from_date);
+        checklist.push(to_date);
+
+        let mut q = format!(
+            "SELECT
+                v.id as voucher_id,
+                v.voucher_no,
+                v.voucher_type,
+                v.voucher_date,
+                coa_v.account_name as party_name,
+                COALESCE(je.account_id, '') as product_id,
+                COALESCE(coa_je.account_name, 'Journal Entry') as product_name,
+                '' as product_code,
+                '' as unit_symbol,
+                0.0 as quantity,
+                0.0 as rate,
+                CAST(CASE WHEN je.debit > 0 THEN je.debit ELSE je.credit END AS REAL) as amount,
+                CAST(CASE WHEN je.debit > 0 THEN je.debit ELSE je.credit END AS REAL) as net_amount,
+                COALESCE(je.narration, v.narration, '') as description
+            FROM journal_entries je
+            JOIN vouchers v ON je.voucher_id = v.id
+            LEFT JOIN chart_of_accounts coa_v ON v.party_id = coa_v.id
+            LEFT JOIN chart_of_accounts coa_je ON je.account_id = coa_je.id
+            WHERE v.voucher_type = '{}'
+              AND v.deleted_at IS NULL
+              AND v.voucher_date >= ? AND v.voucher_date <= ?",
+            vt_ref
+        );
+
+        if let Some(pid) = party_id {
+            q.push_str(" AND (v.party_id = ? OR je.account_id = ?)");
+            checklist.push(pid.clone());
+            checklist.push(pid);
+        }
+
+        if let Some(prod_id) = product_id {
+            q.push_str(" AND je.account_id = ?");
+            checklist.push(prod_id);
+        }
+
+        q.push_str(" ORDER BY v.voucher_date DESC, v.created_at DESC, je.id ASC");
+        q
+    } else {
+        // Product vouchers (sales_invoice, co_invoice, purchase_invoice, sales_return, purchase_return)
+        checklist.push(from_date);
+        checklist.push(to_date);
+
+        let mut q = String::from(
+            "SELECT
+                v.id as voucher_id,
+                v.voucher_no,
+                v.voucher_type,
+                v.voucher_date,
+                COALESCE(
+                    coa.account_name,
+                    (SELECT name FROM customers WHERE id = v.party_id),
+                    (SELECT name FROM suppliers WHERE id = v.party_id)
+                ) as party_name,
+                COALESCE(p.id, vi.product_id, vi.service_id, '') as product_id,
+                COALESCE(p.name, (SELECT name FROM services WHERE id = vi.service_id), vi.description, 'Item') as product_name,
+                COALESCE(p.code, '') as product_code,
+                COALESCE(
+                    (SELECT symbol FROM units WHERE id = vi.unit_id),
+                    (SELECT symbol FROM units WHERE id = p.unit_id),
+                    ''
+                ) as unit_symbol,
+                CAST(COALESCE(vi.base_quantity, vi.initial_quantity, 0) AS REAL) as quantity,
+                CAST(vi.rate AS REAL) as rate,
+                CAST(vi.amount AS REAL) as amount,
+                CAST(COALESCE(vi.net_amount, vi.amount, 0) AS REAL) as net_amount,
+                COALESCE(vi.description, '') as description
+            FROM voucher_items vi
+            JOIN vouchers v ON vi.voucher_id = v.id
+            LEFT JOIN products p ON vi.product_id = p.id
+            LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+            WHERE v.deleted_at IS NULL
+              AND v.voucher_date >= ? AND v.voucher_date <= ?"
+        );
+
+        if let Some(vt) = voucher_type {
+            if vt != "all" {
+                q.push_str(" AND v.voucher_type = ?");
+                checklist.push(vt);
+            }
+        }
+
+        if let Some(pid) = party_id {
+            q.push_str(" AND v.party_id = ?");
+            checklist.push(pid);
+        }
+
+        if let Some(prod_id) = product_id {
+            q.push_str(" AND (vi.product_id = ? OR vi.service_id = ?)");
+            checklist.push(prod_id.clone());
+            checklist.push(prod_id);
+        }
+
+        q.push_str(" ORDER BY v.voucher_date DESC, v.created_at DESC, p.name ASC, vi.id ASC");
+        q
+    };
 
     let mut query = sqlx::query_as::<_, ProductTransactionRow>(&query_str);
 

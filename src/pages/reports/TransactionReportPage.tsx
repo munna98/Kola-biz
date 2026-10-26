@@ -47,6 +47,7 @@ interface ProductTransactionRow {
   rate: number;
   amount: number;
   net_amount: number;
+  description?: string | null;
 }
 
 interface Party {
@@ -62,7 +63,7 @@ interface SimpleProduct {
 }
 
 export default function TransactionReportPage() {
-  const [showProducts, setShowProducts] = useState(false);
+  const [showItems, setShowItems] = useState(false);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [productRows, setProductRows] = useState<ProductTransactionRow[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
@@ -83,6 +84,17 @@ export default function TransactionReportPage() {
   const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
   const [isPrinting, setIsPrinting] = useState(false);
   const [dateSortOrder, setDateSortOrder] = useState<'desc' | 'asc'>('desc');
+
+  const isProductType = (type: string) =>
+    ['sales_invoice', 'co_invoice', 'purchase_invoice', 'sales_return', 'purchase_return'].includes(type);
+
+  const handleVoucherTypeChange = (val: string) => {
+    setVoucherType(val);
+    if (val === 'all') {
+      setShowItems(false);
+      setSelectedProduct('');
+    }
+  };
 
   useEffect(() => {
     loadParties();
@@ -149,7 +161,7 @@ export default function TransactionReportPage() {
   };
 
   const handleApply = () => {
-    if (showProducts) {
+    if (showItems) {
       loadProductRows();
     } else {
       loadTransactions();
@@ -158,6 +170,7 @@ export default function TransactionReportPage() {
 
   const handleClearFilters = () => {
     setVoucherType('all');
+    setShowItems(false);
     setSelectedParty('');
     setSelectedProduct('');
     setDateSortOrder('desc');
@@ -167,19 +180,19 @@ export default function TransactionReportPage() {
     setToDate(new Date().toISOString().split('T')[0]);
   };
 
-  // When the show-products checkbox changes, reload the appropriate data
-  const handleShowProductsChange = (checked: boolean) => {
-    setShowProducts(checked);
+  // When the show-items checkbox changes, reload the appropriate data
+  const handleShowItemsChange = (checked: boolean) => {
+    setShowItems(checked);
     if (!checked) setSelectedProduct('');
   };
 
   useEffect(() => {
-    if (showProducts) {
+    if (showItems) {
       loadProductRows();
     } else {
       loadTransactions();
     }
-  }, [showProducts]);
+  }, [showItems]);
 
   const sortedTransactions = useMemo(() => {
     return [...transactions].sort((a, b) => {
@@ -208,7 +221,7 @@ export default function TransactionReportPage() {
   }, [productRows, dateSortOrder]);
 
   const handlePrint = async () => {
-    const hasData = showProducts ? sortedProductRows.length > 0 : sortedTransactions.length > 0;
+    const hasData = showItems ? sortedProductRows.length > 0 : sortedTransactions.length > 0;
     if (!hasData) {
       toast.error('No transactions to print');
       return;
@@ -217,7 +230,7 @@ export default function TransactionReportPage() {
     try {
       setIsPrinting(true);
       const timestamp = new Date().toISOString().split('T')[0];
-      const modeSuffix = showProducts ? '_Products' : '';
+      const modeSuffix = showItems ? '_Items' : '';
       const sortSuffix = `_${dateSortOrder}`;
       const fileName = `TransactionReport${modeSuffix}_${fromDate}_to_${toDate}${sortSuffix}_${timestamp}.pdf`;
       const downloadsPath = await invoke<string>('get_downloads_path');
@@ -233,6 +246,7 @@ export default function TransactionReportPage() {
       const productLabel = prodObj ? prodObj.name : 'All Products';
 
       const typeLabel = voucherType === 'all' ? 'All Types' : getTypeLabel(voucherType);
+      const hasQtyRate = isProductType(voucherType);
 
       const pdfData = {
         company_name: companyName,
@@ -240,12 +254,13 @@ export default function TransactionReportPage() {
         period_to: formatDate(toDate),
         transaction_type_label: typeLabel,
         party_label: partyLabel,
-        product_label: showProducts ? productLabel : null,
-        is_product_mode: showProducts,
+        product_label: showItems && hasQtyRate ? productLabel : null,
+        is_product_mode: showItems,
+        has_qty_rate: hasQtyRate,
         currency_symbol: currencySymbol,
-        total_amount: showProducts ? productTotalValue : totalAmount,
-        total_count: showProducts ? sortedProductRows.length : sortedTransactions.length,
-        entries: !showProducts
+        total_amount: showItems ? productTotalValue : totalAmount,
+        total_count: showItems ? sortedProductRows.length : sortedTransactions.length,
+        entries: !showItems
           ? sortedTransactions.map((t) => ({
               voucher_date: formatDate(t.voucher_date),
               voucher_no: t.voucher_no,
@@ -255,7 +270,7 @@ export default function TransactionReportPage() {
               amount: t.amount,
             }))
           : [],
-        product_entries: showProducts
+        product_entries: showItems
           ? sortedProductRows.map((r) => ({
               voucher_date: formatDate(r.voucher_date),
               voucher_no: r.voucher_no,
@@ -266,7 +281,8 @@ export default function TransactionReportPage() {
               unit_symbol: r.unit_symbol || null,
               quantity: r.quantity,
               rate: r.rate,
-              amount: r.net_amount,
+              amount: r.net_amount || r.amount,
+              description: r.description || null,
             }))
           : [],
       };
@@ -297,7 +313,7 @@ export default function TransactionReportPage() {
   };
 
   const handleExport = () => {
-    const hasData = showProducts ? sortedProductRows.length > 0 : sortedTransactions.length > 0;
+    const hasData = showItems ? sortedProductRows.length > 0 : sortedTransactions.length > 0;
     if (!hasData) {
       toast.error('No transactions to export');
       return;
@@ -312,7 +328,7 @@ export default function TransactionReportPage() {
 
       const rows: any[][] = [];
 
-      if (!showProducts) {
+      if (!showItems) {
         rows.push([`${companyName} - TRANSACTION REPORT`]);
         rows.push([`Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`]);
         rows.push([`Filters: Type: ${typeLabel} | Party: ${partyLabel} | Date Order: ${dateSortOrder === 'asc' ? 'Oldest First' : 'Newest First'}`]);
@@ -355,11 +371,11 @@ export default function TransactionReportPage() {
         const fileName = `TransactionReport_${fromDate}_to_${toDate}_${dateSortOrder}_${timestamp}.xlsx`;
         XLSX.writeFile(wb, fileName);
         toast.success(`Exported as ${fileName}`);
-      } else {
+      } else if (isProductType(voucherType)) {
         const prodObj = selectedProduct ? products.find((p) => p.id === selectedProduct) : null;
         const productLabel = prodObj ? prodObj.name : 'All Products';
 
-        rows.push([`${companyName} - TRANSACTION REPORT (PRODUCTS)`]);
+        rows.push([`${companyName} - TRANSACTION REPORT (ITEMS)`]);
         rows.push([`Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`]);
         rows.push([`Filters: Type: ${typeLabel} | Party: ${partyLabel} | Product: ${productLabel} | Date Order: ${dateSortOrder === 'asc' ? 'Oldest First' : 'Newest First'}`]);
         rows.push([]);
@@ -387,7 +403,7 @@ export default function TransactionReportPage() {
             row.quantity,
             row.unit_symbol || '',
             row.rate,
-            row.net_amount,
+            row.net_amount || row.amount,
           ]);
         }
 
@@ -408,9 +424,58 @@ export default function TransactionReportPage() {
         ];
 
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Product Transactions');
+        XLSX.utils.book_append_sheet(wb, ws, 'Transaction Items');
         const timestamp = new Date().toISOString().split('T')[0];
-        const fileName = `TransactionReport_Products_${fromDate}_to_${toDate}_${dateSortOrder}_${timestamp}.xlsx`;
+        const fileName = `TransactionReport_Items_${fromDate}_to_${toDate}_${dateSortOrder}_${timestamp}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+        toast.success(`Exported as ${fileName}`);
+      } else {
+        const partyColTitle = voucherType === 'payment' ? 'Paid From' : voucherType === 'receipt' ? 'Received In' : 'Party / Account';
+        const itemColTitle = voucherType === 'payment' ? 'Paid To (Account)' : voucherType === 'receipt' ? 'Received From (Account)' : 'Item / Account';
+
+        rows.push([`${companyName} - TRANSACTION REPORT (ITEMS)`]);
+        rows.push([`Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`]);
+        rows.push([`Filters: Type: ${typeLabel} | Party: ${partyLabel} | Date Order: ${dateSortOrder === 'asc' ? 'Oldest First' : 'Newest First'}`]);
+        rows.push([]);
+        rows.push([
+          'Date',
+          'Voucher No',
+          'Type',
+          partyColTitle,
+          itemColTitle,
+          'Description',
+          `Amount (${currencyCode})`,
+        ]);
+
+        for (const row of sortedProductRows) {
+          rows.push([
+            formatDate(row.voucher_date),
+            row.voucher_no,
+            getTypeLabel(row.voucher_type),
+            row.party_name || '-',
+            row.product_name,
+            row.description || '-',
+            row.net_amount || row.amount,
+          ]);
+        }
+
+        rows.push(['TOTAL', '', '', '', '', '', productTotalValue]);
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [
+          { wch: 14 },
+          { wch: 18 },
+          { wch: 16 },
+          { wch: 28 },
+          { wch: 28 },
+          { wch: 28 },
+          { wch: 18 },
+        ];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Transaction Items');
+        const timestamp = new Date().toISOString().split('T')[0];
+        const fileName = `TransactionReport_Items_${fromDate}_to_${toDate}_${dateSortOrder}_${timestamp}.xlsx`;
         XLSX.writeFile(wb, fileName);
         toast.success(`Exported as ${fileName}`);
       }
@@ -474,7 +539,7 @@ export default function TransactionReportPage() {
               variant="outline"
               size="sm"
               onClick={handleExport}
-              disabled={showProducts ? sortedProductRows.length === 0 : sortedTransactions.length === 0}
+              disabled={showItems ? sortedProductRows.length === 0 : sortedTransactions.length === 0}
             >
               <IconDownload size={16} />
               Export
@@ -483,7 +548,7 @@ export default function TransactionReportPage() {
               variant="outline"
               size="sm"
               onClick={handlePrint}
-              disabled={isPrinting || (showProducts ? sortedProductRows.length === 0 : sortedTransactions.length === 0)}
+              disabled={isPrinting || (showItems ? sortedProductRows.length === 0 : sortedTransactions.length === 0)}
             >
               {isPrinting ? (
                 <IconRefresh size={16} className="animate-spin" />
@@ -518,7 +583,7 @@ export default function TransactionReportPage() {
             </div>
             <div className="flex-1 min-w-[140px] max-w-[180px]">
               <Label className="text-xs mb-1 block">Transaction Type</Label>
-              <Select value={voucherType} onValueChange={setVoucherType}>
+              <Select value={voucherType} onValueChange={handleVoucherTypeChange}>
                 <SelectTrigger className="h-9">
                   <SelectValue />
                 </SelectTrigger>
@@ -529,14 +594,10 @@ export default function TransactionReportPage() {
                   <SelectItem value="purchase_invoice">Purchase</SelectItem>
                   <SelectItem value="sales_return">Sales Return</SelectItem>
                   <SelectItem value="purchase_return">Purchase Return</SelectItem>
-                  {!showProducts && (
-                    <>
-                      <SelectItem value="payment">Payment</SelectItem>
-                      <SelectItem value="receipt">Receipt</SelectItem>
-                      <SelectItem value="journal">Journal</SelectItem>
-                      <SelectItem value="opening_balance">Opening Balance</SelectItem>
-                    </>
-                  )}
+                  <SelectItem value="payment">Payment</SelectItem>
+                  <SelectItem value="receipt">Receipt</SelectItem>
+                  <SelectItem value="journal">Journal</SelectItem>
+                  <SelectItem value="opening_balance">Opening Balance</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -556,7 +617,7 @@ export default function TransactionReportPage() {
                 searchPlaceholder="Search parties..."
               />
             </div>
-            {showProducts && (
+            {showItems && isProductType(voucherType) && (
               <div className="flex-1 min-w-[160px] max-w-[220px]">
                 <Label className="text-xs mb-1 block">Product</Label>
                 <Combobox
@@ -582,16 +643,18 @@ export default function TransactionReportPage() {
               <IconX size={16} />
               Clear
             </Button>
-            {/* Show Products checkbox */}
-            <label className="flex items-center gap-2 cursor-pointer select-none self-end pb-1.5">
-              <input
-                type="checkbox"
-                checked={showProducts}
-                onChange={(e) => handleShowProductsChange(e.target.checked)}
-                className="w-4 h-4 rounded accent-primary cursor-pointer"
-              />
-              <span className="text-sm font-medium">Show Products</span>
-            </label>
+            {/* Show Items checkbox - displayed only when individual transaction type is selected */}
+            {voucherType !== 'all' && (
+              <label className="flex items-center gap-2 cursor-pointer select-none self-end pb-1.5">
+                <input
+                  type="checkbox"
+                  checked={showItems}
+                  onChange={(e) => handleShowItemsChange(e.target.checked)}
+                  className="w-4 h-4 rounded accent-primary cursor-pointer"
+                />
+                <span className="text-sm font-medium">Show Items</span>
+              </label>
+            )}
           </div>
         </div>
       </div>
@@ -603,7 +666,7 @@ export default function TransactionReportPage() {
           <div className="hidden print:block mb-6 text-center">
             <h1 className="text-2xl font-bold">Transaction Report</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {showProducts ? 'Products View — ' : ''}Period: {formatDate(fromDate)} to {formatDate(toDate)}
+              {showItems ? 'Items View — ' : ''}Period: {formatDate(fromDate)} to {formatDate(toDate)}
             </p>
           </div>
 
@@ -611,7 +674,7 @@ export default function TransactionReportPage() {
             <div className="flex items-center justify-center h-64">
               <p className="text-muted-foreground">Loading...</p>
             </div>
-          ) : !showProducts ? (
+          ) : !showItems ? (
             /* ─── VOUCHERS TABLE ─── */
             <Card>
               <CardContent className="p-0">
@@ -681,7 +744,7 @@ export default function TransactionReportPage() {
               </CardContent>
             </Card>
           ) : (
-            /* ─── PRODUCTS TABLE ─── */
+            /* ─── ITEMS TABLE ─── */
             <Card>
               <CardContent className="p-0">
                 <table className="w-full">
@@ -703,18 +766,40 @@ export default function TransactionReportPage() {
                       </th>
                       <th className="p-3 text-left text-sm font-semibold">Voucher No</th>
                       <th className="p-3 text-left text-sm font-semibold">Type</th>
-                      <th className="p-3 text-left text-sm font-semibold">Party</th>
-                      <th className="p-3 text-left text-sm font-semibold">Product</th>
-                      <th className="p-3 text-right text-sm font-semibold">Qty</th>
-                      <th className="p-3 text-right text-sm font-semibold">Rate</th>
+                      <th className="p-3 text-left text-sm font-semibold">
+                        {isProductType(voucherType)
+                          ? 'Party'
+                          : voucherType === 'payment'
+                          ? 'Paid From'
+                          : voucherType === 'receipt'
+                          ? 'Received In'
+                          : 'Party / Account'}
+                      </th>
+                      <th className="p-3 text-left text-sm font-semibold">
+                        {isProductType(voucherType)
+                          ? 'Product'
+                          : voucherType === 'payment'
+                          ? 'Paid To (Account)'
+                          : voucherType === 'receipt'
+                          ? 'Received From (Account)'
+                          : 'Item / Account'}
+                      </th>
+                      {isProductType(voucherType) ? (
+                        <>
+                          <th className="p-3 text-right text-sm font-semibold">Qty</th>
+                          <th className="p-3 text-right text-sm font-semibold">Rate</th>
+                        </>
+                      ) : (
+                        <th className="p-3 text-left text-sm font-semibold">Description</th>
+                      )}
                       <th className="p-3 text-right text-sm font-semibold">Amount</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sortedProductRows.length === 0 ? (
                       <tr>
-                        <td colSpan={8} className="p-8 text-center text-muted-foreground">
-                          No product transactions found
+                        <td colSpan={isProductType(voucherType) ? 8 : 7} className="p-8 text-center text-muted-foreground">
+                          {isProductType(voucherType) ? 'No product items found' : 'No voucher items found'}
                         </td>
                       </tr>
                     ) : (
@@ -736,17 +821,25 @@ export default function TransactionReportPage() {
                               )}
                             </div>
                           </td>
-                          <td className="p-3 text-right font-mono text-sm">
-                            {row.quantity % 1 === 0 ? row.quantity.toFixed(0) : row.quantity.toFixed(2)}
-                            {row.unit_symbol && (
-                              <span className="text-xs text-muted-foreground ml-1">{row.unit_symbol}</span>
-                            )}
-                          </td>
-                          <td className="p-3 text-right font-mono text-sm">
-                            {money(row.rate)}
-                          </td>
+                          {isProductType(voucherType) ? (
+                            <>
+                              <td className="p-3 text-right font-mono text-sm">
+                                {row.quantity % 1 === 0 ? row.quantity.toFixed(0) : row.quantity.toFixed(2)}
+                                {row.unit_symbol && (
+                                  <span className="text-xs text-muted-foreground ml-1">{row.unit_symbol}</span>
+                                )}
+                              </td>
+                              <td className="p-3 text-right font-mono text-sm">
+                                {money(row.rate)}
+                              </td>
+                            </>
+                          ) : (
+                            <td className="p-3 text-sm text-muted-foreground truncate max-w-xs">
+                              {row.description || '-'}
+                            </td>
+                          )}
                           <td className="p-3 text-right font-mono text-sm font-bold">
-                            {money(row.net_amount)}
+                            {money(row.net_amount || row.amount)}
                           </td>
                         </tr>
                       ))
@@ -755,7 +848,7 @@ export default function TransactionReportPage() {
                   {sortedProductRows.length > 0 && (
                     <tfoot className="bg-muted/30 border-t-2 border-foreground/20">
                       <tr>
-                        <td colSpan={7} className="p-3 font-bold text-sm">TOTAL</td>
+                        <td colSpan={isProductType(voucherType) ? 7 : 6} className="p-3 font-bold text-sm">TOTAL</td>
                         <td className="p-3 text-right font-mono font-bold text-sm">
                           {money(productTotalValue)}
                         </td>

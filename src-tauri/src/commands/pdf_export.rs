@@ -1712,6 +1712,8 @@ pub struct TransactionProductPdfEntry {
     pub quantity: f64,
     pub rate: f64,
     pub amount: f64,
+    #[serde(default)]
+    pub description: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -1723,6 +1725,8 @@ pub struct TransactionReportPdfData {
     pub party_label: Option<String>,
     pub product_label: Option<String>,
     pub is_product_mode: bool,
+    #[serde(default)]
+    pub has_qty_rate: Option<bool>,
     pub currency_symbol: Option<String>,
     pub total_amount: f64,
     pub total_count: usize,
@@ -1738,7 +1742,7 @@ pub async fn generate_transaction_report_pdf(
     let output_path = PathBuf::from(&file_path);
 
     let doc_title = if data.is_product_mode {
-        "Transaction Report (Products)"
+        "Transaction Report (Items)"
     } else {
         "Transaction Report"
     };
@@ -1757,7 +1761,7 @@ pub async fn generate_transaction_report_pdf(
     let left_margin = 12.0_f32;
     let top_margin = 280.0_f32;
     let mut y_pos = top_margin;
-    let line_height = 5.6_f32;
+    let line_height = 6.2_f32;
     let cell_padding = 0.8_f32;
 
     // Normalize currency symbol (replace '₹' with "Rs." for BuiltinFont Helvetica)
@@ -1788,7 +1792,7 @@ pub async fn generate_transaction_report_pdf(
     y_pos -= 7.0;
 
     let main_title = if data.is_product_mode {
-        "TRANSACTION REPORT (PRODUCTS)"
+        "TRANSACTION REPORT (ITEMS)"
     } else {
         "TRANSACTION REPORT"
     };
@@ -1841,9 +1845,9 @@ pub async fn generate_transaction_report_pdf(
         macro_rules! draw_std_headers {
             ($layer:expr, $y:expr) => {
                 for (i, h) in headers.iter().enumerate() {
-                    $layer.use_text(*h, 9.0, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
+                    $layer.use_text(*h, 9.5, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
                 }
-                draw_text_right(&$layer, "Amount", 9.0, col_amount_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Amount", 9.5, col_amount_right, $y, &font_bold, true);
             };
         }
 
@@ -1860,33 +1864,33 @@ pub async fn generate_transaction_report_pdf(
             }
 
             // Date
-            current_layer.use_text(&clean(&entry.voucher_date), 8.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&clean(&entry.voucher_date), 9.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
 
             // Voucher No
             let v_no = clean(&entry.voucher_no);
             let v_no_trunc = if v_no.len() > 15 { format!("{}...", &v_no[..12]) } else { v_no };
-            current_layer.use_text(&v_no_trunc, 8.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&v_no_trunc, 9.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
 
             // Type
             let vtype = clean(&format_voucher_type(&entry.voucher_type));
             let vtype_trunc = if vtype.len() > 12 { format!("{}...", &vtype[..9]) } else { vtype };
-            current_layer.use_text(&vtype_trunc, 8.5, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&vtype_trunc, 9.5, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
 
             // Party
             let party_raw = entry.party_name.as_deref().unwrap_or("-");
             let party = clean(party_raw);
             let party_trunc = if party.len() > 22 { format!("{}...", &party[..19]) } else { party };
-            current_layer.use_text(&party_trunc, 8.5, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&party_trunc, 9.5, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
 
             // Narration
             let narr_raw = entry.narration.as_deref().unwrap_or("-");
             let narr = clean(narr_raw);
             let narr_trunc = if narr.len() > 25 { format!("{}...", &narr[..22]) } else { narr };
-            current_layer.use_text(&narr_trunc, 8.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&narr_trunc, 9.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
 
             // Amount (right aligned)
             let amt_str = format_pdf_amount(currency_sym, entry.amount);
-            draw_text_right(&current_layer, &amt_str, 8.5, col_amount_right, y_pos, &font, false);
+            draw_text_right(&current_layer, &amt_str, 9.5, col_amount_right, y_pos, &font, false);
 
             y_pos -= line_height;
         }
@@ -1907,8 +1911,94 @@ pub async fn generate_transaction_report_pdf(
         let total_val_str = format_pdf_amount(currency_sym, data.total_amount);
         draw_text_right(&current_layer, &total_val_str, 9.5, col_amount_right, y_pos, &font_bold, true);
 
+    } else if !data.has_qty_rate.unwrap_or(true) {
+        // ── Financial / Voucher Items Mode (Without Qty and Rate) ──────────────────
+        // Total printable width = 186mm
+        // Col widths: Date (20), Voucher No (26), Type (20), Party/Account (36), Item/Account (36), Description (26), Amount (22)
+        let col_widths = [20.0_f32, 26.0, 20.0, 36.0, 36.0, 26.0, 22.0];
+        let mut col_x = vec![left_margin];
+        for w in &col_widths[..col_widths.len() - 1] {
+            col_x.push(col_x.last().unwrap() + w);
+        }
+        let col_amount_right = col_x[6] + col_widths[6] - cell_padding;
+
+        let headers = ["Date", "Voucher No", "Type", "Party / Account", "Item / Account", "Description"];
+
+        macro_rules! draw_item_headers {
+            ($layer:expr, $y:expr) => {
+                for (i, h) in headers.iter().enumerate() {
+                    $layer.use_text(*h, 9.5, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
+                }
+                draw_text_right(&$layer, "Amount", 9.5, col_amount_right, $y, &font_bold, true);
+            };
+        }
+
+        draw_item_headers!(current_layer, y_pos);
+        y_pos -= line_height + 1.0;
+
+        for entry in &data.product_entries {
+            if y_pos < 30.0 {
+                let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+                current_layer = document.get_page(page).get_layer(layer);
+                y_pos = top_margin - 15.0;
+                draw_item_headers!(current_layer, y_pos);
+                y_pos -= line_height + 1.0;
+            }
+
+            // Date
+            current_layer.use_text(&clean(&entry.voucher_date), 9.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
+
+            // Voucher No
+            let v_no = clean(&entry.voucher_no);
+            let v_no_trunc = if v_no.len() > 14 { format!("{}...", &v_no[..11]) } else { v_no };
+            current_layer.use_text(&v_no_trunc, 9.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+
+            // Type
+            let vtype = clean(&format_voucher_type(&entry.voucher_type));
+            let vtype_trunc = if vtype.len() > 11 { format!("{}...", &vtype[..8]) } else { vtype };
+            current_layer.use_text(&vtype_trunc, 9.5, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
+
+            // Party / Account
+            let party_raw = entry.party_name.as_deref().unwrap_or("-");
+            let party = clean(party_raw);
+            let party_trunc = if party.len() > 20 { format!("{}...", &party[..17]) } else { party };
+            current_layer.use_text(&party_trunc, 9.5, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
+
+            // Item / Account
+            let item_name = clean(&entry.product_name);
+            let item_trunc = if item_name.len() > 20 { format!("{}...", &item_name[..17]) } else { item_name };
+            current_layer.use_text(&item_trunc, 9.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
+
+            // Description
+            let desc_raw = entry.description.as_deref().unwrap_or("-");
+            let desc = clean(desc_raw);
+            let desc_trunc = if desc.len() > 15 { format!("{}...", &desc[..12]) } else { desc };
+            current_layer.use_text(&desc_trunc, 9.5, Mm(col_x[5] + cell_padding), Mm(y_pos), &font);
+
+            // Amount
+            let amt_str = format_pdf_amount(currency_sym, entry.amount);
+            draw_text_right(&current_layer, &amt_str, 9.5, col_amount_right, y_pos, &font, false);
+
+            y_pos -= line_height;
+        }
+
+        // Totals row
+        y_pos -= 2.0;
+        if y_pos < 30.0 {
+            let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+            current_layer = document.get_page(page).get_layer(layer);
+            y_pos = top_margin - 15.0;
+            draw_item_headers!(current_layer, y_pos);
+            y_pos -= line_height + 1.0;
+        }
+
+        current_layer.use_text("TOTAL", 9.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
+        let count_str = format!("({} items)", data.total_count);
+        current_layer.use_text(&count_str, 8.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+        let total_val_str = format_pdf_amount(currency_sym, data.total_amount);
+        draw_text_right(&current_layer, &total_val_str, 9.5, col_amount_right, y_pos, &font_bold, true);
     } else {
-        // ── Product Transactions Mode ───────────────────────────────────────────
+        // ── Product Transactions Mode (With Qty and Rate) ───────────────────────
         // Total printable width = 186mm
         // Col widths: Date (20), Voucher No (24), Type (18), Party (30), Product (44), Qty (16), Rate (16), Amount (18)
         let col_widths = [20.0_f32, 24.0, 18.0, 30.0, 44.0, 16.0, 16.0, 18.0];
@@ -1925,11 +2015,11 @@ pub async fn generate_transaction_report_pdf(
         macro_rules! draw_prod_headers {
             ($layer:expr, $y:expr) => {
                 for (i, h) in headers.iter().enumerate() {
-                    $layer.use_text(*h, 8.5, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
+                    $layer.use_text(*h, 9.5, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
                 }
-                draw_text_right(&$layer, "Qty", 8.5, col_qty_right, $y, &font_bold, true);
-                draw_text_right(&$layer, "Rate", 8.5, col_rate_right, $y, &font_bold, true);
-                draw_text_right(&$layer, "Amount", 8.5, col_amount_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Qty", 9.5, col_qty_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Rate", 9.5, col_rate_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Amount", 9.5, col_amount_right, $y, &font_bold, true);
             };
         }
 
@@ -1946,23 +2036,23 @@ pub async fn generate_transaction_report_pdf(
             }
 
             // Date
-            current_layer.use_text(&clean(&entry.voucher_date), 8.0, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&clean(&entry.voucher_date), 9.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
 
             // Voucher No
             let v_no = clean(&entry.voucher_no);
             let v_no_trunc = if v_no.len() > 13 { format!("{}...", &v_no[..10]) } else { v_no };
-            current_layer.use_text(&v_no_trunc, 8.0, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&v_no_trunc, 9.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
 
             // Type
             let vtype = clean(&format_voucher_type(&entry.voucher_type));
             let vtype_trunc = if vtype.len() > 10 { format!("{}...", &vtype[..7]) } else { vtype };
-            current_layer.use_text(&vtype_trunc, 8.0, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&vtype_trunc, 9.5, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
 
             // Party
             let party_raw = entry.party_name.as_deref().unwrap_or("-");
             let party = clean(party_raw);
             let party_trunc = if party.len() > 17 { format!("{}...", &party[..14]) } else { party };
-            current_layer.use_text(&party_trunc, 8.0, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&party_trunc, 9.5, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
 
             // Product
             let prod_display = if let Some(ref c) = entry.product_code {
@@ -1976,7 +2066,7 @@ pub async fn generate_transaction_report_pdf(
             };
             let prod = clean(&prod_display);
             let prod_trunc = if prod.len() > 24 { format!("{}...", &prod[..21]) } else { prod };
-            current_layer.use_text(&prod_trunc, 8.0, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
+            current_layer.use_text(&prod_trunc, 9.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
 
             // Qty
             let qty_str = if entry.quantity.fract() == 0.0 {
@@ -1993,15 +2083,15 @@ pub async fn generate_transaction_report_pdf(
             } else {
                 qty_str
             };
-            draw_text_right(&current_layer, &clean(&qty_with_unit), 8.0, col_qty_right, y_pos, &font, false);
+            draw_text_right(&current_layer, &clean(&qty_with_unit), 9.5, col_qty_right, y_pos, &font, false);
 
             // Rate
             let rate_str = format_pdf_amount(currency_sym, entry.rate);
-            draw_text_right(&current_layer, &rate_str, 8.0, col_rate_right, y_pos, &font, false);
+            draw_text_right(&current_layer, &rate_str, 9.5, col_rate_right, y_pos, &font, false);
 
             // Amount
             let amt_str = format_pdf_amount(currency_sym, entry.amount);
-            draw_text_right(&current_layer, &amt_str, 8.0, col_amount_right, y_pos, &font, false);
+            draw_text_right(&current_layer, &amt_str, 9.5, col_amount_right, y_pos, &font, false);
 
             y_pos -= line_height;
         }
@@ -2016,11 +2106,11 @@ pub async fn generate_transaction_report_pdf(
             y_pos -= line_height + 1.0;
         }
 
-        current_layer.use_text("TOTAL", 9.0, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
+        current_layer.use_text("TOTAL", 9.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
         let count_str = format!("({} items)", data.total_count);
         current_layer.use_text(&count_str, 8.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
         let total_val_str = format_pdf_amount(currency_sym, data.total_amount);
-        draw_text_right(&current_layer, &total_val_str, 9.0, col_amount_right, y_pos, &font_bold, true);
+        draw_text_right(&current_layer, &total_val_str, 9.5, col_amount_right, y_pos, &font_bold, true);
     }
 
     // Save document
@@ -2088,7 +2178,7 @@ pub async fn generate_product_profit_pdf(
     let left_margin = 12.0_f32;
     let top_margin = 280.0_f32;
     let mut y_pos = top_margin;
-    let line_height = 5.8_f32;
+    let line_height = 6.2_f32;
     let cell_padding = 0.8_f32;
 
     // Normalize currency symbol (replace '₹' with "Rs." for BuiltinFont Helvetica)
@@ -2172,14 +2262,14 @@ pub async fn generate_product_profit_pdf(
     macro_rules! draw_profit_headers {
         ($layer:expr, $y:expr) => {
             for (i, h) in headers_left.iter().enumerate() {
-                $layer.use_text(*h, 8.5, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
+                $layer.use_text(*h, 9.5, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
             }
-            draw_text_right(&$layer, "Qty Sold", 8.5, col_qty_right, $y, &font_bold, true);
-            draw_text_right(&$layer, "Revenue", 8.5, col_rev_right, $y, &font_bold, true);
-            draw_text_right(&$layer, "Cost", 8.5, col_cost_right, $y, &font_bold, true);
-            draw_text_right(&$layer, "Profit", 8.5, col_profit_right, $y, &font_bold, true);
-            draw_text_right(&$layer, "Margin", 8.5, col_margin_right, $y, &font_bold, true);
-            draw_text_right(&$layer, "Sell/Cost", 8.5, col_rates_right, $y, &font_bold, true);
+            draw_text_right(&$layer, "Qty Sold", 9.5, col_qty_right, $y, &font_bold, true);
+            draw_text_right(&$layer, "Revenue", 9.5, col_rev_right, $y, &font_bold, true);
+            draw_text_right(&$layer, "Cost", 9.5, col_cost_right, $y, &font_bold, true);
+            draw_text_right(&$layer, "Profit", 9.5, col_profit_right, $y, &font_bold, true);
+            draw_text_right(&$layer, "Margin", 9.5, col_margin_right, $y, &font_bold, true);
+            draw_text_right(&$layer, "Sell/Cost", 9.5, col_rates_right, $y, &font_bold, true);
         };
     }
 
@@ -2203,13 +2293,13 @@ pub async fn generate_product_profit_pdf(
         };
         let prod = clean(&prod_display);
         let prod_trunc = if prod.len() > 24 { format!("{}...", &prod[..21]) } else { prod };
-        current_layer.use_text(&prod_trunc, 8.0, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&prod_trunc, 9.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
 
         // Group
         let group_raw = item.group_name.as_deref().unwrap_or("-");
         let group = clean(group_raw);
         let group_trunc = if group.len() > 11 { format!("{}...", &group[..8]) } else { group };
-        current_layer.use_text(&group_trunc, 8.0, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+        current_layer.use_text(&group_trunc, 9.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
 
         // Qty Sold
         let qty_str = if item.qty_sold.fract() == 0.0 {
@@ -2222,27 +2312,27 @@ pub async fn generate_product_profit_pdf(
         } else {
             qty_str
         };
-        draw_text_right(&current_layer, &clean(&qty_with_unit), 8.0, col_qty_right, y_pos, &font, false);
+        draw_text_right(&current_layer, &clean(&qty_with_unit), 9.5, col_qty_right, y_pos, &font, false);
 
         // Revenue
         let rev_str = format_pdf_amount(currency_sym, item.total_revenue);
-        draw_text_right(&current_layer, &rev_str, 8.0, col_rev_right, y_pos, &font, false);
+        draw_text_right(&current_layer, &rev_str, 9.5, col_rev_right, y_pos, &font, false);
 
         // Cost
         let cost_str = format_pdf_amount(currency_sym, item.total_cost);
-        draw_text_right(&current_layer, &cost_str, 8.0, col_cost_right, y_pos, &font, false);
+        draw_text_right(&current_layer, &cost_str, 9.5, col_cost_right, y_pos, &font, false);
 
         // Gross Profit
         let profit_str = format_pdf_amount(currency_sym, item.gross_profit);
-        draw_text_right(&current_layer, &profit_str, 8.0, col_profit_right, y_pos, &font, false);
+        draw_text_right(&current_layer, &profit_str, 9.5, col_profit_right, y_pos, &font, false);
 
         // Margin %
         let margin_str = format!("{:.1}%", item.margin_percent);
-        draw_text_right(&current_layer, &margin_str, 8.0, col_margin_right, y_pos, &font, false);
+        draw_text_right(&current_layer, &margin_str, 9.5, col_margin_right, y_pos, &font, false);
 
         // Avg Rates (Sell / Cost)
         let rates_str = format!("{:.0}/{:.0}", item.avg_selling_price, item.avg_cost_price);
-        draw_text_right(&current_layer, &rates_str, 8.0, col_rates_right, y_pos, &font, false);
+        draw_text_right(&current_layer, &rates_str, 9.5, col_rates_right, y_pos, &font, false);
 
         y_pos -= line_height;
     }
@@ -2257,21 +2347,21 @@ pub async fn generate_product_profit_pdf(
         y_pos -= line_height + 1.0;
     }
 
-    current_layer.use_text("TOTAL", 9.0, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
+    current_layer.use_text("TOTAL", 9.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
     let count_str = format!("({} products)", data.total_products);
-    current_layer.use_text(&count_str, 8.0, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+    current_layer.use_text(&count_str, 8.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
 
     let tot_rev = format_pdf_amount(currency_sym, data.total_revenue);
-    draw_text_right(&current_layer, &tot_rev, 9.0, col_rev_right, y_pos, &font_bold, true);
+    draw_text_right(&current_layer, &tot_rev, 9.5, col_rev_right, y_pos, &font_bold, true);
 
     let tot_cost = format_pdf_amount(currency_sym, data.total_cost);
-    draw_text_right(&current_layer, &tot_cost, 9.0, col_cost_right, y_pos, &font_bold, true);
+    draw_text_right(&current_layer, &tot_cost, 9.5, col_cost_right, y_pos, &font_bold, true);
 
     let tot_profit = format_pdf_amount(currency_sym, data.gross_profit);
-    draw_text_right(&current_layer, &tot_profit, 9.0, col_profit_right, y_pos, &font_bold, true);
+    draw_text_right(&current_layer, &tot_profit, 9.5, col_profit_right, y_pos, &font_bold, true);
 
     let tot_margin = format!("{:.1}%", data.overall_margin);
-    draw_text_right(&current_layer, &tot_margin, 9.0, col_margin_right, y_pos, &font_bold, true);
+    draw_text_right(&current_layer, &tot_margin, 9.5, col_margin_right, y_pos, &font_bold, true);
 
     // Save document
     document
