@@ -109,13 +109,16 @@ export default function SalesInvoicePage() {
   const [creatingProductRowIndex, setCreatingProductRowIndex] = useState<number | null>(null);
   const [showQuickPayment, setShowQuickPayment] = useState(false);
   const [savedInvoiceAmount, setSavedInvoiceAmount] = useState(0);
-  const [savedInvoiceForeignAmount, setSavedInvoiceForeignAmount] = useState(0);
   const [savedInvoiceId, setSavedInvoiceId] = useState<string | undefined>(undefined);
   const [savedInvoiceNo, setSavedInvoiceNo] = useState<string | undefined>(undefined);
   const [savedInvoiceDate, setSavedInvoiceDate] = useState<string | undefined>(undefined);
   const [savedPartyName, setSavedPartyName] = useState<string>('');
-  const [savedPartyId, setSavedPartyId] = useState<number | undefined>(undefined);
   const [savedIsCashBankParty, setSavedIsCashBankParty] = useState(false);
+
+  // Loaded voucher state for VoucherPartyBalance calculation (when editing an existing voucher)
+  const [loadedPartyId, setLoadedPartyId] = useState<number | undefined>(undefined);
+  const [loadedInvoiceAmount, setLoadedInvoiceAmount] = useState(0);
+  const [loadedInvoiceForeignAmount, setLoadedInvoiceForeignAmount] = useState(0);
   const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, enableFreightCharge?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost', showShipTo?: boolean, enablePriceCategory?: boolean, priceCategoryFallback?: 'default_sales_rate' | 'show_zero', allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
@@ -328,12 +331,15 @@ export default function SalesInvoicePage() {
     }
   }, [salesState.mode, salesState.currentVoucherId, customOrdersEnabled]);
 
-  // Clear savedInvoiceId when navigating to a different voucher (so we don't hold onto stale IDs)
+  // Clear savedInvoice context when navigating to a different voucher (so we don't hold onto stale IDs)
   useEffect(() => {
     if (salesState.currentVoucherId) {
       setSavedInvoiceId(undefined);
       setSavedInvoiceNo(undefined);
       setSavedInvoiceDate(undefined);
+      setSavedInvoiceAmount(0);
+      setSavedPartyName('');
+      setSavedIsCashBankParty(false);
     }
   }, [salesState.currentVoucherId]);
 
@@ -917,7 +923,6 @@ export default function SalesInvoicePage() {
         setSavedInvoiceAmount(netPayableTotal);
         const customer = parties.find(p => p.id === salesState.form.customer_id);
         setSavedPartyName(customer?.name || 'Cash');
-        setSavedPartyId(customer?.id);
 
         // Check if party is a Cash or Bank account
         const isCashBankParty = customer?.group === 'Cash' || customer?.group === 'Bank Account';
@@ -980,7 +985,6 @@ export default function SalesInvoicePage() {
         const customer = parties.find(p => p.id === salesState.form.customer_id);
         const partyName = customer?.name || 'Cash';
         setSavedPartyName(partyName);
-        setSavedPartyId(customer?.id);
 
         // Check if party is a Cash or Bank account
         const isCashBankParty = customer?.group === 'Cash' || customer?.group === 'Bank Account';
@@ -1117,9 +1121,9 @@ export default function SalesInvoicePage() {
       invoke<number>('get_account_balance', { accountId: invoice.customer_id })
         .then(bal => setPartyBalance(bal))
         .catch(console.error);
-      setSavedInvoiceAmount(invoice.grand_total || 0);
-      setSavedInvoiceForeignAmount(invoice.foreign_total || 0);
-      setSavedPartyId(invoice.customer_id);
+      setLoadedInvoiceAmount(invoice.grand_total || 0);
+      setLoadedInvoiceForeignAmount(invoice.foreign_total || 0);
+      setLoadedPartyId(invoice.customer_id);
       dispatch(setSalesVoucherDate(invoice.voucher_date));
       dispatch(setSalesSalespersonId(invoice.salesperson_id || undefined));
       dispatch(setSalesReference(invoice.reference || ''));
@@ -1324,9 +1328,9 @@ export default function SalesInvoicePage() {
     dispatch(clearSalesForex());
     setAutoRoundOff(globalAutoRoundOff);
     setRoundOffAmount(undefined);
-    setSavedInvoiceAmount(0);
-    setSavedInvoiceForeignAmount(0);
-    setSavedPartyId(undefined);
+    setLoadedInvoiceAmount(0);
+    setLoadedInvoiceForeignAmount(0);
+    setLoadedPartyId(undefined);
     handleNew(skipConfirm);
   };
 
@@ -1639,12 +1643,12 @@ export default function SalesInvoicePage() {
   const isShowingSavedInvoiceContext = !!savedInvoiceId;
   const effectiveIsCashBankParty = isShowingSavedInvoiceContext ? savedIsCashBankParty : currentPartyIsCashBank;
 
-  const isSameSavedParty = salesState.mode !== 'new' && Boolean(salesState.currentVoucherId) && String(salesState.form.customer_id) === String(savedPartyId);
+  const isSameLoadedParty = salesState.mode !== 'new' && Boolean(salesState.currentVoucherId) && String(salesState.form.customer_id) === String(loadedPartyId);
   const isForexDisplay = Boolean(isExportBusiness && salesState.currency_id && partyForeignBalance !== null && partyForeignBalance !== 0);
 
   const currentEffectiveBalance = isForexDisplay
-    ? (partyForeignBalance !== null ? (isSameSavedParty ? partyForeignBalance - savedInvoiceForeignAmount : partyForeignBalance) : null)
-    : (partyBalance !== null ? (isSameSavedParty ? partyBalance - savedInvoiceAmount : partyBalance) : null);
+    ? (partyForeignBalance !== null ? (isSameLoadedParty ? partyForeignBalance - loadedInvoiceForeignAmount : partyForeignBalance) : null)
+    : (partyBalance !== null ? (isSameLoadedParty ? partyBalance - loadedInvoiceAmount : partyBalance) : null);
 
   const voucherPartyImpact = isForexDisplay
     ? netPayableTotal
@@ -1752,19 +1756,26 @@ export default function SalesInvoicePage() {
         open={showQuickPayment}
         onOpenChange={(open) => {
           setShowQuickPayment(open);
-          if (!open && autoPrintPending.current) {
-            autoPrintPending.current = false;
+          if (!open) {
             const idToPrint = savedInvoiceId || salesState.currentVoucherId;
-            if (idToPrint) {
-              setTimeout(() => printVoucher({ voucherId: idToPrint, voucherType: 'sales_invoice', filename: savedInvoiceNo || salesState.currentVoucherNo }), 100);
+            const noToPrint = savedInvoiceNo || salesState.currentVoucherNo;
+            if (autoPrintPending.current && idToPrint) {
+              autoPrintPending.current = false;
+              setTimeout(() => printVoucher({ voucherId: idToPrint, voucherType: 'sales_invoice', filename: noToPrint }), 100);
             }
+            setSavedInvoiceId(undefined);
+            setSavedInvoiceNo(undefined);
+            setSavedInvoiceDate(undefined);
+            setSavedInvoiceAmount(0);
+            setSavedPartyName('');
+            setSavedIsCashBankParty(false);
           }
         }}
         invoiceId={savedInvoiceId || salesState.currentVoucherId || undefined}
         invoiceNo={savedInvoiceNo || salesState.currentVoucherNo}
-        invoiceAmount={savedInvoiceAmount || netPayableTotal}
+        invoiceAmount={savedInvoiceId ? savedInvoiceAmount : (loadedInvoiceAmount || netPayableTotal)}
         invoiceDate={savedInvoiceDate || salesState.form.voucher_date}
-        partyName={savedPartyName}
+        partyName={savedPartyName || parties.find(p => p.id === salesState.form.customer_id)?.name || ''}
         readOnly={salesState.mode === 'viewing'}
         isCashBankParty={effectiveIsCashBankParty}
         onSuccess={() => {
