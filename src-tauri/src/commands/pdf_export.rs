@@ -1676,3 +1676,349 @@ pub async fn generate_expense_pdf(
     Ok(output_path.to_string_lossy().to_string())
 }
 
+
+
+// ── Transaction Report PDF ───────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TransactionPdfEntry {
+    pub voucher_date: String,
+    pub voucher_no: String,
+    pub voucher_type: String,
+    pub party_name: Option<String>,
+    pub narration: Option<String>,
+    pub amount: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct TransactionProductPdfEntry {
+    pub voucher_date: String,
+    pub voucher_no: String,
+    pub voucher_type: String,
+    pub party_name: Option<String>,
+    pub product_name: String,
+    pub product_code: Option<String>,
+    pub unit_symbol: Option<String>,
+    pub quantity: f64,
+    pub rate: f64,
+    pub amount: f64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TransactionReportPdfData {
+    pub company_name: String,
+    pub period_from: String,
+    pub period_to: String,
+    pub transaction_type_label: Option<String>,
+    pub party_label: Option<String>,
+    pub product_label: Option<String>,
+    pub is_product_mode: bool,
+    pub currency_symbol: Option<String>,
+    pub total_amount: f64,
+    pub total_count: usize,
+    pub entries: Vec<TransactionPdfEntry>,
+    pub product_entries: Vec<TransactionProductPdfEntry>,
+}
+
+#[tauri::command]
+pub async fn generate_transaction_report_pdf(
+    data: TransactionReportPdfData,
+    file_path: String,
+) -> Result<String, String> {
+    let output_path = PathBuf::from(&file_path);
+
+    let doc_title = if data.is_product_mode {
+        "Transaction Report (Products)"
+    } else {
+        "Transaction Report"
+    };
+
+    let (document, page1, layer1) =
+        PdfDocument::new(doc_title, Mm(210.0), Mm(297.0), "Layer 1");
+    let font = document
+        .add_builtin_font(BuiltinFont::Helvetica)
+        .map_err(|e| e.to_string())?;
+    let font_bold = document
+        .add_builtin_font(BuiltinFont::HelveticaBold)
+        .map_err(|e| e.to_string())?;
+
+    let mut current_layer = document.get_page(page1).get_layer(layer1);
+
+    let left_margin = 12.0_f32;
+    let top_margin = 280.0_f32;
+    let mut y_pos = top_margin;
+    let line_height = 5.6_f32;
+    let cell_padding = 0.8_f32;
+
+    // Normalize currency symbol (replace '₹' with "Rs." for BuiltinFont Helvetica)
+    let raw_sym = data.currency_symbol.as_deref().unwrap_or("");
+    let currency_sym = if raw_sym.contains('₹') {
+        "Rs."
+    } else {
+        raw_sym
+    };
+
+    // Helper closure to sanitize text into ASCII printable range
+    let clean = |s: &str| -> String {
+        s.chars()
+            .map(|c| {
+                if c == '₹' {
+                    'R'
+                } else if c.is_ascii() && (c as u32) >= 32 && (c as u32) <= 126 {
+                    c
+                } else {
+                    ' '
+                }
+            })
+            .collect()
+    };
+
+    // ── Header ───────────────────────────────────────────────────────────────
+    current_layer.use_text(&clean(&data.company_name), 16.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    y_pos -= 7.0;
+
+    let main_title = if data.is_product_mode {
+        "TRANSACTION REPORT (PRODUCTS)"
+    } else {
+        "TRANSACTION REPORT"
+    };
+    current_layer.use_text(main_title, 20.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    y_pos -= 6.0;
+
+    let period_info = format!("Period: {} to {}", data.period_from, data.period_to);
+    current_layer.use_text(&clean(&period_info), 9.0, Mm(left_margin), Mm(y_pos), &font);
+    y_pos -= 4.5;
+
+    // Filter subtitle
+    let mut filter_items = Vec::new();
+    if let Some(ref t) = data.transaction_type_label {
+        filter_items.push(format!("Type: {}", t));
+    }
+    if let Some(ref p) = data.party_label {
+        filter_items.push(format!("Party: {}", p));
+    }
+    if data.is_product_mode {
+        if let Some(ref pr) = data.product_label {
+            filter_items.push(format!("Product: {}", pr));
+        }
+    }
+    if !filter_items.is_empty() {
+        let f_str = filter_items.join("  |  ");
+        current_layer.use_text(&clean(&f_str), 8.5, Mm(left_margin), Mm(y_pos), &font);
+        y_pos -= 4.5;
+    }
+
+    // Summary line
+    let count_label = if data.is_product_mode { "Items" } else { "Transactions" };
+    let total_str = format_pdf_amount(currency_sym, data.total_amount);
+    let summary_str = format!("Total {}: {}   |   Total Amount: {}", count_label, data.total_count, total_str);
+    current_layer.use_text(&clean(&summary_str), 9.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    y_pos -= 7.0;
+
+    if !data.is_product_mode {
+        // ── Standard Transactions Mode ──────────────────────────────────────────
+        // Total printable width = 186mm (12mm margin on each side)
+        // Col widths: Date (22), Voucher No (28), Type (22), Party (40), Narration (44), Amount (30)
+        let col_widths = [22.0_f32, 28.0, 22.0, 40.0, 44.0, 30.0];
+        let mut col_x = vec![left_margin];
+        for w in &col_widths[..col_widths.len() - 1] {
+            col_x.push(col_x.last().unwrap() + w);
+        }
+        let col_amount_right = col_x[5] + col_widths[5] - cell_padding;
+
+        let headers = ["Date", "Voucher No", "Type", "Party", "Narration"];
+
+        macro_rules! draw_std_headers {
+            ($layer:expr, $y:expr) => {
+                for (i, h) in headers.iter().enumerate() {
+                    $layer.use_text(*h, 9.0, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
+                }
+                draw_text_right(&$layer, "Amount", 9.0, col_amount_right, $y, &font_bold, true);
+            };
+        }
+
+        draw_std_headers!(current_layer, y_pos);
+        y_pos -= line_height + 1.0;
+
+        for entry in &data.entries {
+            if y_pos < 30.0 {
+                let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+                current_layer = document.get_page(page).get_layer(layer);
+                y_pos = top_margin - 15.0;
+                draw_std_headers!(current_layer, y_pos);
+                y_pos -= line_height + 1.0;
+            }
+
+            // Date
+            current_layer.use_text(&clean(&entry.voucher_date), 8.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
+
+            // Voucher No
+            let v_no = clean(&entry.voucher_no);
+            let v_no_trunc = if v_no.len() > 15 { format!("{}...", &v_no[..12]) } else { v_no };
+            current_layer.use_text(&v_no_trunc, 8.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+
+            // Type
+            let vtype = clean(&format_voucher_type(&entry.voucher_type));
+            let vtype_trunc = if vtype.len() > 12 { format!("{}...", &vtype[..9]) } else { vtype };
+            current_layer.use_text(&vtype_trunc, 8.5, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
+
+            // Party
+            let party_raw = entry.party_name.as_deref().unwrap_or("-");
+            let party = clean(party_raw);
+            let party_trunc = if party.len() > 22 { format!("{}...", &party[..19]) } else { party };
+            current_layer.use_text(&party_trunc, 8.5, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
+
+            // Narration
+            let narr_raw = entry.narration.as_deref().unwrap_or("-");
+            let narr = clean(narr_raw);
+            let narr_trunc = if narr.len() > 25 { format!("{}...", &narr[..22]) } else { narr };
+            current_layer.use_text(&narr_trunc, 8.5, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
+
+            // Amount (right aligned)
+            let amt_str = format_pdf_amount(currency_sym, entry.amount);
+            draw_text_right(&current_layer, &amt_str, 8.5, col_amount_right, y_pos, &font, false);
+
+            y_pos -= line_height;
+        }
+
+        // Totals row
+        y_pos -= 2.0;
+        if y_pos < 30.0 {
+            let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+            current_layer = document.get_page(page).get_layer(layer);
+            y_pos = top_margin - 15.0;
+            draw_std_headers!(current_layer, y_pos);
+            y_pos -= line_height + 1.0;
+        }
+
+        current_layer.use_text("TOTAL", 9.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
+        let count_str = format!("({} txns)", data.total_count);
+        current_layer.use_text(&count_str, 9.0, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+        let total_val_str = format_pdf_amount(currency_sym, data.total_amount);
+        draw_text_right(&current_layer, &total_val_str, 9.5, col_amount_right, y_pos, &font_bold, true);
+
+    } else {
+        // ── Product Transactions Mode ───────────────────────────────────────────
+        // Total printable width = 186mm
+        // Col widths: Date (20), Voucher No (24), Type (18), Party (30), Product (44), Qty (16), Rate (16), Amount (18)
+        let col_widths = [20.0_f32, 24.0, 18.0, 30.0, 44.0, 16.0, 16.0, 18.0];
+        let mut col_x = vec![left_margin];
+        for w in &col_widths[..col_widths.len() - 1] {
+            col_x.push(col_x.last().unwrap() + w);
+        }
+        let col_qty_right = col_x[5] + col_widths[5] - cell_padding;
+        let col_rate_right = col_x[6] + col_widths[6] - cell_padding;
+        let col_amount_right = col_x[7] + col_widths[7] - cell_padding;
+
+        let headers = ["Date", "Voucher No", "Type", "Party", "Product"];
+
+        macro_rules! draw_prod_headers {
+            ($layer:expr, $y:expr) => {
+                for (i, h) in headers.iter().enumerate() {
+                    $layer.use_text(*h, 8.5, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
+                }
+                draw_text_right(&$layer, "Qty", 8.5, col_qty_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Rate", 8.5, col_rate_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Amount", 8.5, col_amount_right, $y, &font_bold, true);
+            };
+        }
+
+        draw_prod_headers!(current_layer, y_pos);
+        y_pos -= line_height + 1.0;
+
+        for entry in &data.product_entries {
+            if y_pos < 30.0 {
+                let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+                current_layer = document.get_page(page).get_layer(layer);
+                y_pos = top_margin - 15.0;
+                draw_prod_headers!(current_layer, y_pos);
+                y_pos -= line_height + 1.0;
+            }
+
+            // Date
+            current_layer.use_text(&clean(&entry.voucher_date), 8.0, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
+
+            // Voucher No
+            let v_no = clean(&entry.voucher_no);
+            let v_no_trunc = if v_no.len() > 13 { format!("{}...", &v_no[..10]) } else { v_no };
+            current_layer.use_text(&v_no_trunc, 8.0, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+
+            // Type
+            let vtype = clean(&format_voucher_type(&entry.voucher_type));
+            let vtype_trunc = if vtype.len() > 10 { format!("{}...", &vtype[..7]) } else { vtype };
+            current_layer.use_text(&vtype_trunc, 8.0, Mm(col_x[2] + cell_padding), Mm(y_pos), &font);
+
+            // Party
+            let party_raw = entry.party_name.as_deref().unwrap_or("-");
+            let party = clean(party_raw);
+            let party_trunc = if party.len() > 17 { format!("{}...", &party[..14]) } else { party };
+            current_layer.use_text(&party_trunc, 8.0, Mm(col_x[3] + cell_padding), Mm(y_pos), &font);
+
+            // Product
+            let prod_display = if let Some(ref c) = entry.product_code {
+                if !c.is_empty() {
+                    format!("{} ({})", entry.product_name, c)
+                } else {
+                    entry.product_name.clone()
+                }
+            } else {
+                entry.product_name.clone()
+            };
+            let prod = clean(&prod_display);
+            let prod_trunc = if prod.len() > 24 { format!("{}...", &prod[..21]) } else { prod };
+            current_layer.use_text(&prod_trunc, 8.0, Mm(col_x[4] + cell_padding), Mm(y_pos), &font);
+
+            // Qty
+            let qty_str = if entry.quantity.fract() == 0.0 {
+                format!("{:.0}", entry.quantity)
+            } else {
+                format!("{:.2}", entry.quantity)
+            };
+            let qty_with_unit = if let Some(ref u) = entry.unit_symbol {
+                if !u.is_empty() {
+                    format!("{} {}", qty_str, u)
+                } else {
+                    qty_str
+                }
+            } else {
+                qty_str
+            };
+            draw_text_right(&current_layer, &clean(&qty_with_unit), 8.0, col_qty_right, y_pos, &font, false);
+
+            // Rate
+            let rate_str = format_pdf_amount(currency_sym, entry.rate);
+            draw_text_right(&current_layer, &rate_str, 8.0, col_rate_right, y_pos, &font, false);
+
+            // Amount
+            let amt_str = format_pdf_amount(currency_sym, entry.amount);
+            draw_text_right(&current_layer, &amt_str, 8.0, col_amount_right, y_pos, &font, false);
+
+            y_pos -= line_height;
+        }
+
+        // Totals row
+        y_pos -= 2.0;
+        if y_pos < 30.0 {
+            let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+            current_layer = document.get_page(page).get_layer(layer);
+            y_pos = top_margin - 15.0;
+            draw_prod_headers!(current_layer, y_pos);
+            y_pos -= line_height + 1.0;
+        }
+
+        current_layer.use_text("TOTAL", 9.0, Mm(col_x[0] + cell_padding), Mm(y_pos), &font_bold);
+        let count_str = format!("({} items)", data.total_count);
+        current_layer.use_text(&count_str, 8.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+        let total_val_str = format_pdf_amount(currency_sym, data.total_amount);
+        draw_text_right(&current_layer, &total_val_str, 9.0, col_amount_right, y_pos, &font_bold, true);
+    }
+
+    // Save document
+    document
+        .save(&mut BufWriter::new(
+            File::create(&output_path).map_err(|e| e.to_string())?,
+        ))
+        .map_err(|e| e.to_string())?;
+
+    Ok(output_path.to_string_lossy().to_string())
+}

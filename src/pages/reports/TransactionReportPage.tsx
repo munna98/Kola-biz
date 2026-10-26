@@ -1,5 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { useSelector } from 'react-redux';
+import { RootState } from '@/store';
+import * as XLSX from 'xlsx';
+import { openPath } from '@tauri-apps/plugin-opener';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { IconDownload, IconPrinter, IconRefresh, IconFilter, IconX } from '@tabler/icons-react';
+import { IconDownload, IconPrinter, IconRefresh, IconFilter, IconX, IconSortAscending, IconSortDescending } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
@@ -76,6 +80,9 @@ export default function TransactionReportPage() {
   const [selectedProduct, setSelectedProduct] = useState<string>('');
   const [coEnabled, setCoEnabled] = useState(false);
   const money = useMoney();
+  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [dateSortOrder, setDateSortOrder] = useState<'desc' | 'asc'>('desc');
 
   useEffect(() => {
     loadParties();
@@ -153,6 +160,7 @@ export default function TransactionReportPage() {
     setVoucherType('all');
     setSelectedParty('');
     setSelectedProduct('');
+    setDateSortOrder('desc');
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
     setFromDate(d.toISOString().split('T')[0]);
@@ -173,8 +181,244 @@ export default function TransactionReportPage() {
     }
   }, [showProducts]);
 
-  const handlePrint = () => window.print();
-  const handleExport = () => toast.info('Export functionality coming soon');
+  const sortedTransactions = useMemo(() => {
+    return [...transactions].sort((a, b) => {
+      const dateA = new Date(a.voucher_date).getTime();
+      const dateB = new Date(b.voucher_date).getTime();
+      if (dateA !== dateB) {
+        return dateSortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+      }
+      const timeA = new Date(a.created_at || a.voucher_date).getTime();
+      const timeB = new Date(b.created_at || b.voucher_date).getTime();
+      return dateSortOrder === 'asc' ? timeA - timeB : timeB - timeA;
+    });
+  }, [transactions, dateSortOrder]);
+
+  const sortedProductRows = useMemo(() => {
+    return [...productRows].sort((a, b) => {
+      const dateA = new Date(a.voucher_date).getTime();
+      const dateB = new Date(b.voucher_date).getTime();
+      if (dateA !== dateB) {
+        return dateSortOrder === 'asc' ? dateA - dateB : dateB - dateA;
+      }
+      return dateSortOrder === 'asc'
+        ? a.voucher_no.localeCompare(b.voucher_no)
+        : b.voucher_no.localeCompare(a.voucher_no);
+    });
+  }, [productRows, dateSortOrder]);
+
+  const handlePrint = async () => {
+    const hasData = showProducts ? sortedProductRows.length > 0 : sortedTransactions.length > 0;
+    if (!hasData) {
+      toast.error('No transactions to print');
+      return;
+    }
+
+    try {
+      setIsPrinting(true);
+      const timestamp = new Date().toISOString().split('T')[0];
+      const modeSuffix = showProducts ? '_Products' : '';
+      const sortSuffix = `_${dateSortOrder}`;
+      const fileName = `TransactionReport${modeSuffix}_${fromDate}_to_${toDate}${sortSuffix}_${timestamp}.pdf`;
+      const downloadsPath = await invoke<string>('get_downloads_path');
+      const filePath = `${downloadsPath}/${fileName}`;
+
+      const companyName = companyProfile?.company_name || 'Company';
+      const currencySymbol = companyProfile?.base_currency_symbol || companyProfile?.base_currency || 'Rs.';
+
+      const partyObj = selectedParty ? parties.find((p) => p.id === selectedParty) : null;
+      const partyLabel = partyObj ? partyObj.party_name : 'All Parties';
+
+      const prodObj = selectedProduct ? products.find((p) => p.id === selectedProduct) : null;
+      const productLabel = prodObj ? prodObj.name : 'All Products';
+
+      const typeLabel = voucherType === 'all' ? 'All Types' : getTypeLabel(voucherType);
+
+      const pdfData = {
+        company_name: companyName,
+        period_from: formatDate(fromDate),
+        period_to: formatDate(toDate),
+        transaction_type_label: typeLabel,
+        party_label: partyLabel,
+        product_label: showProducts ? productLabel : null,
+        is_product_mode: showProducts,
+        currency_symbol: currencySymbol,
+        total_amount: showProducts ? productTotalValue : totalAmount,
+        total_count: showProducts ? sortedProductRows.length : sortedTransactions.length,
+        entries: !showProducts
+          ? sortedTransactions.map((t) => ({
+              voucher_date: formatDate(t.voucher_date),
+              voucher_no: t.voucher_no,
+              voucher_type: getTypeLabel(t.voucher_type),
+              party_name: t.party_name || '-',
+              narration: t.narration || '-',
+              amount: t.amount,
+            }))
+          : [],
+        product_entries: showProducts
+          ? sortedProductRows.map((r) => ({
+              voucher_date: formatDate(r.voucher_date),
+              voucher_no: r.voucher_no,
+              voucher_type: getTypeLabel(r.voucher_type),
+              party_name: r.party_name || '-',
+              product_name: r.product_name,
+              product_code: r.product_code || null,
+              unit_symbol: r.unit_symbol || null,
+              quantity: r.quantity,
+              rate: r.rate,
+              amount: r.net_amount,
+            }))
+          : [],
+      };
+
+      await invoke('generate_transaction_report_pdf', {
+        data: pdfData,
+        filePath,
+      });
+
+      try {
+        await openPath(filePath);
+        toast.success(`PDF generated and opened: ${fileName}`);
+      } catch (openErr) {
+        console.warn('Could not auto-open PDF:', openErr);
+        toast.success(`PDF saved to: ${filePath}`, {
+          action: {
+            label: 'Open',
+            onClick: () => openPath(filePath).catch(console.error),
+          },
+        });
+      }
+    } catch (error) {
+      console.error('Failed to generate PDF:', error);
+      toast.error('Failed to generate PDF');
+    } finally {
+      setIsPrinting(false);
+    }
+  };
+
+  const handleExport = () => {
+    const hasData = showProducts ? sortedProductRows.length > 0 : sortedTransactions.length > 0;
+    if (!hasData) {
+      toast.error('No transactions to export');
+      return;
+    }
+
+    try {
+      const companyName = companyProfile?.company_name || 'Company';
+      const currencyCode = companyProfile?.base_currency || 'INR';
+      const partyObj = selectedParty ? parties.find((p) => p.id === selectedParty) : null;
+      const partyLabel = partyObj ? partyObj.party_name : 'All Parties';
+      const typeLabel = voucherType === 'all' ? 'All Types' : getTypeLabel(voucherType);
+
+      const rows: any[][] = [];
+
+      if (!showProducts) {
+        rows.push([`${companyName} - TRANSACTION REPORT`]);
+        rows.push([`Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`]);
+        rows.push([`Filters: Type: ${typeLabel} | Party: ${partyLabel} | Date Order: ${dateSortOrder === 'asc' ? 'Oldest First' : 'Newest First'}`]);
+        rows.push([]);
+        rows.push([
+          'Date',
+          'Voucher No',
+          'Type',
+          'Party',
+          'Narration',
+          `Amount (${currencyCode})`,
+        ]);
+
+        for (const txn of sortedTransactions) {
+          rows.push([
+            formatDate(txn.voucher_date),
+            txn.voucher_no,
+            getTypeLabel(txn.voucher_type),
+            txn.party_name || '-',
+            txn.narration || '-',
+            txn.amount,
+          ]);
+        }
+
+        rows.push(['TOTAL', '', '', '', '', totalAmount]);
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [
+          { wch: 14 },
+          { wch: 18 },
+          { wch: 16 },
+          { wch: 28 },
+          { wch: 32 },
+          { wch: 18 },
+        ];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Transactions');
+        const timestamp = new Date().toISOString().split('T')[0];
+        const fileName = `TransactionReport_${fromDate}_to_${toDate}_${dateSortOrder}_${timestamp}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+        toast.success(`Exported as ${fileName}`);
+      } else {
+        const prodObj = selectedProduct ? products.find((p) => p.id === selectedProduct) : null;
+        const productLabel = prodObj ? prodObj.name : 'All Products';
+
+        rows.push([`${companyName} - TRANSACTION REPORT (PRODUCTS)`]);
+        rows.push([`Period: ${formatDate(fromDate)} to ${formatDate(toDate)}`]);
+        rows.push([`Filters: Type: ${typeLabel} | Party: ${partyLabel} | Product: ${productLabel} | Date Order: ${dateSortOrder === 'asc' ? 'Oldest First' : 'Newest First'}`]);
+        rows.push([]);
+        rows.push([
+          'Date',
+          'Voucher No',
+          'Type',
+          'Party',
+          'Product',
+          'Product Code',
+          'Qty',
+          'Unit',
+          `Rate (${currencyCode})`,
+          `Amount (${currencyCode})`,
+        ]);
+
+        for (const row of sortedProductRows) {
+          rows.push([
+            formatDate(row.voucher_date),
+            row.voucher_no,
+            getTypeLabel(row.voucher_type),
+            row.party_name || '-',
+            row.product_name,
+            row.product_code || '-',
+            row.quantity,
+            row.unit_symbol || '',
+            row.rate,
+            row.net_amount,
+          ]);
+        }
+
+        rows.push(['TOTAL', '', '', '', '', '', '', '', '', productTotalValue]);
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [
+          { wch: 14 },
+          { wch: 18 },
+          { wch: 16 },
+          { wch: 24 },
+          { wch: 28 },
+          { wch: 16 },
+          { wch: 12 },
+          { wch: 10 },
+          { wch: 16 },
+          { wch: 18 },
+        ];
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Product Transactions');
+        const timestamp = new Date().toISOString().split('T')[0];
+        const fileName = `TransactionReport_Products_${fromDate}_to_${toDate}_${dateSortOrder}_${timestamp}.xlsx`;
+        XLSX.writeFile(wb, fileName);
+        toast.success(`Exported as ${fileName}`);
+      }
+    } catch (err) {
+      console.error('Export error:', err);
+      toast.error('Failed to export to Excel');
+    }
+  };
 
   const getTypeLabel = (type: string) => {
     const labels: Record<string, string> = {
@@ -207,8 +451,8 @@ export default function TransactionReportPage() {
   };
 
   // Table footer totals
-  const totalAmount = transactions.reduce((sum, t) => sum + t.amount, 0);
-  const productTotalValue = productRows.reduce((sum, r) => sum + r.net_amount, 0);
+  const totalAmount = sortedTransactions.reduce((sum, t) => sum + t.amount, 0);
+  const productTotalValue = sortedProductRows.reduce((sum, r) => sum + r.net_amount, 0);
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -226,13 +470,27 @@ export default function TransactionReportPage() {
               <IconRefresh size={16} />
               Refresh
             </Button>
-            <Button variant="outline" size="sm" onClick={handleExport}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleExport}
+              disabled={showProducts ? sortedProductRows.length === 0 : sortedTransactions.length === 0}
+            >
               <IconDownload size={16} />
               Export
             </Button>
-            <Button variant="outline" size="sm" onClick={handlePrint}>
-              <IconPrinter size={16} />
-              Print
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handlePrint}
+              disabled={isPrinting || (showProducts ? sortedProductRows.length === 0 : sortedTransactions.length === 0)}
+            >
+              {isPrinting ? (
+                <IconRefresh size={16} className="animate-spin" />
+              ) : (
+                <IconPrinter size={16} />
+              )}
+              Print PDF
             </Button>
           </div>
         </div>
@@ -360,7 +618,20 @@ export default function TransactionReportPage() {
                 <table className="w-full">
                   <thead className="bg-muted/50 border-b">
                     <tr>
-                      <th className="p-3 text-left text-sm font-semibold">Date</th>
+                      <th
+                        className="p-3 text-left text-sm font-semibold cursor-pointer select-none hover:bg-muted/80 transition-colors"
+                        onClick={() => setDateSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                        title={`Date order: ${dateSortOrder === 'asc' ? 'Oldest first (click for Newest first)' : 'Newest first (click for Oldest first)'}`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Date</span>
+                          {dateSortOrder === 'asc' ? (
+                            <IconSortAscending size={15} className="text-primary" />
+                          ) : (
+                            <IconSortDescending size={15} className="text-primary" />
+                          )}
+                        </div>
+                      </th>
                       <th className="p-3 text-left text-sm font-semibold">Voucher No</th>
                       <th className="p-3 text-left text-sm font-semibold">Type</th>
                       <th className="p-3 text-left text-sm font-semibold">Party</th>
@@ -369,14 +640,14 @@ export default function TransactionReportPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {transactions.length === 0 ? (
+                    {sortedTransactions.length === 0 ? (
                       <tr>
                         <td colSpan={6} className="p-8 text-center text-muted-foreground">
                           No transactions found
                         </td>
                       </tr>
                     ) : (
-                      transactions.map((txn) => (
+                      sortedTransactions.map((txn) => (
                         <tr key={txn.id} className="border-b hover:bg-muted/30">
                           <td className="p-3 text-sm">{formatDate(txn.voucher_date)}</td>
                           <td className="p-3 font-mono text-sm">{txn.voucher_no}</td>
@@ -396,7 +667,7 @@ export default function TransactionReportPage() {
                       ))
                     )}
                   </tbody>
-                  {transactions.length > 0 && (
+                  {sortedTransactions.length > 0 && (
                     <tfoot className="bg-muted/30 border-t-2 border-foreground/20">
                       <tr>
                         <td colSpan={5} className="p-3 font-bold text-sm">TOTAL</td>
@@ -416,7 +687,20 @@ export default function TransactionReportPage() {
                 <table className="w-full">
                   <thead className="bg-muted/50 border-b">
                     <tr>
-                      <th className="p-3 text-left text-sm font-semibold">Date</th>
+                      <th
+                        className="p-3 text-left text-sm font-semibold cursor-pointer select-none hover:bg-muted/80 transition-colors"
+                        onClick={() => setDateSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))}
+                        title={`Date order: ${dateSortOrder === 'asc' ? 'Oldest first (click for Newest first)' : 'Newest first (click for Oldest first)'}`}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <span>Date</span>
+                          {dateSortOrder === 'asc' ? (
+                            <IconSortAscending size={15} className="text-primary" />
+                          ) : (
+                            <IconSortDescending size={15} className="text-primary" />
+                          )}
+                        </div>
+                      </th>
                       <th className="p-3 text-left text-sm font-semibold">Voucher No</th>
                       <th className="p-3 text-left text-sm font-semibold">Type</th>
                       <th className="p-3 text-left text-sm font-semibold">Party</th>
@@ -427,14 +711,14 @@ export default function TransactionReportPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {productRows.length === 0 ? (
+                    {sortedProductRows.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="p-8 text-center text-muted-foreground">
                           No product transactions found
                         </td>
                       </tr>
                     ) : (
-                      productRows.map((row, idx) => (
+                      sortedProductRows.map((row, idx) => (
                         <tr key={`${row.voucher_id}-${row.product_id}-${idx}`} className="border-b hover:bg-muted/30">
                           <td className="p-3 text-sm">{formatDate(row.voucher_date)}</td>
                           <td className="p-3 font-mono text-sm">{row.voucher_no}</td>
@@ -468,7 +752,7 @@ export default function TransactionReportPage() {
                       ))
                     )}
                   </tbody>
-                  {productRows.length > 0 && (
+                  {sortedProductRows.length > 0 && (
                     <tfoot className="bg-muted/30 border-t-2 border-foreground/20">
                       <tr>
                         <td colSpan={7} className="p-3 font-bold text-sm">TOTAL</td>
