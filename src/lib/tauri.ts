@@ -514,6 +514,20 @@ export interface SalesInvoice {
   gst_disabled?: number | boolean;
 }
 
+export interface DeletedVoucher {
+  id: string;
+  voucher_no: string;
+  raw_voucher_no: string;
+  voucher_type: string;
+  voucher_date: string;
+  party_name?: string;
+  total_amount: number;
+  grand_total?: number;
+  deleted_at?: string;
+  deleted_by?: string;
+  item_count: number;
+}
+
 // ======= EMPLOYEES / USERS =======
 
 export interface Employee {
@@ -708,6 +722,12 @@ export const api = {
   permissions: {
     getForUser: (userId: string) => invoke<UserPermissionsResult>('get_user_permissions', { userId }),
     saveForUser: (data: SaveUserPermissions) => invoke<void>('save_user_permissions', { data }),
+  },
+  vouchers: {
+    listDeleted: (voucherType?: string) => invoke<DeletedVoucher[]>('get_deleted_vouchers', { voucherType }),
+    restore: (id: string) => invoke<void>('restore_voucher', { id }),
+    hardDelete: (id: string) => invoke<void>('hard_delete_voucher', { id }),
+    hardDeleteAll: (voucherType?: string) => invoke<number>('hard_delete_all_deleted_vouchers', { voucherType }),
   },
 };
 

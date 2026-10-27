@@ -15,8 +15,10 @@ import {
     AlertDialogHeader,
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { IconArrowUp, IconArrowDown, IconDeviceFloppy, IconCalendarStats, IconSortAscendingNumbers, IconFileUpload } from '@tabler/icons-react';
+import { IconArrowUp, IconArrowDown, IconDeviceFloppy, IconCalendarStats, IconSortAscendingNumbers, IconFileUpload, IconTrash } from '@tabler/icons-react';
 import ImportVouchersDialog, { type VoucherTypeKey } from '@/components/dialogs/ImportVouchersDialog';
+import DeletedVouchersDialog from '@/components/dialogs/DeletedVouchersDialog';
+import { api } from '@/lib/tauri';
 
 
 interface ColumnSettings {
@@ -126,6 +128,19 @@ export default function VoucherSettingsPage() {
     const [enableFreightCharge, setEnableFreightCharge] = useState(false);
     const [loading, setLoading] = useState(false);
 
+    // ---- Deleted Vouchers state ----
+    const [showDeletedVouchersDialog, setShowDeletedVouchersDialog] = useState(false);
+    const [deletedVoucherCount, setDeletedVoucherCount] = useState(0);
+
+    const loadDeletedCount = async (vType?: string) => {
+        try {
+            const list = await api.vouchers.listDeleted(vType || selectedVoucher);
+            setDeletedVoucherCount(list.length);
+        } catch {
+            setDeletedVoucherCount(0);
+        }
+    };
+
     // ---- Reassign Voucher Numbers state ----
     const [reassigning, setReassigning] = useState(false);
     const [showReassignDialog, setShowReassignDialog] = useState(false);
@@ -135,6 +150,7 @@ export default function VoucherSettingsPage() {
 
     useEffect(() => {
         loadSettings(selectedVoucher);
+        loadDeletedCount(selectedVoucher);
     }, [selectedVoucher]);
 
     const getBaseDefaultValue = (colId: string, voucherType: string) => {
@@ -905,6 +921,34 @@ export default function VoucherSettingsPage() {
                         </div>
                     </div>
 
+                    {/* ---- Deleted Vouchers (Recycle Bin) Section ---- */}
+                    <div className="bg-card border rounded-lg p-4">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                                <div className="flex items-center gap-2 mb-1">
+                                    <IconTrash className="h-5 w-5 text-destructive" />
+                                    <h3 className="text-base font-semibold">Deleted Vouchers (Recycle Bin)</h3>
+                                </div>
+                                <p className="text-sm text-muted-foreground">
+                                    View, restore, or permanently delete vouchers that have been moved to the Recycle Bin.
+                                </p>
+                            </div>
+                            <Button
+                                variant="outline"
+                                className="border-destructive/60 text-destructive hover:bg-destructive/10 shrink-0 self-start sm:self-auto"
+                                onClick={() => setShowDeletedVouchersDialog(true)}
+                            >
+                                <IconTrash className="mr-2 h-4 w-4" />
+                                View Deleted Vouchers
+                                {deletedVoucherCount > 0 && (
+                                    <span className="ml-2 bg-destructive/15 text-destructive font-semibold text-xs px-2 py-0.5 rounded-full">
+                                        {deletedVoucherCount}
+                                    </span>
+                                )}
+                            </Button>
+                        </div>
+                    </div>
+
                     {/* ---- Reassign Voucher Numbers Section ---- */}
                     {REASSIGN_SUPPORTED_TYPES.includes(selectedVoucher) && (
                         <div className="bg-card border rounded-lg p-4">
@@ -982,6 +1026,14 @@ export default function VoucherSettingsPage() {
                 open={showImportDialog}
                 onOpenChange={setShowImportDialog}
                 voucherType={selectedVoucher as VoucherTypeKey}
+            />
+
+            {/* ---- Deleted Vouchers Dialog ---- */}
+            <DeletedVouchersDialog
+                open={showDeletedVouchersDialog}
+                onOpenChange={setShowDeletedVouchersDialog}
+                initialVoucherType={selectedVoucher}
+                onVouchersChange={() => loadDeletedCount(selectedVoucher)}
             />
 
             {/* ---- Reassign Confirmation Dialog ---- */}

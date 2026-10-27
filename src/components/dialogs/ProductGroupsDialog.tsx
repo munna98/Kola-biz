@@ -82,8 +82,8 @@ export default function ProductGroupsDialog({ open, onOpenChange, onGroupsChange
         toast.success('Product group deleted successfully');
         loadGroups();
         onGroupsChange?.();
-      } catch (error) {
-        toast.error('Failed to delete product group');
+      } catch (error: any) {
+        toast.error(error?.toString() || 'Failed to delete product group');
         console.error(error);
       }
     }

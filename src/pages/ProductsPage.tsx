@@ -164,8 +164,8 @@ export default function ProductsPage() {
         await api.products.delete(id, currentUser);
         toast.success('Product moved to Recycle Bin');
         load();
-      } catch (error) {
-        toast.error('Failed to delete product');
+      } catch (error: any) {
+        toast.error(error?.toString() || 'Failed to delete product');
         console.error(error);
       }
     }

@@ -923,7 +923,7 @@ pub async fn get_products(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<Pr
                 pc.name as color_name, products.supplier_id,
                 coa.account_name as supplier_name,
                 products.unit_id, products.purchase_rate, products.sales_rate, products.mrp, products.cost, products.barcode, products.part_number, products.serial_number, products.imei, products.warranty_months, products.battery_health, products.is_active, products.created_at,
-                EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
+                EXISTS(SELECT 1 FROM voucher_items vi JOIN vouchers v ON vi.voucher_id = v.id WHERE vi.product_id = products.id AND v.deleted_at IS NULL) as has_transactions,
                 products.hsn_sac_code, products.gst_slab_id,
                 COALESCE(products.is_master, 0) as is_master,
                 products.parent_product_id,
@@ -1049,7 +1049,7 @@ pub async fn create_product(
                 pc.name as color_name, products.supplier_id,
                 coa.account_name as supplier_name,
                 products.unit_id, products.purchase_rate, products.sales_rate, products.mrp, products.cost, products.barcode, products.part_number, products.serial_number, products.imei, products.warranty_months, products.battery_health, products.is_active, products.created_at,
-                EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
+                EXISTS(SELECT 1 FROM voucher_items vi JOIN vouchers v ON vi.voucher_id = v.id WHERE vi.product_id = products.id AND v.deleted_at IS NULL) as has_transactions,
                 products.hsn_sac_code, products.gst_slab_id,
                 COALESCE(products.is_master, 0) as is_master,
                 products.parent_product_id,
@@ -1347,28 +1347,62 @@ pub async fn delete_product(
     deleted_by: String,
 ) -> Result<(), String> {
     let pool = registry.active_pool().await?;
-    // Check for references in voucher_items
-    let ref_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM voucher_items WHERE product_id = ?")
-            .bind(&id)
-            .fetch_one(&pool)
-            .await
-            .map_err(|e| e.to_string())?;
 
-    if ref_count > 0 {
-        return Err("Cannot delete product as it is referenced in vouchers.".to_string());
+    // Check for child products if this is a master product
+    let child_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM products WHERE parent_product_id = ? AND deleted_at IS NULL",
+    )
+    .bind(&id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
+    if child_count > 0 {
+        return Err("Cannot delete product as it has active child batch/variant products.".to_string());
     }
 
-    // Check for references in stock_movements
-    let stock_ref_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM stock_movements WHERE product_id = ?")
-            .bind(&id)
-            .fetch_one(&pool)
-            .await
-            .map_err(|e| e.to_string())?;
+    // Check for references in active vouchers
+    let voucher_references: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
+        "SELECT DISTINCT v.voucher_type, v.voucher_no 
+         FROM voucher_items vi 
+         JOIN vouchers v ON vi.voucher_id = v.id 
+         WHERE vi.product_id = ? AND v.deleted_at IS NULL 
+         LIMIT 3",
+    )
+    .bind(&id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
 
-    if stock_ref_count > 0 {
-        return Err("Cannot delete product as it has stock movement records.".to_string());
+    if !voucher_references.is_empty() {
+        let refs = voucher_references
+            .into_iter()
+            .map(|(v_type, v_no)| format!("{} ({})", v_no, v_type.replace('_', " ")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!("Cannot delete product as it is referenced in active vouchers: {}", refs));
+    }
+
+    // Check for references in active stock_movements
+    let stock_movements: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
+        "SELECT DISTINCT v.voucher_type, v.voucher_no 
+         FROM stock_movements sm 
+         JOIN vouchers v ON sm.voucher_id = v.id 
+         WHERE sm.product_id = ? AND v.deleted_at IS NULL 
+         LIMIT 3",
+    )
+    .bind(&id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    if !stock_movements.is_empty() {
+        let refs = stock_movements
+            .into_iter()
+            .map(|(v_type, v_no)| format!("{} ({})", v_no, v_type.replace('_', " ")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!("Cannot delete product as it has stock movement records in: {}", refs));
     }
 
     sqlx::query(
@@ -1395,7 +1429,7 @@ pub async fn get_deleted_products(
                 pc.name as color_name, products.supplier_id,
                 coa.account_name as supplier_name,
                 products.unit_id, products.purchase_rate, products.sales_rate, products.mrp, products.cost, products.barcode, products.part_number, products.serial_number, products.imei, products.warranty_months, products.battery_health, products.is_active, products.created_at,
-                EXISTS(SELECT 1 FROM voucher_items vi WHERE vi.product_id = products.id) as has_transactions,
+                EXISTS(SELECT 1 FROM voucher_items vi JOIN vouchers v ON vi.voucher_id = v.id WHERE vi.product_id = products.id AND v.deleted_at IS NULL) as has_transactions,
                 products.hsn_sac_code, products.gst_slab_id,
                 COALESCE(products.is_master, 0) as is_master,
                 products.parent_product_id,
@@ -1439,31 +1473,91 @@ pub async fn hard_delete_product(
     id: String,
 ) -> Result<(), String> {
     let pool = registry.active_pool().await?;
-    // Reference checks (same as soft delete)
-    let ref_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM voucher_items WHERE product_id = ?")
-            .bind(&id)
-            .fetch_one(&pool)
-            .await
-            .map_err(|e| e.to_string())?;
 
-    if ref_count > 0 {
-        return Err(
-            "Cannot permanently delete product as it is referenced in vouchers.".to_string(),
-        );
+    let child_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM products WHERE parent_product_id = ?",
+    )
+    .bind(&id)
+    .fetch_one(&pool)
+    .await
+    .unwrap_or(0);
+
+    if child_count > 0 {
+        return Err("Cannot permanently delete product as it has child batch/variant products.".to_string());
     }
 
-    let stock_ref_count: i64 =
-        sqlx::query_scalar("SELECT COUNT(*) FROM stock_movements WHERE product_id = ?")
-            .bind(&id)
-            .fetch_one(&pool)
-            .await
-            .map_err(|e| e.to_string())?;
+    // Reference checks (active vouchers)
+    let voucher_references: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
+        "SELECT DISTINCT v.voucher_type, v.voucher_no 
+         FROM voucher_items vi 
+         JOIN vouchers v ON vi.voucher_id = v.id 
+         WHERE vi.product_id = ? AND v.deleted_at IS NULL 
+         LIMIT 3",
+    )
+    .bind(&id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
 
-    if stock_ref_count > 0 {
-        return Err(
-            "Cannot permanently delete product as it has stock movement records.".to_string(),
-        );
+    if !voucher_references.is_empty() {
+        let refs = voucher_references
+            .into_iter()
+            .map(|(v_type, v_no)| format!("{} ({})", v_no, v_type.replace('_', " ")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "Cannot permanently delete product as it is referenced in active vouchers: {}",
+            refs
+        ));
+    }
+
+    // Reference checks (soft-deleted vouchers in Recycle Bin)
+    let deleted_voucher_references: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
+        "SELECT DISTINCT v.voucher_type, v.voucher_no 
+         FROM voucher_items vi 
+         JOIN vouchers v ON vi.voucher_id = v.id 
+         WHERE vi.product_id = ? AND v.deleted_at IS NOT NULL 
+         LIMIT 3",
+    )
+    .bind(&id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    if !deleted_voucher_references.is_empty() {
+        let refs = deleted_voucher_references
+            .into_iter()
+            .map(|(v_type, raw_no)| format!("{} ({})", crate::commands::settings::clean_deleted_voucher_no(&raw_no), v_type.replace('_', " ")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "Cannot permanently delete product as it is referenced in Recycle Bin voucher(s): {}. Please permanently delete those vouchers in Voucher Settings first.",
+            refs
+        ));
+    }
+
+    let stock_movements: Vec<(String, String)> = sqlx::query_as::<_, (String, String)>(
+        "SELECT DISTINCT v.voucher_type, v.voucher_no 
+         FROM stock_movements sm 
+         JOIN vouchers v ON sm.voucher_id = v.id 
+         WHERE sm.product_id = ? AND v.deleted_at IS NULL 
+         LIMIT 3",
+    )
+    .bind(&id)
+    .fetch_all(&pool)
+    .await
+    .unwrap_or_default();
+
+    if !stock_movements.is_empty() {
+        let refs = stock_movements
+            .into_iter()
+            .map(|(v_type, v_no)| format!("{} ({})", v_no, v_type.replace('_', " ")))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(format!(
+            "Cannot permanently delete product as it has stock movement records in: {}",
+            refs
+        ));
     }
 
     // Fetch and delete product images on disk

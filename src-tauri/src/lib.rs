@@ -367,6 +367,11 @@ pub fn run() {
             preview_voucher_number,
             get_next_voucher_number_preview,
             reassign_voucher_numbers,
+            // Deleted Vouchers Management
+            get_deleted_vouchers,
+            restore_voucher,
+            hard_delete_voucher,
+            hard_delete_all_deleted_vouchers,
             // Opening Stock
             commands::opening_stock::get_opening_stocks,
             commands::opening_stock::get_opening_stock,

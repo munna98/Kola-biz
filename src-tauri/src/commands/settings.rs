@@ -933,3 +933,290 @@ pub async fn reassign_voucher_numbers(
     tx.commit().await.map_err(|e| e.to_string())?;
     Ok(fy_count)
 }
+
+// ==================== DELETED VOUCHERS MANAGEMENT ====================
+
+pub fn clean_deleted_voucher_no(raw: &str) -> String {
+    if let Some(stripped) = raw.strip_prefix("__DELETED__") {
+        if let Some(inner) = stripped.strip_suffix("__") {
+            if let Some((orig_no, _)) = inner.split_once("__") {
+                return orig_no.to_string();
+            }
+            return inner.to_string();
+        }
+        return stripped.to_string();
+    }
+    raw.to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeletedVoucher {
+    pub id: String,
+    pub voucher_no: String,
+    pub raw_voucher_no: String,
+    pub voucher_type: String,
+    pub voucher_date: String,
+    pub party_name: Option<String>,
+    pub total_amount: f64,
+    pub grand_total: Option<f64>,
+    pub deleted_at: Option<String>,
+    pub deleted_by: Option<String>,
+    pub item_count: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct RawDeletedVoucher {
+    id: String,
+    raw_voucher_no: String,
+    voucher_type: String,
+    voucher_date: String,
+    party_name: Option<String>,
+    total_amount: f64,
+    grand_total: Option<f64>,
+    deleted_at: Option<String>,
+    deleted_by: Option<String>,
+    item_count: i64,
+}
+
+#[tauri::command]
+pub async fn get_deleted_vouchers(
+    registry: State<'_, Arc<DbRegistry>>,
+    voucher_type: Option<String>,
+) -> Result<Vec<DeletedVoucher>, String> {
+    let pool = registry.active_pool().await?;
+    let mut query_str = String::from(
+        "SELECT 
+            v.id,
+            v.voucher_no as raw_voucher_no,
+            v.voucher_type,
+            v.voucher_date,
+            COALESCE(coa.account_name, c.name, s.name, 'N/A') as party_name,
+            CAST(COALESCE(v.total_amount, 0) AS REAL) as total_amount,
+            CAST(COALESCE(v.grand_total, v.total_amount, 0) AS REAL) as grand_total,
+            v.deleted_at,
+            v.deleted_by,
+            (SELECT COUNT(*) FROM voucher_items vi WHERE vi.voucher_id = v.id) as item_count
+         FROM vouchers v
+         LEFT JOIN chart_of_accounts coa ON v.party_id = coa.id
+         LEFT JOIN customers c ON v.party_id = c.id
+         LEFT JOIN suppliers s ON v.party_id = s.id
+         WHERE v.deleted_at IS NOT NULL "
+    );
+
+    if let Some(ref vt) = voucher_type {
+        if !vt.is_empty() && vt != "all" {
+            query_str.push_str(&format!("AND v.voucher_type = '{}' ", vt.replace('\'', "''")));
+        }
+    }
+
+    query_str.push_str("ORDER BY v.deleted_at DESC, v.voucher_date DESC LIMIT 300");
+
+    let rows: Vec<RawDeletedVoucher> = sqlx::query_as(&query_str)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let result = rows
+        .into_iter()
+        .map(|r| {
+            let voucher_no = clean_deleted_voucher_no(&r.raw_voucher_no);
+            DeletedVoucher {
+                id: r.id,
+                voucher_no,
+                raw_voucher_no: r.raw_voucher_no,
+                voucher_type: r.voucher_type,
+                voucher_date: r.voucher_date,
+                party_name: r.party_name,
+                total_amount: r.total_amount,
+                grand_total: r.grand_total,
+                deleted_at: r.deleted_at,
+                deleted_by: r.deleted_by,
+                item_count: r.item_count,
+            }
+        })
+        .collect();
+
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn hard_delete_voucher(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    let is_deleted: Option<bool> = sqlx::query_scalar(
+        "SELECT deleted_at IS NOT NULL FROM vouchers WHERE id = ?"
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match is_deleted {
+        Some(true) => {},
+        Some(false) => return Err("Cannot permanently delete an active voucher. Move it to the Recycle Bin first.".to_string()),
+        None => return Err("Voucher not found.".to_string()),
+    }
+
+    // Delete related payment allocations
+    sqlx::query("DELETE FROM payment_allocations WHERE invoice_voucher_id = ? OR payment_voucher_id = ?")
+        .bind(&id)
+        .bind(&id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Delete related journal entries
+    sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+        .bind(&id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Delete related stock movements
+    sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
+        .bind(&id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Delete related voucher items
+    sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+        .bind(&id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // Delete the voucher itself
+    sqlx::query("DELETE FROM vouchers WHERE id = ?")
+        .bind(&id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn hard_delete_all_deleted_vouchers(
+    registry: State<'_, Arc<DbRegistry>>,
+    voucher_type: Option<String>,
+) -> Result<usize, String> {
+    let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    let filter_type = voucher_type.filter(|vt| !vt.is_empty() && vt != "all");
+
+    let ids: Vec<String> = if let Some(ref vt) = filter_type {
+        sqlx::query_scalar("SELECT id FROM vouchers WHERE deleted_at IS NOT NULL AND voucher_type = ?")
+            .bind(vt)
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    } else {
+        sqlx::query_scalar("SELECT id FROM vouchers WHERE deleted_at IS NOT NULL")
+            .fetch_all(&mut *tx)
+            .await
+            .map_err(|e| e.to_string())?
+    };
+
+    let count = ids.len();
+    if count == 0 {
+        return Ok(0);
+    }
+
+    for id in &ids {
+        let _ = sqlx::query("DELETE FROM payment_allocations WHERE invoice_voucher_id = ? OR payment_voucher_id = ?")
+            .bind(id)
+            .bind(id)
+            .execute(&mut *tx)
+            .await;
+        let _ = sqlx::query("DELETE FROM journal_entries WHERE voucher_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await;
+        let _ = sqlx::query("DELETE FROM stock_movements WHERE voucher_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await;
+        let _ = sqlx::query("DELETE FROM voucher_items WHERE voucher_id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await;
+        let _ = sqlx::query("DELETE FROM vouchers WHERE id = ?")
+            .bind(id)
+            .execute(&mut *tx)
+            .await;
+    }
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(count)
+}
+
+#[tauri::command]
+pub async fn restore_voucher(
+    registry: State<'_, Arc<DbRegistry>>,
+    id: String,
+) -> Result<(), String> {
+    let pool = registry.active_pool().await?;
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+
+    let voucher_opt: Option<(String, String)> = sqlx::query_as(
+        "SELECT voucher_no, voucher_type FROM vouchers WHERE id = ? AND deleted_at IS NOT NULL"
+    )
+    .bind(&id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let (raw_no, voucher_type) = voucher_opt.ok_or_else(|| "Deleted voucher not found".to_string())?;
+    let target_no = clean_deleted_voucher_no(&raw_no);
+
+    // Check if the original voucher number is already taken by another active voucher
+    let existing_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM vouchers WHERE voucher_no = ? AND voucher_type = ? AND deleted_at IS NULL"
+    )
+    .bind(&target_no)
+    .bind(&voucher_type)
+    .fetch_one(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    if existing_count > 0 {
+        return Err(format!(
+            "Cannot restore: Voucher number '{}' is already in use by an active {} voucher.",
+            target_no,
+            voucher_type.replace('_', " ")
+        ));
+    }
+
+    // Auto-restore any referenced products that are in the Recycle Bin
+    let _ = sqlx::query(
+        "UPDATE products 
+         SET deleted_at = NULL, is_active = 1, updated_at = CURRENT_TIMESTAMP 
+         WHERE id IN (SELECT product_id FROM voucher_items WHERE voucher_id = ?) 
+           AND deleted_at IS NOT NULL"
+    )
+    .bind(&id)
+    .execute(&mut *tx)
+    .await;
+
+    // Reactivate the voucher
+    sqlx::query(
+        "UPDATE vouchers 
+         SET voucher_no = ?, deleted_at = NULL, deleted_by = NULL, status = 'posted' 
+         WHERE id = ?"
+    )
+    .bind(&target_no)
+    .bind(&id)
+    .execute(&mut *tx)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    tx.commit().await.map_err(|e| e.to_string())?;
+    Ok(())
+}
