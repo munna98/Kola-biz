@@ -613,8 +613,11 @@ export default function SalesInvoicePage() {
           const currentCount = currentItem.count ?? 1;
           const grossAmount = (initialQty - currentCount * resolvedDeduction) * resolvedRate;
           let discountAmount = currentItem.discount_amount;
-          if (currentItem.discount_percent > 0) {
+          let discountPercent = currentItem.discount_percent;
+          if (currentItem.discount_type === 'percent' && currentItem.discount_percent > 0) {
             discountAmount = parseFloat(((grossAmount * currentItem.discount_percent) / 100).toFixed(2));
+          } else if (grossAmount > 0 && discountAmount > 0) {
+            discountPercent = parseFloat(((discountAmount / grossAmount) * 100).toFixed(2));
           }
 
           const updatedItems = [...salesState.items];
@@ -627,6 +630,7 @@ export default function SalesInvoicePage() {
             rate: resolvedRate,
             deduction_per_unit: resolvedDeduction,
             discount_amount: discountAmount,
+            discount_percent: discountPercent,
             ...(willBeMarginInvoice ? { purchase_cost: product.purchase_rate || 0 } : {}),
             ...(options?.initialQuantity !== undefined ? { initial_quantity: options.initialQuantity } : {}),
           };
@@ -714,15 +718,18 @@ export default function SalesInvoicePage() {
     // Discount Logic Sync
     if (field === 'discount_percent') {
       const grossAmount = (item.initial_quantity - item.count * item.deduction_per_unit) * item.rate;
+      item.discount_type = 'percent';
       item.discount_amount = parseFloat(((grossAmount * (finalValue as number)) / 100).toFixed(2));
     } else if (field === 'discount_amount') {
       const grossAmount = (item.initial_quantity - item.count * item.deduction_per_unit) * item.rate;
+      item.discount_type = 'amount';
       item.discount_percent = grossAmount > 0 ? parseFloat(((finalValue as number / grossAmount) * 100).toFixed(2)) : 0;
     } else if (field === 'rate' || field === 'initial_quantity' || field === 'count' || field === 'deduction_per_unit') {
-      // Re-calc discount amount if relying on percent? Usually we keep percent constant.
       const grossAmount = (item.initial_quantity - item.count * item.deduction_per_unit) * item.rate;
-      if (item.discount_percent > 0) {
+      if (item.discount_type === 'percent' && item.discount_percent > 0) {
         item.discount_amount = parseFloat(((grossAmount * item.discount_percent) / 100).toFixed(2));
+      } else if (grossAmount > 0 && item.discount_amount) {
+        item.discount_percent = parseFloat(((item.discount_amount / grossAmount) * 100).toFixed(2));
       }
     }
 

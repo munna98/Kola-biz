@@ -314,12 +314,18 @@ pub(crate) async fn prepare_voucher_line(
     }
 
     let gross_amount = round2(final_quantity * rate);
-    let discount_percent = discount_percent.unwrap_or(0.0);
-    let entered_discount_amount = if discount_percent > 0.0 {
-        round2(gross_amount * (discount_percent / 100.0))
+    let mut resolved_discount_percent = discount_percent.unwrap_or(0.0);
+    let entered_discount_amount = if let Some(amt) = discount_amount.filter(|&a| a > 0.0) {
+        round2(amt)
+    } else if resolved_discount_percent > 0.0 {
+        round2(gross_amount * (resolved_discount_percent / 100.0))
     } else {
-        round2(discount_amount.unwrap_or(0.0))
+        0.0
     };
+
+    if resolved_discount_percent <= 0.0 && entered_discount_amount > 0.0 && gross_amount > 0.0 {
+        resolved_discount_percent = round2((entered_discount_amount / gross_amount) * 100.0);
+    }
 
     let (original_amount, net_before_invoice_discount, stored_discount_amount, stored_rate) =
         if tax_inclusive {
@@ -378,7 +384,7 @@ pub(crate) async fn prepare_voucher_line(
         rate: stored_rate,
         original_amount,
         net_before_invoice_discount,
-        discount_percent,
+        discount_percent: resolved_discount_percent,
         discount_amount: stored_discount_amount,
         remarks,
         hsn_sac_code,

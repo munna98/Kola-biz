@@ -280,6 +280,7 @@ export interface PurchaseInvoiceItem {
   tax_rate: number;
   discount_percent: number;
   discount_amount: number;
+  discount_type?: 'percent' | 'amount';
 }
 
 export interface PurchaseInvoiceState extends VoucherNavigationState {
@@ -1120,6 +1121,7 @@ export interface SalesInvoiceItem {
   tax_rate: number;
   discount_percent: number;
   discount_amount: number;
+  discount_type?: 'percent' | 'amount';
   /** Purchase cost per unit — used for margin scheme GST calculation */
   purchase_cost?: number;
 }
@@ -1589,6 +1591,7 @@ export interface PurchaseReturnItem {
   tax_rate: number;
   discount_percent: number;
   discount_amount: number;
+  discount_type?: 'percent' | 'amount';
 }
 
 export interface PurchaseReturnState extends VoucherNavigationState {
@@ -1809,6 +1812,7 @@ export interface SalesReturnItem {
   tax_rate: number;
   discount_percent: number;
   discount_amount: number;
+  discount_type?: 'percent' | 'amount';
   purchase_cost?: number;
 }
 
@@ -2165,6 +2169,7 @@ export interface SalesQuotationItem {
   tax_rate: number;
   discount_percent: number;
   discount_amount: number;
+  discount_type?: 'percent' | 'amount';
 }
 
 export interface SalesQuotationState extends VoucherNavigationState {
@@ -2687,6 +2692,7 @@ export interface DeliveryNoteItem {
   tax_rate: number;
   discount_percent: number;
   discount_amount: number;
+  discount_type?: 'percent' | 'amount';
 }
 
 export interface DeliveryNoteState extends VoucherNavigationState {
