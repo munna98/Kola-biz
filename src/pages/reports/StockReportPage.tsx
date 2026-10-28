@@ -90,7 +90,7 @@ export default function StockReportPage() {
     const loadReport = async () => {
         try {
             setLoading(true);
-            const groupId = selectedGroup === 'all' ? null : parseInt(selectedGroup);
+            const groupId = selectedGroup === 'all' ? null : selectedGroup;
             const data = await invoke<StockSummary[]>('get_stock_report', {
                 groupId,
                 asOnDate,

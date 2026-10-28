@@ -1740,10 +1740,10 @@ pub async fn get_stock_report(
     as_on_date: String,
 ) -> Result<Vec<StockSummary>, String> {
     let pool = registry.active_pool().await?;
-    let group_filter = if let Some(gid) = group_id {
-        format!("AND p.group_id = '{}'", gid)
+    let group_filter = if group_id.is_some() {
+        "AND p.group_id = ?"
     } else {
-        String::new()
+        ""
     };
 
     let query = format!(
@@ -1810,7 +1810,7 @@ pub async fn get_stock_report(
         group_filter
     );
 
-    let rows = sqlx::query_as::<
+    let mut q = sqlx::query_as::<
         _,
         (
             String,
@@ -1827,10 +1827,16 @@ pub async fn get_stock_report(
     .bind(&as_on_date)
     .bind(&as_on_date)
     .bind(&as_on_date)
-    .bind(&as_on_date)
-    .fetch_all(&pool)
-    .await
-    .map_err(|e| e.to_string())?;
+    .bind(&as_on_date);
+
+    if let Some(ref gid) = group_id {
+        q = q.bind(gid);
+    }
+
+    let rows = q
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
 
     Ok(rows
         .into_iter()
