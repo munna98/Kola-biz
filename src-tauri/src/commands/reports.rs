@@ -2971,9 +2971,10 @@ pub async fn get_ledger_group_balance(
             CAST(COALESCE(SUM(je.debit - je.credit), 0) AS REAL) as net_balance,
             COUNT(DISTINCT coa.id) as account_count
         FROM chart_of_accounts coa
-        LEFT JOIN journal_entries je ON coa.id = je.account_id
-        LEFT JOIN vouchers v ON je.voucher_id = v.id AND v.deleted_at IS NULL {}
+        JOIN journal_entries je ON coa.id = je.account_id
+        JOIN vouchers v ON je.voucher_id = v.id
         WHERE coa.deleted_at IS NULL AND coa.is_active = 1
+          AND v.deleted_at IS NULL {}
         {}
         GROUP BY coa.account_group, coa.account_type
         HAVING total_debit > 0 OR total_credit > 0
@@ -3040,9 +3041,10 @@ pub async fn get_ledger_group_accounts(
             CAST(COALESCE(SUM(je.credit), 0) AS REAL) as total_credit,
             CAST(COALESCE(SUM(je.debit - je.credit), 0) AS REAL) as net_balance
         FROM chart_of_accounts coa
-        LEFT JOIN journal_entries je ON coa.id = je.account_id
-        LEFT JOIN vouchers v ON je.voucher_id = v.id AND v.deleted_at IS NULL {}
+        JOIN journal_entries je ON coa.id = je.account_id
+        JOIN vouchers v ON je.voucher_id = v.id
         WHERE coa.deleted_at IS NULL AND coa.is_active = 1
+          AND v.deleted_at IS NULL {}
           AND coa.account_group = ?
         GROUP BY coa.id, coa.account_code, coa.account_name, coa.account_type
         HAVING total_debit > 0 OR total_credit > 0
