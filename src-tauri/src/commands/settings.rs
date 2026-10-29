@@ -364,6 +364,34 @@ pub async fn reset_database_data(
     // 1. Delete selected Voucher Types first (Child tables)
     // This allows deleting master data later if referenced vouchers are removed
     for v_type in &voucher_types {
+        if v_type == "service_order" {
+            // Service orders live in their own tables, not in `vouchers`
+            sqlx::query("DELETE FROM service_order_status_log")
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("Failed to delete service_order_status_log: {}", e))?;
+            sqlx::query("DELETE FROM service_order_parts")
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("Failed to delete service_order_parts: {}", e))?;
+            sqlx::query("DELETE FROM service_order_labour")
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("Failed to delete service_order_labour: {}", e))?;
+            sqlx::query("DELETE FROM service_orders")
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("Failed to delete service_orders: {}", e))?;
+
+            if reset_sequences {
+                sqlx::query("UPDATE voucher_sequences SET next_number = 1 WHERE voucher_type = 'service_order'")
+                    .execute(&mut *tx)
+                    .await
+                    .map_err(|e| format!("Failed to reset service_order sequence: {}", e))?;
+            }
+            continue;
+        }
+
         // Delete vouchers of this type
         // Note: voucher_items, journal_entries, etc. are ON DELETE CASCADE in schema
         sqlx::query("DELETE FROM vouchers WHERE voucher_type = ?")
@@ -381,6 +409,7 @@ pub async fn reset_database_data(
                 .map_err(|e| format!("Failed to reset sequence for {}: {}", v_type, e))?;
         }
     }
+
 
     // 2. Delete Master Tables (if mode is full)
     // We execute these in a specific dependency order to avoid FK violations

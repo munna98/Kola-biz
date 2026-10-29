@@ -2924,3 +2924,153 @@ pub async fn get_expense_report_details(
 
     query.fetch_all(&pool).await.map_err(|e| e.to_string())
 }
+
+// ============= LEDGER GROUP BALANCE =============
+
+#[derive(Serialize, Deserialize)]
+pub struct LedgerGroupBalanceRow {
+    pub group_name: String,
+    pub account_type: String,
+    pub total_debit: f64,
+    pub total_credit: f64,
+    pub net_balance: f64,
+    pub account_count: i64,
+}
+
+#[tauri::command]
+pub async fn get_ledger_group_balance(
+    registry: State<'_, Arc<DbRegistry>>,
+    from_date: Option<String>,
+    to_date: String,
+    account_type_filter: Option<String>,
+) -> Result<Vec<LedgerGroupBalanceRow>, String> {
+    let pool = registry.active_pool().await?;
+
+    let date_filter = if let Some(ref from) = from_date {
+        format!(
+            "AND v.voucher_date >= '{}' AND v.voucher_date <= '{}'",
+            from, to_date
+        )
+    } else {
+        format!("AND v.voucher_date <= '{}'", to_date)
+    };
+
+    let type_filter = match &account_type_filter {
+        Some(t) if !t.is_empty() && t != "All" => {
+            format!("AND coa.account_type = '{}'", t.replace('\'', "''"))
+        }
+        _ => String::new(),
+    };
+
+    let query = format!(
+        "SELECT
+            COALESCE(coa.account_group, 'Ungrouped') as group_name,
+            coa.account_type,
+            CAST(COALESCE(SUM(je.debit), 0) AS REAL) as total_debit,
+            CAST(COALESCE(SUM(je.credit), 0) AS REAL) as total_credit,
+            CAST(COALESCE(SUM(je.debit - je.credit), 0) AS REAL) as net_balance,
+            COUNT(DISTINCT coa.id) as account_count
+        FROM chart_of_accounts coa
+        LEFT JOIN journal_entries je ON coa.id = je.account_id
+        LEFT JOIN vouchers v ON je.voucher_id = v.id AND v.deleted_at IS NULL {}
+        WHERE coa.deleted_at IS NULL AND coa.is_active = 1
+        {}
+        GROUP BY coa.account_group, coa.account_type
+        HAVING total_debit > 0 OR total_credit > 0
+        ORDER BY coa.account_type ASC, group_name ASC",
+        date_filter, type_filter
+    );
+
+    let rows = sqlx::query_as::<_, (String, String, f64, f64, f64, i64)>(&query)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .map(|(group_name, account_type, total_debit, total_credit, net_balance, account_count)| {
+            LedgerGroupBalanceRow {
+                group_name,
+                account_type,
+                total_debit: round2(total_debit),
+                total_credit: round2(total_credit),
+                net_balance: round2(net_balance),
+                account_count,
+            }
+        })
+        .collect())
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct LedgerGroupAccountRow {
+    pub account_id: String,
+    pub account_code: String,
+    pub account_name: String,
+    pub account_type: String,
+    pub total_debit: f64,
+    pub total_credit: f64,
+    pub net_balance: f64,
+}
+
+#[tauri::command]
+pub async fn get_ledger_group_accounts(
+    registry: State<'_, Arc<DbRegistry>>,
+    group_name: String,
+    from_date: Option<String>,
+    to_date: String,
+) -> Result<Vec<LedgerGroupAccountRow>, String> {
+    let pool = registry.active_pool().await?;
+
+    let date_filter = if let Some(ref from) = from_date {
+        format!(
+            "AND v.voucher_date >= '{}' AND v.voucher_date <= '{}'",
+            from, to_date
+        )
+    } else {
+        format!("AND v.voucher_date <= '{}'", to_date)
+    };
+
+    let query = format!(
+        "SELECT
+            coa.id as account_id,
+            coa.account_code,
+            coa.account_name,
+            coa.account_type,
+            CAST(COALESCE(SUM(je.debit), 0) AS REAL) as total_debit,
+            CAST(COALESCE(SUM(je.credit), 0) AS REAL) as total_credit,
+            CAST(COALESCE(SUM(je.debit - je.credit), 0) AS REAL) as net_balance
+        FROM chart_of_accounts coa
+        LEFT JOIN journal_entries je ON coa.id = je.account_id
+        LEFT JOIN vouchers v ON je.voucher_id = v.id AND v.deleted_at IS NULL {}
+        WHERE coa.deleted_at IS NULL AND coa.is_active = 1
+          AND coa.account_group = ?
+        GROUP BY coa.id, coa.account_code, coa.account_name, coa.account_type
+        HAVING total_debit > 0 OR total_credit > 0
+        ORDER BY coa.account_code ASC",
+        date_filter
+    );
+
+    let rows = sqlx::query_as::<_, (String, String, String, String, f64, f64, f64)>(&query)
+        .bind(&group_name)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(rows
+        .into_iter()
+        .map(
+            |(account_id, account_code, account_name, account_type, total_debit, total_credit, net_balance)| {
+                LedgerGroupAccountRow {
+                    account_id,
+                    account_code,
+                    account_name,
+                    account_type,
+                    total_debit: round2(total_debit),
+                    total_credit: round2(total_credit),
+                    net_balance: round2(net_balance),
+                }
+            },
+        )
+        .collect())
+}
+

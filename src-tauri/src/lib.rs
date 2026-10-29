@@ -253,6 +253,8 @@ pub fn run() {
             get_product_profit_invoices,
             get_expense_report,
             get_expense_report_details,
+            get_ledger_group_balance,
+            get_ledger_group_accounts,
             commands::parties::get_all_parties,
             commands::parties::get_party_currency_info,
             // User Management (New)

@@ -29,6 +29,7 @@ import SalesInvoicePage from './pages/SalesInvoicePage';
 import SalesReturnPage from './pages/SalesReturnPage';
 import TrialBalancePage from './pages/reports/TrialBalancePage';
 import LedgerReportPage from './pages/reports/LedgerReportPage';
+import LedgerGroupBalancePage from './pages/reports/LedgerGroupBalancePage';
 import BalanceSheetPage from './pages/reports/BalanceSheetPage';
 import ProfitLossPage from './pages/reports/ProfitLossPage';
 import CashFlowPage from './pages/reports/CashFlowPage';
@@ -241,6 +242,7 @@ function AppContent() {
             case 'stock_journal': return <StockJournalPage />;
             case 'trial': return <TrialBalancePage />;
             case 'ledger': return <LedgerReportPage />;
+            case 'ledger_group': return <LedgerGroupBalancePage />;
             case 'balance_sheet': return <BalanceSheetPage />;
             case 'profit_loss': return <ProfitLossPage />;
             case 'cash_flow': return <CashFlowPage />;

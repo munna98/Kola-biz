@@ -28,6 +28,7 @@ import {
     IconScissors,
     IconDeviceMobile,
     IconUserCheck,
+    IconStack2,
 } from '@tabler/icons-react';
 
 export interface MenuItem {
@@ -75,6 +76,7 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
     { id: 'day_book', label: 'Day Book', icon: IconCalendarStats, category: 'Report' },
     { id: 'outstanding', label: 'Party Outstanding', icon: IconFileInvoice, category: 'Report' },
     { id: 'ledger', label: 'Ledger Report', icon: IconNotebook, category: 'Report' },
+    { id: 'ledger_group', label: 'Group Balance', icon: IconStack2, category: 'Report' },
     { id: 'trial', label: 'Trial Balance', icon: IconScaleOutline, category: 'Report' },
     { id: 'balance_sheet', label: 'Balance Sheet', icon: IconScale, category: 'Report' },
     { id: 'profit_loss', label: 'Profit & Loss', icon: IconChartPie, category: 'Report' },
