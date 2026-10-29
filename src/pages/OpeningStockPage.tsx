@@ -466,6 +466,7 @@ export default function OpeningStockPage() {
                 units={units}
                 groups={productGroups}
                 onSuccess={handleCreateProductSave}
+                masterProductsEnabled={masterProductsEnabled}
             />
 
             <BarcodeLabelDialog

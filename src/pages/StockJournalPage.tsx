@@ -642,6 +642,7 @@ export default function StockJournalPage() {
                 units={units}
                 groups={productGroups}
                 onSuccess={handleCreateProductSave}
+                masterProductsEnabled={masterProductsEnabled}
             />
 
             <div className="flex-1 min-h-0 overflow-hidden flex flex-col">

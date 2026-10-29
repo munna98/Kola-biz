@@ -119,7 +119,7 @@ export default function SalesInvoicePage() {
   const [loadedPartyId, setLoadedPartyId] = useState<number | undefined>(undefined);
   const [loadedInvoiceAmount, setLoadedInvoiceAmount] = useState(0);
   const [loadedInvoiceForeignAmount, setLoadedInvoiceForeignAmount] = useState(0);
-  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, enableFreightCharge?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost', showShipTo?: boolean, enablePriceCategory?: boolean, priceCategoryFallback?: 'default_sales_rate' | 'show_zero', allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
+  const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, showPaymentModal?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, enableFreightCharge?: boolean, showProductInfoOnHover?: boolean, showInvoiceProfit?: boolean, profitCostSource?: 'cost_rate' | 'product_master_cost', showShipTo?: boolean, enablePriceCategory?: boolean, priceCategoryFallback?: 'default_sales_rate' | 'show_zero', allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean, requireCustomer?: boolean } | undefined>(undefined);
   const [isTaxInclusive, setIsTaxInclusive] = useState(false);
   const [partyBalance, setPartyBalance] = useState<number | null>(null);
   const [partyForeignBalance, setPartyForeignBalance] = useState<number | null>(null);
@@ -300,6 +300,12 @@ export default function SalesInvoicePage() {
   // Auto-focus party or product when opening a new voucher (if setting enabled)
   useEffect(() => {
     if (salesState.mode === 'new' && !salesState.currentVoucherId) {
+      if (voucherSettings?.requireCustomer && (!salesState.form.customer_id || salesState.form.customer_id === 0)) {
+        requestAnimationFrame(() => {
+          partyComboRef.current?.focus();
+        });
+        return;
+      }
       const shouldFocusProduct = voucherSettings?.autoFocusProduct ?? (!voucherSettings?.autoFocusParty);
       if (shouldFocusProduct) {
         requestAnimationFrame(() => {
@@ -312,7 +318,7 @@ export default function SalesInvoicePage() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [salesState.mode, salesState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct]);
+  }, [salesState.mode, salesState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct, voucherSettings?.requireCustomer]);
 
   // Lookup linked custom order for current sales voucher (if feature enabled)
   useEffect(() => {
@@ -477,6 +483,10 @@ export default function SalesInvoicePage() {
   // Default Party Selection Effect
   useEffect(() => {
     if (salesState.mode === 'new' && salesState.form.customer_id === 0 && parties.length > 0) {
+      if (voucherSettings?.requireCustomer) {
+        // When requireCustomer is enabled, do not auto-select Cash or Bank account
+        return;
+      }
       // Default to "Cash Sale" account if available, otherwise first party
       const cashSaleAccount = parties.find(p => p.name === 'Cash');
       const defaultParty = cashSaleAccount || parties[0];
@@ -489,7 +499,7 @@ export default function SalesInvoicePage() {
         }));
       }
     }
-  }, [salesState.mode, salesState.form.customer_id, parties, dispatch]);
+  }, [salesState.mode, salesState.form.customer_id, parties, dispatch, voucherSettings?.requireCustomer]);
 
   // Auto-add first line if empty and in new mode
   useEffect(() => {
@@ -875,8 +885,17 @@ export default function SalesInvoicePage() {
     }
 
     if (!salesState.form.customer_id) {
-      toast.error('Select a party');
+      toast.error(voucherSettings?.requireCustomer ? 'Please select a customer' : 'Select a party');
       return;
+    }
+
+    if (voucherSettings?.requireCustomer) {
+      const selectedParty = parties.find(p => p.id === salesState.form.customer_id);
+      const isCashOrBank = selectedParty?.group === 'Cash' || selectedParty?.group === 'Bank Account' || ['cash', 'bank'].includes(selectedParty?.name.trim().toLowerCase() || '');
+      if (!selectedParty || isCashOrBank) {
+        toast.error('Please select a customer. Cash and Bank accounts are not allowed to save a sales voucher.');
+        return;
+      }
     }
 
     try {
@@ -1650,6 +1669,16 @@ export default function SalesInvoicePage() {
   const isShowingSavedInvoiceContext = !!savedInvoiceId;
   const effectiveIsCashBankParty = isShowingSavedInvoiceContext ? savedIsCashBankParty : currentPartyIsCashBank;
 
+  const availableParties = useMemo(() => {
+    if (!voucherSettings?.requireCustomer) return parties;
+    return parties.filter(p => {
+      // Keep currently selected party so Combobox displays its name even if previously saved with Cash
+      if (p.id === salesState.form.customer_id) return true;
+      const isCashOrBank = p.group === 'Cash' || p.group === 'Bank Account' || ['cash', 'bank'].includes(p.name.trim().toLowerCase());
+      return !isCashOrBank;
+    });
+  }, [parties, voucherSettings?.requireCustomer, salesState.form.customer_id]);
+
   const isSameLoadedParty = salesState.mode !== 'new' && Boolean(salesState.currentVoucherId) && String(salesState.form.customer_id) === String(loadedPartyId);
   const isForexDisplay = Boolean(isExportBusiness && salesState.currency_id && partyForeignBalance !== null && partyForeignBalance !== 0);
 
@@ -1806,6 +1835,7 @@ export default function SalesInvoicePage() {
         groups={productGroups}
         onSuccess={handleCreateProductSave}
         product={undefined} // Always new
+        masterProductsEnabled={masterProductsEnabled}
       />
 
 
@@ -1818,15 +1848,17 @@ export default function SalesInvoicePage() {
               {/* Customer */}
               <div ref={customerRef} className="flex-[3] min-w-[320px] flex gap-2 items-end">
                 <div className="flex-1">
-                  <Label className="text-xs font-medium mb-1 block">Party *</Label>
+                  <Label className="text-xs font-medium mb-1 block">
+                    {voucherSettings?.requireCustomer ? 'Customer *' : 'Party *'}
+                  </Label>
                   <Combobox
                     ref={partyComboRef}
-                    options={parties.map(p => ({
+                    options={availableParties.map(p => ({
                       value: p.id,
                       label: p.name,
                       subLabel: p.address_line_1 || undefined,
                     }))}
-                    value={salesState.form.customer_id}
+                    value={salesState.form.customer_id || undefined}
                     onChange={async (value) => {
                       const party = parties.find((p) => p.id === value);
                       if (party) {
@@ -1839,8 +1871,8 @@ export default function SalesInvoicePage() {
                         }, 100);
                       }
                     }}
-                    placeholder="Select party"
-                    searchPlaceholder="Search parties..."
+                    placeholder={voucherSettings?.requireCustomer ? "Select customer..." : "Select party"}
+                    searchPlaceholder={voucherSettings?.requireCustomer ? "Search customers..." : "Search parties..."}
                     disabled={isReadOnly}
                     onActionClick={() => {
                       setNewCustomerName('');

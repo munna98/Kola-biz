@@ -1469,6 +1469,7 @@ export default function PurchaseInvoicePage() {
         groups={productGroups}
         onSuccess={handleCreateProductSave}
         product={undefined} // Always new
+        masterProductsEnabled={masterProductsEnabled}
       />
 
       {/* Form Content */}

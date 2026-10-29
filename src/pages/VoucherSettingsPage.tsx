@@ -55,6 +55,7 @@ interface VoucherSettings {
     autoFocusParty?: boolean; // Auto-focus party combobox when opening a new voucher
     autoFocusProduct?: boolean; // Auto-focus product input when opening a new voucher
     enableFreightCharge?: boolean; // Enable Freight Charge input on vouchers
+    requireCustomer?: boolean; // Require selecting a customer (disallow Cash/Bank) to save sales voucher
 }
 
 const AVAILABLE_COLUMNS = [
@@ -126,6 +127,7 @@ export default function VoucherSettingsPage() {
     const [autoFocusParty, setAutoFocusParty] = useState(false);
     const [autoFocusProduct, setAutoFocusProduct] = useState(false);
     const [enableFreightCharge, setEnableFreightCharge] = useState(false);
+    const [requireCustomer, setRequireCustomer] = useState(false);
     const [loading, setLoading] = useState(false);
 
     // ---- Deleted Vouchers state ----
@@ -202,6 +204,7 @@ export default function VoucherSettingsPage() {
                 setAutoFocusParty(savedSettings.autoFocusParty || false);
                 setAutoFocusProduct(savedSettings.autoFocusProduct !== undefined ? savedSettings.autoFocusProduct : (!savedSettings.autoFocusParty));
                 setEnableFreightCharge(savedSettings.enableFreightCharge || false);
+                setRequireCustomer(savedSettings.requireCustomer || false);
 
                 // Merge saved settings with available columns (in case new columns were added to code)
                 // This logic ensures we respect saved order and visibility, but also add new columns at the end
@@ -258,6 +261,7 @@ export default function VoucherSettingsPage() {
                 setAutoFocusParty(false);
                 setAutoFocusProduct(true);
                 setEnableFreightCharge(false);
+                setRequireCustomer(false);
                 initialColumns = availableCols.map((col, index) => ({
                     id: col.id,
                     label: col.label,
@@ -304,6 +308,7 @@ export default function VoucherSettingsPage() {
                 autoFocusParty: autoFocusParty,
                 autoFocusProduct: autoFocusProduct,
                 enableFreightCharge: enableFreightCharge,
+                requireCustomer: requireCustomer,
             };
             await invoke('save_voucher_settings', { voucherType: selectedVoucher, settings });
             toast.success('Settings saved successfully');
@@ -438,6 +443,28 @@ export default function VoucherSettingsPage() {
                                 </p>
                             </div>
                         </div>
+
+                        {['sales_invoice', 'sales_quotation', 'delivery_note', 'sales_return'].includes(selectedVoucher) && (
+                            <div className="flex items-start gap-4 mb-6">
+                                <Checkbox
+                                    id="require-customer"
+                                    checked={requireCustomer}
+                                    onCheckedChange={(checked) => setRequireCustomer(checked as boolean)}
+                                    className="mt-1"
+                                />
+                                <div className="grid gap-1.5 leading-none w-full">
+                                    <label
+                                        htmlFor="require-customer"
+                                        className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                                    >
+                                        Require Customer Selection (Disallow Cash & Bank)
+                                    </label>
+                                    <p className="text-sm text-muted-foreground">
+                                        When enabled, an actual customer must be selected to save this voucher. Cash and Bank accounts cannot be selected as the party.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
 
                         {['sales_invoice', 'sales_quotation', 'delivery_note'].includes(selectedVoucher) && (
                             <div className="flex items-center gap-4 mb-6">

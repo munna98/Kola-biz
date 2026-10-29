@@ -658,6 +658,7 @@ export default function ProductsPage() {
         colors={colors}
         product={editingProduct}
         onSuccess={load}
+        masterProductsEnabled={masterProductsEnabled}
       />
 
       {/* Units Management Dialog Component */}

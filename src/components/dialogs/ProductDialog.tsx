@@ -27,6 +27,7 @@ interface ProductDialogProps {
   colors?: ProductColor[];
   product?: Product;
   onSuccess?: () => void;
+  masterProductsEnabled?: boolean;
 }
 
 interface ConversionRow extends CreateProductUnitConversion {
@@ -145,9 +146,12 @@ export default function ProductDialog({
   brands = [],
   colors = [],
   product,
-  onSuccess
+  onSuccess,
+  masterProductsEnabled: propMasterProductsEnabled
 }: ProductDialogProps) {
   const defaultUnitId = getDefaultUnitId(units);
+  const [masterProductsEnabled, setMasterProductsEnabled] = useState(propMasterProductsEnabled ?? false);
+  const [isMaster, setIsMaster] = useState(Boolean((propMasterProductsEnabled ?? false) && !product));
   const [form, setForm] = useState<CreateProduct>({
     code: '',
     name: '',
@@ -179,8 +183,6 @@ export default function ProductDialog({
     purchase_deduction: 0,
     sales_deduction: 0,
   });
-  const [isMaster, setIsMaster] = useState(false);
-  const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
   const [conversionRows, setConversionRows] = useState<ConversionRow[]>(defaultUnitId ? [createBaseRow(defaultUnitId)] : []);
   const [loading, setLoading] = useState(false);
   const [showUnitSection, setShowUnitSection] = useState(false);
@@ -301,6 +303,12 @@ export default function ProductDialog({
   }, []);
 
   useEffect(() => {
+    if (propMasterProductsEnabled !== undefined) {
+      setMasterProductsEnabled(propMasterProductsEnabled);
+    }
+  }, [propMasterProductsEnabled]);
+
+  useEffect(() => {
     if (!open) return;
 
     if (!brands || brands.length === 0) {
@@ -323,6 +331,17 @@ export default function ProductDialog({
     setShowUnitSection(false);
 
     const loadDialogData = async () => {
+      let isFeatureEnabled = propMasterProductsEnabled ?? masterProductsEnabled;
+      try {
+        const v = await invoke<string | null>('get_app_setting', { key: 'enable_master_products' });
+        if (v !== null) {
+          isFeatureEnabled = v === 'true';
+          setMasterProductsEnabled(isFeatureEnabled);
+        }
+      } catch (err) {
+        console.error(err);
+      }
+
       if (product) {
         setIsMaster(product.is_master === 1);
         setForm({
@@ -385,7 +404,8 @@ export default function ProductDialog({
           setConversionRows([createBaseRow(product.unit_id, product.purchase_rate, product.sales_rate)]);
         }
       } else {
-        setIsMaster(false);
+        const defaultMaster = isFeatureEnabled;
+        setIsMaster(defaultMaster);
         setForm({
           code: '',
           name: '',
@@ -406,7 +426,7 @@ export default function ProductDialog({
           conversions: [],
           hsn_sac_code: '',
           gst_slab_id: 'gst_0',
-          is_master: false,
+          is_master: defaultMaster,
           is_margin_scheme_default: false,
           vehicle_manufacturer: undefined,
           vehicle_model: undefined,
@@ -420,24 +440,17 @@ export default function ProductDialog({
           sales_deduction: 0,
         });
         setConversionRows(initialUnitId ? [createBaseRow(initialUnitId, initialPurchaseRate, initialSalesRate)] : []);
+
+        if (!defaultMaster) {
+          api.products.getNextCode().then((code) => {
+            setForm(prev => ({ ...prev, code }));
+          }).catch(console.error);
+        }
       }
     };
 
     loadDialogData();
-  }, [open, product, units]);
-
-  useEffect(() => {
-    if (open && !product) {
-      // Only auto-generate code for non-master products
-      if (!isMaster) {
-        api.products.getNextCode().then((code) => {
-          setForm(prev => ({ ...prev, code }));
-        }).catch(console.error);
-      } else {
-        setForm(prev => ({ ...prev, code: '' }));
-      }
-    }
-  }, [open, product, isMaster]);
+  }, [open, product, units, propMasterProductsEnabled]);
 
   useEffect(() => {
     if (!open || !form.unit_id) return;
@@ -446,7 +459,8 @@ export default function ProductDialog({
 
   const resetForm = () => {
     const unitId = getDefaultUnitId(units);
-    setIsMaster(false);
+    const defaultMaster = propMasterProductsEnabled ?? masterProductsEnabled;
+    setIsMaster(defaultMaster);
     setForm({
       code: '',
       name: '',
@@ -467,7 +481,7 @@ export default function ProductDialog({
       conversions: [],
       hsn_sac_code: '',
       gst_slab_id: 'gst_0',
-      is_master: false,
+      is_master: defaultMaster,
       is_margin_scheme_default: false,
       vehicle_manufacturer: undefined,
       vehicle_model: undefined,
@@ -482,6 +496,12 @@ export default function ProductDialog({
     });
     setConversionRows(unitId ? [createBaseRow(unitId)] : []);
     setShowUnitSection(false);
+
+    if (!defaultMaster) {
+      api.products.getNextCode().then((code) => {
+        setForm(prev => ({ ...prev, code }));
+      }).catch(console.error);
+    }
   };
 
   const setDefaultFlag = (

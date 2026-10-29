@@ -94,7 +94,7 @@ export default function SalesReturnPage() {
     const [showShortcuts, setShowShortcuts] = useState(false);
     const [showListView, setShowListView] = useState(false);
     const [masterProductsEnabled, setMasterProductsEnabled] = useState(false);
-    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, enableFreightCharge?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean } | undefined>(undefined);
+    const [voucherSettings, setVoucherSettings] = useState<{ columns: ColumnSettings[], autoPrint?: boolean, enableFreightCharge?: boolean, skipToNextRowAfterQty?: boolean, skipToNextRowAfterProduct?: boolean, incrementQtyOnDuplicate?: boolean, taxInclusive?: boolean, showProductInfoOnHover?: boolean, allowTotalInput?: boolean, autoFocusParty?: boolean, autoFocusProduct?: boolean, requireCustomer?: boolean } | undefined>(undefined);
     const { print } = usePrint();
     const productUnitsByProduct = useMemo(
         () => buildProductUnitMap(productUnitConversions),
@@ -211,6 +211,9 @@ export default function SalesReturnPage() {
     // Default Party Selection Effect
     useEffect(() => {
         if (salesReturnState.mode === 'new' && salesReturnState.form.customer_id === 0 && parties.length > 0) {
+            if (voucherSettings?.requireCustomer) {
+                return;
+            }
             // Default to "Cash Sale" account if available, otherwise first party
             const cashSaleAccount = parties.find(p => p.name === 'Cash');
             const defaultParty = cashSaleAccount || parties[0];
@@ -223,11 +226,17 @@ export default function SalesReturnPage() {
                 }));
             }
         }
-    }, [salesReturnState.mode, salesReturnState.form.customer_id, parties, dispatch]);
+    }, [salesReturnState.mode, salesReturnState.form.customer_id, parties, dispatch, voucherSettings?.requireCustomer]);
 
     // Auto-focus party or product when opening a new voucher (if setting enabled)
     useEffect(() => {
         if (salesReturnState.mode === 'new' && !salesReturnState.currentVoucherId) {
+            if (voucherSettings?.requireCustomer && (!salesReturnState.form.customer_id || salesReturnState.form.customer_id === 0)) {
+                requestAnimationFrame(() => {
+                    partyComboRef.current?.focus();
+                });
+                return;
+            }
             const shouldFocusProduct = voucherSettings?.autoFocusProduct ?? (!voucherSettings?.autoFocusParty);
             if (shouldFocusProduct) {
                 requestAnimationFrame(() => {
@@ -240,7 +249,7 @@ export default function SalesReturnPage() {
             }
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [salesReturnState.mode, salesReturnState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct]);
+    }, [salesReturnState.mode, salesReturnState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct, voucherSettings?.requireCustomer]);
 
     // Fetch customer balance whenever customer_id changes
     useEffect(() => {
@@ -549,8 +558,17 @@ export default function SalesReturnPage() {
         }
 
         if (!salesReturnState.form.customer_id) {
-            toast.error('Select a party');
+            toast.error(voucherSettings?.requireCustomer ? 'Please select a customer' : 'Select a party');
             return;
+        }
+
+        if (voucherSettings?.requireCustomer) {
+            const selectedParty = parties.find(p => p.id === salesReturnState.form.customer_id);
+            const isCashOrBank = selectedParty?.group === 'Cash' || selectedParty?.group === 'Bank Account' || ['cash', 'bank'].includes(selectedParty?.name.trim().toLowerCase() || '');
+            if (!selectedParty || isCashOrBank) {
+                toast.error('Please select a customer. Cash and Bank accounts are not allowed to save a sales return.');
+                return;
+            }
         }
 
         if (activeSectionParams?.source === 'sales_invoice' && activeSectionParams.draftReturn) {
@@ -928,6 +946,15 @@ export default function SalesReturnPage() {
     const isCashOrBankParty = currentPartyIsCashBank || ['cash', 'bank'].includes(currentCustomerParty?.name.trim().toLowerCase() || '');
     const shouldShowPartyBalance = currentCustomerParty ? !isCashOrBankParty : false;
 
+    const availableParties = useMemo(() => {
+        if (!voucherSettings?.requireCustomer) return parties;
+        return parties.filter(p => {
+            if (p.id === salesReturnState.form.customer_id) return true;
+            const isCashOrBank = p.group === 'Cash' || p.group === 'Bank Account' || ['cash', 'bank'].includes(p.name.trim().toLowerCase());
+            return !isCashOrBank;
+        });
+    }, [parties, voucherSettings?.requireCustomer, salesReturnState.form.customer_id]);
+
     const isSameParty = salesReturnState.mode !== 'new' && Boolean(salesReturnState.currentVoucherId) && String(salesReturnState.form.customer_id) === String(savedPartyId);
     const isForexDisplay = Boolean(isMultiCurrencyEnabled && salesReturnState.currency_id && partyForeignBalance !== null && partyForeignBalance !== 0);
 
@@ -992,15 +1019,17 @@ export default function SalesReturnPage() {
                             {/* Customer */}
                             <div ref={customerRef} className="col-span-2 flex items-end gap-2">
                                 <div className="flex-1">
-                                    <Label className="text-xs font-medium mb-1 block">Party *</Label>
+                                    <Label className="text-xs font-medium mb-1 block">
+                                        {voucherSettings?.requireCustomer ? 'Customer *' : 'Party *'}
+                                    </Label>
                                     <Combobox
                                         ref={partyComboRef}
-                                        options={parties.map(p => ({
+                                        options={availableParties.map(p => ({
                                             value: p.id,
                                             label: p.name,
                                             subLabel: p.address_line_1 || undefined,
                                         }))}
-                                        value={salesReturnState.form.customer_id}
+                                        value={salesReturnState.form.customer_id || undefined}
                                         onChange={(value) => {
                                             const party = parties.find((p) => p.id === value);
                                             if (party) {
@@ -1028,8 +1057,8 @@ export default function SalesReturnPage() {
                                                 }, 100);
                                             }
                                         }}
-                                        placeholder="Select party"
-                                        searchPlaceholder="Search parties..."
+                                        placeholder={voucherSettings?.requireCustomer ? "Select customer..." : "Select party"}
+                                        searchPlaceholder={voucherSettings?.requireCustomer ? "Search customers..." : "Search parties..."}
                                         disabled={isReadOnly}
                                     />
                                 </div>
