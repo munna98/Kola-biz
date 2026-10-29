@@ -11,7 +11,6 @@ import {
   IconRefresh,
   IconChevronDown,
   IconChevronRight,
-  IconArrowLeft,
 } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
@@ -130,7 +129,7 @@ export default function LedgerGroupBalancePage() {
     dispatch(
       setActiveSectionWithParams({
         section: 'ledger',
-        params: {},
+        params: { accountId },
       })
     );
   };
@@ -410,8 +409,7 @@ export default function LedgerGroupBalancePage() {
                                         <th className="p-2 text-left text-xs font-semibold text-muted-foreground">Account Name</th>
                                         <th className="p-2 text-right text-xs font-semibold text-muted-foreground">Debit</th>
                                         <th className="p-2 text-right text-xs font-semibold text-muted-foreground">Credit</th>
-                                        <th className="p-2 text-right text-xs font-semibold text-muted-foreground">Net Balance</th>
-                                        <th className="p-2 w-24"></th>
+                                        <th className="p-2 pr-4 text-right text-xs font-semibold text-muted-foreground">Net Balance</th>
                                       </tr>
                                     </thead>
                                     <tbody>
@@ -425,30 +423,29 @@ export default function LedgerGroupBalancePage() {
                                             <td className="p-2 pl-10 font-mono text-xs text-muted-foreground">
                                               {acc.account_code}
                                             </td>
-                                            <td className="p-2 text-sm">{acc.account_name}</td>
-                                            <td className="p-2 text-right font-mono text-xs">
-                                              {acc.total_debit > 0 ? money(acc.total_debit) : '-'}
-                                            </td>
-                                            <td className="p-2 text-right font-mono text-xs">
-                                              {acc.total_credit > 0 ? money(acc.total_credit) : '-'}
-                                            </td>
-                                            <td className="p-2 text-right font-mono text-xs font-semibold">
-                                              <span className={accDr ? '' : 'text-destructive'}>
-                                                {money(Math.abs(acc.net_balance))} {accDr ? 'Dr' : 'Cr'}
-                                              </span>
-                                            </td>
-                                            <td className="p-2 text-right">
+                                            <td className="p-2 text-sm">
                                               <button
                                                 type="button"
                                                 onClick={(e) => {
                                                   e.stopPropagation();
                                                   openLedger(acc.account_id);
                                                 }}
-                                                className="text-xs text-primary hover:underline flex items-center gap-1 ml-auto"
+                                                className="text-primary hover:underline font-medium text-left cursor-pointer focus:outline-none"
+                                                title={`View Ledger for ${acc.account_name}`}
                                               >
-                                                Ledger
-                                                <IconArrowLeft size={12} className="rotate-180" />
+                                                {acc.account_name}
                                               </button>
+                                            </td>
+                                            <td className="p-2 text-right font-mono text-xs">
+                                              {acc.total_debit > 0 ? money(acc.total_debit) : '-'}
+                                            </td>
+                                            <td className="p-2 text-right font-mono text-xs">
+                                              {acc.total_credit > 0 ? money(acc.total_credit) : '-'}
+                                            </td>
+                                            <td className="p-2 pr-4 text-right font-mono text-xs font-semibold">
+                                              <span className={accDr ? '' : 'text-destructive'}>
+                                                {money(Math.abs(acc.net_balance))} {accDr ? 'Dr' : 'Cr'}
+                                              </span>
                                             </td>
                                           </tr>
                                         );
