@@ -2574,6 +2574,8 @@ pub struct ProductProfitRow {
     pub avg_selling_price: f64,
     pub avg_cost_price: f64,
     pub units_sold_text: Option<String>,
+    pub purchase_cost: f64,
+    pub total_expense: f64,
 }
 
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
@@ -2602,6 +2604,16 @@ pub async fn get_product_profit_report(
 ) -> Result<Vec<ProductProfitRow>, String> {
     let pool = registry.active_pool().await?;
     
+    let update_cost_enabled: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'update_payment_to_product_cost'",
+    )
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true" || v == "\"true\"")
+    .unwrap_or(false);
+
     // 1. Build and execute main profit query using product cost (p.cost) when set/updated, falling back to sm.cost_amount
     // Revenue uses vi.net_amount (net after item-level and bill-level discounts)
     let mut query_str = String::from("
@@ -2634,7 +2646,26 @@ pub async fn get_product_profit_report(
                     WHEN sm.movement_type = 'IN' THEN -sm.quantity * COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0)
                     ELSE 0
                 END
-            ), 0) AS REAL) as total_cost
+            ), 0) AS REAL) as total_cost,
+            -- Base purchase cost (using p.purchase_rate, falling back to sm.cost_rate)
+            CAST(COALESCE(SUM(
+                CASE
+                    WHEN sm.movement_type = 'OUT' THEN sm.quantity * COALESCE(NULLIF(p.purchase_rate, 0), sm.cost_rate, 0)
+                    WHEN sm.movement_type = 'IN' THEN -sm.quantity * COALESCE(NULLIF(p.purchase_rate, 0), sm.cost_rate, 0)
+                    ELSE 0
+                END
+            ), 0) AS REAL) as base_purchase_cost,
+            CAST(COALESCE(p.purchase_rate, 0) AS REAL) as product_purchase_rate,
+            CAST(COALESCE(p.cost, 0) AS REAL) as product_cost,
+            -- Lifetime cumulative expense on this product from payment vouchers
+            (
+                SELECT CAST(COALESCE(SUM(vi_exp.amount), 0) AS REAL)
+                FROM voucher_items vi_exp
+                JOIN vouchers v_exp ON vi_exp.voucher_id = v_exp.id
+                WHERE v_exp.voucher_type = 'payment'
+                  AND v_exp.deleted_at IS NULL
+                  AND vi_exp.product_id = p.id
+            ) as total_expense
         FROM stock_movements sm
         JOIN vouchers v ON sm.voucher_id = v.id
         JOIN products p ON sm.product_id = p.id
@@ -2656,7 +2687,7 @@ pub async fn get_product_profit_report(
 
     query_str.push_str(" GROUP BY p.id ORDER BY total_revenue DESC");
 
-    let mut query = sqlx::query_as::<_, (String, String, String, Option<String>, String, f64, f64, f64)>(&query_str)
+    let mut query = sqlx::query_as::<_, (String, String, String, Option<String>, String, f64, f64, f64, f64, f64, f64, f64)>(&query_str)
         .bind(&from_date)
         .bind(&to_date);
 
@@ -2668,11 +2699,34 @@ pub async fn get_product_profit_report(
 
     Ok(rows
         .into_iter()
-        .map(|(prod_id, prod_code, prod_name, grp_name, base_unit, qty, rev, cost)| {
-            let gross = rev - cost;
+        .map(|(prod_id, prod_code, prod_name, grp_name, base_unit, qty, rev, cost, base_purchase_cost, product_purchase_rate, product_cost, total_expense)| {
+            let (purchase_cost, final_total_cost, total_expense_val) = if update_cost_enabled {
+                let base_cost = if base_purchase_cost > 0.0 {
+                    base_purchase_cost
+                } else if product_purchase_rate > 0.0 {
+                    product_purchase_rate * if qty > 0.0 { qty } else { 1.0 }
+                } else if product_cost > total_expense {
+                    (product_cost - total_expense) * if qty > 0.0 { qty } else { 1.0 }
+                } else {
+                    cost
+                };
+                let combined_cost = base_cost + total_expense;
+                (base_cost, combined_cost, total_expense)
+            } else {
+                let base_cost = if base_purchase_cost > 0.0 {
+                    base_purchase_cost
+                } else if product_purchase_rate > 0.0 {
+                    product_purchase_rate * if qty > 0.0 { qty } else { 1.0 }
+                } else {
+                    cost
+                };
+                (base_cost, cost, total_expense)
+            };
+
+            let gross = rev - final_total_cost;
             let margin = if rev != 0.0 { (gross / rev) * 100.0 } else { 0.0 };
             let avg_sell = if qty != 0.0 { rev / qty } else { 0.0 };
-            let avg_cost = if qty != 0.0 { cost / qty } else { 0.0 };
+            let avg_cost = if qty != 0.0 { final_total_cost / qty } else { 0.0 };
 
             // Base unit display only
             let units_sold_text = format!("{} {}", qty, base_unit);
@@ -2685,12 +2739,14 @@ pub async fn get_product_profit_report(
                 base_unit_symbol: base_unit,
                 qty_sold: qty,
                 total_revenue: rev,
-                total_cost: cost,
+                total_cost: final_total_cost,
                 gross_profit: gross,
                 margin_percent: margin,
                 avg_selling_price: avg_sell,
                 avg_cost_price: avg_cost,
                 units_sold_text: Some(units_sold_text),
+                purchase_cost,
+                total_expense: total_expense_val,
             }
         })
         .collect())

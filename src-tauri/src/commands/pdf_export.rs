@@ -2139,6 +2139,10 @@ pub struct ProductProfitPdfItem {
     pub margin_percent: f64,
     pub avg_selling_price: f64,
     pub avg_cost_price: f64,
+    #[serde(default)]
+    pub purchase_cost: Option<f64>,
+    #[serde(default)]
+    pub total_expense: Option<f64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2155,6 +2159,12 @@ pub struct ProductProfitPdfData {
     pub overall_margin: f64,
     pub total_products: usize,
     pub items: Vec<ProductProfitPdfItem>,
+    #[serde(default)]
+    pub is_cost_update_enabled: Option<bool>,
+    #[serde(default)]
+    pub total_purchase_cost: Option<f64>,
+    #[serde(default)]
+    pub total_expense: Option<f64>,
 }
 
 #[tauri::command]
@@ -2231,31 +2241,50 @@ pub async fn generate_product_profit_pdf(
         y_pos -= 4.5;
     }
 
+    let is_cost_mode = data.is_cost_update_enabled.unwrap_or(false);
+
     // KPI Summary Banner
-    let kpi_str = format!(
-        "Revenue: {}   |   Cost: {}   |   Profit: {}   |   Margin: {:.1}%",
-        format_pdf_amount(currency_sym, data.total_revenue),
-        format_pdf_amount(currency_sym, data.total_cost),
-        format_pdf_amount(currency_sym, data.gross_profit),
-        data.overall_margin
-    );
-    current_layer.use_text(&clean(&kpi_str), 9.0, Mm(left_margin), Mm(y_pos), &font_bold);
+    let kpi_str = if is_cost_mode {
+        format!(
+            "Cost: {}   |   Expense: {}   |   Total Cost: {}   |   Revenue: {}   |   Profit: {}   |   Margin: {:.1}%",
+            format_pdf_amount(currency_sym, data.total_purchase_cost.unwrap_or(0.0)),
+            format_pdf_amount(currency_sym, data.total_expense.unwrap_or(0.0)),
+            format_pdf_amount(currency_sym, data.total_cost),
+            format_pdf_amount(currency_sym, data.total_revenue),
+            format_pdf_amount(currency_sym, data.gross_profit),
+            data.overall_margin
+        )
+    } else {
+        format!(
+            "Revenue: {}   |   Cost: {}   |   Profit: {}   |   Margin: {:.1}%",
+            format_pdf_amount(currency_sym, data.total_revenue),
+            format_pdf_amount(currency_sym, data.total_cost),
+            format_pdf_amount(currency_sym, data.gross_profit),
+            data.overall_margin
+        )
+    };
+    current_layer.use_text(&clean(&kpi_str), 8.5, Mm(left_margin), Mm(y_pos), &font_bold);
     y_pos -= 7.0;
 
     // ── Columns ───────────────────────────────────────────────────────────────
     // Total printable width = 186mm (12mm margins on both sides of 210mm page)
-    // Widths: Product (44), Group (20), Qty (18), Revenue (23), Cost (23), Profit (23), Margin (15), Avg Rates (20)
-    let col_widths = [44.0_f32, 20.0, 18.0, 23.0, 23.0, 23.0, 15.0, 20.0];
+    let col_widths = if is_cost_mode {
+        // Product (42), Group (18), Purchase Cost (21), Expense (21), Total Cost (21), Revenue (23), Profit (22), Margin (18)
+        [42.0_f32, 18.0, 21.0, 21.0, 21.0, 23.0, 22.0, 18.0]
+    } else {
+        // Widths: Product (44), Group (20), Qty (18), Revenue (23), Cost (23), Profit (23), Margin (15), Avg Rates (20)
+        [44.0_f32, 20.0, 18.0, 23.0, 23.0, 23.0, 15.0, 20.0]
+    };
     let mut col_x = vec![left_margin];
     for w in &col_widths[..col_widths.len() - 1] {
         col_x.push(col_x.last().unwrap() + w);
     }
-    let col_qty_right = col_x[2] + col_widths[2] - cell_padding;
-    let col_rev_right = col_x[3] + col_widths[3] - cell_padding;
-    let col_cost_right = col_x[4] + col_widths[4] - cell_padding;
-    let col_profit_right = col_x[5] + col_widths[5] - cell_padding;
-    let col_margin_right = col_x[6] + col_widths[6] - cell_padding;
-    let col_rates_right = col_x[7] + col_widths[7] - cell_padding;
+    let col_c2_right = col_x[2] + col_widths[2] - cell_padding;
+    let col_c3_right = col_x[3] + col_widths[3] - cell_padding;
+    let col_c4_right = col_x[4] + col_widths[4] - cell_padding;
+    let col_c5_right = col_x[5] + col_widths[5] - cell_padding;
+    let col_c6_right = col_x[6] + col_widths[6] - cell_padding;
+    let col_c7_right = col_x[7] + col_widths[7] - cell_padding;
 
     let headers_left = ["Product Details", "Group"];
 
@@ -2264,12 +2293,21 @@ pub async fn generate_product_profit_pdf(
             for (i, h) in headers_left.iter().enumerate() {
                 $layer.use_text(*h, 9.5, Mm(col_x[i] + cell_padding), Mm($y), &font_bold);
             }
-            draw_text_right(&$layer, "Qty Sold", 9.5, col_qty_right, $y, &font_bold, true);
-            draw_text_right(&$layer, "Revenue", 9.5, col_rev_right, $y, &font_bold, true);
-            draw_text_right(&$layer, "Cost", 9.5, col_cost_right, $y, &font_bold, true);
-            draw_text_right(&$layer, "Profit", 9.5, col_profit_right, $y, &font_bold, true);
-            draw_text_right(&$layer, "Margin", 9.5, col_margin_right, $y, &font_bold, true);
-            draw_text_right(&$layer, "Sell/Cost", 9.5, col_rates_right, $y, &font_bold, true);
+            if is_cost_mode {
+                draw_text_right(&$layer, "Cost", 9.0, col_c2_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Expense", 9.0, col_c3_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Total Cost", 9.0, col_c4_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Revenue", 9.0, col_c5_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Profit", 9.0, col_c6_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Margin", 9.0, col_c7_right, $y, &font_bold, true);
+            } else {
+                draw_text_right(&$layer, "Qty Sold", 9.5, col_c2_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Revenue", 9.5, col_c3_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Cost", 9.5, col_c4_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Profit", 9.5, col_c5_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Margin", 9.5, col_c6_right, $y, &font_bold, true);
+                draw_text_right(&$layer, "Sell/Cost", 9.5, col_c7_right, $y, &font_bold, true);
+            }
         };
     }
 
@@ -2292,47 +2330,75 @@ pub async fn generate_product_profit_pdf(
             item.product_name.clone()
         };
         let prod = clean(&prod_display);
-        let prod_trunc = if prod.len() > 24 { format!("{}...", &prod[..21]) } else { prod };
-        current_layer.use_text(&prod_trunc, 9.5, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
+        let max_chars = if is_cost_mode { 22 } else { 24 };
+        let prod_trunc = if prod.len() > max_chars { format!("{}...", &prod[..max_chars - 3]) } else { prod };
+        current_layer.use_text(&prod_trunc, 9.0, Mm(col_x[0] + cell_padding), Mm(y_pos), &font);
 
         // Group
         let group_raw = item.group_name.as_deref().unwrap_or("-");
         let group = clean(group_raw);
-        let group_trunc = if group.len() > 11 { format!("{}...", &group[..8]) } else { group };
-        current_layer.use_text(&group_trunc, 9.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
+        let max_g_chars = if is_cost_mode { 10 } else { 11 };
+        let group_trunc = if group.len() > max_g_chars { format!("{}...", &group[..max_g_chars - 3]) } else { group };
+        current_layer.use_text(&group_trunc, 9.0, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
 
-        // Qty Sold
-        let qty_str = if item.qty_sold.fract() == 0.0 {
-            format!("{:.0}", item.qty_sold)
+        if is_cost_mode {
+            // Cost (Purchase Cost)
+            let p_cost_str = format_pdf_amount(currency_sym, item.purchase_cost.unwrap_or(0.0));
+            draw_text_right(&current_layer, &p_cost_str, 9.0, col_c2_right, y_pos, &font, false);
+
+            // Expense
+            let exp_str = format_pdf_amount(currency_sym, item.total_expense.unwrap_or(0.0));
+            draw_text_right(&current_layer, &exp_str, 9.0, col_c3_right, y_pos, &font, false);
+
+            // Total Cost
+            let tot_cost_str = format_pdf_amount(currency_sym, item.total_cost);
+            draw_text_right(&current_layer, &tot_cost_str, 9.0, col_c4_right, y_pos, &font, false);
+
+            // Revenue
+            let rev_str = format_pdf_amount(currency_sym, item.total_revenue);
+            draw_text_right(&current_layer, &rev_str, 9.0, col_c5_right, y_pos, &font, false);
+
+            // Profit
+            let profit_str = format_pdf_amount(currency_sym, item.gross_profit);
+            draw_text_right(&current_layer, &profit_str, 9.0, col_c6_right, y_pos, &font, false);
+
+            // Margin %
+            let margin_str = format!("{:.1}%", item.margin_percent);
+            draw_text_right(&current_layer, &margin_str, 9.0, col_c7_right, y_pos, &font, false);
         } else {
-            format!("{:.2}", item.qty_sold)
-        };
-        let qty_with_unit = if !item.unit_symbol.is_empty() {
-            format!("{} {}", qty_str, item.unit_symbol)
-        } else {
-            qty_str
-        };
-        draw_text_right(&current_layer, &clean(&qty_with_unit), 9.5, col_qty_right, y_pos, &font, false);
+            // Qty Sold
+            let qty_str = if item.qty_sold.fract() == 0.0 {
+                format!("{:.0}", item.qty_sold)
+            } else {
+                format!("{:.2}", item.qty_sold)
+            };
+            let qty_with_unit = if !item.unit_symbol.is_empty() {
+                format!("{} {}", qty_str, item.unit_symbol)
+            } else {
+                qty_str
+            };
+            draw_text_right(&current_layer, &clean(&qty_with_unit), 9.5, col_c2_right, y_pos, &font, false);
 
-        // Revenue
-        let rev_str = format_pdf_amount(currency_sym, item.total_revenue);
-        draw_text_right(&current_layer, &rev_str, 9.5, col_rev_right, y_pos, &font, false);
+            // Revenue
+            let rev_str = format_pdf_amount(currency_sym, item.total_revenue);
+            draw_text_right(&current_layer, &rev_str, 9.5, col_c3_right, y_pos, &font, false);
 
-        // Cost
-        let cost_str = format_pdf_amount(currency_sym, item.total_cost);
-        draw_text_right(&current_layer, &cost_str, 9.5, col_cost_right, y_pos, &font, false);
+            // Cost
+            let cost_str = format_pdf_amount(currency_sym, item.total_cost);
+            draw_text_right(&current_layer, &cost_str, 9.5, col_c4_right, y_pos, &font, false);
 
-        // Gross Profit
-        let profit_str = format_pdf_amount(currency_sym, item.gross_profit);
-        draw_text_right(&current_layer, &profit_str, 9.5, col_profit_right, y_pos, &font, false);
+            // Gross Profit
+            let profit_str = format_pdf_amount(currency_sym, item.gross_profit);
+            draw_text_right(&current_layer, &profit_str, 9.5, col_c5_right, y_pos, &font, false);
 
-        // Margin %
-        let margin_str = format!("{:.1}%", item.margin_percent);
-        draw_text_right(&current_layer, &margin_str, 9.5, col_margin_right, y_pos, &font, false);
+            // Margin %
+            let margin_str = format!("{:.1}%", item.margin_percent);
+            draw_text_right(&current_layer, &margin_str, 9.5, col_c6_right, y_pos, &font, false);
 
-        // Avg Rates (Sell / Cost)
-        let rates_str = format!("{:.0}/{:.0}", item.avg_selling_price, item.avg_cost_price);
-        draw_text_right(&current_layer, &rates_str, 9.5, col_rates_right, y_pos, &font, false);
+            // Avg Rates (Sell / Cost)
+            let rates_str = format!("{:.0}/{:.0}", item.avg_selling_price, item.avg_cost_price);
+            draw_text_right(&current_layer, &rates_str, 9.5, col_c7_right, y_pos, &font, false);
+        }
 
         y_pos -= line_height;
     }
@@ -2351,17 +2417,37 @@ pub async fn generate_product_profit_pdf(
     let count_str = format!("({} products)", data.total_products);
     current_layer.use_text(&count_str, 8.5, Mm(col_x[1] + cell_padding), Mm(y_pos), &font);
 
-    let tot_rev = format_pdf_amount(currency_sym, data.total_revenue);
-    draw_text_right(&current_layer, &tot_rev, 9.5, col_rev_right, y_pos, &font_bold, true);
+    if is_cost_mode {
+        let tot_purchase = format_pdf_amount(currency_sym, data.total_purchase_cost.unwrap_or(0.0));
+        draw_text_right(&current_layer, &tot_purchase, 9.0, col_c2_right, y_pos, &font_bold, true);
 
-    let tot_cost = format_pdf_amount(currency_sym, data.total_cost);
-    draw_text_right(&current_layer, &tot_cost, 9.5, col_cost_right, y_pos, &font_bold, true);
+        let tot_exp = format_pdf_amount(currency_sym, data.total_expense.unwrap_or(0.0));
+        draw_text_right(&current_layer, &tot_exp, 9.0, col_c3_right, y_pos, &font_bold, true);
 
-    let tot_profit = format_pdf_amount(currency_sym, data.gross_profit);
-    draw_text_right(&current_layer, &tot_profit, 9.5, col_profit_right, y_pos, &font_bold, true);
+        let tot_cost = format_pdf_amount(currency_sym, data.total_cost);
+        draw_text_right(&current_layer, &tot_cost, 9.0, col_c4_right, y_pos, &font_bold, true);
 
-    let tot_margin = format!("{:.1}%", data.overall_margin);
-    draw_text_right(&current_layer, &tot_margin, 9.5, col_margin_right, y_pos, &font_bold, true);
+        let tot_rev = format_pdf_amount(currency_sym, data.total_revenue);
+        draw_text_right(&current_layer, &tot_rev, 9.0, col_c5_right, y_pos, &font_bold, true);
+
+        let tot_profit = format_pdf_amount(currency_sym, data.gross_profit);
+        draw_text_right(&current_layer, &tot_profit, 9.0, col_c6_right, y_pos, &font_bold, true);
+
+        let tot_margin = format!("{:.1}%", data.overall_margin);
+        draw_text_right(&current_layer, &tot_margin, 9.0, col_c7_right, y_pos, &font_bold, true);
+    } else {
+        let tot_rev = format_pdf_amount(currency_sym, data.total_revenue);
+        draw_text_right(&current_layer, &tot_rev, 9.5, col_c3_right, y_pos, &font_bold, true);
+
+        let tot_cost = format_pdf_amount(currency_sym, data.total_cost);
+        draw_text_right(&current_layer, &tot_cost, 9.5, col_c4_right, y_pos, &font_bold, true);
+
+        let tot_profit = format_pdf_amount(currency_sym, data.gross_profit);
+        draw_text_right(&current_layer, &tot_profit, 9.5, col_c5_right, y_pos, &font_bold, true);
+
+        let tot_margin = format!("{:.1}%", data.overall_margin);
+        draw_text_right(&current_layer, &tot_margin, 9.5, col_c6_right, y_pos, &font_bold, true);
+    }
 
     // Save document
     document
