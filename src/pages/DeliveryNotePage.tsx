@@ -67,6 +67,7 @@ interface Party {
   type: 'customer' | 'supplier';
   group: string;
   address_line_1?: string;
+  phone?: string;
 }
 
 export default function DeliveryNotePage() {
@@ -173,6 +174,7 @@ export default function DeliveryNotePage() {
           type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const,
           group: acc.account_group as string,
           address_line_1: acc.address_line_1 as string | undefined,
+          phone: acc.phone as string | undefined,
         }));
         setParties(combinedParties);
       } catch (error) {
@@ -195,12 +197,6 @@ export default function DeliveryNotePage() {
   // Auto-focus party or product when opening a new voucher (if setting enabled)
   useEffect(() => {
     if (noteState.mode === 'new' && !noteState.currentVoucherId) {
-      if (voucherSettings?.requireCustomer && (!noteState.form.customer_id || noteState.form.customer_id === 0)) {
-        requestAnimationFrame(() => {
-          partyComboRef.current?.focus();
-        });
-        return;
-      }
       const shouldFocusProduct = voucherSettings?.autoFocusProduct ?? (!voucherSettings?.autoFocusParty);
       if (shouldFocusProduct) {
         requestAnimationFrame(() => {
@@ -213,14 +209,11 @@ export default function DeliveryNotePage() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [noteState.mode, noteState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct, voucherSettings?.requireCustomer]);
+  }, [noteState.mode, noteState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct]);
 
   // Default Party Selection Effect
   useEffect(() => {
     if (noteState.mode === 'new' && noteState.form.customer_id === 0 && parties.length > 0) {
-      if (voucherSettings?.requireCustomer) {
-        return;
-      }
       const cashSaleAccount = parties.find(p => p.name === 'Cash');
       const defaultParty = cashSaleAccount || parties[0];
       if (defaultParty) {
@@ -230,7 +223,7 @@ export default function DeliveryNotePage() {
           .catch(console.error);
       }
     }
-  }, [noteState.mode, noteState.form.customer_id, parties, dispatch, voucherSettings?.requireCustomer]);
+  }, [noteState.mode, noteState.form.customer_id, parties, dispatch]);
 
   // Auto-add first line if empty and in new mode
   useEffect(() => {
@@ -505,7 +498,7 @@ export default function DeliveryNotePage() {
     }
 
     if (!noteState.form.customer_id) {
-      toast.error(voucherSettings?.requireCustomer ? 'Please select a customer' : 'Select a party');
+      toast.error('Select a party');
       return;
     }
 
@@ -850,6 +843,7 @@ export default function DeliveryNotePage() {
         id: acc.id, name: acc.account_name,
         type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const,
         group: acc.account_group as string, address_line_1: acc.address_line_1 as string | undefined,
+        phone: acc.phone as string | undefined,
       }));
       setParties(combinedParties);
       if (newCustomer) {
@@ -921,14 +915,6 @@ export default function DeliveryNotePage() {
   const shouldShowPartyBalance = currentCustomerParty ? !isCashOrBankParty : false;
   const newEffectiveBalance = partyBalance !== null ? partyBalance + noteState.totals.grandTotal : null;
 
-  const availableParties = useMemo(() => {
-    if (!voucherSettings?.requireCustomer) return parties;
-    return parties.filter(p => {
-      if (p.id === noteState.form.customer_id) return true;
-      const isCashOrBank = p.group === 'Cash' || p.group === 'Bank Account' || ['cash', 'bank'].includes(p.name.trim().toLowerCase());
-      return !isCashOrBank;
-    });
-  }, [parties, voucherSettings?.requireCustomer, noteState.form.customer_id]);
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -1040,12 +1026,19 @@ export default function DeliveryNotePage() {
               <div ref={customerRef} className="col-span-2 flex gap-2 items-end">
                 <div className="flex-1">
                   <Label className="text-xs font-medium mb-1 block">
-                    {voucherSettings?.requireCustomer ? 'Customer *' : 'Party *'}
+                    Party *
                   </Label>
                   <Combobox
                     ref={partyComboRef}
-                    options={availableParties.map(p => ({ value: p.id, label: p.name, subLabel: p.address_line_1 || undefined }))}
-                    value={noteState.form.customer_id || undefined}
+                    popoverClassName="w-[460px]"
+                    options={parties.map(p => ({
+                      value: p.id,
+                      label: p.name,
+                      subLabel: [p.phone, p.address_line_1].filter(Boolean).join(' • ') || undefined,
+                      searchString: `${p.name} ${p.phone || ''} ${p.address_line_1 || ''}`.trim(),
+                      keywords: p.phone ? [p.phone, p.phone.replace(/\D/g, '')].filter(Boolean) : undefined,
+                    }))}
+                    value={noteState.form.customer_id}
                     onChange={(value) => {
                       const party = parties.find((p) => p.id === value);
                       if (party) {
@@ -1054,8 +1047,8 @@ export default function DeliveryNotePage() {
                         setTimeout(() => { voucherItemsRef.current?.focusFirstProduct(); }, 100);
                       }
                     }}
-                    placeholder={voucherSettings?.requireCustomer ? "Select customer..." : "Select party"}
-                    searchPlaceholder={voucherSettings?.requireCustomer ? "Search customers..." : "Search parties..."}
+                    placeholder="Select party"
+                    searchPlaceholder="Search party by name, phone..."
                     disabled={isReadOnly}
                     onActionClick={() => { setNewCustomerName(''); setShowCreateCustomer(true); }}
                     onCreate={(name) => { setNewCustomerName(name); setShowCreateCustomer(true); }}

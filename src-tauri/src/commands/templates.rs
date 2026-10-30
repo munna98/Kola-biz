@@ -273,6 +273,45 @@ pub async fn update_template_settings(
     Ok(template_id)
 }
 
+fn normalize_template_quantity_formatting(mut template: InvoiceTemplate) -> InvoiceTemplate {
+    for field in [
+        "initial_quantity",
+        "less_quantity",
+        "final_quantity",
+        "deduction_per_unit",
+    ] {
+        let zero_dec_pattern = format!(r"\{{\{{\s*format_number\s+{}\s+0\s*\}}\}}", field);
+        if let Ok(regex) = regex::Regex::new(&zero_dec_pattern) {
+            let replacement = format!("{{{{format_number {} 2}}}}", field);
+            template.header_html = regex
+                .replace_all(&template.header_html, replacement.as_str())
+                .into_owned();
+            template.body_html = regex
+                .replace_all(&template.body_html, replacement.as_str())
+                .into_owned();
+            template.footer_html = regex
+                .replace_all(&template.footer_html, replacement.as_str())
+                .into_owned();
+        }
+    }
+
+    let is_thermal = template.template_format == "thermal_80mm"
+        || template.template_format == "thermal_58mm"
+        || template.name.to_lowercase().contains("thermal");
+
+    if is_thermal {
+        // Thermal 80mm / thermal receipts require 3 decimals for the less field (e.g. 18.000)
+        if let Ok(regex) = regex::Regex::new(r"\{{\{{\s*format_number\s+less_quantity(?:\s+[0-9]+)?\s*\}}\}}") {
+            let replacement = "{{format_number less_quantity 3}}";
+            template.header_html = regex.replace_all(&template.header_html, replacement).into_owned();
+            template.body_html = regex.replace_all(&template.body_html, replacement).into_owned();
+            template.footer_html = regex.replace_all(&template.footer_html, replacement).into_owned();
+        }
+    }
+
+    template
+}
+
 #[tauri::command]
 pub async fn render_invoice(
     registry: State<'_, Arc<DbRegistry>>,
@@ -296,29 +335,9 @@ pub async fn render_invoice(
             .ok_or_else(|| "No template found for voucher type".to_string())?
     };
 
-    // Normalize legacy quantity-related number formatting in saved templates
-    // so qty/less/final qty/deduction are not rounded to whole numbers in print.
-    let mut template = template;
-    for field in [
-        "initial_quantity",
-        "less_quantity",
-        "final_quantity",
-        "deduction_per_unit",
-    ] {
-        let zero_dec_pattern = format!(r"\{{\{{\s*format_number\s+{}\s+0\s*\}}\}}", field);
-        if let Ok(regex) = regex::Regex::new(&zero_dec_pattern) {
-            let replacement = format!("{{{{format_number {} 2}}}}", field);
-            template.header_html = regex
-                .replace_all(&template.header_html, replacement.as_str())
-                .into_owned();
-            template.body_html = regex
-                .replace_all(&template.body_html, replacement.as_str())
-                .into_owned();
-            template.footer_html = regex
-                .replace_all(&template.footer_html, replacement.as_str())
-                .into_owned();
-        }
-    }
+    // Normalize quantity-related number formatting in saved templates
+    // so qty/less/final qty/deduction are formatted with appropriate decimals (3 for thermal less_quantity).
+    let mut template = normalize_template_quantity_formatting(template);
 
     // 2. Get company profile
     let company = crate::commands::company::get_company_profile_with_pool(&pool)
@@ -943,7 +962,7 @@ async fn get_purchase_invoice_data(
                 obj.insert("total".to_string(), json!(round2(total)));
 
                 // Add less_quantity field (count * deduction_per_unit)
-                let less_quantity = round2((item.count as f64) * item.deduction_per_unit);
+                let less_quantity = round3((item.count as f64) * item.deduction_per_unit);
                 obj.insert("less_quantity".to_string(), json!(less_quantity));
 
                 // Inject HSN code and unit from product data
@@ -1302,7 +1321,7 @@ async fn get_sales_invoice_data(
                 obj.insert("total".to_string(), json!(round2(total)));
 
                 // Add less_quantity field (count * deduction_per_unit)
-                let less_quantity = round2((item.count as f64) * item.deduction_per_unit);
+                let less_quantity = round3((item.count as f64) * item.deduction_per_unit);
                 obj.insert("less_quantity".to_string(), json!(less_quantity));
 
                 // Inject HSN code and unit from product data
@@ -1715,7 +1734,7 @@ async fn get_sales_quotation_data(
                 obj.insert("total".to_string(), json!(round2(total)));
 
                 // Add less_quantity field (count * deduction_per_unit)
-                let less_quantity = round2((item.count as f64) * item.deduction_per_unit);
+                let less_quantity = round3((item.count as f64) * item.deduction_per_unit);
                 obj.insert("less_quantity".to_string(), json!(less_quantity));
 
                 // Inject HSN code and unit from product data
@@ -1990,7 +2009,7 @@ async fn get_delivery_note_data(
                 let total = item_level_taxable_amt * (1.0 + tax_rate / 100.0);
                 obj.insert("total".to_string(), json!(round2(total)));
 
-                let less_quantity = round2((item.count as f64) * item.deduction_per_unit);
+                let less_quantity = round3((item.count as f64) * item.deduction_per_unit);
                 obj.insert("less_quantity".to_string(), json!(less_quantity));
 
                 let (hsn, unit) = meta_map.get(&item.id).cloned().unwrap_or_default();
@@ -2301,7 +2320,7 @@ async fn get_sales_return_data(
                 let total = item_level_taxable_amt * (1.0 + tax_rate / 100.0);
                 obj.insert("total".to_string(), json!(round2(total)));
 
-                let less_quantity = round2((item.count as f64) * item.deduction_per_unit);
+                let less_quantity = round3((item.count as f64) * item.deduction_per_unit);
                 obj.insert("less_quantity".to_string(), json!(less_quantity));
 
                 let (hsn, unit) = meta_map.get(&item.id).cloned().unwrap_or_default();
@@ -2899,6 +2918,10 @@ fn round2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
 
+fn round3(v: f64) -> f64 {
+    (v * 1000.0).round() / 1000.0
+}
+
 /// Converts a floating-point rupee amount to Indian number words.
 fn number_to_words_indian(amount: f64) -> String {
     const ONES: &[&str] = &[
@@ -3172,6 +3195,7 @@ pub async fn render_co_invoice(
         .map_err(|e| e.to_string())?;
 
     let voucher_data = get_sales_invoice_data(&pool, invoice_id).await?;
+    let template = normalize_template_quantity_formatting(template);
 
     let mut engine = TEMPLATE_ENGINE.lock().map_err(|e| e.to_string())?;
     engine.render_invoice(&template, &company, voucher_data)

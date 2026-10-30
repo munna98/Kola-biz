@@ -64,6 +64,7 @@ interface Party {
     type: 'customer' | 'supplier';
     address_line_1?: string;
     group?: string;
+    phone?: string;
 }
 
 export default function PurchaseReturnPage() {
@@ -149,6 +150,7 @@ export default function PurchaseReturnPage() {
                     type: acc.account_group === 'Accounts Payable' ? 'supplier' as const : 'customer' as const,
                     address_line_1: acc.address_line_1 as string | undefined,
                     group: acc.account_group as string | undefined,
+                    phone: acc.phone as string | undefined,
                 }));
                 setParties(combinedParties);
 
@@ -910,10 +912,13 @@ export default function PurchaseReturnPage() {
                                     <Label className="text-xs font-medium mb-1 block">Party (Supplier/Customer) *</Label>
                                     <Combobox
                                         ref={partyComboRef}
+                                        popoverClassName="w-[460px]"
                                         options={parties.map(p => ({
                                             value: p.id,
                                             label: p.name,
-                                            subLabel: p.address_line_1 || undefined,
+                                            subLabel: [p.phone, p.address_line_1].filter(Boolean).join(' • ') || undefined,
+                                            searchString: `${p.name} ${p.phone || ''} ${p.address_line_1 || ''}`.trim(),
+                                            keywords: p.phone ? [p.phone, p.phone.replace(/\D/g, '')].filter(Boolean) : undefined,
                                         }))}
                                         value={purchaseReturnState.form.supplier_id}
                                         onChange={(value) => {
@@ -944,7 +949,7 @@ export default function PurchaseReturnPage() {
                                             }
                                         }}
                                         placeholder="Select party"
-                                        searchPlaceholder="Search parties..."
+                                        searchPlaceholder="Search party by name, phone..."
                                         disabled={isReadOnly}
                                     />
                                 </div>

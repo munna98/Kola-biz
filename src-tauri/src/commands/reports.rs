@@ -1,4 +1,4 @@
-use crate::company_db::DbRegistry;
+﻿use crate::company_db::DbRegistry;
 use chrono;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -789,13 +789,13 @@ pub async fn get_cash_flow(
         chrono::NaiveDate::parse_from_str(&from_date, "%Y-%m-%d").map_err(|e| e.to_string())?;
     let opening_date = (opening_date_obj - chrono::Duration::days(1)).to_string();
 
-    // 1. Calculate Opening Cash
+    // 1. Calculate Opening Cash & Cash Equivalents (Cash and Bank Accounts)
     let opening_cash_query = "
         SELECT CAST(COALESCE(SUM(je.debit - je.credit), 0) AS REAL)
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
-        WHERE coa.account_name = 'Cash' 
+        WHERE (coa.account_group IN ('Cash', 'Bank Account') OR coa.account_name IN ('Cash', 'Bank Account'))
         AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
@@ -805,13 +805,13 @@ pub async fn get_cash_flow(
         .await
         .map_err(|e| e.to_string())?;
 
-    // 2. Calculate Closing Cash
+    // 2. Calculate Closing Cash & Cash Equivalents (Cash and Bank Accounts)
     let closing_cash_query = "
         SELECT CAST(COALESCE(SUM(je.debit - je.credit), 0) AS REAL)
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
-        WHERE coa.account_name = 'Cash' 
+        WHERE (coa.account_group IN ('Cash', 'Bank Account') OR coa.account_name IN ('Cash', 'Bank Account'))
         AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
@@ -821,17 +821,19 @@ pub async fn get_cash_flow(
         .await
         .map_err(|e| e.to_string())?;
 
-    let net_change = closing_cash - opening_cash;
+    let opening_cash = round2(opening_cash);
+    let closing_cash = round2(closing_cash);
+    let net_change = round2(closing_cash - opening_cash);
 
-    // 3. Operating Activities - Only track actual cash transactions and working capital changes
+    // 3. Operating Activities - Direct Cash / Bank Receipts and Disbursements
 
-    // Cash received from customers (Cash sales)
+    // Cash / Bank received from customers (Cash sales & direct invoice collections)
     let cash_sales_query = "
         SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL)
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
-        WHERE coa.account_name = 'Cash' 
+        WHERE (coa.account_group IN ('Cash', 'Bank Account') OR coa.account_name IN ('Cash', 'Bank Account'))
         AND v.voucher_type IN ('sales_invoice', 'co_invoice')
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
@@ -843,13 +845,13 @@ pub async fn get_cash_flow(
         .await
         .unwrap_or(0.0);
 
-    // Cash paid for purchases (Cash purchases only)
+    // Cash / Bank paid for purchases (Direct cash purchase invoices)
     let cash_purchases_query = "
         SELECT CAST(COALESCE(SUM(je.credit), 0) AS REAL)
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
-        WHERE coa.account_name = 'Cash' 
+        WHERE (coa.account_group IN ('Cash', 'Bank Account') OR coa.account_name IN ('Cash', 'Bank Account'))
         AND v.voucher_type = 'purchase_invoice'
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
@@ -861,14 +863,13 @@ pub async fn get_cash_flow(
         .await
         .unwrap_or(0.0);
 
-    // Cash received from debtors (Payments against credit sales)
-    // Note: Changes in Accounts Receivable can be added if needed for detailed working capital analysis
+    // Cash / Bank received from debtors (Receipt vouchers)
     let debtor_payment_query = "
         SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL)
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
-        WHERE coa.account_name = 'Cash' 
+        WHERE (coa.account_group IN ('Cash', 'Bank Account') OR coa.account_name IN ('Cash', 'Bank Account'))
         AND v.voucher_type = 'receipt'
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
@@ -880,14 +881,13 @@ pub async fn get_cash_flow(
         .await
         .unwrap_or(0.0);
 
-    // Cash paid to creditors (Payments against credit purchases)
-    // Note: Changes in Accounts Payable can be added if needed for detailed working capital analysis
+    // Cash / Bank paid to creditors (Payment vouchers)
     let creditor_payment_query = "
         SELECT CAST(COALESCE(SUM(je.credit), 0) AS REAL)
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
-        WHERE coa.account_name = 'Cash' 
+        WHERE (coa.account_group IN ('Cash', 'Bank Account') OR coa.account_name IN ('Cash', 'Bank Account'))
         AND v.voucher_type = 'payment'
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
@@ -899,15 +899,17 @@ pub async fn get_cash_flow(
         .await
         .unwrap_or(0.0);
 
-    // Other operating expenses paid in cash
+    // Other operating expenses paid via cash / bank (Journal vouchers)
     let other_expenses_query = "
-        SELECT CAST(COALESCE(SUM(je.credit), 0) AS REAL)
-        FROM journal_entries je
-        JOIN vouchers v ON je.voucher_id = v.id
-        JOIN chart_of_accounts coa ON je.account_id = coa.id
-        WHERE coa.account_name = 'Cash' 
+        SELECT CAST(COALESCE(SUM(je_cash.credit), 0) AS REAL)
+        FROM journal_entries je_cash
+        JOIN vouchers v ON je_cash.voucher_id = v.id
+        JOIN chart_of_accounts coa_cash ON je_cash.account_id = coa_cash.id
+        JOIN journal_entries je_exp ON je_exp.voucher_id = v.id
+        JOIN chart_of_accounts coa_exp ON je_exp.account_id = coa_exp.id
+        WHERE (coa_cash.account_group IN ('Cash', 'Bank Account') OR coa_cash.account_name IN ('Cash', 'Bank Account'))
+        AND coa_exp.account_type = 'Expense'
         AND v.voucher_type = 'journal'
-        AND coa.account_type = 'Expense'
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
@@ -918,9 +920,31 @@ pub async fn get_cash_flow(
         .await
         .unwrap_or(0.0);
 
+    // Other operating income received via cash / bank (Journal vouchers)
+    let other_income_query = "
+        SELECT CAST(COALESCE(SUM(je_cash.debit), 0) AS REAL)
+        FROM journal_entries je_cash
+        JOIN vouchers v ON je_cash.voucher_id = v.id
+        JOIN chart_of_accounts coa_cash ON je_cash.account_id = coa_cash.id
+        JOIN journal_entries je_inc ON je_inc.voucher_id = v.id
+        JOIN chart_of_accounts coa_inc ON je_inc.account_id = coa_inc.id
+        WHERE (coa_cash.account_group IN ('Cash', 'Bank Account') OR coa_cash.account_name IN ('Cash', 'Bank Account'))
+        AND coa_inc.account_type = 'Income'
+        AND v.voucher_type = 'journal'
+        AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+    ";
+
+    let other_income: f64 = sqlx::query_scalar(other_income_query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0.0);
+
     let mut operating_activities = vec![];
     let mut net_operating = 0.0;
 
+    let cash_sales = round2(cash_sales);
     if cash_sales.abs() >= 0.01 {
         operating_activities.push(CashFlowItem {
             description: "Cash from Sales".to_string(),
@@ -929,6 +953,7 @@ pub async fn get_cash_flow(
         net_operating += cash_sales;
     }
 
+    let debtor_payment = round2(debtor_payment);
     if debtor_payment.abs() >= 0.01 {
         operating_activities.push(CashFlowItem {
             description: "Cash received from Debtors".to_string(),
@@ -937,6 +962,7 @@ pub async fn get_cash_flow(
         net_operating += debtor_payment;
     }
 
+    let cash_purchases = round2(cash_purchases);
     if cash_purchases.abs() >= 0.01 {
         operating_activities.push(CashFlowItem {
             description: "Cash paid for Purchases".to_string(),
@@ -945,6 +971,7 @@ pub async fn get_cash_flow(
         net_operating -= cash_purchases;
     }
 
+    let creditor_payment = round2(creditor_payment);
     if creditor_payment.abs() >= 0.01 {
         operating_activities.push(CashFlowItem {
             description: "Cash paid to Creditors".to_string(),
@@ -953,6 +980,7 @@ pub async fn get_cash_flow(
         net_operating -= creditor_payment;
     }
 
+    let other_expenses = round2(other_expenses);
     if other_expenses.abs() >= 0.01 {
         operating_activities.push(CashFlowItem {
             description: "Other Operating Expenses".to_string(),
@@ -961,65 +989,103 @@ pub async fn get_cash_flow(
         net_operating -= other_expenses;
     }
 
-    // 4. Investing Activities (Asset accounts excluding Cash and Receivables)
+    let other_income = round2(other_income);
+    if other_income.abs() >= 0.01 {
+        operating_activities.push(CashFlowItem {
+            description: "Other Operating Income".to_string(),
+            amount: other_income,
+        });
+        net_operating += other_income;
+    }
+
+    // 4. Investing Activities - Cash / Bank transactions involving Fixed Assets or Investments
     let investing_query = "
-        SELECT CAST(COALESCE(SUM(je.credit - je.debit), 0) AS REAL)
-        FROM journal_entries je
-        JOIN vouchers v ON je.voucher_id = v.id
-        JOIN chart_of_accounts coa ON je.account_id = coa.id
-        WHERE coa.account_type = 'Asset' 
-        AND coa.account_name NOT IN ('Cash', 'Accounts Receivable', 'Bank Account')
+        SELECT CAST(COALESCE(SUM(je_cash.debit - je_cash.credit), 0) AS REAL)
+        FROM journal_entries je_cash
+        JOIN vouchers v ON je_cash.voucher_id = v.id
+        JOIN chart_of_accounts coa_cash ON je_cash.account_id = coa_cash.id
+        JOIN journal_entries je_asset ON je_asset.voucher_id = v.id
+        JOIN chart_of_accounts coa_asset ON je_asset.account_id = coa_asset.id
+        WHERE (coa_cash.account_group IN ('Cash', 'Bank Account') OR coa_cash.account_name IN ('Cash', 'Bank Account'))
+        AND coa_asset.account_type = 'Asset'
+        AND coa_asset.account_group NOT IN ('Cash', 'Bank Account', 'Accounts Receivable', 'Inventory', 'Tax Receivable')
+        AND coa_asset.account_name NOT IN ('Cash', 'Bank Account', 'Accounts Receivable', 'Inventory')
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
-    let net_investing: f64 = sqlx::query_scalar(investing_query)
+    let raw_investing: f64 = sqlx::query_scalar(investing_query)
         .bind(&from_date)
         .bind(&to_date)
         .fetch_one(&pool)
         .await
         .unwrap_or(0.0);
 
+    let net_investing = round2(raw_investing);
     let mut investing_activities = vec![];
     if net_investing.abs() >= 0.01 {
+        let desc = if net_investing > 0.0 {
+            "Cash from Sale of Fixed Assets / Investments".to_string()
+        } else {
+            "Capital Expenditure / Purchase of Assets".to_string()
+        };
         investing_activities.push(CashFlowItem {
-            description: "Capital Expenditure / Asset Sales".to_string(),
+            description: desc,
             amount: net_investing,
         });
     }
 
-    // 5. Financing Activities (Only actual financing transactions like loans, capital, dividends)
-    // Exclude operating liabilities (Accounts Payable, Accounts Receivable)
+    // 5. Financing Activities - Cash / Bank transactions involving Equity, Loans, or Dividends
     let financing_query = "
-        SELECT CAST(COALESCE(SUM(je.debit - je.credit), 0) AS REAL)
-        FROM journal_entries je
-        JOIN vouchers v ON je.voucher_id = v.id
-        JOIN chart_of_accounts coa ON je.account_id = coa.id
-        WHERE coa.account_type IN ('Liability', 'Equity')
-        AND coa.account_name NOT IN ('Accounts Payable', 'Accounts Receivable')
-        AND v.voucher_type NOT IN ('sales_invoice', 'co_invoice', 'purchase_invoice', 'receipt', 'payment')
+        SELECT CAST(COALESCE(SUM(je_cash.debit - je_cash.credit), 0) AS REAL)
+        FROM journal_entries je_cash
+        JOIN vouchers v ON je_cash.voucher_id = v.id
+        JOIN chart_of_accounts coa_cash ON je_cash.account_id = coa_cash.id
+        JOIN journal_entries je_fin ON je_fin.voucher_id = v.id
+        JOIN chart_of_accounts coa_fin ON je_fin.account_id = coa_fin.id
+        WHERE (coa_cash.account_group IN ('Cash', 'Bank Account') OR coa_cash.account_name IN ('Cash', 'Bank Account'))
+        AND coa_fin.account_type IN ('Liability', 'Equity')
+        AND coa_fin.account_group NOT IN ('Accounts Payable', 'Current Liabilities', 'Tax Payable', 'Duties & Taxes')
+        AND coa_fin.account_name NOT IN ('Accounts Payable', 'Accounts Receivable')
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
-    let net_financing: f64 = sqlx::query_scalar(financing_query)
+    let raw_financing: f64 = sqlx::query_scalar(financing_query)
         .bind(&from_date)
         .bind(&to_date)
         .fetch_one(&pool)
         .await
         .unwrap_or(0.0);
 
+    let net_financing = round2(raw_financing);
     let mut financing_activities = vec![];
     if net_financing.abs() >= 0.01 {
+        let desc = if net_financing > 0.0 {
+            "Proceeds from Loans / Capital Introduced".to_string()
+        } else {
+            "Repayment of Loans / Capital Withdrawn".to_string()
+        };
         financing_activities.push(CashFlowItem {
-            description: "Financing Activities".to_string(),
+            description: desc,
             amount: net_financing,
         });
+    }
+
+    // 6. Reconciliation: Ensure Operating + Investing + Financing exactly ties to Net Change in Cash
+    let sum_activities = round2(net_operating + net_investing + net_financing);
+    let discrepancy = round2(net_change - sum_activities);
+    if discrepancy.abs() >= 0.01 {
+        operating_activities.push(CashFlowItem {
+            description: "Other Cash Flow / Working Capital Adjustments".to_string(),
+            amount: discrepancy,
+        });
+        net_operating = round2(net_operating + discrepancy);
     }
 
     Ok(CashFlowData {
         operating_activities,
         investing_activities,
         financing_activities,
-        net_operating,
+        net_operating: round2(net_operating),
         net_investing,
         net_financing,
         net_change,

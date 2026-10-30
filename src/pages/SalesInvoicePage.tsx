@@ -83,6 +83,7 @@ interface Party {
   type: 'customer' | 'supplier';
   group: string;
   address_line_1?: string;
+  phone?: string;
 }
 
 export default function SalesInvoicePage() {
@@ -269,6 +270,7 @@ export default function SalesInvoicePage() {
           type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const,
           group: acc.account_group as string,
           address_line_1: acc.address_line_1 as string | undefined,
+          phone: acc.phone as string | undefined,
         }));
         setParties(combinedParties);
       } catch (error) {
@@ -300,12 +302,6 @@ export default function SalesInvoicePage() {
   // Auto-focus party or product when opening a new voucher (if setting enabled)
   useEffect(() => {
     if (salesState.mode === 'new' && !salesState.currentVoucherId) {
-      if (voucherSettings?.requireCustomer && (!salesState.form.customer_id || salesState.form.customer_id === 0)) {
-        requestAnimationFrame(() => {
-          partyComboRef.current?.focus();
-        });
-        return;
-      }
       const shouldFocusProduct = voucherSettings?.autoFocusProduct ?? (!voucherSettings?.autoFocusParty);
       if (shouldFocusProduct) {
         requestAnimationFrame(() => {
@@ -318,7 +314,7 @@ export default function SalesInvoicePage() {
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [salesState.mode, salesState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct, voucherSettings?.requireCustomer]);
+  }, [salesState.mode, salesState.currentVoucherId, voucherSettings?.autoFocusParty, voucherSettings?.autoFocusProduct]);
 
   // Lookup linked custom order for current sales voucher (if feature enabled)
   useEffect(() => {
@@ -483,10 +479,6 @@ export default function SalesInvoicePage() {
   // Default Party Selection Effect
   useEffect(() => {
     if (salesState.mode === 'new' && salesState.form.customer_id === 0 && parties.length > 0) {
-      if (voucherSettings?.requireCustomer) {
-        // When requireCustomer is enabled, do not auto-select Cash or Bank account
-        return;
-      }
       // Default to "Cash Sale" account if available, otherwise first party
       const cashSaleAccount = parties.find(p => p.name === 'Cash');
       const defaultParty = cashSaleAccount || parties[0];
@@ -499,7 +491,7 @@ export default function SalesInvoicePage() {
         }));
       }
     }
-  }, [salesState.mode, salesState.form.customer_id, parties, dispatch, voucherSettings?.requireCustomer]);
+  }, [salesState.mode, salesState.form.customer_id, parties, dispatch]);
 
   // Auto-add first line if empty and in new mode
   useEffect(() => {
@@ -885,7 +877,7 @@ export default function SalesInvoicePage() {
     }
 
     if (!salesState.form.customer_id) {
-      toast.error(voucherSettings?.requireCustomer ? 'Please select a customer' : 'Select a party');
+      toast.error('Select a party');
       return;
     }
 
@@ -1535,6 +1527,7 @@ export default function SalesInvoicePage() {
         type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const,
         group: acc.account_group as string,
         address_line_1: acc.address_line_1 as string | undefined,
+        phone: acc.phone as string | undefined,
       }));
       setParties(combinedParties);
 
@@ -1669,15 +1662,6 @@ export default function SalesInvoicePage() {
   const isShowingSavedInvoiceContext = !!savedInvoiceId;
   const effectiveIsCashBankParty = isShowingSavedInvoiceContext ? savedIsCashBankParty : currentPartyIsCashBank;
 
-  const availableParties = useMemo(() => {
-    if (!voucherSettings?.requireCustomer) return parties;
-    return parties.filter(p => {
-      // Keep currently selected party so Combobox displays its name even if previously saved with Cash
-      if (p.id === salesState.form.customer_id) return true;
-      const isCashOrBank = p.group === 'Cash' || p.group === 'Bank Account' || ['cash', 'bank'].includes(p.name.trim().toLowerCase());
-      return !isCashOrBank;
-    });
-  }, [parties, voucherSettings?.requireCustomer, salesState.form.customer_id]);
 
   const isSameLoadedParty = salesState.mode !== 'new' && Boolean(salesState.currentVoucherId) && String(salesState.form.customer_id) === String(loadedPartyId);
   const isForexDisplay = Boolean(isExportBusiness && salesState.currency_id && partyForeignBalance !== null && partyForeignBalance !== 0);
@@ -1849,16 +1833,19 @@ export default function SalesInvoicePage() {
               <div ref={customerRef} className="flex-[3] min-w-[320px] flex gap-2 items-end">
                 <div className="flex-1">
                   <Label className="text-xs font-medium mb-1 block">
-                    {voucherSettings?.requireCustomer ? 'Customer *' : 'Party *'}
+                    Party *
                   </Label>
                   <Combobox
                     ref={partyComboRef}
-                    options={availableParties.map(p => ({
+                    popoverClassName="w-[460px]"
+                    options={parties.map(p => ({
                       value: p.id,
                       label: p.name,
-                      subLabel: p.address_line_1 || undefined,
+                      subLabel: [p.phone, p.address_line_1].filter(Boolean).join(' • ') || undefined,
+                      searchString: `${p.name} ${p.phone || ''} ${p.address_line_1 || ''}`.trim(),
+                      keywords: p.phone ? [p.phone, p.phone.replace(/\D/g, '')].filter(Boolean) : undefined,
                     }))}
-                    value={salesState.form.customer_id || undefined}
+                    value={salesState.form.customer_id}
                     onChange={async (value) => {
                       const party = parties.find((p) => p.id === value);
                       if (party) {
@@ -1871,8 +1858,8 @@ export default function SalesInvoicePage() {
                         }, 100);
                       }
                     }}
-                    placeholder={voucherSettings?.requireCustomer ? "Select customer..." : "Select party"}
-                    searchPlaceholder={voucherSettings?.requireCustomer ? "Search customers..." : "Search parties..."}
+                    placeholder="Select party"
+                    searchPlaceholder="Search party by name, phone..."
                     disabled={isReadOnly}
                     onActionClick={() => {
                       setNewCustomerName('');

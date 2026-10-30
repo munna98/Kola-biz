@@ -54,7 +54,6 @@
 <table class="items">
     <thead>
         <tr>
-        <tr>
             <th>Code</th>
             <th>Item</th>
             <th>Qty</th>
@@ -75,7 +74,7 @@
             <td>{{product_name}}</td>
             <td>{{format_number initial_quantity 0}}</td>
             {{#if @root.show_less_column}}
-            <td>{{format_number less_quantity 0}}</td>
+            <td>{{format_number less_quantity 3}}</td>
             {{/if}}
             <td>{{format_number rate 2}}</td>
             {{#if @root.show_discount_column}}

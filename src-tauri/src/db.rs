@@ -1167,6 +1167,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             opening_balance_type TEXT DEFAULT 'Dr',
             party_id TEXT,
             party_type TEXT,
+            phone TEXT,
             gstin TEXT,
             address_line_1 TEXT,
             address_line_2 TEXT,
@@ -2395,7 +2396,8 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
          WHERE currency IS NULL OR currency = '' OR currency NOT IN (SELECT id FROM currencies)"
     ).execute(pool).await;
 
-    // Migration: Add GST columns to chart_of_accounts
+    // Migration: Add GST & contact columns to chart_of_accounts
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN phone TEXT").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN gstin TEXT").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN address_line_1 TEXT").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN address_line_2 TEXT").execute(pool).await;
@@ -2409,6 +2411,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         "UPDATE chart_of_accounts
          SET
              party_id       = COALESCE(chart_of_accounts.party_id, c.id),
+             phone          = COALESCE(NULLIF(chart_of_accounts.phone, ''),          c.phone),
              gstin          = COALESCE(NULLIF(chart_of_accounts.gstin, ''),          c.gstin),
              address_line_1 = COALESCE(NULLIF(chart_of_accounts.address_line_1, ''), c.address_line_1),
              address_line_2 = COALESCE(NULLIF(chart_of_accounts.address_line_2, ''), c.address_line_2),
@@ -2425,6 +2428,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         "UPDATE chart_of_accounts
          SET
              party_id       = COALESCE(chart_of_accounts.party_id, s.id),
+             phone          = COALESCE(NULLIF(chart_of_accounts.phone, ''),          s.phone),
              gstin          = COALESCE(NULLIF(chart_of_accounts.gstin, ''),          s.gstin),
              address_line_1 = COALESCE(NULLIF(chart_of_accounts.address_line_1, ''), s.address_line_1),
              address_line_2 = COALESCE(NULLIF(chart_of_accounts.address_line_2, ''), s.address_line_2),

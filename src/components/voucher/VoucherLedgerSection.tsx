@@ -13,6 +13,7 @@ interface LedgerAccount {
     id: number;
     account_name: string;
     address_line_1?: string;
+    phone?: string;
 }
 
 export interface VoucherLedgerSectionProps {
@@ -154,7 +155,14 @@ export function VoucherLedgerSection({
                     <div className="flex gap-1 items-center" onFocus={() => onFocusRow?.(index)}>
                         <Combobox
                             value={item.description}
-                            options={ledgers.map(l => ({ value: l.account_name, label: l.account_name, subLabel: l.address_line_1 || undefined }))}
+                            popoverClassName="w-[460px]"
+                            options={ledgers.map(l => ({
+                                value: l.account_name,
+                                label: l.account_name,
+                                subLabel: [l.phone, l.address_line_1].filter(Boolean).join(' • ') || undefined,
+                                searchString: `${l.account_name} ${l.phone || ''} ${l.address_line_1 || ''}`.trim(),
+                                keywords: l.phone ? [l.phone, l.phone.replace(/\D/g, '')].filter(Boolean) : undefined,
+                            }))}
                             onChange={(val) => onUpdateItem(index, 'description', val)}
                             placeholder="Select Ledger"
                             searchPlaceholder="Search ledgers..."

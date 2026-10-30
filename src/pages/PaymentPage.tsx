@@ -59,6 +59,7 @@ interface LedgerAccount {
     id: number;
     account_name: string;
     address_line_1?: string;
+    phone?: string;
 }
 
 export default function PaymentPage() {

@@ -35,12 +35,12 @@ export function VoucherPartyBalance({
     const newColor = cleanedNew >= 0 ? 'text-green-600 dark:text-green-500' : 'text-red-600 dark:text-red-500';
 
     return (
-        <div className={cn("text-base font-mono font-bold flex items-center gap-1.5", className)}>
+        <div className={cn("text-base font-mono font-bold flex items-baseline gap-1.5", className)}>
             <span className={currentColor}>
                 Balance: {formatBal(cleanedBalance)}
             </span>
             {hasNewBalance && (
-                <span className={newColor}>
+                <span className={cn("text-sm font-semibold", newColor)}>
                     ({formatBal(cleanedNew)})
                 </span>
             )}

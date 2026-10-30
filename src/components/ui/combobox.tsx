@@ -109,7 +109,36 @@ const defaultComboboxFilter = (value: string, search: string, keywords?: string[
     }
   }
 
-  // 5. Substring match on full value
+  // 5. Substring match on explicit keywords (e.g. searching part of a phone number)
+  if (keywords && keywords.length > 0) {
+    for (const kw of keywords) {
+      if (!kw) continue;
+      const kwLower = String(kw).trim().toLowerCase();
+      if (kwLower.includes(searchTrim)) {
+        return 70;
+      }
+    }
+  }
+
+  // 6. Numeric digits match for phone numbers or numeric codes
+  const searchDigits = searchTrim.replace(/\D/g, '');
+  if (searchDigits.length >= 3) {
+    if (keywords && keywords.length > 0) {
+      for (const kw of keywords) {
+        if (!kw) continue;
+        const kwDigits = String(kw).replace(/\D/g, '');
+        if (kwDigits && kwDigits.includes(searchDigits)) {
+          return kwDigits.startsWith(searchDigits) ? 500 : 80;
+        }
+      }
+    }
+    const valueDigits = valueLower.replace(/\D/g, '');
+    if (valueDigits && valueDigits.includes(searchDigits)) {
+      return valueDigits.startsWith(searchDigits) ? 350 : 60;
+    }
+  }
+
+  // 7. Substring match on full value
   if (valueLower.includes(searchTrim)) {
     return 10;
   }
@@ -447,7 +476,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
                     <>
                       <span className="flex-1 font-medium truncate">{option.label}</span>
                       {option.subLabel && (
-                        <span className="ml-3 text-xs text-muted-foreground font-normal truncate max-w-[50%] shrink-0">
+                        <span className="ml-3 text-xs text-muted-foreground font-normal truncate max-w-[55%] shrink-0 text-right">
                           {option.subLabel}
                         </span>
                       )}

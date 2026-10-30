@@ -91,7 +91,7 @@ interface Product {
     group_id?: string; brand_id?: string; barcode?: string; hsn_code?: string; sku?: string;
     part_number?: string; sales_rate?: number; min_sales_rate?: number; description?: string;
 }
-interface PartyOption { id: string; name: string; code?: string; }
+interface PartyOption { id: string; name: string; code?: string; phone?: string; }
 interface CashBankAccount { id: string; name: string; account_name?: string; account_group?: string; }
 interface CustomOrderPaymentRecord {
     voucher_id: string;
@@ -345,10 +345,10 @@ export default function CustomOrdersPage() {
             const list: PartyOption[] = []; const seenCodes = new Set<string>();
             const accounts = await invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable'] }).catch(() => []);
             if (Array.isArray(accounts) && accounts.length > 0) {
-                accounts.forEach((acc: any) => { const key = acc.account_code || acc.account_name || acc.id; if (!seenCodes.has(key)) { seenCodes.add(key); list.push({ id: acc.id, name: acc.account_name || acc.name || 'Unnamed', code: acc.account_code || '' }); } });
+                accounts.forEach((acc: any) => { const key = acc.account_code || acc.account_name || acc.id; if (!seenCodes.has(key)) { seenCodes.add(key); list.push({ id: acc.id, name: acc.account_name || acc.name || 'Unnamed', code: acc.account_code || '', phone: acc.phone || '' }); } });
             } else {
                 const custs = await invoke<any[]>('get_customers').catch(() => []);
-                custs.forEach((c: any) => { const key = c.code || c.name || c.id; if (!seenCodes.has(key)) { seenCodes.add(key); list.push({ id: c.id, name: c.name || 'Unnamed', code: c.code || '' }); } });
+                custs.forEach((c: any) => { const key = c.code || c.name || c.id; if (!seenCodes.has(key)) { seenCodes.add(key); list.push({ id: c.id, name: c.name || 'Unnamed', code: c.code || '', phone: c.phone || '' }); } });
             }
             setCustomers(list);
         } catch (e) { console.error('customers', e); }
@@ -356,10 +356,10 @@ export default function CustomOrdersPage() {
             const suppList: PartyOption[] = []; const seenSupp = new Set<string>();
             const accounts = await invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Payable'] }).catch(() => []);
             if (Array.isArray(accounts) && accounts.length > 0) {
-                accounts.forEach((acc: any) => { const key = acc.account_code || acc.account_name || acc.id; if (!seenSupp.has(key)) { seenSupp.add(key); suppList.push({ id: acc.id, name: acc.account_name || acc.name || 'Unnamed', code: acc.account_code || '' }); } });
+                accounts.forEach((acc: any) => { const key = acc.account_code || acc.account_name || acc.id; if (!seenSupp.has(key)) { seenSupp.add(key); suppList.push({ id: acc.id, name: acc.account_name || acc.name || 'Unnamed', code: acc.account_code || '', phone: acc.phone || '' }); } });
             } else {
                 const supps = await invoke<any[]>('get_suppliers').catch(() => []);
-                supps.forEach((s: any) => { const key = s.code || s.name || s.id; if (!seenSupp.has(key)) { seenSupp.add(key); suppList.push({ id: s.id, name: s.name || 'Unnamed', code: s.code || '' }); } });
+                supps.forEach((s: any) => { const key = s.code || s.name || s.id; if (!seenSupp.has(key)) { seenSupp.add(key); suppList.push({ id: s.id, name: s.name || 'Unnamed', code: s.code || '', phone: s.phone || '' }); } });
             }
             setSuppliers(suppList);
         } catch (e) { console.error('suppliers', e); }
@@ -1330,7 +1330,8 @@ export default function CustomOrdersPage() {
                                 <div className="flex-[3] min-w-[260px]">
                                     <Label className="text-xs font-medium mb-1 block">Customer *</Label>
                                     <Combobox
-                                        options={customers.map(c=>({value:c.id,label:c.code?`${c.code} - ${c.name}`:c.name,searchString:`${c.code||''} ${c.name}`}))}
+                                        popoverClassName="w-[460px]"
+                                        options={customers.map(c=>({value:c.id,label:c.code?`${c.code} - ${c.name}`:c.name,subLabel:c.phone||undefined,searchString:`${c.code||''} ${c.name} ${c.phone||''}`.trim(),keywords:c.phone?[c.phone,c.phone.replace(/\D/g, '')].filter(Boolean):undefined}))}
                                         value={customerId}
                                         onChange={val=>{dispatch(setCustomOrderCustomerId(String(val)));}}
                                         onAfterSelect={() => {
@@ -1339,7 +1340,7 @@ export default function CustomOrdersPage() {
                                             });
                                         }}
                                         placeholder="Select customer..."
-                                        searchPlaceholder="Search by name or code..."
+                                        searchPlaceholder="Search by name, phone, or code..."
                                         className="w-full"
                                         onActionClick={() => { setNewCustomerName(''); setShowCreateCustomer(true); }}
                                         onCreate={(name) => { setNewCustomerName(name); setShowCreateCustomer(true); }}

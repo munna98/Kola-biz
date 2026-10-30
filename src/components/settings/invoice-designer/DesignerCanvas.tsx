@@ -137,7 +137,7 @@ function renderElementContent(
                                     // Row 2 Left: Less: [less_quantity] [unit]
                                     let row2LeftText = '';
                                     if (visibleColumns.some(c => c.key === 'less_quantity')) {
-                                        row2LeftText = 'Less: 18.00 Nos';
+                                        row2LeftText = 'Less: 18.000 Nos';
                                     }
 
                                     // Row 2 Right: [final_quantity] X [rate]

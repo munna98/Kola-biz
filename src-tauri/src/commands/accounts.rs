@@ -22,6 +22,7 @@ pub struct ChartOfAccount {
     pub is_system: i64,
     pub party_id: Option<String>,
     pub party_type: Option<String>,
+    pub phone: Option<String>,
     // Address / contact fields (added via migration, always nullable)
     pub address_line_1: Option<String>,
     pub address_line_2: Option<String>,
@@ -55,6 +56,7 @@ const COA_SELECT_COLS: &str =
      CAST(COALESCE(opening_balance, 0) AS REAL) as opening_balance,
      COALESCE(opening_balance_type, 'Dr') as opening_balance_type,
      is_active, is_system, party_id, party_type,
+     COALESCE(chart_of_accounts.phone, (SELECT c.phone FROM customers c WHERE c.id = chart_of_accounts.party_id OR (chart_of_accounts.party_id IS NULL AND c.name = chart_of_accounts.account_name) LIMIT 1), (SELECT s.phone FROM suppliers s WHERE s.id = chart_of_accounts.party_id OR (chart_of_accounts.party_id IS NULL AND s.name = chart_of_accounts.account_name) LIMIT 1)) AS phone,
      address_line_1, address_line_2, city, state, postal_code, gstin,
      price_category_id,
      deleted_at, created_at, updated_at";

@@ -192,7 +192,7 @@ function renderThermalTable(el: DesignerElement): string {
         // Row 2 Left: Less: [less_quantity] [unit]
         let row2LeftText = '';
         if (visibleCols.some(c => c.key === 'less_quantity')) {
-            row2LeftText = 'Less: {{format_number less_quantity 2}} {{unit}}';
+            row2LeftText = 'Less: {{format_number less_quantity 3}} {{unit}}';
         }
 
         // Row 2 Right: [final_quantity] X [rate]
@@ -267,7 +267,9 @@ function renderThermalTable(el: DesignerElement): string {
         html += `<td style="padding:0 ${ph}px ${pv}px ${ph}px;${borderBottomStyle}"></td>`;
         for (const col of row2Cols) {
             let cellContent: string;
-            if (col.format === 'currency' || col.format === 'number') {
+            if (col.key === 'less_quantity') {
+                cellContent = `{{format_number less_quantity 3}}`;
+            } else if (col.format === 'currency' || col.format === 'number') {
                 cellContent = `{{format_number ${col.key} 2}}`;
             } else if (col.format === 'date') {
                 cellContent = `{{format_date ${col.key}}}`;
@@ -300,6 +302,8 @@ function renderThermalTable(el: DesignerElement): string {
         let cellContent: string;
         if (col.key === 'serial_no') {
             cellContent = '{{increment @index}}';
+        } else if (col.key === 'less_quantity') {
+            cellContent = `{{format_number less_quantity 3}}`;
         } else if (col.format === 'currency') {
             cellContent = `{{format_number ${col.key} 2}}`;
         } else if (col.format === 'number') {

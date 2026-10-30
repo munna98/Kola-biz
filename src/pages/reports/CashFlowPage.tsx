@@ -170,7 +170,7 @@ export default function CashFlowPage() {
                     <tfoot className="bg-muted/20 border-t-2">
                       <tr>
                         <td className="p-3 font-bold text-sm">Net Cash from Operating Activities</td>
-                        <td className={`p-3 text-right font-mono font-bold text-sm`}>
+                        <td className={`p-3 text-right font-mono font-bold text-sm ${data.net_operating >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {data.net_operating >= 0 ? '+' : ''}{money(data.net_operating)}
                         </td>
                       </tr>
@@ -209,7 +209,7 @@ export default function CashFlowPage() {
                     <tfoot className="bg-muted/20 border-t-2">
                       <tr>
                         <td className="p-3 font-bold text-sm">Net Cash from Investing Activities</td>
-                        <td className={`p-3 text-right font-mono font-bold text-sm`}>
+                        <td className={`p-3 text-right font-mono font-bold text-sm ${data.net_investing >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {data.net_investing >= 0 ? '+' : ''}{money(data.net_investing)}
                         </td>
                       </tr>
@@ -248,7 +248,7 @@ export default function CashFlowPage() {
                     <tfoot className="bg-muted/20 border-t-2">
                       <tr>
                         <td className="p-3 font-bold text-sm">Net Cash from Financing Activities</td>
-                        <td className={`p-3 text-right font-mono font-bold text-sm`}>
+                        <td className={`p-3 text-right font-mono font-bold text-sm ${data.net_financing >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {data.net_financing >= 0 ? '+' : ''}{money(data.net_financing)}
                         </td>
                       </tr>
@@ -268,7 +268,7 @@ export default function CashFlowPage() {
                   </div>
                   <div className="flex justify-between items-center border-t pt-4">
                     <span className="text-sm font-semibold">Net Change in Cash</span>
-                    <span className={`font-mono font-bold`}>
+                    <span className={`font-mono font-bold ${data.net_change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                       {data.net_change >= 0 ? '+' : ''}{money(data.net_change)}
                     </span>
                   </div>

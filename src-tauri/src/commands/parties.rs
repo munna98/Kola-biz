@@ -162,8 +162,8 @@ pub async fn create_customer(
     let account_id = Uuid::now_v7().to_string();
 
     sqlx::query(
-        "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, party_id, party_type) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, party_id, party_type, phone) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(account_id)
     .bind(&account_code)
@@ -173,6 +173,7 @@ pub async fn create_customer(
     .bind("Customer account")
     .bind(&id)
     .bind("customer")
+    .bind(&customer.phone)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -242,8 +243,8 @@ pub async fn batch_create_customers(
         let account_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, party_id, party_type) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, party_id, party_type, phone) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(account_id)
         .bind(&account_code)
@@ -253,6 +254,7 @@ pub async fn batch_create_customers(
         .bind("Customer account")
         .bind(&id)
         .bind("customer")
+        .bind(&customer.phone)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -291,11 +293,12 @@ pub async fn update_customer(
     .await
     .map_err(|e| e.to_string())?;
 
-    // Sync address/gstin to chart_of_accounts
+    // Sync address/gstin/phone to chart_of_accounts
     sqlx::query(
-        "UPDATE chart_of_accounts SET account_name = ?, address_line_1 = ?, address_line_2 = ?, city = ?, state = ?, postal_code = ?, gstin = ?, updated_at = CURRENT_TIMESTAMP WHERE party_id = ?"
+        "UPDATE chart_of_accounts SET account_name = ?, phone = ?, address_line_1 = ?, address_line_2 = ?, city = ?, state = ?, postal_code = ?, gstin = ?, updated_at = CURRENT_TIMESTAMP WHERE party_id = ?"
     )
     .bind(&customer.name)
+    .bind(&customer.phone)
     .bind(&customer.address_line_1)
     .bind(&customer.address_line_2)
     .bind(&customer.city)
@@ -589,8 +592,8 @@ pub async fn create_supplier(
     let account_id = Uuid::now_v7().to_string();
 
     sqlx::query(
-        "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, party_id, party_type) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+        "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, party_id, party_type, phone) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
     .bind(account_id)
     .bind(&account_code)
@@ -600,6 +603,7 @@ pub async fn create_supplier(
     .bind("Supplier account")
     .bind(&id)
     .bind("supplier")
+    .bind(&supplier.phone)
     .execute(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
@@ -669,8 +673,8 @@ pub async fn batch_create_suppliers(
         let account_id = Uuid::now_v7().to_string();
 
         sqlx::query(
-            "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, party_id, party_type) 
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, party_id, party_type, phone) 
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
         )
         .bind(account_id)
         .bind(&account_code)
@@ -680,6 +684,7 @@ pub async fn batch_create_suppliers(
         .bind("Supplier account")
         .bind(&id)
         .bind("supplier")
+        .bind(&supplier.phone)
         .execute(&mut *tx)
         .await
         .map_err(|e| e.to_string())?;
@@ -718,11 +723,12 @@ pub async fn update_supplier(
     .await
     .map_err(|e| e.to_string())?;
 
-    // Sync address/gstin to chart_of_accounts
+    // Sync address/gstin/phone to chart_of_accounts
     sqlx::query(
-        "UPDATE chart_of_accounts SET account_name = ?, address_line_1 = ?, address_line_2 = ?, city = ?, state = ?, postal_code = ?, gstin = ?, updated_at = CURRENT_TIMESTAMP WHERE party_id = ?"
+        "UPDATE chart_of_accounts SET account_name = ?, phone = ?, address_line_1 = ?, address_line_2 = ?, city = ?, state = ?, postal_code = ?, gstin = ?, updated_at = CURRENT_TIMESTAMP WHERE party_id = ?"
     )
     .bind(&supplier.name)
+    .bind(&supplier.phone)
     .bind(&supplier.address_line_1)
     .bind(&supplier.address_line_2)
     .bind(&supplier.city)
