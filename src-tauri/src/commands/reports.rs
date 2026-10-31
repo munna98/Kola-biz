@@ -1,4 +1,4 @@
-﻿use crate::company_db::DbRegistry;
+use crate::company_db::DbRegistry;
 use chrono;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -758,10 +758,21 @@ pub async fn get_profit_loss(
 }
 
 // ============= CASH FLOW =============
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct CashFlowItem {
     pub description: String,
     pub amount: f64,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CashAccountBreakdown {
+    pub account_id: String,
+    pub account_name: String,
+    pub account_code: String,
+    pub account_group: String,
+    pub opening_balance: f64,
+    pub net_change: f64,
+    pub closing_balance: f64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -775,6 +786,7 @@ pub struct CashFlowData {
     pub net_change: f64,
     pub opening_cash: f64,
     pub closing_cash: f64,
+    pub breakdown: Vec<CashAccountBreakdown>,
 }
 
 #[tauri::command]
@@ -1081,6 +1093,63 @@ pub async fn get_cash_flow(
         net_operating = round2(net_operating + discrepancy);
     }
 
+    // 7. Breakdown of Cash & Cash Equivalents by Account (Cash in Hand vs Bank Accounts)
+    let breakdown_query = "
+        SELECT 
+            coa.id,
+            coa.account_name,
+            coa.account_code,
+            COALESCE(coa.account_group, 'Cash') as account_group,
+            CAST(COALESCE(SUM(CASE WHEN v.voucher_date <= ? THEN je.debit - je.credit ELSE 0 END), 0) AS REAL) as opening_balance,
+            CAST(COALESCE(SUM(CASE WHEN v.voucher_date >= ? AND v.voucher_date <= ? THEN je.debit - je.credit ELSE 0 END), 0) AS REAL) as net_change,
+            CAST(COALESCE(SUM(CASE WHEN v.voucher_date <= ? THEN je.debit - je.credit ELSE 0 END), 0) AS REAL) as closing_balance
+        FROM chart_of_accounts coa
+        LEFT JOIN journal_entries je ON coa.id = je.account_id
+        LEFT JOIN vouchers v ON je.voucher_id = v.id AND v.deleted_at IS NULL
+        WHERE (coa.account_group IN ('Cash', 'Bank Account') OR coa.account_name IN ('Cash', 'Bank Account'))
+          AND coa.deleted_at IS NULL
+        GROUP BY coa.id, coa.account_name, coa.account_code, coa.account_group
+        ORDER BY coa.account_group ASC, coa.account_name ASC
+    ";
+
+    let breakdown_rows: Vec<(String, String, String, String, f64, f64, f64)> = sqlx::query_as(breakdown_query)
+        .bind(&opening_date)
+        .bind(&from_date)
+        .bind(&to_date)
+        .bind(&to_date)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let mut breakdown: Vec<CashAccountBreakdown> = breakdown_rows
+        .iter()
+        .filter(|(_, _, _, _, op, chg, cl)| op.abs() >= 0.005 || chg.abs() >= 0.005 || cl.abs() >= 0.005)
+        .map(|(id, name, code, group, op, chg, cl)| CashAccountBreakdown {
+            account_id: id.clone(),
+            account_name: name.clone(),
+            account_code: code.clone(),
+            account_group: group.clone(),
+            opening_balance: round2(*op),
+            net_change: round2(*chg),
+            closing_balance: round2(*cl),
+        })
+        .collect();
+
+    if breakdown.is_empty() {
+        breakdown = breakdown_rows
+            .into_iter()
+            .map(|(id, name, code, group, op, chg, cl)| CashAccountBreakdown {
+                account_id: id,
+                account_name: name,
+                account_code: code,
+                account_group: group,
+                opening_balance: round2(op),
+                net_change: round2(chg),
+                closing_balance: round2(cl),
+            })
+            .collect();
+    }
+
     Ok(CashFlowData {
         operating_activities,
         investing_activities,
@@ -1091,6 +1160,7 @@ pub async fn get_cash_flow(
         net_change,
         opening_cash,
         closing_cash,
+        breakdown,
     })
 }
 

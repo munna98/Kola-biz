@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
+import { IconBuildingBank, IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
@@ -12,6 +12,16 @@ import { useMoney } from '@/hooks/useMoney';
 interface CashFlowItem {
   description: string;
   amount: number;
+}
+
+interface CashAccountBreakdown {
+  account_id: string;
+  account_name: string;
+  account_code: string;
+  account_group: string;
+  opening_balance: number;
+  net_change: number;
+  closing_balance: number;
 }
 
 interface CashFlowData {
@@ -24,6 +34,7 @@ interface CashFlowData {
   net_change: number;
   opening_cash: number;
   closing_cash: number;
+  breakdown?: CashAccountBreakdown[];
 }
 
 export default function CashFlowPage() {
@@ -37,6 +48,24 @@ export default function CashFlowPage() {
   });
   const [toDate, setToDate] = useState(new Date().toISOString().split('T')[0]);
   const money = useMoney();
+
+  const cashAccounts =
+    data?.breakdown?.filter(
+      (a) =>
+        a.account_group.toLowerCase().includes('cash') ||
+        a.account_name.toLowerCase().includes('cash')
+    ) || [];
+  const bankAccounts =
+    data?.breakdown?.filter(
+      (a) =>
+        !a.account_group.toLowerCase().includes('cash') &&
+        !a.account_name.toLowerCase().includes('cash')
+    ) || [];
+
+  const totalCashOpening = cashAccounts.reduce((sum, a) => sum + a.opening_balance, 0);
+  const totalCashClosing = cashAccounts.reduce((sum, a) => sum + a.closing_balance, 0);
+  const totalBankOpening = bankAccounts.reduce((sum, a) => sum + a.opening_balance, 0);
+  const totalBankClosing = bankAccounts.reduce((sum, a) => sum + a.closing_balance, 0);
 
   const loadReport = async () => {
     try {
@@ -260,9 +289,18 @@ export default function CashFlowPage() {
               {/* Summary */}
               <Card>
                 <CardContent className="p-6 space-y-4">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm font-semibold">Opening Cash & Cash Equivalents</span>
-                    <span className="font-mono font-bold">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="text-sm font-semibold">Opening Cash & Cash Equivalents</span>
+                      {data.breakdown && data.breakdown.length > 0 && (
+                        <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                          <span>Cash in Hand: <strong className="font-mono text-foreground">{money(totalCashOpening)}</strong></span>
+                          <span>•</span>
+                          <span>Bank Accounts: <strong className="font-mono text-foreground">{money(totalBankOpening)}</strong></span>
+                        </div>
+                      )}
+                    </div>
+                    <span className="font-mono font-bold text-base">
                       {money(data.opening_cash)}
                     </span>
                   </div>
@@ -272,14 +310,91 @@ export default function CashFlowPage() {
                       {data.net_change >= 0 ? '+' : ''}{money(data.net_change)}
                     </span>
                   </div>
-                  <div className="flex justify-between items-center border-t pt-4">
-                    <span className="text-lg font-bold">Closing Cash & Cash Equivalents</span>
+                  <div className="flex justify-between items-start border-t pt-4">
+                    <div>
+                      <span className="text-lg font-bold">Closing Cash & Cash Equivalents</span>
+                      {data.breakdown && data.breakdown.length > 0 && (
+                        <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-0.5">
+                          <span>Cash in Hand: <strong className="font-mono text-foreground">{money(totalCashClosing)}</strong></span>
+                          <span>•</span>
+                          <span>Bank Accounts: <strong className="font-mono text-foreground">{money(totalBankClosing)}</strong></span>
+                        </div>
+                      )}
+                    </div>
                     <span className="text-2xl font-mono font-bold text-primary">
                       {money(data.closing_cash)}
                     </span>
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Cash & Bank Account Breakdown Card */}
+              {data.breakdown && data.breakdown.length > 0 && (
+                <Card>
+                  <CardContent className="p-0">
+                    <div className="bg-muted/30 border-b p-4">
+                      <h2 className="font-bold text-base flex items-center gap-2">
+                        <IconBuildingBank size={18} className="text-primary" />
+                        Cash & Bank Balances Breakdown (Cash Equivalents)
+                      </h2>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Reconciliation of Cash in Hand and Bank accounts included in the Cash Flow Statement
+                      </p>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead>
+                          <tr className="border-b bg-muted/10 text-xs text-muted-foreground font-semibold">
+                            <th className="p-3 text-left">Account</th>
+                            <th className="p-3 text-left">Group</th>
+                            <th className="p-3 text-right">Opening Balance</th>
+                            <th className="p-3 text-right">Net Change</th>
+                            <th className="p-3 text-right">Closing Balance</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {data.breakdown.map((acc) => (
+                            <tr key={acc.account_id} className="border-b hover:bg-muted/30 text-sm">
+                              <td className="p-3">
+                                <span className="font-medium">{acc.account_name}</span>
+                                <span className="text-xs text-muted-foreground ml-2 font-mono">({acc.account_code})</span>
+                              </td>
+                              <td className="p-3 text-xs">
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  acc.account_group.toLowerCase().includes('cash')
+                                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                    : 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                                }`}>
+                                  {acc.account_group}
+                                </span>
+                              </td>
+                              <td className="p-3 text-right font-mono text-sm">
+                                {money(acc.opening_balance)}
+                              </td>
+                              <td className={`p-3 text-right font-mono text-sm ${acc.net_change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {acc.net_change >= 0 ? '+' : ''}{money(acc.net_change)}
+                              </td>
+                              <td className="p-3 text-right font-mono text-sm font-semibold">
+                                {money(acc.closing_balance)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-muted/20 border-t-2 font-bold text-sm">
+                          <tr>
+                            <td colSpan={2} className="p-3">Total Cash & Cash Equivalents</td>
+                            <td className="p-3 text-right font-mono">{money(data.opening_cash)}</td>
+                            <td className={`p-3 text-right font-mono ${data.net_change >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                              {data.net_change >= 0 ? '+' : ''}{money(data.net_change)}
+                            </td>
+                            <td className="p-3 text-right font-mono text-primary font-bold">{money(data.closing_cash)}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </div>
           )}
         </div>
