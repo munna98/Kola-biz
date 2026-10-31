@@ -2760,7 +2760,24 @@ pub async fn get_product_profit_invoices(
     to_date: String,
 ) -> Result<Vec<ProductProfitInvoiceRow>, String> {
     let pool = registry.active_pool().await?;
-    let query = "
+
+    let update_cost_enabled: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'update_payment_to_product_cost'",
+    )
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true" || v == "\"true\"")
+    .unwrap_or(false);
+
+    let cost_rate_expr = if update_cost_enabled {
+        "COALESCE(NULLIF(p.purchase_rate, 0), sm.cost_rate, 0)"
+    } else {
+        "COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0)"
+    };
+
+    let query = format!("
         SELECT
             v.id as voucher_id,
             v.voucher_no,
@@ -2777,8 +2794,8 @@ pub async fn get_product_profit_invoices(
             u.symbol as unit_symbol,
             CAST(COALESCE(vi.rate, sm.rate) AS REAL) as rate,
             CAST(CASE WHEN sm.movement_type = 'OUT' THEN COALESCE(vi.net_amount, sm.amount) * COALESCE(v.exchange_rate, 1.0) ELSE -COALESCE(vi.net_amount, sm.amount) * COALESCE(v.exchange_rate, 1.0) END AS REAL) as total_revenue,
-            CAST(COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0) AS REAL) as cost_rate,
-            CAST(CASE WHEN sm.movement_type = 'OUT' THEN sm.quantity * COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0) ELSE -sm.quantity * COALESCE(NULLIF(p.cost, 0), sm.cost_rate, 0) END AS REAL) as total_cost
+            CAST({cost_rate_expr} AS REAL) as cost_rate,
+            CAST(CASE WHEN sm.movement_type = 'OUT' THEN sm.quantity * {cost_rate_expr} ELSE -sm.quantity * {cost_rate_expr} END AS REAL) as total_cost
         FROM stock_movements sm
         JOIN vouchers v ON sm.voucher_id = v.id
         JOIN products p ON sm.product_id = p.id
@@ -2792,9 +2809,9 @@ pub async fn get_product_profit_invoices(
           AND v.voucher_date >= ? AND v.voucher_date <= ?
           AND v.deleted_at IS NULL
         ORDER BY v.voucher_date DESC, v.voucher_no DESC
-    ";
+    ");
 
-    let rows = sqlx::query_as::<_, (String, String, String, String, String, f64, String, f64, f64, f64, f64)>(query)
+    let rows = sqlx::query_as::<_, (String, String, String, String, String, f64, String, f64, f64, f64, f64)>(&query)
         .bind(&product_id)
         .bind(&from_date)
         .bind(&to_date)
