@@ -17,8 +17,8 @@ import {
   setLedgerReportFromDate,
   setLedgerReportToDate,
   setLedgerReportData,
-  setActiveSectionWithParams,
 } from '@/store';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 import { useMoney } from '@/hooks/useMoney';
 import { useMultiCurrencyEnabled } from '@/hooks/useMultiCurrency';
 
@@ -46,6 +46,8 @@ interface LedgerEntry {
 
 export default function LedgerReportPage() {
   const dispatch = useDispatch();
+  const { navigateTo } = useAppNavigation();
+  const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
   const {
     selectedAccount,
     entries,
@@ -72,6 +74,13 @@ export default function LedgerReportPage() {
   useEffect(() => {
     loadAccounts();
   }, []);
+
+  // Update selected account when navigated with accountId param
+  useEffect(() => {
+    if (activeSectionParams?.accountId) {
+      dispatch(setLedgerReportSelectedAccount(String(activeSectionParams.accountId)));
+    }
+  }, [activeSectionParams?.accountId]);
 
   // Auto-generate report when an account is selected via drill-down navigation
   useEffect(() => {
@@ -307,10 +316,8 @@ export default function LedgerReportPage() {
     let section = '';
     switch (type) {
       case 'sales_invoice':
-        section = 'sales';
-        break;
       case 'co_invoice':
-        section = 'custom_orders';
+        section = 'sales';
         break;
       case 'sales_return':
         section = 'sales_return';
@@ -351,12 +358,7 @@ export default function LedgerReportPage() {
         return;
     }
 
-    dispatch(
-      setActiveSectionWithParams({
-        section,
-        params: { voucherId: id },
-      })
-    );
+    navigateTo(section, { voucherId: id });
   };
 
   // Opening/closing balance values based on view mode

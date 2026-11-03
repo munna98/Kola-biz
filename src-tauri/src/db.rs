@@ -1964,6 +1964,8 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             total_parts_cost     REAL DEFAULT 0,
             total_parts_billed   REAL DEFAULT 0,
             total_labour_cost    REAL DEFAULT 0,
+            discount_rate        REAL DEFAULT 0,
+            discount_amount      REAL DEFAULT 0,
             total_amount         REAL DEFAULT 0,
             final_invoice_id     TEXT,
             final_invoice_no     TEXT,
@@ -2047,6 +2049,9 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         .execute(pool).await?;
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_service_order_status_log_order ON service_order_status_log(order_id)")
         .execute(pool).await?;
+
+    let _ = sqlx::query("ALTER TABLE service_orders ADD COLUMN discount_rate REAL DEFAULT 0").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE service_orders ADD COLUMN discount_amount REAL DEFAULT 0").execute(pool).await;
 
     // Seed voucher sequence for service orders (default SVO-00001) and service invoice (default SVI-00001)
     let _ = sqlx::query(

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useDispatch, useSelector } from 'react-redux';
-import { setActiveSectionWithParams, RootState } from '@/store';
+import { useSelector } from 'react-redux';
+import { RootState } from '@/store';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 import { invoke } from '@tauri-apps/api/core';
 import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
@@ -59,7 +60,7 @@ interface ProductGroup {
 }
 
 export default function StockReportPage() {
-    const dispatch = useDispatch();
+    const { navigateTo } = useAppNavigation();
     const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
     const [stockData, setStockData] = useState<StockSummary[]>([]);
     const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
@@ -175,12 +176,7 @@ export default function StockReportPage() {
                 return;
         }
 
-        dispatch(
-            setActiveSectionWithParams({
-                section,
-                params: { voucherId: id },
-            })
-        );
+        navigateTo(section, { voucherId: id });
     };
 
     const handlePrint = async () => {

@@ -10,8 +10,9 @@ import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
-import { useDispatch, useSelector } from 'react-redux';
-import { setActiveSectionWithParams, RootState } from '@/store';
+import { useSelector } from 'react-redux';
+import { RootState } from '@/store';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 interface DayBookEntry {
   voucher_id: string;
@@ -26,7 +27,7 @@ interface DayBookEntry {
 }
 
 export default function DayBookPage() {
-  const dispatch = useDispatch();
+  const { navigateTo } = useAppNavigation();
   const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
   const [entries, setEntries] = useState<DayBookEntry[]>([]);
   const [loading, setLoading] = useState(false);
@@ -229,12 +230,7 @@ export default function DayBookPage() {
         return;
     }
 
-    dispatch(
-      setActiveSectionWithParams({
-        section,
-        params: { voucherId: id },
-      })
-    );
+    navigateTo(section, { voucherId: id });
   };
 
   const getVoucherTypeLabel = (type: string) => {

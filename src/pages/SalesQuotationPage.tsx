@@ -27,6 +27,7 @@ import {
   switchQuotationTab,
   closeQuotationTab,
   setActiveSectionWithParams,
+  navigateTo,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -813,10 +814,14 @@ export default function SalesQuotationPage() {
   };
 
   useEffect(() => {
-    if (activeSectionParams?.refreshInvoiceId) {
-      loadVoucher(String(activeSectionParams.refreshInvoiceId));
+    const vId = activeSectionParams?.voucherId || activeSectionParams?.refreshInvoiceId;
+    if (vId) {
+      dispatch(setQuotationMode('viewing'));
+      dispatch(setQuotationCurrentVoucherId(String(vId)));
+      loadVoucher(String(vId));
+      dispatch(setActiveSectionWithParams({ section: 'sales_quotation', params: undefined }));
     }
-  }, [activeSectionParams?.refreshInvoiceId, activeSectionParams?.refreshKey]);
+  }, [activeSectionParams?.voucherId, activeSectionParams?.refreshInvoiceId, activeSectionParams?.refreshKey]);
 
   const {
     handleNavigatePrevious,
@@ -1141,7 +1146,7 @@ export default function SalesQuotationPage() {
 
   const handleConvertToInvoice = () => {
     if (salesState.currentVoucherId && !salesState.hasUnsavedChanges) {
-      dispatch(setActiveSectionWithParams({ section: 'sales', params: { sourceQuotationId: salesState.currentVoucherId } }));
+      dispatch(navigateTo({ section: 'sales', params: { sourceQuotationId: salesState.currentVoucherId } }));
     } else {
       toast.error("Please save the quotation first before converting");
     }

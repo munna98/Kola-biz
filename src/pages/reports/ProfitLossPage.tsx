@@ -15,7 +15,8 @@ import { formatDate, round2 } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
 import { AccountGroup, AccountGroupNode } from '@/lib/tauri';
 import { useDispatch, useSelector } from 'react-redux';
-import { RootState, setLedgerReportSelectedAccount, setActiveSectionWithParams } from '@/store';
+import { RootState, setLedgerReportSelectedAccount } from '@/store';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 import { cn } from '@/lib/utils';
 
 interface PLAccount {
@@ -265,6 +266,7 @@ function PLTRow({ node, onDrilldown, expandedGroups, toggleExpand, money }: PLRo
 
 export default function ProfitLossPage() {
   const dispatch = useDispatch();
+  const { navigateTo } = useAppNavigation();
   const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
   const [data, setData] = useState<ProfitLossData | null>(null);
   const [loading, setLoading] = useState(false);
@@ -339,12 +341,7 @@ export default function ProfitLossPage() {
 
   const handleDrilldown = (acc: PLAccount) => {
     dispatch(setLedgerReportSelectedAccount(acc.id as any));
-    dispatch(
-      setActiveSectionWithParams({
-        section: 'ledger',
-        params: { accountId: acc.id },
-      })
-    );
+    navigateTo('ledger', { accountId: acc.id });
   };
 
   const handlePrint = async () => {

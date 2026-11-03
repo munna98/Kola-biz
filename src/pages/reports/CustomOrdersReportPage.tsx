@@ -31,8 +31,7 @@ import {
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
-import { useDispatch } from 'react-redux';
-import { setActiveSectionWithParams } from '@/store';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 interface CustomOrderMarginRow {
   id: string;
@@ -96,7 +95,7 @@ interface CustomOrderDetail {
 }
 
 export default function CustomOrdersReportPage() {
-  const dispatch = useDispatch();
+  const { navigateTo } = useAppNavigation();
   const money = useMoney();
 
   const [rows, setRows] = useState<CustomOrderMarginRow[]>([]);
@@ -176,12 +175,7 @@ export default function CustomOrdersReportPage() {
   };
 
   const handleOrderClick = (orderId: string) => {
-    dispatch(
-      setActiveSectionWithParams({
-        section: 'custom_orders',
-        params: { orderId },
-      })
-    );
+    navigateTo('custom_orders', { orderId });
   };
 
   const filteredRows = useMemo(() => {

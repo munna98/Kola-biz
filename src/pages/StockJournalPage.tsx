@@ -23,6 +23,7 @@ import {
     setStockJournalTotals,
     updateStockJournalDestinationItem,
     updateStockJournalSourceItem,
+    setActiveSectionWithParams,
 } from '@/store';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -255,6 +256,7 @@ export default function StockJournalPage() {
     useEffect(() => {
         if (activeSectionParams?.voucherId) {
             handleLoadVoucher(String(activeSectionParams.voucherId));
+            dispatch(setActiveSectionWithParams({ section: 'stock_journal', params: undefined }));
         }
     }, [activeSectionParams?.voucherId]);
 

@@ -16,7 +16,8 @@ import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
 import { useSelector, useDispatch } from 'react-redux';
-import { RootState, setLedgerReportSelectedAccount, setActiveSectionWithParams } from '@/store';
+import { RootState, setLedgerReportSelectedAccount } from '@/store';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
@@ -55,6 +56,7 @@ const TYPE_COLORS: Record<string, string> = {
 
 export default function LedgerGroupBalancePage() {
   const dispatch = useDispatch();
+  const { navigateTo } = useAppNavigation();
   const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
   const money = useMoney();
 
@@ -126,12 +128,7 @@ export default function LedgerGroupBalancePage() {
 
   const openLedger = (accountId: string) => {
     dispatch(setLedgerReportSelectedAccount(accountId));
-    dispatch(
-      setActiveSectionWithParams({
-        section: 'ledger',
-        params: { accountId },
-      })
-    );
+    navigateTo('ledger', { accountId });
   };
 
   // ── Totals ──────────────────────────────────────────────────────────────────

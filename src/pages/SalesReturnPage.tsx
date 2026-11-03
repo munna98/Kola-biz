@@ -812,6 +812,16 @@ export default function SalesReturnPage() {
         }
     };
 
+    useEffect(() => {
+        const vId = activeSectionParams?.voucherId || activeSectionParams?.refreshInvoiceId;
+        if (vId) {
+            dispatch(setSalesReturnMode('viewing'));
+            dispatch(setSalesReturnCurrentVoucherId(String(vId)));
+            loadVoucher(String(vId));
+            dispatch(setActiveSectionWithParams({ section: 'sales_return', params: undefined }));
+        }
+    }, [activeSectionParams?.voucherId, activeSectionParams?.refreshInvoiceId, activeSectionParams?.refreshKey]);
+
     const {
         handleNavigatePrevious,
         handleNavigateNext,

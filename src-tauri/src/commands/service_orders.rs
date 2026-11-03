@@ -35,6 +35,8 @@ pub struct ServiceOrder {
     pub total_parts_cost: f64,
     pub total_parts_billed: f64,
     pub total_labour_cost: f64,
+    pub discount_rate: f64,
+    pub discount_amount: f64,
     pub total_amount: f64,
     pub final_invoice_id: Option<String>,
     pub final_invoice_no: Option<String>,
@@ -141,6 +143,8 @@ pub struct CreateServiceOrder {
     pub cash_bank_account_id: Option<String>,
     pub reference: Option<String>,
     pub narration: Option<String>,
+    pub discount_rate: Option<f64>,
+    pub discount_amount: Option<f64>,
     pub parts: Vec<CreateServiceOrderPart>,
     pub labour: Vec<CreateServiceOrderLabour>,
     pub user_id: Option<String>,
@@ -170,6 +174,8 @@ pub struct FinalizeServiceOrderPayload {
     pub voucher_date: String,
     pub narration: Option<String>,
     pub user_id: Option<String>,
+    pub discount_rate: Option<f64>,
+    pub discount_amount: Option<f64>,
     pub collect_payment: Option<bool>,
     pub payment_amount: Option<f64>,
     pub payment_account_id: Option<String>,
@@ -434,7 +440,10 @@ pub async fn list_service_orders(
             COALESCE(emp.name, '') as technician_name,
             so.commission_type, so.commission_rate, so.commission_amount,
             so.estimated_cost, so.advance_amount, so.advance_voucher_id,
-            so.total_parts_cost, so.total_parts_billed, so.total_labour_cost, so.total_amount,
+            so.total_parts_cost, so.total_parts_billed, so.total_labour_cost,
+            COALESCE(so.discount_rate, 0.0) as discount_rate,
+            COALESCE(so.discount_amount, 0.0) as discount_amount,
+            so.total_amount,
             so.final_invoice_id,
             inv.voucher_no as final_invoice_no,
             so.status,
@@ -524,7 +533,10 @@ pub async fn get_service_order(
             COALESCE(emp.name, '') as technician_name,
             so.commission_type, so.commission_rate, so.commission_amount,
             so.estimated_cost, so.advance_amount, so.advance_voucher_id,
-            so.total_parts_cost, so.total_parts_billed, so.total_labour_cost, so.total_amount,
+            so.total_parts_cost, so.total_parts_billed, so.total_labour_cost,
+            COALESCE(so.discount_rate, 0.0) as discount_rate,
+            COALESCE(so.discount_amount, 0.0) as discount_amount,
+            so.total_amount,
             so.final_invoice_id,
             inv.voucher_no as final_invoice_no,
             so.status,
@@ -654,7 +666,14 @@ pub async fn create_service_order(
     }
 
     let total_labour_cost: f64 = data.labour.iter().map(|l| round2(l.amount)).sum();
-    let total_amount = round2(total_parts_billed + total_labour_cost);
+    let subtotal = round2(total_parts_billed + total_labour_cost);
+    let discount_rate = data.discount_rate.unwrap_or(0.0);
+    let discount_amount = match data.discount_amount {
+        Some(amt) if amt > 0.0 => round2(amt),
+        _ if discount_rate > 0.0 => round2(subtotal * discount_rate / 100.0),
+        _ => 0.0,
+    };
+    let total_amount = round2((subtotal - discount_amount).max(0.0));
     let commission_amount = calculate_commission(&comm_type, comm_rate, total_labour_cost);
 
     let advance_amount = data.advance_amount.unwrap_or(0.0);
@@ -717,9 +736,9 @@ pub async fn create_service_order(
           device_brand, device_model, device_imei, device_color, device_condition, security_pin_pattern,
           complaint, technician_notes, assigned_to, commission_type, commission_rate, commission_amount,
           estimated_cost, advance_amount, advance_voucher_id,
-          total_parts_cost, total_parts_billed, total_labour_cost, total_amount,
+          total_parts_cost, total_parts_billed, total_labour_cost, discount_rate, discount_amount, total_amount,
           status, reference, narration, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', ?, ?, ?)",
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', ?, ?, ?)",
     )
     .bind(&order_id)
     .bind(&order_no)
@@ -744,6 +763,8 @@ pub async fn create_service_order(
     .bind(total_parts_cost)
     .bind(total_parts_billed)
     .bind(total_labour_cost)
+    .bind(discount_rate)
+    .bind(discount_amount)
     .bind(total_amount)
     .bind(&data.reference)
     .bind(&data.narration)
@@ -823,7 +844,7 @@ pub async fn update_service_order(
         None => return Err("Service order not found".to_string()),
     };
 
-    if status == "delivered" || final_invoice_id.is_some() {
+    if status == "delivered" || status == "cancelled" || final_invoice_id.is_some() {
         return Err("Cannot edit an order that has already been delivered and invoiced".to_string());
     }
 
@@ -873,7 +894,14 @@ pub async fn update_service_order(
     }
 
     let total_labour_cost: f64 = data.labour.iter().map(|l| round2(l.amount)).sum();
-    let total_amount = round2(total_parts_billed + total_labour_cost);
+    let subtotal = round2(total_parts_billed + total_labour_cost);
+    let discount_rate = data.discount_rate.unwrap_or(0.0);
+    let discount_amount = match data.discount_amount {
+        Some(amt) if amt > 0.0 => round2(amt),
+        _ if discount_rate > 0.0 => round2(subtotal * discount_rate / 100.0),
+        _ => 0.0,
+    };
+    let total_amount = round2((subtotal - discount_amount).max(0.0));
     let commission_amount = calculate_commission(&comm_type, comm_rate, total_labour_cost);
 
     sqlx::query(
@@ -883,7 +911,7 @@ pub async fn update_service_order(
          device_condition = ?, security_pin_pattern = ?, complaint = ?, technician_notes = ?,
          assigned_to = ?, commission_type = ?, commission_rate = ?, commission_amount = ?,
          estimated_cost = ?,
-         total_parts_cost = ?, total_parts_billed = ?, total_labour_cost = ?, total_amount = ?,
+         total_parts_cost = ?, total_parts_billed = ?, total_labour_cost = ?, discount_rate = ?, discount_amount = ?, total_amount = ?,
          reference = ?, narration = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?",
     )
@@ -906,6 +934,8 @@ pub async fn update_service_order(
     .bind(total_parts_cost)
     .bind(total_parts_billed)
     .bind(total_labour_cost)
+    .bind(discount_rate)
+    .bind(discount_amount)
     .bind(total_amount)
     .bind(&data.reference)
     .bind(&data.narration)
@@ -1127,8 +1157,19 @@ pub async fn finalize_service_order(
         .bind(&payload.order_id).fetch_one(&pool).await.map_err(|e| e.to_string())?;
     let total_labour_cost: f64 = sqlx::query_scalar("SELECT COALESCE(total_labour_cost, 0) FROM service_orders WHERE id = ?")
         .bind(&payload.order_id).fetch_one(&pool).await.map_err(|e| e.to_string())?;
-    let total_amount: f64 = sqlx::query_scalar("SELECT COALESCE(total_amount, 0) FROM service_orders WHERE id = ?")
-        .bind(&payload.order_id).fetch_one(&pool).await.map_err(|e| e.to_string())?;
+    let (order_disc_rate, order_disc_amount): (f64, f64) = sqlx::query_as(
+        "SELECT COALESCE(discount_rate, 0.0), COALESCE(discount_amount, 0.0) FROM service_orders WHERE id = ?"
+    )
+    .bind(&payload.order_id).fetch_one(&pool).await.unwrap_or((0.0, 0.0));
+
+    let subtotal = round2(total_parts_billed + total_labour_cost);
+    let discount_rate = payload.discount_rate.unwrap_or(order_disc_rate);
+    let discount_amount = match payload.discount_amount {
+        Some(amt) if amt >= 0.0 => round2(amt),
+        _ if discount_rate > 0.0 => round2(subtotal * discount_rate / 100.0),
+        _ => order_disc_amount,
+    };
+    let total_amount = round2((subtotal - discount_amount).max(0.0));
     let advance_amount: f64 = sqlx::query_scalar("SELECT COALESCE(advance_amount, 0) FROM service_orders WHERE id = ?")
         .bind(&payload.order_id).fetch_one(&pool).await.map_err(|e| e.to_string())?;
     let advance_voucher_id: Option<String> = sqlx::query_scalar("SELECT advance_voucher_id FROM service_orders WHERE id = ?")
@@ -1186,11 +1227,12 @@ pub async fn finalize_service_order(
 
     sqlx::query(
         "INSERT INTO vouchers (id, voucher_no, voucher_type, voucher_date, party_id, party_type,
-          subtotal, tax_amount, total_amount, grand_total, narration, status, payment_status, created_by, gst_disabled)
-         VALUES (?, ?, 'service_invoice', ?, ?, 'customer', ?, 0, ?, ?, ?, 'posted', 'unpaid', ?, 1)",
+          subtotal, discount_rate, discount_amount, tax_amount, total_amount, grand_total, narration, status, payment_status, created_by, gst_disabled)
+         VALUES (?, ?, 'service_invoice', ?, ?, 'customer', ?, ?, ?, 0, ?, ?, ?, 'posted', 'unpaid', ?, 1)",
     )
     .bind(&inv_id).bind(&inv_no).bind(&payload.voucher_date).bind(&customer_account_id)
-    .bind(total_amount).bind(total_amount).bind(total_amount)
+    .bind(subtotal).bind(discount_rate).bind(discount_amount)
+    .bind(total_amount).bind(total_amount)
     .bind(&narration).bind(&payload.user_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
@@ -1261,6 +1303,21 @@ pub async fn finalize_service_order(
         sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, 0, ?, ?)")
             .bind(&je_service).bind(&inv_id).bind(&fallback_acc_id).bind(total_labour_cost).bind(&narration)
             .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+    }
+
+    // 4. Dr Discount Allowed (5007) for invoice discount (if any)
+    if discount_amount > 0.0 {
+        let dis_acc: Option<String> = sqlx::query_scalar(
+            "SELECT id FROM chart_of_accounts WHERE account_code = '5007' LIMIT 1"
+        )
+        .fetch_optional(&mut *tx).await.map_err(|e| e.to_string())?;
+
+        if let Some(acc_id) = dis_acc {
+            let je_disc = Uuid::now_v7().to_string();
+            sqlx::query("INSERT INTO journal_entries (id, voucher_id, account_id, debit, credit, narration) VALUES (?, ?, ?, ?, 0, ?)")
+                .bind(&je_disc).bind(&inv_id).bind(&acc_id).bind(discount_amount).bind(&narration)
+                .execute(&mut *tx).await.map_err(|e| e.to_string())?;
+        }
     }
 
     // Allocate any advance receipt vouchers against this final invoice
@@ -1350,13 +1407,13 @@ pub async fn finalize_service_order(
             .map_err(|e| e.to_string())?;
     }
 
-    // Update service order: status = 'delivered', link invoice
+    // Update service order: status = 'delivered', link invoice, persist final discount and total
     sqlx::query(
         "UPDATE service_orders
-         SET status = 'delivered', final_invoice_id = ?, final_invoice_no = ?, updated_at = CURRENT_TIMESTAMP
+         SET status = 'delivered', discount_rate = ?, discount_amount = ?, total_amount = ?, final_invoice_id = ?, final_invoice_no = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ?",
     )
-    .bind(&inv_id).bind(&inv_no).bind(&payload.order_id)
+    .bind(discount_rate).bind(discount_amount).bind(total_amount).bind(&inv_id).bind(&inv_no).bind(&payload.order_id)
     .execute(&mut *tx).await.map_err(|e| e.to_string())?;
 
     // Status log entry

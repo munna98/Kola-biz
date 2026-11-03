@@ -17,6 +17,7 @@ import {
     setOpeningStockTotal,
     resetOpeningStockForm,
     setOpeningStockLoading,
+    setActiveSectionWithParams,
 } from '@/store';
 import { RootState } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -166,6 +167,7 @@ export default function OpeningStockPage() {
     useEffect(() => {
         if (activeSectionParams?.voucherId) {
             handleLoadVoucher(String(activeSectionParams.voucherId));
+            dispatch(setActiveSectionWithParams({ section: 'opening_stock', params: undefined }));
         }
     }, [activeSectionParams?.voucherId]);
 

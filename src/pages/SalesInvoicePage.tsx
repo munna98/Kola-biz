@@ -25,6 +25,7 @@ import {
   setSalesCreatedByName,
   setSalesReturnDraft,
   setActiveSectionWithParams,
+  navigateTo,
   setSalesMarginScheme,
   setSalesForexInfo,
   setSalesExchangeRate,
@@ -1353,7 +1354,7 @@ export default function SalesInvoicePage() {
   };
 
   const handleOpenSalesReturn = () => {
-    dispatch(setActiveSectionWithParams({
+    dispatch(navigateTo({
       section: 'sales_return',
       params: {
         source: 'sales_invoice',
@@ -1705,7 +1706,7 @@ export default function SalesInvoicePage() {
         onListView={() => setShowListView(true)}
         onManagePayments={salesState.mode !== 'new' ? () => setShowQuickPayment(true) : undefined}
         onViewCustomOrder={customOrdersEnabled && linkedCustomOrder ? () => {
-          dispatch(setActiveSectionWithParams({ section: 'custom_orders', params: { orderId: linkedCustomOrder.id } }));
+          dispatch(navigateTo({ section: 'custom_orders', params: { orderId: linkedCustomOrder.id } }));
         } : undefined}
         customOrderNo={linkedCustomOrder?.order_no}
         loading={salesState.loading}

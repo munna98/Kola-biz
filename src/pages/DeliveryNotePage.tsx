@@ -26,6 +26,7 @@ import {
   createNewDeliveryNoteTab,
   switchDeliveryNoteTab,
   closeDeliveryNoteTab,
+  setActiveSectionWithParams,
 } from '@/store';
 import type { RootState, AppDispatch } from '@/store';
 import { Button } from '@/components/ui/button';
@@ -697,10 +698,14 @@ export default function DeliveryNotePage() {
   };
 
   useEffect(() => {
-    if (activeSectionParams?.refreshInvoiceId) {
-      loadVoucher(String(activeSectionParams.refreshInvoiceId));
+    const vId = activeSectionParams?.voucherId || activeSectionParams?.refreshInvoiceId;
+    if (vId) {
+      dispatch(setDeliveryNoteMode('viewing'));
+      dispatch(setDeliveryNoteCurrentVoucherId(String(vId)));
+      loadVoucher(String(vId));
+      dispatch(setActiveSectionWithParams({ section: 'delivery_note', params: undefined }));
     }
-  }, [activeSectionParams?.refreshInvoiceId, activeSectionParams?.refreshKey]);
+  }, [activeSectionParams?.voucherId, activeSectionParams?.refreshInvoiceId, activeSectionParams?.refreshKey]);
 
   const {
     handleNavigatePrevious,

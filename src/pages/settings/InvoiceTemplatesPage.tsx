@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useDispatch } from 'react-redux';
+import { navigateTo } from '@/store';
 import { invoke } from '@tauri-apps/api/core';
 import {
     Card,
@@ -252,7 +253,7 @@ export function InvoiceTemplatesPage() {
                             </SelectContent>
                         </Select>
                     </div>
-                    <Button onClick={() => dispatch({ type: 'app/setActiveSectionWithParams', payload: { section: 'invoice_designer' } })}>
+                    <Button onClick={() => dispatch(navigateTo({ section: 'invoice_designer' }))}>
                         <IconPlus size={16} className="mr-2" />
                         Create Custom Template
                     </Button>
@@ -372,7 +373,7 @@ export function InvoiceTemplatesPage() {
                                                     variant="outline"
                                                     size="sm"
                                                     className="flex-1 h-7 text-xs"
-                                                    onClick={() => dispatch({ type: 'app/setActiveSectionWithParams', payload: { section: 'invoice_designer', params: { templateId: template.id.toString(), voucherType: template.voucher_type } } })}
+                                                    onClick={() => dispatch(navigateTo({ section: 'invoice_designer', params: { templateId: template.id.toString(), voucherType: template.voucher_type } }))}
                                                 >
                                                     <IconEdit size={12} className="mr-1.5" />
                                                     Design
