@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,8 +6,11 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Combobox } from '@/components/ui/combobox';
+import { IconSettings } from '@tabler/icons-react';
 import { toast } from 'sonner';
-import { api, CreateEmployee, Employee, UpdateEmployee } from '@/lib/tauri';
+import { api, CreateEmployee, Employee, UpdateEmployee, AccountGroup, buildAccountGroupTree, flattenGroupTree } from '@/lib/tauri';
+import AccountGroupsDialog from '@/components/dialogs/AccountGroupsDialog';
 
 interface EmployeeDialogProps {
     open: boolean;
@@ -18,6 +21,8 @@ interface EmployeeDialogProps {
 
 export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onSave }: EmployeeDialogProps) {
     const [loading, setLoading] = useState(false);
+    const [accountGroups, setAccountGroups] = useState<AccountGroup[]>([]);
+    const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
     const [formData, setFormData] = useState<CreateEmployee>({
         name: '',
         code: '',
@@ -30,7 +35,45 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
         username: '',
         password: '',
         role: 'user',
+        account_group: 'Emp Benefits & Salaries',
     });
+
+    const loadAccountGroups = useCallback(async () => {
+        try {
+            const groups = await api.accountGroups.getTree();
+            setAccountGroups(groups);
+        } catch (err) {
+            console.error('Failed to load account groups:', err);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (open) {
+            loadAccountGroups();
+        }
+    }, [open, loadAccountGroups]);
+
+    const groupOptions = useMemo(() => {
+        let options: { value: string; label: string; searchString: string }[] = [];
+        if (accountGroups.length > 0) {
+            const tree = buildAccountGroupTree(accountGroups);
+            const flat = flattenGroupTree(tree);
+            options = flat.map(node => ({
+                value: node.name,
+                label: '\u00A0'.repeat(node.depth * 3) + node.name,
+                searchString: node.name,
+            }));
+        }
+        const currentVal = formData.account_group || 'Emp Benefits & Salaries';
+        if (!options.some(o => o.value === currentVal)) {
+            options.unshift({
+                value: currentVal,
+                label: currentVal,
+                searchString: currentVal,
+            });
+        }
+        return options;
+    }, [accountGroups, formData.account_group]);
 
     useEffect(() => {
         if (!open) return;
@@ -47,6 +90,7 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                 username: '', // Can't retrieve without extra API call, leave blank
                 password: '',
                 role: 'user',
+                account_group: employeeToEdit.account_group || 'Emp Benefits & Salaries',
             });
         } else {
             setFormData({
@@ -61,6 +105,7 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                 username: '',
                 password: '',
                 role: 'user',
+                account_group: 'Emp Benefits & Salaries',
             });
             api.employees.getNextCode().then(code => setFormData(prev => ({ ...prev, code }))).catch(console.error);
         }
@@ -87,11 +132,16 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                     username: formData.username,
                     password: formData.password,
                     role: formData.role,
+                    account_group: formData.account_group || 'Emp Benefits & Salaries',
                 };
                 await api.employees.update(updateData);
                 toast.success('Employee updated successfully');
             } else {
-                await api.employees.create({ ...formData, name: uppercasedName });
+                await api.employees.create({
+                    ...formData,
+                    name: uppercasedName,
+                    account_group: formData.account_group || 'Emp Benefits & Salaries',
+                });
                 toast.success('Employee created successfully');
             }
             onSave();
@@ -144,6 +194,31 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                             />
                         </div>
                         <div className="space-y-2">
+                            <Label htmlFor="account_group">Employee Group</Label>
+                            <div className="flex gap-1.5">
+                                <Combobox
+                                    options={groupOptions}
+                                    value={formData.account_group || 'Emp Benefits & Salaries'}
+                                    onChange={(val) => setFormData({ ...formData, account_group: String(val) })}
+                                    placeholder="Select group..."
+                                    className="w-full"
+                                />
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="icon"
+                                    className="shrink-0 h-9 w-9"
+                                    title="Manage Account Groups"
+                                    onClick={() => setManageGroupsOpen(true)}
+                                >
+                                    <IconSettings size={15} />
+                                </Button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
                             <Label htmlFor="joining_date">Joining Date</Label>
                             <Input
                                 id="joining_date"
@@ -152,9 +227,6 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                                 onChange={(e) => setFormData({ ...formData, joining_date: e.target.value })}
                             />
                         </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                             <Label htmlFor="phone">Phone</Label>
                             <Input
@@ -163,15 +235,16 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                                 onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                             />
                         </div>
-                        <div className="space-y-2">
-                            <Label htmlFor="email">Email</Label>
-                            <Input
-                                id="email"
-                                type="email"
-                                value={formData.email}
-                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                            />
-                        </div>
+                    </div>
+
+                    <div className="space-y-2">
+                        <Label htmlFor="email">Email</Label>
+                        <Input
+                            id="email"
+                            type="email"
+                            value={formData.email}
+                            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                        />
                     </div>
 
                     <div className="space-y-2">
@@ -277,6 +350,13 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                     </DialogFooter>
                 </form>
             </DialogContent>
-        </Dialog >
+            {manageGroupsOpen && (
+                <AccountGroupsDialog
+                    open={manageGroupsOpen}
+                    onOpenChange={setManageGroupsOpen}
+                    onGroupsChanged={loadAccountGroups}
+                />
+            )}
+        </Dialog>
     );
 }

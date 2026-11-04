@@ -1108,7 +1108,8 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query(
         "UPDATE chart_of_accounts
          SET account_group = 'Emp Benefits & Salaries', account_type = 'Expense'
-         WHERE party_type = 'Employee' OR id IN (SELECT account_id FROM employees WHERE account_id IS NOT NULL)"
+         WHERE (party_type = 'Employee' OR id IN (SELECT account_id FROM employees WHERE account_id IS NOT NULL))
+           AND (account_group = 'Current Liabilities' OR account_group IS NULL OR account_group = '')"
     ).execute(pool).await;
 
     // Migration: Seed / ensure 'Salary Payables' ledger (2004) under 'Current Liabilities'

@@ -543,6 +543,7 @@ export interface Employee {
   joining_date?: string;
   status: string;
   created_at: string;
+  account_group?: string;
 }
 
 export interface CreateEmployee {
@@ -557,6 +558,7 @@ export interface CreateEmployee {
   username?: string;
   password?: string;
   role?: string;
+  account_group?: string;
 }
 
 export interface UpdateEmployee {
@@ -573,6 +575,7 @@ export interface UpdateEmployee {
   username?: string;
   password?: string;
   role?: string;
+  account_group?: string;
 }
 
 export interface User {

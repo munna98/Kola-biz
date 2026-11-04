@@ -9,6 +9,28 @@ pub(crate) async fn generate_employee_code(pool: &SqlitePool) -> Result<String, 
     crate::commands::parties::get_next_party_code(pool, "employees", "code", "E").await
 }
 
+async fn resolve_account_type(
+    tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
+    group_name: &str,
+) -> Option<String> {
+    sqlx::query_scalar(
+        "WITH RECURSIVE ancestors(id, account_type, parent_group_id, base_type) AS (
+             SELECT id, account_type, parent_group_id, base_type FROM account_groups WHERE name = ? AND is_active = 1
+             UNION ALL
+             SELECT ag.id, ag.account_type, ag.parent_group_id, ag.base_type
+             FROM account_groups ag
+             JOIN ancestors a ON ag.id = a.parent_group_id
+         )
+         SELECT COALESCE(base_type, account_type) FROM ancestors
+         WHERE parent_group_id IS NULL OR parent_group_id = ''
+         LIMIT 1",
+    )
+    .bind(group_name)
+    .fetch_optional(&mut **tx)
+    .await
+    .unwrap_or(None)
+}
+
 #[tauri::command]
 pub async fn get_next_employee_code(
     registry: State<'_, Arc<DbRegistry>>,
@@ -31,6 +53,7 @@ pub struct Employee {
     pub joining_date: Option<String>,
     pub status: String,
     pub created_at: String,
+    pub account_group: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -42,6 +65,7 @@ pub struct CreateEmployeeRequest {
     pub email: Option<String>,
     pub address: Option<String>,
     pub joining_date: Option<String>,
+    pub account_group: Option<String>,
     pub create_user: bool,
     pub username: Option<String>,
     pub password: Option<String>,
@@ -59,6 +83,7 @@ pub struct UpdateEmployeeRequest {
     pub address: Option<String>,
     pub joining_date: Option<String>,
     pub status: String,
+    pub account_group: Option<String>,
     #[allow(dead_code)]
     pub create_user: bool,
     #[allow(dead_code)]
@@ -90,16 +115,24 @@ pub async fn create_employee(
         generate_employee_code(&pool).await?
     };
 
-    // 1. Create Ledger Account (in Emp Benefits & Salaries -> Indirect Expenses)
-    let account_group = "Emp Benefits & Salaries";
-    let account_type = "Expense";
+    // 1. Create Ledger Account
+    let account_group = data
+        .account_group
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Emp Benefits & Salaries");
+
+    let account_type = resolve_account_type(&mut tx, account_group)
+        .await
+        .unwrap_or_else(|| "Expense".to_string());
 
     // Create Ledger
     sqlx::query("INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, is_system, party_id, party_type) VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'Employee')")
         .bind(&account_id)
         .bind(&code)
         .bind(&data.name)
-        .bind(account_type)
+        .bind(&account_type)
         .bind(account_group)
         .bind(format!("Ledger for employee: {}", &data.name))
         .bind(&employee_id)
@@ -157,12 +190,13 @@ pub async fn get_employees(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<E
     let pool = registry.active_pool().await?;
     sqlx::query_as::<_, Employee>(
         r#"SELECT 
-            id, user_id, account_id, code, name, designation, phone, email, address, 
-            status, created_at,
-            joining_date
-        FROM employees 
-        WHERE deleted_at IS NULL 
-        ORDER BY name"#,
+            e.id, e.user_id, e.account_id, e.code, e.name, e.designation, e.phone, e.email, e.address, 
+            e.status, e.created_at, e.joining_date,
+            coa.account_group
+        FROM employees e
+        LEFT JOIN chart_of_accounts coa ON (e.account_id = coa.id OR (e.account_id IS NULL AND coa.party_id = e.id AND coa.party_type = 'Employee'))
+        WHERE e.deleted_at IS NULL 
+        ORDER BY e.name"#,
     )
     .fetch_all(&pool)
     .await
@@ -198,22 +232,108 @@ pub async fn update_employee(
     .await
     .map_err(|e| format!("Failed to update employee: {}", e))?;
 
-    // 2. Update Linked Ledger Name and Account Code
+    // 2. Update Linked Ledger Name, Account Code, and Account Group
     let account_id: Option<String> = sqlx::query("SELECT account_id FROM employees WHERE id = ?")
         .bind(&data.id)
         .fetch_optional(&mut *tx)
         .await
         .map_err(|e| e.to_string())?
-        .map(|row| row.get(0));
+        .and_then(|row| row.get(0));
+
+    let account_id = match account_id {
+        Some(aid) if !aid.is_empty() => Some(aid),
+        _ => {
+            sqlx::query("SELECT id FROM chart_of_accounts WHERE party_id = ? AND party_type = 'Employee'")
+                .bind(&data.id)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| e.to_string())?
+                .and_then(|row| row.get(0))
+        }
+    };
 
     if let Some(acc_id) = account_id {
-        sqlx::query("UPDATE chart_of_accounts SET account_name = ?, account_code = COALESCE(NULLIF(?, ''), account_code) WHERE id = ?")
+        if let Some(group) = &data.account_group {
+            let group_trim = group.trim();
+            if !group_trim.is_empty() {
+                let derived_type = resolve_account_type(&mut tx, group_trim)
+                    .await
+                    .unwrap_or_else(|| "Expense".to_string());
+
+                sqlx::query(
+                    "UPDATE chart_of_accounts 
+                     SET account_name = ?, account_code = COALESCE(NULLIF(?, ''), account_code), account_group = ?, account_type = ? 
+                     WHERE id = ?"
+                )
+                .bind(&data.name)
+                .bind(code_to_update)
+                .bind(group_trim)
+                .bind(derived_type)
+                .bind(&acc_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("Failed to update ledger: {}", e))?;
+            } else {
+                sqlx::query(
+                    "UPDATE chart_of_accounts 
+                     SET account_name = ?, account_code = COALESCE(NULLIF(?, ''), account_code) 
+                     WHERE id = ?"
+                )
+                .bind(&data.name)
+                .bind(code_to_update)
+                .bind(&acc_id)
+                .execute(&mut *tx)
+                .await
+                .map_err(|e| format!("Failed to update ledger name: {}", e))?;
+            }
+        } else {
+            sqlx::query(
+                "UPDATE chart_of_accounts 
+                 SET account_name = ?, account_code = COALESCE(NULLIF(?, ''), account_code) 
+                 WHERE id = ?"
+            )
             .bind(&data.name)
             .bind(code_to_update)
-            .bind(acc_id)
+            .bind(&acc_id)
             .execute(&mut *tx)
             .await
             .map_err(|e| format!("Failed to update ledger name: {}", e))?;
+        }
+    } else {
+        // If employee had no linked ledger, create one and link it
+        let new_acc_id = Uuid::now_v7().to_string();
+        let group_name = data
+            .account_group
+            .as_deref()
+            .map(|s| s.trim())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("Emp Benefits & Salaries");
+
+        let derived_type = resolve_account_type(&mut tx, group_name)
+            .await
+            .unwrap_or_else(|| "Expense".to_string());
+
+        sqlx::query(
+            "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, is_system, party_id, party_type) 
+             VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'Employee')"
+        )
+        .bind(&new_acc_id)
+        .bind(&data.code)
+        .bind(&data.name)
+        .bind(derived_type)
+        .bind(group_name)
+        .bind(format!("Ledger for employee: {}", &data.name))
+        .bind(&data.id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("Failed to create missing ledger: {}", e))?;
+
+        sqlx::query("UPDATE employees SET account_id = ? WHERE id = ?")
+            .bind(&new_acc_id)
+            .bind(&data.id)
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| format!("Failed to link ledger to employee: {}", e))?;
     }
 
     // 3. Handle User Login Access

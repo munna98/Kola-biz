@@ -3,14 +3,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { IconPlus, IconEdit, IconTrash, IconUser, IconMail, IconPhone } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconUser, IconMail, IconPhone, IconFolder } from '@tabler/icons-react';
 import { api, Employee } from '@/lib/tauri';
 import { toast } from 'sonner';
 import EmployeeDialog from '@/components/dialogs/EmployeeDialog';
+import AccountGroupsDialog from '@/components/dialogs/AccountGroupsDialog';
 
 export default function EmployeesPage() {
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [open, setOpen] = useState(false);
+    const [groupsDialogOpen, setGroupsDialogOpen] = useState(false);
     const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -48,6 +50,7 @@ export default function EmployeesPage() {
         e.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         (e.code || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (e.designation || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (e.account_group || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         (e.phone || '').includes(searchTerm) ||
         (e.email || '').toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -68,6 +71,9 @@ export default function EmployeesPage() {
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-64"
                     />
+                    <Button variant="outline" onClick={() => setGroupsDialogOpen(true)}>
+                        <IconFolder size={16} /> Manage Groups
+                    </Button>
                     <Button onClick={() => { setOpen(true); setEmployeeToEdit(null); }}>
                         <IconPlus size={16} /> Add Employee
                     </Button>
@@ -82,6 +88,7 @@ export default function EmployeesPage() {
                                 <th className="p-3 w-12">S.No</th>
                                 <th className="p-3">Name</th>
                                 <th className="p-3">Code</th>
+                                <th className="p-3">Group</th>
                                 <th className="p-3">Designation</th>
                                 <th className="p-3">Contact</th>
                                 <th className="p-3">Status</th>
@@ -91,7 +98,7 @@ export default function EmployeesPage() {
                         <tbody>
                             {filteredEmployees.length === 0 ? (
                                 <tr>
-                                    <td colSpan={7} className="p-6 text-center text-muted-foreground">
+                                    <td colSpan={8} className="p-6 text-center text-muted-foreground">
                                         {searchTerm ? 'No employees match your search.' : 'No employees found.'}
                                     </td>
                                 </tr>
@@ -111,6 +118,11 @@ export default function EmployeesPage() {
                                             </div>
                                         </td>
                                         <td className="p-3 text-sm text-muted-foreground">{emp.code || '-'}</td>
+                                        <td className="p-3 text-sm">
+                                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground">
+                                                {emp.account_group || 'Emp Benefits & Salaries'}
+                                            </span>
+                                        </td>
                                         <td className="p-3 text-sm">{emp.designation || '-'}</td>
                                         <td className="p-3 text-sm">
                                             <div className="flex flex-col gap-1">
@@ -143,6 +155,12 @@ export default function EmployeesPage() {
                 onOpenChange={setOpen}
                 employeeToEdit={employeeToEdit}
                 onSave={load}
+            />
+
+            <AccountGroupsDialog
+                open={groupsDialogOpen}
+                onOpenChange={setGroupsDialogOpen}
+                onGroupsChanged={load}
             />
         </div>
     );
