@@ -381,6 +381,13 @@ export default function ProfitLossPage() {
           account_group: e.account_group,
           amount: e.amount,
         })),
+        direct_expenses: directExpensesTotal,
+        direct_expense_items: (data.direct_expenses || []).map(e => ({
+          account_code: e.account_code,
+          account_name: e.account_name,
+          account_group: e.account_group,
+          amount: e.amount,
+        })),
       };
 
       await invoke('generate_profit_loss_pdf', {
@@ -459,7 +466,14 @@ export default function ProfitLossPage() {
       rows.push(['Total P&L Debit', plDebitTotal, 'Total P&L Credit', plCreditTotal]);
       rows.push([]);
 
-      // 3. DETAILED TREES FOR OPERATING EXPENSES & INCOMES
+      // 3. DETAILED TREES FOR DIRECT EXPENSES, OPERATING EXPENSES & INCOMES
+      if (directExpenseTree.length > 0) {
+        rows.push(['DETAILED DIRECT EXPENSES']);
+        rows.push(['Account Code', 'Particulars', 'Type / Group', 'Amount']);
+        flattenPLTreeForExcel(directExpenseTree, rows);
+        rows.push([]);
+      }
+
       rows.push(['DETAILED OPERATING EXPENSES']);
       rows.push(['Account Code', 'Particulars', 'Type / Group', 'Amount']);
       flattenPLTreeForExcel(expenseTree, rows);
@@ -811,9 +825,15 @@ export default function ProfitLossPage() {
                         <td className="p-3 text-right font-mono font-semibold">{money(data.opening_stock)}</td>
                       </tr>
                       <tr className="hover:bg-muted/20">
-                        <td className="p-3 font-medium">Add: Purchases & Direct Expenses</td>
-                        <td className="p-3 text-right font-mono font-semibold">{money(data.purchases + directExpensesTotal)}</td>
+                        <td className="p-3 font-medium">Add: Purchases</td>
+                        <td className="p-3 text-right font-mono font-semibold">{money(data.purchases)}</td>
                       </tr>
+                      {directExpensesTotal > 0 && (
+                        <tr className="hover:bg-muted/20">
+                          <td className="p-3 font-medium">Add: Direct Expenses</td>
+                          <td className="p-3 text-right font-mono font-semibold">{money(directExpensesTotal)}</td>
+                        </tr>
+                      )}
                       <tr className="hover:bg-muted/20 text-blue-600 dark:text-blue-400">
                         <td className="p-3 font-medium">Less: Closing Stock</td>
                         <td className="p-3 text-right font-mono font-semibold">−{money(data.closing_stock)}</td>

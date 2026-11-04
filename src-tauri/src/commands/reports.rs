@@ -654,6 +654,52 @@ pub async fn get_profit_loss(
         period_purchases_vouchers
     };
 
+    let update_cost_enabled: bool = sqlx::query_scalar::<_, String>(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'update_payment_to_product_cost'",
+    )
+    .fetch_optional(&pool)
+    .await
+    .ok()
+    .flatten()
+    .map(|v| v == "true" || v == "\"true\"")
+    .unwrap_or(false);
+
+    let mut product_payment_costs: std::collections::HashMap<String, (String, String, String, String, f64)> = std::collections::HashMap::new();
+
+    if update_cost_enabled {
+        let pmt_rows = sqlx::query_as::<_, (String, String, String, String, String, f64)>(
+            "SELECT 
+                COALESCE(NULLIF(vi.ledger_id, ''), NULLIF(coa_fallback.id, ''), NULLIF(coa_desc.id, ''), '') as acc_id,
+                COALESCE(NULLIF(coa_direct.account_name, ''), NULLIF(coa_fallback.account_name, ''), NULLIF(coa_desc.account_name, ''), NULLIF(vi.description, ''), 'Direct Expenses') as acc_name,
+                COALESCE(NULLIF(coa_direct.account_code, ''), NULLIF(coa_fallback.account_code, ''), NULLIF(coa_desc.account_code, ''), '') as acc_code,
+                COALESCE(NULLIF(coa_direct.account_group, ''), NULLIF(coa_fallback.account_group, ''), NULLIF(coa_desc.account_group, ''), 'Direct Expenses') as acc_group,
+                COALESCE(NULLIF(coa_direct.account_type, ''), NULLIF(coa_fallback.account_type, ''), NULLIF(coa_desc.account_type, ''), 'Expense') as acc_type,
+                CAST(COALESCE(SUM(vi.amount * COALESCE(NULLIF(v.exchange_rate, 0.0), 1.0)), 0.0) AS REAL) as total_amt
+             FROM voucher_items vi
+             JOIN vouchers v ON vi.voucher_id = v.id
+             LEFT JOIN chart_of_accounts coa_direct ON vi.ledger_id = coa_direct.id
+             LEFT JOIN chart_of_accounts coa_fallback ON coa_fallback.account_name = vi.description AND coa_fallback.is_active = 1
+             LEFT JOIN chart_of_accounts coa_desc ON vi.description = coa_desc.id
+             WHERE v.voucher_type = 'payment'
+               AND v.voucher_date >= ? AND v.voucher_date <= ?
+               AND v.deleted_at IS NULL
+               AND vi.product_id IS NOT NULL AND vi.product_id != ''
+             GROUP BY COALESCE(NULLIF(vi.ledger_id, ''), NULLIF(coa_fallback.id, ''), NULLIF(coa_desc.id, ''), vi.description)"
+        )
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default();
+
+        for (acc_id, acc_name, acc_code, acc_group, acc_type, total_amt) in pmt_rows {
+            if total_amt.abs() >= 0.01 {
+                let key = if !acc_id.is_empty() { acc_id.clone() } else { acc_name.clone() };
+                product_payment_costs.insert(key, (acc_name, acc_code, acc_group, acc_type, total_amt));
+            }
+        }
+    }
+
     let mut income = Vec::new();
     let mut expenses = Vec::new();
     let mut direct_expenses = Vec::new();
@@ -687,23 +733,99 @@ pub async fn get_profit_loss(
             gl_direct_expenses += amount;
             if amount.abs() >= 0.01 {
                 direct_expenses.push(PLAccount {
-                    id,
-                    account_name: name,
+                    id: id.clone(),
+                    account_name: name.clone(),
                     account_code: code,
                     account_group: group_name,
                     amount: round2(amount),
                 });
             }
+            if update_cost_enabled {
+                if product_payment_costs.contains_key(&id) {
+                    product_payment_costs.remove(&id);
+                } else if product_payment_costs.contains_key(&name) {
+                    product_payment_costs.remove(&name);
+                } else {
+                    let k_opt = product_payment_costs.iter()
+                        .find(|(_, (acc_n, _, _, _, _))| acc_n.eq_ignore_ascii_case(&name))
+                        .map(|(k, _)| k.clone());
+                    if let Some(k) = k_opt {
+                        product_payment_costs.remove(&k);
+                    }
+                }
+            }
         } else {
             let amount = dr - cr;
-            if amount.abs() >= 0.01 {
-                total_operating_expenses += amount;
-                expenses.push(PLAccount {
-                    id,
-                    account_name: name,
-                    account_code: code,
-                    account_group: group_name,
-                    amount: round2(amount),
+            let prod_cost = if update_cost_enabled {
+                let k_opt = if product_payment_costs.contains_key(&id) {
+                    Some(id.clone())
+                } else if product_payment_costs.contains_key(&name) {
+                    Some(name.clone())
+                } else {
+                    product_payment_costs.iter()
+                        .find(|(_, (acc_n, _, _, _, _))| acc_n.eq_ignore_ascii_case(&name))
+                        .map(|(k, _)| k.clone())
+                };
+                k_opt.and_then(|k| product_payment_costs.remove(&k)).map(|(_, _, _, _, amt)| amt).unwrap_or(0.0)
+            } else {
+                0.0
+            };
+
+            if prod_cost > 0.0 {
+                let direct_amt = prod_cost.min(amount.max(0.0));
+                let indirect_amt = amount - direct_amt;
+
+                if direct_amt.abs() >= 0.01 {
+                    gl_direct_expenses += direct_amt;
+                    direct_expenses.push(PLAccount {
+                        id: id.clone(),
+                        account_name: name.clone(),
+                        account_code: code.clone(),
+                        account_group: "Direct Expenses".to_string(),
+                        amount: round2(direct_amt),
+                    });
+                }
+
+                if indirect_amt.abs() >= 0.01 {
+                    total_operating_expenses += indirect_amt;
+                    expenses.push(PLAccount {
+                        id,
+                        account_name: name,
+                        account_code: code,
+                        account_group: group_name,
+                        amount: round2(indirect_amt),
+                    });
+                }
+            } else {
+                if amount.abs() >= 0.01 {
+                    total_operating_expenses += amount;
+                    expenses.push(PLAccount {
+                        id,
+                        account_name: name,
+                        account_code: code,
+                        account_group: group_name,
+                        amount: round2(amount),
+                    });
+                }
+            }
+        }
+    }
+
+    if update_cost_enabled {
+        for (acc_id, (acc_name, acc_code, acc_group, _acc_type, total_amt)) in product_payment_costs {
+            if total_amt.abs() >= 0.01 {
+                gl_direct_expenses += total_amt;
+                let target_group = if is_direct_expense_group(&acc_group, &groups) {
+                    acc_group
+                } else {
+                    "Direct Expenses".to_string()
+                };
+                direct_expenses.push(PLAccount {
+                    id: if !acc_id.is_empty() { acc_id } else { acc_name.clone() },
+                    account_name: acc_name,
+                    account_code: acc_code,
+                    account_group: target_group,
+                    amount: round2(total_amt),
                 });
             }
         }

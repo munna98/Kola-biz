@@ -368,6 +368,10 @@ pub struct ProfitLossPdfData {
     pub currency_symbol: Option<String>,
     pub income_items: Vec<PdfAccountRow>,
     pub expense_items: Vec<PdfAccountRow>,
+    #[serde(default)]
+    pub direct_expenses: Option<f64>,
+    #[serde(default)]
+    pub direct_expense_items: Option<Vec<PdfAccountRow>>,
 }
 
 #[tauri::command]
@@ -612,13 +616,17 @@ pub async fn generate_profit_loss_pdf(
     current_layer.use_text("1. TRADING ACCOUNT SUMMARY", 11.0, Mm(left_margin), Mm(y_pos), &font_bold);
     y_pos -= 6.0;
 
-    let trading_items = vec![
+    let direct_expenses_val = data.direct_expenses.unwrap_or(0.0);
+    let mut trading_items = vec![
         ("Opening Stock", data.opening_stock),
-        ("Purchases & Direct Expenses", data.purchases),
-        ("Revenue / Operations (Sales)", data.total_income),
-        ("Closing Stock", data.closing_stock),
-        ("Cost of Goods Sold (COGS)", data.cogs),
+        ("Purchases", data.purchases),
     ];
+    if direct_expenses_val.abs() >= 0.01 {
+        trading_items.push(("Direct Expenses", direct_expenses_val));
+    }
+    trading_items.push(("Revenue / Operations (Sales)", data.total_income));
+    trading_items.push(("Closing Stock", data.closing_stock));
+    trading_items.push(("Cost of Goods Sold (COGS)", data.cogs));
 
     for (label, val) in trading_items {
         current_layer.use_text(label, 9.5, Mm(left_margin + 5.0), Mm(y_pos), &font);
@@ -703,6 +711,52 @@ pub async fn generate_profit_loss_pdf(
             y_pos -= line_height;
         }
         y_pos -= 6.0;
+    }
+
+    // Direct Expense Accounts
+    if let Some(ref de_items) = data.direct_expense_items {
+        if !de_items.is_empty() {
+            if y_pos < 35.0 {
+                let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+                current_layer = document.get_page(page).get_layer(layer);
+                y_pos = top_margin - 15.0;
+            }
+
+            current_layer.use_text("DETAILED DIRECT EXPENSE ACCOUNTS", 11.0, Mm(left_margin), Mm(y_pos), &font_bold);
+            y_pos -= 6.0;
+
+            current_layer.use_text("Code", 9.0, Mm(col_x[0]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Particulars / Account Name", 9.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Account Group", 9.0, Mm(col_x[2]), Mm(y_pos), &font_bold);
+            current_layer.use_text("Amount", 9.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
+            y_pos -= line_height;
+
+            for item in de_items {
+                if y_pos < 25.0 {
+                    let (page, layer) = document.add_page(Mm(210.0), Mm(297.0), "Page");
+                    current_layer = document.get_page(page).get_layer(layer);
+                    y_pos = top_margin - 15.0;
+                    current_layer.use_text("Code", 9.0, Mm(col_x[0]), Mm(y_pos), &font_bold);
+                    current_layer.use_text("Particulars / Account Name", 9.0, Mm(col_x[1]), Mm(y_pos), &font_bold);
+                    current_layer.use_text("Account Group", 9.0, Mm(col_x[2]), Mm(y_pos), &font_bold);
+                    current_layer.use_text("Amount", 9.0, Mm(col_x[3]), Mm(y_pos), &font_bold);
+                    y_pos -= line_height;
+                }
+
+                current_layer.use_text(&item.account_code, 9.0, Mm(col_x[0]), Mm(y_pos), &font);
+                let name = if item.account_name.len() > 40 {
+                    format!("{}...", &item.account_name[..37])
+                } else {
+                    item.account_name.clone()
+                };
+                current_layer.use_text(&name, 9.0, Mm(col_x[1]), Mm(y_pos), &font);
+                current_layer.use_text(&item.account_group, 9.0, Mm(col_x[2]), Mm(y_pos), &font);
+                let amt_str = format!("{} {:.2}", currency_sym, item.amount);
+                current_layer.use_text(&amt_str, 9.0, Mm(col_x[3]), Mm(y_pos), &font);
+                y_pos -= line_height;
+            }
+            y_pos -= 6.0;
+        }
     }
 
     // Expense Accounts
