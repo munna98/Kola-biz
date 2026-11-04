@@ -240,6 +240,7 @@ pub fn run() {
             get_balance_sheet,
             get_profit_loss,
             get_cash_flow,
+            get_cash_flow_drilldown,
             get_day_book,
             get_party_outstanding,
             get_party_invoice_details,

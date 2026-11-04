@@ -869,8 +869,12 @@ pub async fn get_profit_loss(
 // ============= CASH FLOW =============
 #[derive(Serialize, Deserialize, Clone)]
 pub struct CashFlowItem {
+    #[serde(default)]
+    pub key: String,
     pub description: String,
     pub amount: f64,
+    #[serde(default)]
+    pub count: i64,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -882,6 +886,8 @@ pub struct CashAccountBreakdown {
     pub opening_balance: f64,
     pub net_change: f64,
     pub closing_balance: f64,
+    #[serde(default)]
+    pub transaction_count: i64,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -896,6 +902,44 @@ pub struct CashFlowData {
     pub opening_cash: f64,
     pub closing_cash: f64,
     pub breakdown: Vec<CashAccountBreakdown>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CashFlowDetailEntry {
+    pub id: String,
+    pub voucher_id: String,
+    pub voucher_no: String,
+    pub voucher_type: String,
+    pub voucher_date: String,
+    pub cash_account_id: String,
+    pub cash_account_name: String,
+    pub cash_account_group: String,
+    pub party_name: Option<String>,
+    pub opposing_account: Option<String>,
+    pub narration: Option<String>,
+    pub flow_type: String,
+    pub activity_type: String,
+    pub category: String,
+    pub category_key: String,
+    pub inflow: f64,
+    pub outflow: f64,
+    pub net_amount: f64,
+    pub running_balance: Option<f64>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct CashFlowDrilldownResponse {
+    pub title: String,
+    pub category_key: Option<String>,
+    pub account_id: Option<String>,
+    pub account_name: Option<String>,
+    pub opening_balance: f64,
+    pub total_inflow: f64,
+    pub total_outflow: f64,
+    pub net_change: f64,
+    pub closing_balance: f64,
+    pub count: usize,
+    pub entries: Vec<CashFlowDetailEntry>,
 }
 
 #[tauri::command]
@@ -950,7 +994,7 @@ pub async fn get_cash_flow(
 
     // Cash / Bank received from customers (Cash sales & direct invoice collections)
     let cash_sales_query = "
-        SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL)
+        SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL), CAST(COUNT(DISTINCT v.id) AS INTEGER)
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
@@ -959,16 +1003,16 @@ pub async fn get_cash_flow(
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
-    let cash_sales: f64 = sqlx::query_scalar(cash_sales_query)
+    let (cash_sales, cash_sales_count): (f64, i64) = sqlx::query_as(cash_sales_query)
         .bind(&from_date)
         .bind(&to_date)
         .fetch_one(&pool)
         .await
-        .unwrap_or(0.0);
+        .unwrap_or((0.0, 0));
 
     // Cash / Bank paid for purchases (Direct cash purchase invoices)
     let cash_purchases_query = "
-        SELECT CAST(COALESCE(SUM(je.credit), 0) AS REAL)
+        SELECT CAST(COALESCE(SUM(je.credit), 0) AS REAL), CAST(COUNT(DISTINCT v.id) AS INTEGER)
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
@@ -977,16 +1021,16 @@ pub async fn get_cash_flow(
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
-    let cash_purchases: f64 = sqlx::query_scalar(cash_purchases_query)
+    let (cash_purchases, cash_purchases_count): (f64, i64) = sqlx::query_as(cash_purchases_query)
         .bind(&from_date)
         .bind(&to_date)
         .fetch_one(&pool)
         .await
-        .unwrap_or(0.0);
+        .unwrap_or((0.0, 0));
 
     // Cash / Bank received from debtors (Receipt vouchers)
     let debtor_payment_query = "
-        SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL)
+        SELECT CAST(COALESCE(SUM(je.debit), 0) AS REAL), CAST(COUNT(DISTINCT v.id) AS INTEGER)
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
@@ -995,16 +1039,16 @@ pub async fn get_cash_flow(
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
-    let debtor_payment: f64 = sqlx::query_scalar(debtor_payment_query)
+    let (debtor_payment, debtor_payment_count): (f64, i64) = sqlx::query_as(debtor_payment_query)
         .bind(&from_date)
         .bind(&to_date)
         .fetch_one(&pool)
         .await
-        .unwrap_or(0.0);
+        .unwrap_or((0.0, 0));
 
     // Cash / Bank paid to creditors (Payment vouchers)
     let creditor_payment_query = "
-        SELECT CAST(COALESCE(SUM(je.credit), 0) AS REAL)
+        SELECT CAST(COALESCE(SUM(je.credit), 0) AS REAL), CAST(COUNT(DISTINCT v.id) AS INTEGER)
         FROM journal_entries je
         JOIN vouchers v ON je.voucher_id = v.id
         JOIN chart_of_accounts coa ON je.account_id = coa.id
@@ -1013,16 +1057,16 @@ pub async fn get_cash_flow(
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
-    let creditor_payment: f64 = sqlx::query_scalar(creditor_payment_query)
+    let (creditor_payment, creditor_payment_count): (f64, i64) = sqlx::query_as(creditor_payment_query)
         .bind(&from_date)
         .bind(&to_date)
         .fetch_one(&pool)
         .await
-        .unwrap_or(0.0);
+        .unwrap_or((0.0, 0));
 
     // Other operating expenses paid via cash / bank (Journal vouchers)
     let other_expenses_query = "
-        SELECT CAST(COALESCE(SUM(je_cash.credit), 0) AS REAL)
+        SELECT CAST(COALESCE(SUM(je_cash.credit), 0) AS REAL), CAST(COUNT(DISTINCT v.id) AS INTEGER)
         FROM journal_entries je_cash
         JOIN vouchers v ON je_cash.voucher_id = v.id
         JOIN chart_of_accounts coa_cash ON je_cash.account_id = coa_cash.id
@@ -1034,16 +1078,16 @@ pub async fn get_cash_flow(
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
-    let other_expenses: f64 = sqlx::query_scalar(other_expenses_query)
+    let (other_expenses, other_expenses_count): (f64, i64) = sqlx::query_as(other_expenses_query)
         .bind(&from_date)
         .bind(&to_date)
         .fetch_one(&pool)
         .await
-        .unwrap_or(0.0);
+        .unwrap_or((0.0, 0));
 
     // Other operating income received via cash / bank (Journal vouchers)
     let other_income_query = "
-        SELECT CAST(COALESCE(SUM(je_cash.debit), 0) AS REAL)
+        SELECT CAST(COALESCE(SUM(je_cash.debit), 0) AS REAL), CAST(COUNT(DISTINCT v.id) AS INTEGER)
         FROM journal_entries je_cash
         JOIN vouchers v ON je_cash.voucher_id = v.id
         JOIN chart_of_accounts coa_cash ON je_cash.account_id = coa_cash.id
@@ -1055,12 +1099,12 @@ pub async fn get_cash_flow(
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
-    let other_income: f64 = sqlx::query_scalar(other_income_query)
+    let (other_income, other_income_count): (f64, i64) = sqlx::query_as(other_income_query)
         .bind(&from_date)
         .bind(&to_date)
         .fetch_one(&pool)
         .await
-        .unwrap_or(0.0);
+        .unwrap_or((0.0, 0));
 
     let mut operating_activities = vec![];
     let mut net_operating = 0.0;
@@ -1068,8 +1112,10 @@ pub async fn get_cash_flow(
     let cash_sales = round2(cash_sales);
     if cash_sales.abs() >= 0.01 {
         operating_activities.push(CashFlowItem {
+            key: "cash_sales".to_string(),
             description: "Cash from Sales".to_string(),
             amount: cash_sales,
+            count: cash_sales_count,
         });
         net_operating += cash_sales;
     }
@@ -1077,8 +1123,10 @@ pub async fn get_cash_flow(
     let debtor_payment = round2(debtor_payment);
     if debtor_payment.abs() >= 0.01 {
         operating_activities.push(CashFlowItem {
+            key: "debtor_receipts".to_string(),
             description: "Cash received from Debtors".to_string(),
             amount: debtor_payment,
+            count: debtor_payment_count,
         });
         net_operating += debtor_payment;
     }
@@ -1086,8 +1134,10 @@ pub async fn get_cash_flow(
     let cash_purchases = round2(cash_purchases);
     if cash_purchases.abs() >= 0.01 {
         operating_activities.push(CashFlowItem {
+            key: "cash_purchases".to_string(),
             description: "Cash paid for Purchases".to_string(),
             amount: -cash_purchases,
+            count: cash_purchases_count,
         });
         net_operating -= cash_purchases;
     }
@@ -1095,8 +1145,10 @@ pub async fn get_cash_flow(
     let creditor_payment = round2(creditor_payment);
     if creditor_payment.abs() >= 0.01 {
         operating_activities.push(CashFlowItem {
+            key: "creditor_payments".to_string(),
             description: "Cash paid to Creditors".to_string(),
             amount: -creditor_payment,
+            count: creditor_payment_count,
         });
         net_operating -= creditor_payment;
     }
@@ -1104,8 +1156,10 @@ pub async fn get_cash_flow(
     let other_expenses = round2(other_expenses);
     if other_expenses.abs() >= 0.01 {
         operating_activities.push(CashFlowItem {
+            key: "other_expenses".to_string(),
             description: "Other Operating Expenses".to_string(),
             amount: -other_expenses,
+            count: other_expenses_count,
         });
         net_operating -= other_expenses;
     }
@@ -1113,15 +1167,17 @@ pub async fn get_cash_flow(
     let other_income = round2(other_income);
     if other_income.abs() >= 0.01 {
         operating_activities.push(CashFlowItem {
+            key: "other_income".to_string(),
             description: "Other Operating Income".to_string(),
             amount: other_income,
+            count: other_income_count,
         });
         net_operating += other_income;
     }
 
     // 4. Investing Activities - Cash / Bank transactions involving Fixed Assets or Investments
     let investing_query = "
-        SELECT CAST(COALESCE(SUM(je_cash.debit - je_cash.credit), 0) AS REAL)
+        SELECT CAST(COALESCE(SUM(je_cash.debit - je_cash.credit), 0) AS REAL), CAST(COUNT(DISTINCT v.id) AS INTEGER)
         FROM journal_entries je_cash
         JOIN vouchers v ON je_cash.voucher_id = v.id
         JOIN chart_of_accounts coa_cash ON je_cash.account_id = coa_cash.id
@@ -1134,12 +1190,12 @@ pub async fn get_cash_flow(
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
-    let raw_investing: f64 = sqlx::query_scalar(investing_query)
+    let (raw_investing, investing_count): (f64, i64) = sqlx::query_as(investing_query)
         .bind(&from_date)
         .bind(&to_date)
         .fetch_one(&pool)
         .await
-        .unwrap_or(0.0);
+        .unwrap_or((0.0, 0));
 
     let net_investing = round2(raw_investing);
     let mut investing_activities = vec![];
@@ -1150,14 +1206,16 @@ pub async fn get_cash_flow(
             "Capital Expenditure / Purchase of Assets".to_string()
         };
         investing_activities.push(CashFlowItem {
+            key: "investing".to_string(),
             description: desc,
             amount: net_investing,
+            count: investing_count,
         });
     }
 
     // 5. Financing Activities - Cash / Bank transactions involving Equity, Loans, or Dividends
     let financing_query = "
-        SELECT CAST(COALESCE(SUM(je_cash.debit - je_cash.credit), 0) AS REAL)
+        SELECT CAST(COALESCE(SUM(je_cash.debit - je_cash.credit), 0) AS REAL), CAST(COUNT(DISTINCT v.id) AS INTEGER)
         FROM journal_entries je_cash
         JOIN vouchers v ON je_cash.voucher_id = v.id
         JOIN chart_of_accounts coa_cash ON je_cash.account_id = coa_cash.id
@@ -1170,12 +1228,12 @@ pub async fn get_cash_flow(
         AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
     ";
 
-    let raw_financing: f64 = sqlx::query_scalar(financing_query)
+    let (raw_financing, financing_count): (f64, i64) = sqlx::query_as(financing_query)
         .bind(&from_date)
         .bind(&to_date)
         .fetch_one(&pool)
         .await
-        .unwrap_or(0.0);
+        .unwrap_or((0.0, 0));
 
     let net_financing = round2(raw_financing);
     let mut financing_activities = vec![];
@@ -1186,8 +1244,10 @@ pub async fn get_cash_flow(
             "Repayment of Loans / Capital Withdrawn".to_string()
         };
         financing_activities.push(CashFlowItem {
+            key: "financing".to_string(),
             description: desc,
             amount: net_financing,
+            count: financing_count,
         });
     }
 
@@ -1195,9 +1255,26 @@ pub async fn get_cash_flow(
     let sum_activities = round2(net_operating + net_investing + net_financing);
     let discrepancy = round2(net_change - sum_activities);
     if discrepancy.abs() >= 0.01 {
+        let discrepancy_count: i64 = sqlx::query_scalar("
+            SELECT CAST(COUNT(DISTINCT v.id) AS INTEGER)
+            FROM journal_entries je
+            JOIN vouchers v ON je.voucher_id = v.id
+            JOIN chart_of_accounts coa ON je.account_id = coa.id
+            WHERE (coa.account_group IN ('Cash', 'Bank Account') OR coa.account_name IN ('Cash', 'Bank Account'))
+            AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+            AND v.voucher_type NOT IN ('sales_invoice', 'co_invoice', 'receipt', 'purchase_invoice', 'payment')
+        ")
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(1);
+
         operating_activities.push(CashFlowItem {
+            key: "adjustments".to_string(),
             description: "Other Cash Flow / Working Capital Adjustments".to_string(),
             amount: discrepancy,
+            count: discrepancy_count,
         });
         net_operating = round2(net_operating + discrepancy);
     }
@@ -1211,7 +1288,8 @@ pub async fn get_cash_flow(
             COALESCE(coa.account_group, 'Cash') as account_group,
             CAST(COALESCE(SUM(CASE WHEN v.voucher_date <= ? THEN je.debit - je.credit ELSE 0 END), 0) AS REAL) as opening_balance,
             CAST(COALESCE(SUM(CASE WHEN v.voucher_date >= ? AND v.voucher_date <= ? THEN je.debit - je.credit ELSE 0 END), 0) AS REAL) as net_change,
-            CAST(COALESCE(SUM(CASE WHEN v.voucher_date <= ? THEN je.debit - je.credit ELSE 0 END), 0) AS REAL) as closing_balance
+            CAST(COALESCE(SUM(CASE WHEN v.voucher_date <= ? THEN je.debit - je.credit ELSE 0 END), 0) AS REAL) as closing_balance,
+            CAST(COUNT(DISTINCT CASE WHEN v.voucher_date >= ? AND v.voucher_date <= ? THEN v.id ELSE NULL END) AS INTEGER) as transaction_count
         FROM chart_of_accounts coa
         LEFT JOIN journal_entries je ON coa.id = je.account_id
         LEFT JOIN vouchers v ON je.voucher_id = v.id AND v.deleted_at IS NULL
@@ -1221,10 +1299,12 @@ pub async fn get_cash_flow(
         ORDER BY coa.account_group ASC, coa.account_name ASC
     ";
 
-    let breakdown_rows: Vec<(String, String, String, String, f64, f64, f64)> = sqlx::query_as(breakdown_query)
+    let breakdown_rows: Vec<(String, String, String, String, f64, f64, f64, i64)> = sqlx::query_as(breakdown_query)
         .bind(&opening_date)
         .bind(&from_date)
         .bind(&to_date)
+        .bind(&to_date)
+        .bind(&from_date)
         .bind(&to_date)
         .fetch_all(&pool)
         .await
@@ -1232,8 +1312,8 @@ pub async fn get_cash_flow(
 
     let mut breakdown: Vec<CashAccountBreakdown> = breakdown_rows
         .iter()
-        .filter(|(_, _, _, _, op, chg, cl)| op.abs() >= 0.005 || chg.abs() >= 0.005 || cl.abs() >= 0.005)
-        .map(|(id, name, code, group, op, chg, cl)| CashAccountBreakdown {
+        .filter(|(_, _, _, _, op, chg, cl, cnt)| op.abs() >= 0.005 || chg.abs() >= 0.005 || cl.abs() >= 0.005 || *cnt > 0)
+        .map(|(id, name, code, group, op, chg, cl, cnt)| CashAccountBreakdown {
             account_id: id.clone(),
             account_name: name.clone(),
             account_code: code.clone(),
@@ -1241,13 +1321,14 @@ pub async fn get_cash_flow(
             opening_balance: round2(*op),
             net_change: round2(*chg),
             closing_balance: round2(*cl),
+            transaction_count: *cnt,
         })
         .collect();
 
     if breakdown.is_empty() {
         breakdown = breakdown_rows
             .into_iter()
-            .map(|(id, name, code, group, op, chg, cl)| CashAccountBreakdown {
+            .map(|(id, name, code, group, op, chg, cl, cnt)| CashAccountBreakdown {
                 account_id: id,
                 account_name: name,
                 account_code: code,
@@ -1255,6 +1336,7 @@ pub async fn get_cash_flow(
                 opening_balance: round2(op),
                 net_change: round2(chg),
                 closing_balance: round2(cl),
+                transaction_count: cnt,
             })
             .collect();
     }
@@ -1270,6 +1352,335 @@ pub async fn get_cash_flow(
         opening_cash,
         closing_cash,
         breakdown,
+    })
+}
+
+#[tauri::command]
+pub async fn get_cash_flow_drilldown(
+    registry: State<'_, Arc<DbRegistry>>,
+    from_date: String,
+    to_date: String,
+    category_key: Option<String>,
+    account_id: Option<String>,
+) -> Result<CashFlowDrilldownResponse, String> {
+    let pool = registry.active_pool().await?;
+    let opening_date_obj =
+        chrono::NaiveDate::parse_from_str(&from_date, "%Y-%m-%d").map_err(|e| e.to_string())?;
+    let opening_date = (opening_date_obj - chrono::Duration::days(1)).to_string();
+
+    // 1. Fetch account info if filtering by specific account
+    let target_account_name = if let Some(ref acc_id) = account_id {
+        sqlx::query_scalar::<_, String>("SELECT account_name FROM chart_of_accounts WHERE id = ?")
+            .bind(acc_id)
+            .fetch_optional(&pool)
+            .await
+            .unwrap_or(None)
+    } else {
+        None
+    };
+
+    // 2. Calculate Opening Balance for the relevant scope
+    let opening_balance: f64 = if let Some(ref acc_id) = account_id {
+        sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(je.debit - je.credit), 0) AS REAL)
+             FROM journal_entries je
+             JOIN vouchers v ON je.voucher_id = v.id
+             WHERE je.account_id = ? AND v.voucher_date <= ? AND v.deleted_at IS NULL"
+        )
+        .bind(acc_id)
+        .bind(&opening_date)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0.0)
+    } else if category_key.is_some() && category_key.as_deref() != Some("all") {
+        0.0
+    } else {
+        sqlx::query_scalar(
+            "SELECT CAST(COALESCE(SUM(je.debit - je.credit), 0) AS REAL)
+             FROM journal_entries je
+             JOIN vouchers v ON je.voucher_id = v.id
+             JOIN chart_of_accounts coa ON je.account_id = coa.id
+             WHERE (coa.account_group IN ('Cash', 'Bank Account') OR coa.account_name IN ('Cash', 'Bank Account'))
+             AND v.voucher_date <= ? AND v.deleted_at IS NULL"
+        )
+        .bind(&opening_date)
+        .fetch_one(&pool)
+        .await
+        .unwrap_or(0.0)
+    };
+
+    // 3. Title determination
+    let title = if let Some(ref acc_name) = target_account_name {
+        format!("{} — Cash Movement Statement", acc_name)
+    } else {
+        match category_key.as_deref() {
+            Some("cash_sales") => "Cash from Sales".to_string(),
+            Some("debtor_receipts") => "Cash received from Debtors".to_string(),
+            Some("cash_purchases") => "Cash paid for Purchases".to_string(),
+            Some("creditor_payments") => "Cash paid to Creditors".to_string(),
+            Some("other_expenses") => "Other Operating Expenses".to_string(),
+            Some("other_income") => "Other Operating Income".to_string(),
+            Some("investing") => "Cash Flow from Investing Activities".to_string(),
+            Some("financing") => "Cash Flow from Financing Activities".to_string(),
+            Some("adjustments") => "Other Cash Flow / Adjustments".to_string(),
+            _ => "All Cash Flow Movements".to_string(),
+        }
+    };
+
+    // 4. Fetch all cash journal entries in the period
+    #[derive(sqlx::FromRow)]
+    struct RawCashJe {
+        je_id: String,
+        voucher_id: String,
+        voucher_no: String,
+        voucher_type: String,
+        voucher_date: String,
+        cash_account_id: String,
+        cash_account_name: String,
+        cash_account_group: String,
+        party_name: Option<String>,
+        narration: Option<String>,
+        debit: f64,
+        credit: f64,
+    }
+
+    let raw_cash_query = "
+        SELECT 
+            je.id as je_id,
+            v.id as voucher_id,
+            v.voucher_no,
+            v.voucher_type,
+            v.voucher_date,
+            coa_cash.id as cash_account_id,
+            coa_cash.account_name as cash_account_name,
+            COALESCE(coa_cash.account_group, 'Cash') as cash_account_group,
+            CASE 
+                WHEN v.party_type = 'customer' THEN (SELECT name FROM customers WHERE id = v.party_id)
+                WHEN v.party_type = 'supplier' THEN (SELECT name FROM suppliers WHERE id = v.party_id)
+                ELSE NULL
+            END as party_name,
+            COALESCE(NULLIF(je.narration, ''), NULLIF(v.narration, ''), '') as narration,
+            CAST(je.debit AS REAL) as debit,
+            CAST(je.credit AS REAL) as credit
+        FROM journal_entries je
+        JOIN vouchers v ON je.voucher_id = v.id
+        JOIN chart_of_accounts coa_cash ON je.account_id = coa_cash.id
+        WHERE (coa_cash.account_group IN ('Cash', 'Bank Account') OR coa_cash.account_name IN ('Cash', 'Bank Account'))
+          AND v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+          AND (je.debit > 0 OR je.credit > 0)
+        ORDER BY v.voucher_date ASC, v.id ASC, je.id ASC
+    ";
+
+    let raw_entries: Vec<RawCashJe> = sqlx::query_as(raw_cash_query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_all(&pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // 5. Fetch all other journal entries in these vouchers to identify opposing accounts
+    #[derive(sqlx::FromRow, Clone)]
+    struct RawOtherJe {
+        voucher_id: String,
+        account_id: String,
+        account_name: String,
+        account_type: String,
+        account_group: String,
+    }
+
+    let raw_other_query = "
+        SELECT 
+            je_other.voucher_id,
+            coa_other.id as account_id,
+            coa_other.account_name,
+            coa_other.account_type,
+            COALESCE(coa_other.account_group, '') as account_group
+        FROM journal_entries je_other
+        JOIN chart_of_accounts coa_other ON je_other.account_id = coa_other.id
+        JOIN vouchers v ON je_other.voucher_id = v.id
+        WHERE v.voucher_date >= ? AND v.voucher_date <= ? AND v.deleted_at IS NULL
+        ORDER BY je_other.voucher_id, je_other.id
+    ";
+
+    let other_rows: Vec<RawOtherJe> = sqlx::query_as(raw_other_query)
+        .bind(&from_date)
+        .bind(&to_date)
+        .fetch_all(&pool)
+        .await
+        .unwrap_or_default();
+
+    let mut others_by_voucher: std::collections::HashMap<String, Vec<RawOtherJe>> = std::collections::HashMap::new();
+    for row in other_rows {
+        others_by_voucher.entry(row.voucher_id.clone()).or_default().push(row);
+    }
+
+    // 6. Categorize each cash journal entry
+    let mut all_details = Vec::new();
+
+    for je in raw_entries {
+        let others = others_by_voucher.get(&je.voucher_id);
+        let mut non_cash_others = Vec::new();
+        let mut cash_others = Vec::new();
+        if let Some(list) = others {
+            for o in list {
+                if o.account_id != je.cash_account_id {
+                    let is_cash_equiv = o.account_group == "Cash"
+                        || o.account_group == "Bank Account"
+                        || o.account_name == "Cash"
+                        || o.account_name == "Bank Account";
+                    if is_cash_equiv {
+                        cash_others.push(o);
+                    } else {
+                        non_cash_others.push(o);
+                    }
+                }
+            }
+        }
+
+        let is_inflow = je.debit > 0.0;
+        let inflow = round2(je.debit);
+        let outflow = round2(je.credit);
+        let net_amount = round2(inflow - outflow);
+        let flow_type = if is_inflow { "inflow".to_string() } else { "outflow".to_string() };
+
+        let (category_key_str, category_str, activity_type_str, mut opposing_acc) = match je.voucher_type.as_str() {
+            "sales_invoice" | "co_invoice" => {
+                let name = je.party_name.as_deref().unwrap_or("Sales");
+                ("cash_sales", "Cash from Sales", "operating", format!("Sales ({})", name))
+            },
+            "receipt" => {
+                let name = je.party_name.as_deref().unwrap_or("Debtor");
+                ("debtor_receipts", "Cash received from Debtors", "operating", format!("Receipt ({})", name))
+            },
+            "purchase_invoice" => {
+                let name = je.party_name.as_deref().unwrap_or("Purchases");
+                ("cash_purchases", "Cash paid for Purchases", "operating", format!("Purchases ({})", name))
+            },
+            "payment" => {
+                let name = je.party_name.as_deref().unwrap_or("Creditor / Expense");
+                ("creditor_payments", "Cash paid to Creditors", "operating", format!("Payment ({})", name))
+            },
+            "journal" => {
+                if let Some(exp) = non_cash_others.iter().find(|o| o.account_type == "Expense") {
+                    ("other_expenses", "Other Operating Expenses", "operating", exp.account_name.clone())
+                } else if let Some(inc) = non_cash_others.iter().find(|o| o.account_type == "Income") {
+                    ("other_income", "Other Operating Income", "operating", inc.account_name.clone())
+                } else if let Some(ast) = non_cash_others.iter().find(|o| {
+                    o.account_type == "Asset"
+                        && !["Cash", "Bank Account", "Accounts Receivable", "Inventory", "Tax Receivable"].contains(&o.account_group.as_str())
+                        && !["Cash", "Bank Account", "Accounts Receivable", "Inventory"].contains(&o.account_name.as_str())
+                }) {
+                    let desc = if is_inflow { "Cash from Sale of Fixed Assets / Investments" } else { "Capital Expenditure / Purchase of Assets" };
+                    ("investing", desc, "investing", ast.account_name.clone())
+                } else if let Some(fin) = non_cash_others.iter().find(|o| {
+                    ["Liability", "Equity"].contains(&o.account_type.as_str())
+                        && !["Accounts Payable", "Current Liabilities", "Tax Payable", "Duties & Taxes"].contains(&o.account_group.as_str())
+                        && !["Accounts Payable", "Accounts Receivable"].contains(&o.account_name.as_str())
+                }) {
+                    let desc = if is_inflow { "Proceeds from Loans / Capital Introduced" } else { "Repayment of Loans / Capital Withdrawn" };
+                    ("financing", desc, "financing", fin.account_name.clone())
+                } else if !cash_others.is_empty() {
+                    let target_names = cash_others.iter().map(|c| c.account_name.as_str()).collect::<Vec<_>>().join(", ");
+                    ("transfer", "Cash & Bank Transfer", "transfer", format!("Transfer: {}", target_names))
+                } else {
+                    let others_str = if !non_cash_others.is_empty() {
+                        non_cash_others.iter().map(|o| o.account_name.as_str()).collect::<Vec<_>>().join(", ")
+                    } else {
+                        "General Adjustment".to_string()
+                    };
+                    ("adjustments", "Other Cash Flow / Adjustments", "operating", others_str)
+                }
+            },
+            "sales_return" => {
+                let name = je.party_name.as_deref().unwrap_or("Customer");
+                ("adjustments", "Sales Return Cash Refund", "operating", format!("Sales Return ({})", name))
+            },
+            "purchase_return" => {
+                let name = je.party_name.as_deref().unwrap_or("Supplier");
+                ("adjustments", "Purchase Return Cash Refund", "operating", format!("Purchase Return ({})", name))
+            },
+            _ => {
+                let others_str = if !non_cash_others.is_empty() {
+                    non_cash_others.iter().map(|o| o.account_name.as_str()).collect::<Vec<_>>().join(", ")
+                } else if !cash_others.is_empty() {
+                    cash_others.iter().map(|o| o.account_name.as_str()).collect::<Vec<_>>().join(", ")
+                } else {
+                    je.voucher_type.clone()
+                };
+                ("adjustments", "Other Cash Flow / Adjustments", "operating", others_str)
+            }
+        };
+
+        if opposing_acc.is_empty() && !non_cash_others.is_empty() {
+            opposing_acc = non_cash_others[0].account_name.clone();
+        }
+
+        all_details.push(CashFlowDetailEntry {
+            id: je.je_id,
+            voucher_id: je.voucher_id,
+            voucher_no: je.voucher_no,
+            voucher_type: je.voucher_type,
+            voucher_date: je.voucher_date,
+            cash_account_id: je.cash_account_id,
+            cash_account_name: je.cash_account_name,
+            cash_account_group: je.cash_account_group,
+            party_name: je.party_name,
+            opposing_account: Some(opposing_acc),
+            narration: je.narration,
+            flow_type,
+            activity_type: activity_type_str.to_string(),
+            category: category_str.to_string(),
+            category_key: category_key_str.to_string(),
+            inflow,
+            outflow,
+            net_amount,
+            running_balance: None,
+        });
+    }
+
+    // 7. Filter entries by account_id and/or category_key
+    let mut filtered_entries: Vec<CashFlowDetailEntry> = all_details
+        .into_iter()
+        .filter(|e| {
+            if let Some(ref acc_id) = account_id {
+                if &e.cash_account_id != acc_id {
+                    return false;
+                }
+            }
+            if let Some(ref cat_key) = category_key {
+                if cat_key != "all" && &e.category_key != cat_key {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect();
+
+    // 8. Compute running balance
+    let mut running = opening_balance;
+    for entry in &mut filtered_entries {
+        running = round2(running + entry.net_amount);
+        entry.running_balance = Some(running);
+    }
+
+    let total_inflow = round2(filtered_entries.iter().map(|e| e.inflow).sum());
+    let total_outflow = round2(filtered_entries.iter().map(|e| e.outflow).sum());
+    let net_change = round2(total_inflow - total_outflow);
+    let closing_balance = round2(opening_balance + net_change);
+    let count = filtered_entries.len();
+
+    Ok(CashFlowDrilldownResponse {
+        title,
+        category_key,
+        account_id,
+        account_name: target_account_name,
+        opening_balance: round2(opening_balance),
+        total_inflow,
+        total_outflow,
+        net_change,
+        closing_balance,
+        count,
+        entries: filtered_entries,
     })
 }
 
