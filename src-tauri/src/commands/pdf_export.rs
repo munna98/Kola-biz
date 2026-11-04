@@ -638,9 +638,10 @@ pub async fn generate_profit_loss_pdf(
     current_layer.use_text("2. PROFIT & LOSS SUMMARY", 11.0, Mm(left_margin), Mm(y_pos), &font_bold);
     y_pos -= 6.0;
 
+    let operating_expenses = (data.total_expenses - data.cogs).max(0.0);
     let pl_summary_items = vec![
         (if data.gross_profit >= 0.0 { "Gross Profit b/f" } else { "Gross Loss b/f" }, data.gross_profit.abs()),
-        ("Operating / Indirect Expenses", data.total_expenses),
+        ("Operating / Indirect Expenses", operating_expenses),
     ];
 
     for (label, val) in pl_summary_items {

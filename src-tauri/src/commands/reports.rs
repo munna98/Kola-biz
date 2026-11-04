@@ -581,8 +581,8 @@ pub async fn get_profit_loss(
     .await
     .map_err(|e| e.to_string())?;
 
-    let opening_stock = get_stock_value_for_period(&pool, &from_date, &to_date, true).await?;
-    let closing_stock = get_stock_value_for_period(&pool, &from_date, &to_date, false).await?;
+    let opening_stock = get_stock_value_for_period(&pool, &from_date, &from_date, true).await?;
+    let closing_stock = get_stock_value_for_period(&pool, &to_date, &to_date, false).await?;
 
     let query = "
         SELECT 
@@ -610,11 +610,16 @@ pub async fn get_profit_loss(
         .map_err(|e| e.to_string())?;
 
     let period_purchases_sm: f64 = sqlx::query_scalar(
-        "SELECT CAST(COALESCE(SUM(sm.cost_amount), 0.0) AS REAL)
+        "SELECT CAST(COALESCE(SUM(
+            CASE 
+                WHEN sm.movement_type = 'IN' THEN sm.cost_amount 
+                WHEN sm.movement_type = 'OUT' AND v.voucher_type = 'purchase_return' THEN -sm.cost_amount
+                ELSE 0.0 
+            END
+         ), 0.0) AS REAL)
          FROM stock_movements sm
          JOIN vouchers v ON sm.voucher_id = v.id
-         WHERE v.voucher_type IN ('purchase', 'purchase_invoice')
-           AND sm.movement_type = 'IN'
+         WHERE v.voucher_type IN ('purchase', 'purchase_invoice', 'purchase_return')
            AND v.voucher_date >= ? AND v.voucher_date <= ?
            AND v.deleted_at IS NULL"
     )
@@ -625,9 +630,15 @@ pub async fn get_profit_loss(
     .unwrap_or(0.0);
 
     let period_purchases_vouchers: f64 = sqlx::query_scalar(
-        "SELECT CAST(COALESCE(SUM(v.total_amount), 0.0) AS REAL)
+        "SELECT CAST(COALESCE(SUM(
+            CASE 
+                WHEN v.voucher_type IN ('purchase', 'purchase_invoice') THEN v.total_amount
+                WHEN v.voucher_type = 'purchase_return' THEN -v.total_amount
+                ELSE 0.0
+            END
+         ), 0.0) AS REAL)
          FROM vouchers v
-         WHERE v.voucher_type IN ('purchase', 'purchase_invoice')
+         WHERE v.voucher_type IN ('purchase', 'purchase_invoice', 'purchase_return')
            AND v.voucher_date >= ? AND v.voucher_date <= ?
            AND v.deleted_at IS NULL"
     )
@@ -647,7 +658,8 @@ pub async fn get_profit_loss(
     let mut expenses = Vec::new();
     let mut direct_expenses = Vec::new();
     let mut total_income = 0.0;
-    let mut purchases = 0.0;
+    let mut gl_purchases = 0.0;
+    let mut gl_direct_expenses = 0.0;
     let mut cogs_from_gl = 0.0;
     let mut total_operating_expenses = 0.0;
 
@@ -667,33 +679,12 @@ pub async fn get_profit_loss(
         } else if code == "5002" {
             let amount = dr - cr;
             cogs_from_gl += amount;
-        } else if code == "5001" {
+        } else if code == "5001" || code == "5003" || group_name.eq_ignore_ascii_case("purchase accounts") {
             let amount = dr - cr;
-            purchases += amount;
-            if amount.abs() >= 0.01 {
-                direct_expenses.push(PLAccount {
-                    id,
-                    account_name: name,
-                    account_code: code,
-                    account_group: group_name,
-                    amount: round2(amount),
-                });
-            }
-        } else if code == "5003" {
-            let amount = dr - cr;
-            purchases += amount;
-            if amount.abs() >= 0.01 {
-                direct_expenses.push(PLAccount {
-                    id,
-                    account_name: name,
-                    account_code: code,
-                    account_group: group_name,
-                    amount: round2(amount),
-                });
-            }
+            gl_purchases += amount;
         } else if is_direct_expense_group(&group_name, &groups) || code == "6010" {
             let amount = dr - cr;
-            purchases += amount;
+            gl_direct_expenses += amount;
             if amount.abs() >= 0.01 {
                 direct_expenses.push(PLAccount {
                     id,
@@ -718,23 +709,19 @@ pub async fn get_profit_loss(
         }
     }
 
-    let total_purchases = if period_purchases > 0.0 && purchases == 0.0 {
+    let total_purchases = if period_purchases != 0.0 && gl_purchases == 0.0 {
         period_purchases
     } else {
-        purchases
+        gl_purchases
     };
 
-    // Calculate COGS universally:
-    // 1. Perpetual Inventory: Sales invoices post GL debits to COGS account (5002).
-    //    cogs_from_gl is the COGS recorded from sales. Any GL direct expenses (in 5001/5003/6010) add to it.
-    //    Total stock purchases (which go to Inventory Asset) are NOT added on top.
-    // 2. Periodic Inventory / Manual GL: No perpetual COGS GL debits (cogs_from_gl == 0).
-    //    COGS = Opening Stock + Total Purchases - Closing Stock.
-    let cogs = if cogs_from_gl > 0.0 {
-        round2(cogs_from_gl + purchases)
-    } else {
-        round2((opening_stock + total_purchases - closing_stock).max(0.0))
-    };
+    // Calculate COGS and Gross Profit for Trading and Profit & Loss Account:
+    // In standard accounting (Trading Account):
+    // COGS = Opening Stock + Total Purchases + Direct Expenses - Closing Stock
+    // Gross Profit = Total Revenue (Sales) - COGS
+    // This guarantees that the Trading Account balances mathematically:
+    // Debit Total (Opening + Purchases + Direct Expenses + Gross Profit) == Credit Total (Sales + Closing Stock)
+    let cogs = round2((opening_stock + total_purchases + gl_direct_expenses - closing_stock).max(0.0));
 
     let gross_profit = round2(total_income - cogs);
     let total_expenses = round2(cogs + total_operating_expenses);
