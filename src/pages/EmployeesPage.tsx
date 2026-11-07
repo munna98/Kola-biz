@@ -3,16 +3,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { IconPlus, IconEdit, IconTrash, IconUser, IconMail, IconPhone, IconFolder } from '@tabler/icons-react';
+import { IconPlus, IconEdit, IconTrash, IconUser, IconMail, IconPhone } from '@tabler/icons-react';
 import { api, Employee } from '@/lib/tauri';
 import { toast } from 'sonner';
 import EmployeeDialog from '@/components/dialogs/EmployeeDialog';
-import AccountGroupsDialog from '@/components/dialogs/AccountGroupsDialog';
 
 export default function EmployeesPage() {
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [open, setOpen] = useState(false);
-    const [groupsDialogOpen, setGroupsDialogOpen] = useState(false);
     const [employeeToEdit, setEmployeeToEdit] = useState<Employee | null>(null);
     const [searchTerm, setSearchTerm] = useState('');
 
@@ -71,9 +69,6 @@ export default function EmployeesPage() {
                         onChange={(e) => setSearchTerm(e.target.value)}
                         className="w-64"
                     />
-                    <Button variant="outline" onClick={() => setGroupsDialogOpen(true)}>
-                        <IconFolder size={16} /> Manage Groups
-                    </Button>
                     <Button onClick={() => { setOpen(true); setEmployeeToEdit(null); }}>
                         <IconPlus size={16} /> Add Employee
                     </Button>
@@ -155,12 +150,6 @@ export default function EmployeesPage() {
                 onOpenChange={setOpen}
                 employeeToEdit={employeeToEdit}
                 onSave={load}
-            />
-
-            <AccountGroupsDialog
-                open={groupsDialogOpen}
-                onOpenChange={setGroupsDialogOpen}
-                onGroupsChanged={load}
             />
         </div>
     );

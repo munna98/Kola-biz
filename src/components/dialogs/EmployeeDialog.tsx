@@ -7,10 +7,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Combobox } from '@/components/ui/combobox';
-import { IconSettings } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { api, CreateEmployee, Employee, UpdateEmployee, AccountGroup, buildAccountGroupTree, flattenGroupTree } from '@/lib/tauri';
-import AccountGroupsDialog from '@/components/dialogs/AccountGroupsDialog';
 
 interface EmployeeDialogProps {
     open: boolean;
@@ -22,7 +20,6 @@ interface EmployeeDialogProps {
 export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onSave }: EmployeeDialogProps) {
     const [loading, setLoading] = useState(false);
     const [accountGroups, setAccountGroups] = useState<AccountGroup[]>([]);
-    const [manageGroupsOpen, setManageGroupsOpen] = useState(false);
     const [formData, setFormData] = useState<CreateEmployee>({
         name: '',
         code: '',
@@ -195,25 +192,13 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                         </div>
                         <div className="space-y-2">
                             <Label htmlFor="account_group">Employee Group</Label>
-                            <div className="flex gap-1.5">
-                                <Combobox
-                                    options={groupOptions}
-                                    value={formData.account_group || 'Emp Benefits & Salaries'}
-                                    onChange={(val) => setFormData({ ...formData, account_group: String(val) })}
-                                    placeholder="Select group..."
-                                    className="w-full"
-                                />
-                                <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="icon"
-                                    className="shrink-0 h-9 w-9"
-                                    title="Manage Account Groups"
-                                    onClick={() => setManageGroupsOpen(true)}
-                                >
-                                    <IconSettings size={15} />
-                                </Button>
-                            </div>
+                            <Combobox
+                                options={groupOptions}
+                                value={formData.account_group || 'Emp Benefits & Salaries'}
+                                onChange={(val) => setFormData({ ...formData, account_group: String(val) })}
+                                placeholder="Select group..."
+                                className="w-full"
+                            />
                         </div>
                     </div>
 
@@ -350,13 +335,6 @@ export default function EmployeeDialog({ open, onOpenChange, employeeToEdit, onS
                     </DialogFooter>
                 </form>
             </DialogContent>
-            {manageGroupsOpen && (
-                <AccountGroupsDialog
-                    open={manageGroupsOpen}
-                    onOpenChange={setManageGroupsOpen}
-                    onGroupsChanged={loadAccountGroups}
-                />
-            )}
         </Dialog>
     );
 }

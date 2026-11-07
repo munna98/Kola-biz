@@ -164,8 +164,8 @@ pub async fn create_employee(
 
     // 3. Create Employee
     sqlx::query(
-        "INSERT INTO employees (id, user_id, account_id, code, name, designation, phone, email, address, joining_date, status) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')"
+        "INSERT INTO employees (id, user_id, account_id, code, name, designation, phone, email, address, joining_date, status, account_group) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)"
     )
     .bind(&employee_id)
     .bind(user_id)
@@ -177,6 +177,7 @@ pub async fn create_employee(
     .bind(data.email)
     .bind(data.address)
     .bind(data.joining_date)
+    .bind(account_group)
     .execute(&mut *tx)
     .await
     .map_err(|e| format!("Failed to create employee: {}", e))?;
@@ -192,7 +193,7 @@ pub async fn get_employees(registry: State<'_, Arc<DbRegistry>>) -> Result<Vec<E
         r#"SELECT 
             e.id, e.user_id, e.account_id, e.code, e.name, e.designation, e.phone, e.email, e.address, 
             e.status, e.created_at, e.joining_date,
-            coa.account_group
+            COALESCE(NULLIF(e.account_group, ''), coa.account_group, 'Emp Benefits & Salaries') as account_group
         FROM employees e
         LEFT JOIN chart_of_accounts coa ON (e.account_id = coa.id OR (e.account_id IS NULL AND coa.party_id = e.id AND coa.party_type = 'Employee'))
         WHERE e.deleted_at IS NULL 
@@ -211,12 +212,19 @@ pub async fn update_employee(
     let pool = registry.active_pool().await?;
     let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
+    let account_group_val = data
+        .account_group
+        .as_deref()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Emp Benefits & Salaries");
+
     // 1. Update Employee
     let code_to_update = data.code.clone();
     sqlx::query(
         "UPDATE employees SET 
             code = ?, name = ?, designation = ?, phone = ?, email = ?, 
-            address = ?, joining_date = ?, status = ?
+            address = ?, joining_date = ?, status = ?, account_group = ?
          WHERE id = ?",
     )
     .bind(&data.code)
@@ -227,6 +235,7 @@ pub async fn update_employee(
     .bind(data.address)
     .bind(data.joining_date)
     .bind(data.status)
+    .bind(account_group_val)
     .bind(&data.id)
     .execute(&mut *tx)
     .await
@@ -252,67 +261,27 @@ pub async fn update_employee(
         }
     };
 
-    if let Some(acc_id) = account_id {
-        if let Some(group) = &data.account_group {
-            let group_trim = group.trim();
-            if !group_trim.is_empty() {
-                let derived_type = resolve_account_type(&mut tx, group_trim)
-                    .await
-                    .unwrap_or_else(|| "Expense".to_string());
+    let derived_type = resolve_account_type(&mut tx, account_group_val)
+        .await
+        .unwrap_or_else(|| "Expense".to_string());
 
-                sqlx::query(
-                    "UPDATE chart_of_accounts 
-                     SET account_name = ?, account_code = COALESCE(NULLIF(?, ''), account_code), account_group = ?, account_type = ? 
-                     WHERE id = ?"
-                )
-                .bind(&data.name)
-                .bind(code_to_update)
-                .bind(group_trim)
-                .bind(derived_type)
-                .bind(&acc_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| format!("Failed to update ledger: {}", e))?;
-            } else {
-                sqlx::query(
-                    "UPDATE chart_of_accounts 
-                     SET account_name = ?, account_code = COALESCE(NULLIF(?, ''), account_code) 
-                     WHERE id = ?"
-                )
-                .bind(&data.name)
-                .bind(code_to_update)
-                .bind(&acc_id)
-                .execute(&mut *tx)
-                .await
-                .map_err(|e| format!("Failed to update ledger name: {}", e))?;
-            }
-        } else {
-            sqlx::query(
-                "UPDATE chart_of_accounts 
-                 SET account_name = ?, account_code = COALESCE(NULLIF(?, ''), account_code) 
-                 WHERE id = ?"
-            )
-            .bind(&data.name)
-            .bind(code_to_update)
-            .bind(&acc_id)
-            .execute(&mut *tx)
-            .await
-            .map_err(|e| format!("Failed to update ledger name: {}", e))?;
-        }
+    if let Some(acc_id) = account_id {
+        sqlx::query(
+            "UPDATE chart_of_accounts 
+             SET account_name = ?, account_code = COALESCE(NULLIF(?, ''), account_code), account_group = ?, account_type = ? 
+             WHERE id = ?"
+        )
+        .bind(&data.name)
+        .bind(code_to_update)
+        .bind(account_group_val)
+        .bind(derived_type)
+        .bind(&acc_id)
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| format!("Failed to update ledger: {}", e))?;
     } else {
         // If employee had no linked ledger, create one and link it
         let new_acc_id = Uuid::now_v7().to_string();
-        let group_name = data
-            .account_group
-            .as_deref()
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .unwrap_or("Emp Benefits & Salaries");
-
-        let derived_type = resolve_account_type(&mut tx, group_name)
-            .await
-            .unwrap_or_else(|| "Expense".to_string());
-
         sqlx::query(
             "INSERT INTO chart_of_accounts (id, account_code, account_name, account_type, account_group, description, is_system, party_id, party_type) 
              VALUES (?, ?, ?, ?, ?, ?, 0, ?, 'Employee')"
@@ -321,7 +290,7 @@ pub async fn update_employee(
         .bind(&data.code)
         .bind(&data.name)
         .bind(derived_type)
-        .bind(group_name)
+        .bind(account_group_val)
         .bind(format!("Ledger for employee: {}", &data.name))
         .bind(&data.id)
         .execute(&mut *tx)

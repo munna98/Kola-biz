@@ -1104,13 +1104,6 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
          WHERE account_code = '5005'"
     ).execute(pool).await;
 
-    // Migration: Migrate existing employee ledgers to group 'Emp Benefits & Salaries' and account_type 'Expense'
-    let _ = sqlx::query(
-        "UPDATE chart_of_accounts
-         SET account_group = 'Emp Benefits & Salaries', account_type = 'Expense'
-         WHERE (party_type = 'Employee' OR id IN (SELECT account_id FROM employees WHERE account_id IS NOT NULL))
-           AND (account_group = 'Current Liabilities' OR account_group IS NULL OR account_group = '')"
-    ).execute(pool).await;
 
     // Migration: Seed / ensure 'Salary Payables' ledger (2004) under 'Current Liabilities'
     let _ = sqlx::query(
@@ -2217,6 +2210,24 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_employees_user ON employees(user_id)")
         .execute(pool)
         .await?;
+
+    // Migration: Add account_group to employees
+    let _ = sqlx::query("ALTER TABLE employees ADD COLUMN account_group TEXT").execute(pool).await;
+
+    // Migration: Backfill account_group on employees from linked chart_of_accounts
+    let _ = sqlx::query(
+        "UPDATE employees
+         SET account_group = (
+             SELECT coa.account_group FROM chart_of_accounts coa 
+             WHERE coa.id = employees.account_id OR (employees.account_id IS NULL AND coa.party_id = employees.id AND coa.party_type = 'Employee')
+             LIMIT 1
+         )
+         WHERE (account_group IS NULL OR account_group = '')
+           AND EXISTS (
+             SELECT 1 FROM chart_of_accounts coa 
+             WHERE coa.id = employees.account_id OR (employees.account_id IS NULL AND coa.party_id = employees.id AND coa.party_type = 'Employee')
+           )"
+    ).execute(pool).await;
 
     // Migration: Backfill code for existing employees missing code or having temp EMP- account codes
     if let Ok(unassigned_employees) = sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
