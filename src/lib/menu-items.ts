@@ -65,6 +65,7 @@ export const ALL_MENU_ITEMS: MenuItem[] = [
     { id: 'opening', label: 'Opening Balance', icon: IconScale, category: 'Voucher' },
     { id: 'opening_stock', label: 'Opening Stock', icon: IconBox, category: 'Voucher' },
     { id: 'stock_journal', label: 'Stock Journal', icon: IconExchange, category: 'Voucher' },
+    { id: 'stock_adjustment', label: 'Stock Adjustment', icon: IconAdjustments, category: 'Voucher' },
 
     // Reports
     { id: 'technician_report', label: 'Tech Commission', icon: IconUserCheck, category: 'Report' },

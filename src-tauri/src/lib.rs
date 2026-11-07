@@ -388,6 +388,13 @@ pub fn run() {
             commands::stock_journal::create_stock_journal,
             commands::stock_journal::update_stock_journal,
             commands::stock_journal::delete_stock_journal,
+            // Stock Adjustment
+            commands::stock_adjustment::get_stock_adjustments,
+            commands::stock_adjustment::get_stock_adjustment,
+            commands::stock_adjustment::get_stock_adjustment_items,
+            commands::stock_adjustment::create_stock_adjustment,
+            commands::stock_adjustment::update_stock_adjustment,
+            commands::stock_adjustment::delete_stock_adjustment,
             // GST
             get_gst_tax_slabs,
             create_gst_tax_slab,

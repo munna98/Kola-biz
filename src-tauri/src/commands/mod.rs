@@ -20,6 +20,7 @@ pub mod reports;
 pub mod sales_returns;
 pub mod services;
 pub mod settings;
+pub mod stock_adjustment;
 pub mod stock_journal;
 pub mod tax;
 #[allow(dead_code)]
@@ -53,6 +54,7 @@ pub use reports::*;
 pub use sales_returns::*;
 pub use services::*;
 pub use settings::*;
+pub use stock_adjustment::*;
 pub use stock_journal::*;
 pub use tax::*;
 pub use price_categories::*;

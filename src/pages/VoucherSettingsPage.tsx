@@ -87,6 +87,7 @@ const VOUCHER_TYPES = [
     { value: 'sales_return', label: 'Sales Return' },
     { value: 'purchase_return', label: 'Purchase Return' },
     { value: 'opening_stock', label: 'Opening Stock' },
+    { value: 'stock_adjustment', label: 'Stock Adjustment' },
 ];
 
 // Voucher types that support date-based renumbering (payment/receipt/journal excluded)
@@ -98,6 +99,7 @@ const REASSIGN_SUPPORTED_TYPES = [
     'sales_return',
     'purchase_return',
     'opening_stock',
+    'stock_adjustment',
 ];
 
 
@@ -487,7 +489,7 @@ export default function VoucherSettingsPage() {
                             </div>
                         )}
 
-                        {/* Price Category — Sales Invoice only */}
+                        {/* Price Category â€” Sales Invoice only */}
                         {selectedVoucher === 'sales_invoice' && (
                             <div className="flex items-start gap-4 mb-6">
                                 <Checkbox
@@ -533,7 +535,7 @@ export default function VoucherSettingsPage() {
                                                         onChange={() => setPriceCategoryFallback('show_zero')}
                                                         className="accent-primary"
                                                     />
-                                                    <span className="text-sm font-medium">Show 0 <span className="text-xs font-normal text-muted-foreground">— highlights missing prices as a data-quality prompt</span></span>
+                                                    <span className="text-sm font-medium">Show 0 <span className="text-xs font-normal text-muted-foreground">â€” highlights missing prices as a data-quality prompt</span></span>
                                                 </label>
                                             </div>
                                         </div>
@@ -836,7 +838,7 @@ export default function VoucherSettingsPage() {
                             </div>
                         </div>
 
-                        {/* Show Invoice Profit — sales voucher types only */}
+                        {/* Show Invoice Profit â€” sales voucher types only */}
                         {['sales_invoice', 'sales_quotation', 'sales_return'].includes(selectedVoucher) && (
                             <div className="flex items-start gap-4 mb-6">
                                 <Checkbox
@@ -869,7 +871,7 @@ export default function VoucherSettingsPage() {
                                                         onChange={() => setProfitCostSource('cost_rate')}
                                                         className="accent-primary"
                                                     />
-                                                    <span className="text-sm font-medium">Cost Rate <span className="text-xs font-normal text-muted-foreground">(default) — uses product's Purchase Rate, same as used in Profit Report</span></span>
+                                                    <span className="text-sm font-medium">Cost Rate <span className="text-xs font-normal text-muted-foreground">(default) â€” uses product's Purchase Rate, same as used in Profit Report</span></span>
                                                 </label>
                                                 <label className="flex items-center gap-2 cursor-pointer">
                                                     <input
@@ -880,7 +882,7 @@ export default function VoucherSettingsPage() {
                                                         onChange={() => setProfitCostSource('product_master_cost')}
                                                         className="accent-primary"
                                                     />
-                                                    <span className="text-sm font-medium">Product Master Cost <span className="text-xs font-normal text-muted-foreground">— uses the dedicated Cost field on the product master</span></span>
+                                                    <span className="text-sm font-medium">Product Master Cost <span className="text-xs font-normal text-muted-foreground">â€” uses the dedicated Cost field on the product master</span></span>
                                                 </label>
                                             </div>
                                         </div>
@@ -999,7 +1001,7 @@ export default function VoucherSettingsPage() {
                                         const m = now.getMonth() + 1;
                                         const y = now.getFullYear();
                                         const s = m >= 4 ? y : y - 1;
-                                        return `${s}-04-01  →  ${s + 1}-03-31`;
+                                        return `${s}-04-01  â†’  ${s + 1}-03-31`;
                                     })()}
                                 </div>
                                 <Button
@@ -1014,7 +1016,7 @@ export default function VoucherSettingsPage() {
                             </div>
 
                             <p className="text-xs text-muted-foreground">
-                                ⚠️ This is irreversible. Only vouchers in the current financial year are affected.
+                                âš ï¸ This is irreversible. Only vouchers in the current financial year are affected.
                             </p>
                         </div>
                     )}
@@ -1079,7 +1081,7 @@ export default function VoucherSettingsPage() {
                                         {VOUCHER_TYPES.find(v => v.value === selectedVoucher)?.label}
                                     </strong>{' '}
                                     vouchers in the <strong>current financial year</strong> in invoice date
-                                    order (oldest → newest).
+                                    order (oldest â†’ newest).
                                 </p>
                                 <p className="text-amber-600 dark:text-amber-400 font-medium">
                                     Previously printed invoices with old numbers will be outdated.
@@ -1095,7 +1097,7 @@ export default function VoucherSettingsPage() {
                             disabled={reassigning}
                             className="bg-amber-500 hover:bg-amber-600 text-white"
                         >
-                            {reassigning ? 'Renumbering…' : 'Confirm Reassign'}
+                            {reassigning ? 'Renumberingâ€¦' : 'Confirm Reassign'}
                         </AlertDialogAction>
                     </AlertDialogFooter>
                 </AlertDialogContent>

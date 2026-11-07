@@ -46,6 +46,7 @@ const getInitialSidebarItems = () => {
     return [
       'dashboard', 'products', 'customers', 'suppliers', 'employees',
       'purchase', 'sales', 'payments', 'receipts', 'journal',
+      'opening_stock', 'stock_journal', 'stock_adjustment',
       'stock_report', 'product_profit', 'transactions', 'expense_report', 'day_book', 'outstanding'
     ];
   }
@@ -64,6 +65,15 @@ const getInitialSidebarItems = () => {
       items.splice(index + 1, 0, 'expense_report');
     } else {
       items.push('expense_report');
+    }
+    localStorage.setItem('sidebar_items', JSON.stringify(items));
+  }
+  if (!items.includes('stock_adjustment')) {
+    const index = items.indexOf('stock_journal');
+    if (index !== -1) {
+      items.splice(index + 1, 0, 'stock_adjustment');
+    } else {
+      items.push('stock_adjustment');
     }
     localStorage.setItem('sidebar_items', JSON.stringify(items));
   }
@@ -1122,7 +1132,7 @@ export interface SalesInvoiceItem {
   discount_percent: number;
   discount_amount: number;
   discount_type?: 'percent' | 'amount';
-  /** Purchase cost per unit — used for margin scheme GST calculation */
+  /** Purchase cost per unit Ã¢â‚¬â€ used for margin scheme GST calculation */
   purchase_cost?: number;
 }
 
@@ -1538,7 +1548,7 @@ const companyProfileInitialState: CompanyProfileState = {
     terms_and_conditions: '',
     base_currency: 'INR',
     currency_display: 'symbol',
-    base_currency_symbol: '₹',
+    base_currency_symbol: 'Ã¢â€šÂ¹',
   },
   loading: false,
 };
@@ -3423,6 +3433,136 @@ export const {
   resetCustomOrderForm,
 } = customOrderSlice.actions;
 
+
+// ========== STOCK ADJUSTMENT SLICE ==========
+export interface StockAdjustmentItem {
+  id?: string;
+  product_id: string;
+  product_name?: string;
+  unit_id?: string;
+  base_quantity?: number;
+  initial_quantity: number;
+  quantity: number;
+  actual_stock?: number;
+  current_stock?: number;
+  adjustment_qty: number;
+  rate: number;
+  amount: number;
+  reason: string;
+  description?: string;
+}
+
+export interface StockAdjustmentState extends VoucherNavigationState {
+  currentVoucherNo?: string;
+  created_by_name?: string;
+  form: {
+    voucher_date: string;
+    narration: string;
+  };
+  items: StockAdjustmentItem[];
+  loading: boolean;
+  totalAmount: number;
+}
+
+const stockAdjustmentInitialState: StockAdjustmentState = {
+  ...initialNavigationState,
+  currentVoucherNo: undefined,
+  created_by_name: undefined,
+  form: {
+    voucher_date: new Date().toISOString().split('T')[0],
+    narration: '',
+  },
+  items: [],
+  loading: false,
+  totalAmount: 0,
+};
+
+const stockAdjustmentSlice = createSlice({
+  name: 'stockAdjustment',
+  initialState: stockAdjustmentInitialState,
+  reducers: {
+    setStockAdjustmentMode: (state, action: PayloadAction<'new' | 'viewing' | 'editing'>) => {
+      state.mode = action.payload;
+    },
+    setStockAdjustmentCurrentVoucherId: (state, action: PayloadAction<string | null>) => {
+      state.currentVoucherId = action.payload;
+    },
+    setStockAdjustmentCurrentVoucherNo: (state, action: PayloadAction<string | undefined>) => {
+      state.currentVoucherNo = action.payload;
+    },
+    setStockAdjustmentCreatedByName: (state, action: PayloadAction<string | undefined>) => {
+      state.created_by_name = action.payload;
+    },
+    setStockAdjustmentHasUnsavedChanges: (state, action: PayloadAction<boolean>) => {
+      state.hasUnsavedChanges = action.payload;
+    },
+    setStockAdjustmentNavigationData: (state, action: PayloadAction<{ hasPrevious: boolean; hasNext: boolean; previousId: string | null; nextId: string | null }>) => {
+      state.navigationData = action.payload;
+    },
+    setStockAdjustmentDate: (state, action: PayloadAction<string>) => {
+      state.form.voucher_date = action.payload;
+    },
+    setStockAdjustmentNarration: (state, action: PayloadAction<string>) => {
+      state.form.narration = action.payload;
+    },
+    addStockAdjustmentItem: (state, action: PayloadAction<StockAdjustmentItem & { insertAt?: number }>) => {
+      const { insertAt, ...itemData } = action.payload as any;
+      const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
+      if (insertAt !== undefined) {
+        state.items.splice(insertAt, 0, itemWithId as any);
+      } else {
+        state.items.push(itemWithId as any);
+      }
+    },
+    updateStockAdjustmentItem: (state, action: PayloadAction<{ index: number; data: Partial<StockAdjustmentItem> }>) => {
+      state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
+    },
+    removeStockAdjustmentItem: (state, action: PayloadAction<number>) => {
+      state.items.splice(action.payload, 1);
+    },
+    setStockAdjustmentItems: (state, action: PayloadAction<StockAdjustmentItem[]>) => {
+      state.items = action.payload;
+    },
+    setStockAdjustmentTotal: (state, action: PayloadAction<number>) => {
+      state.totalAmount = action.payload;
+    },
+    resetStockAdjustmentForm: (state) => {
+      state.form = {
+        voucher_date: new Date().toISOString().split('T')[0],
+        narration: '',
+      };
+      state.items = [];
+      state.totalAmount = 0;
+      state.hasUnsavedChanges = false;
+      state.currentVoucherId = null;
+      state.currentVoucherNo = undefined;
+      state.created_by_name = undefined;
+      state.mode = 'new';
+      state.navigationData = { hasPrevious: false, hasNext: false, previousId: null, nextId: null };
+    },
+    setStockAdjustmentLoading: (state, action: PayloadAction<boolean>) => {
+      state.loading = action.payload;
+    },
+  },
+});
+
+export const {
+  setStockAdjustmentMode,
+  setStockAdjustmentCurrentVoucherId,
+  setStockAdjustmentCurrentVoucherNo,
+  setStockAdjustmentCreatedByName,
+  setStockAdjustmentHasUnsavedChanges,
+  setStockAdjustmentNavigationData,
+  setStockAdjustmentDate,
+  setStockAdjustmentNarration,
+  addStockAdjustmentItem,
+  updateStockAdjustmentItem,
+  removeStockAdjustmentItem,
+  setStockAdjustmentItems,
+  setStockAdjustmentTotal,
+  resetStockAdjustmentForm,
+  setStockAdjustmentLoading,
+} = stockAdjustmentSlice.actions;
 export const store = configureStore({
   reducer: {
     app: appSlice.reducer,
@@ -3439,6 +3579,7 @@ export const store = configureStore({
     openingBalance: openingBalanceSlice.reducer,
     openingStock: openingStockSlice.reducer,
     stockJournal: stockJournalSlice.reducer,
+    stockAdjustment: stockAdjustmentSlice.reducer,
     companyProfile: companyProfileSlice.reducer,
     ledgerReport: ledgerReportSlice.reducer,
     customOrder: customOrderSlice.reducer,

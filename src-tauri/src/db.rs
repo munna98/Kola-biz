@@ -12,7 +12,7 @@ async fn backfill_stock_movement_costs(
            AND COALESCE(cost_amount, 0) = 0
            AND voucher_id IN (
                SELECT id FROM vouchers
-               WHERE voucher_type IN ('purchase_invoice', 'purchase_return', 'opening_stock', 'stock_journal')
+               WHERE voucher_type IN ('purchase_invoice', 'purchase_return', 'opening_stock', 'stock_journal', 'stock_adjustment')
            )",
     )
     .execute(pool)
@@ -2109,10 +2109,13 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         ('vs_' || hex(randomblob(16)), 'journal', 'JV'),
         ('vs_' || hex(randomblob(16)), 'opening_balance', 'OB'),
         ('vs_' || hex(randomblob(16)), 'opening_stock', 'OS'),
-        ('vs_' || hex(randomblob(16)), 'stock_journal', 'STJ')",
+        ('vs_' || hex(randomblob(16)), 'stock_journal', 'STJ'),
+        ('vs_' || hex(randomblob(16)), 'stock_adjustment', 'SA')",
     )
     .execute(pool)
     .await?;
+
+    let _ = sqlx::query("UPDATE voucher_sequences SET prefix = 'SA' WHERE voucher_type = 'stock_adjustment' AND (prefix = 'SAV' OR prefix = '')").execute(pool).await;
 
     // Migration: Sync voucher sequence settings with existing imported/created vouchers
     let _ = backfill_voucher_sequences(pool).await;
@@ -2657,6 +2660,7 @@ async fn backfill_voucher_sequences(pool: &SqlitePool) -> Result<(), sqlx::Error
         "opening_balance",
         "opening_stock",
         "stock_journal",
+        "stock_adjustment",
     ];
 
     for v_type in voucher_types {

@@ -3078,7 +3078,7 @@ pub async fn list_vouchers(
                     END
                     FROM voucher_items vi WHERE vi.voucher_id = v.id
                 )
-                ELSE COALESCE(coa.account_name, CASE WHEN v.voucher_type = 'journal' THEN 'Journal Entry' WHEN v.voucher_type = 'opening_balance' THEN 'Opening Balance' WHEN v.voucher_type = 'opening_stock' THEN 'Opening Stock' WHEN v.voucher_type = 'stock_journal' THEN 'Stock Journal' ELSE 'N/A' END)
+                ELSE COALESCE(coa.account_name, CASE WHEN v.voucher_type = 'journal' THEN 'Journal Entry' WHEN v.voucher_type = 'opening_balance' THEN 'Opening Balance' WHEN v.voucher_type = 'opening_stock' THEN 'Opening Stock' WHEN v.voucher_type = 'stock_journal' THEN 'Stock Journal' WHEN v.voucher_type = 'stock_adjustment' THEN 'Stock Adjustment' ELSE 'N/A' END)
             END as party_name,
             ROUND(
                 CASE

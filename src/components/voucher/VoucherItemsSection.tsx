@@ -489,8 +489,9 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
         invoke<any[]>('get_product_brands').then(setBrands).catch(console.error);
     }, []);
 
+    const hasCurrentStockCol = Boolean(settings?.columns?.some(c => c.id === 'current_stock' && c.visible));
     React.useEffect(() => {
-        if (comboboxDisplaySettings.show_stock) {
+        if (comboboxDisplaySettings.show_stock || hasCurrentStockCol) {
             invoke<any[]>('get_stock_report', { groupId: null, asOnDate: new Date().toISOString().split('T')[0] })
                 .then(summary => {
                     const map: Record<string, number> = {};
@@ -501,11 +502,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                 })
                 .catch(console.error);
         }
-    }, [comboboxDisplaySettings.show_stock]);
+    }, [comboboxDisplaySettings.show_stock, hasCurrentStockCol]);
 
     // FOCUSABLE_FIELDS: the column ids (in order) that can receive keyboard focus after product selection.
     // 'product' itself is excluded; 'final_qty', 'amount', 'total' are read-only display cells.
-    const FOCUSABLE_FIELD_IDS = ['quantity', 'unit', 'rate', 'count', 'deduction', 'discount_percent', 'discount_amount', 'tax_rate', 'purchase_cost'];
+    const FOCUSABLE_FIELD_IDS = ['quantity', 'unit', 'rate', 'count', 'deduction', 'discount_percent', 'discount_amount', 'tax_rate', 'purchase_cost', 'reason', 'description', 'remarks'];
 
     /**
      * Focus the first editable field after 'product' in the current column order.
@@ -915,7 +916,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     onKeyDown={(e) => {
                                         if (e.key === 'Enter') {
                                             const val = e.currentTarget.value;
-                                            if (!val || parseFloat(val) <= 0) {
+                                            if (!val || isNaN(parseFloat(val)) || parseFloat(val) === 0) {
                                                 e.preventDefault();
                                                 e.stopPropagation();
                                             } else if (settings?.skipToNextRowAfterQty) {
@@ -1250,6 +1251,51 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                         {value ? money(value) : '-'}
                                     </div>
                                 )
+                            );
+                        }
+                        case 'current_stock': {
+                            const stock = item.current_stock !== undefined
+                                ? item.current_stock
+                                : (item.product_id ? (stockMap[item.product_id] ?? 0) : null);
+                            return (
+                                <div key={col.id} className="h-7 text-xs flex items-center justify-end px-2 bg-muted/40 border border-input/60 rounded-md font-mono text-muted-foreground" title="Current system stock">
+                                    {stock !== null ? Number(stock).toFixed(2) : '-'}
+                                </div>
+                            );
+                        }
+                        case 'diff_qty':
+                        case 'adjustment_qty': {
+                            const currentStock = item.current_stock !== undefined
+                                ? item.current_stock
+                                : (item.product_id ? (stockMap[item.product_id] ?? 0) : 0);
+                            const actualStock = item.actual_stock ?? item.quantity ?? item.initial_quantity ?? 0;
+                            const diff = item.adjustment_qty !== undefined ? item.adjustment_qty : (actualStock - currentStock);
+                            const isPos = diff > 0.0001;
+                            const isNeg = diff < -0.0001;
+                            return (
+                                <div key={col.id} className={cn(
+                                    "h-7 text-xs flex items-center justify-end px-2 border rounded-md font-mono font-semibold",
+                                    isPos && "text-emerald-600 bg-emerald-500/10 border-emerald-500/30",
+                                    isNeg && "text-destructive bg-destructive/10 border-destructive/30",
+                                    !isPos && !isNeg && "text-muted-foreground bg-muted/30 border-input/60"
+                                )} title="Difference: Actual Stock - Current Stock">
+                                    {isPos ? `+${diff.toFixed(2)}` : diff.toFixed(2)}
+                                </div>
+                            );
+                        }
+                        case 'reason':
+                        case 'description':
+                        case 'remarks': {
+                            return (
+                                <Input
+                                    key={col.id}
+                                    data-field={col.id}
+                                    value={item.reason || item.description || item.remarks || ''}
+                                    onChange={(e) => onUpdateItem(idx, col.id, e.target.value)}
+                                    disabled={isReadOnly}
+                                    placeholder={col.label || "Reason..."}
+                                    className="h-7 text-xs"
+                                />
                             );
                         }
                         default:

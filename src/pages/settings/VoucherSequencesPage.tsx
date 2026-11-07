@@ -32,6 +32,7 @@ const HUMAN_READABLE_TYPES: Record<string, string> = {
     'payment': 'Payment',
     'journal': 'Journal Entry',
     'stock_journal': 'Stock Journal',
+    'stock_adjustment': 'Stock Adjustment',
     'opening_stock': 'Opening Stock',
 };
 
