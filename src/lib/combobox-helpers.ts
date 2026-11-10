@@ -275,7 +275,7 @@ export function buildProductComboboxOption({
     label: formattedLabel,
     itemLabel: p.name,
     columns: columnData,
-    searchString: `${formattedLabel} ${keywords.join(' ')}`,
+    searchString: keywords.join(' ') || formattedLabel,
     keywords,
   };
 }

@@ -102,12 +102,15 @@ const defaultComboboxFilter = (value: string, search: string, keywords?: string[
   }
 
   // 4. Prefix match on value tokens
+  let bestTokenScore = 0;
   for (const token of valueTokens) {
     if (token.startsWith(searchTrim)) {
       const lenDiff = token.length - searchTrim.length;
-      return Math.max(50, 400 - lenDiff * 10);
+      const score = Math.max(50, 400 - lenDiff * 10);
+      if (score > bestTokenScore) bestTokenScore = score;
     }
   }
+  if (bestTokenScore > 0) return bestTokenScore;
 
   // 5. Substring match on explicit keywords (e.g. searching part of a phone number)
   if (keywords && keywords.length > 0) {
@@ -120,21 +123,35 @@ const defaultComboboxFilter = (value: string, search: string, keywords?: string[
     }
   }
 
-  // 6. Numeric digits match for phone numbers or numeric codes
-  const searchDigits = searchTrim.replace(/\D/g, '');
-  if (searchDigits.length >= 3) {
-    if (keywords && keywords.length > 0) {
-      for (const kw of keywords) {
-        if (!kw) continue;
-        const kwDigits = String(kw).replace(/\D/g, '');
-        if (kwDigits && kwDigits.includes(searchDigits)) {
-          return kwDigits.startsWith(searchDigits) ? 500 : 80;
+  // 6. Numeric digits match for phone numbers (without gluing unrelated numbers across fields)
+  if (!/[a-z]/i.test(searchTrim)) {
+    const searchDigits = searchTrim.replace(/\D/g, '');
+    if (searchDigits.length >= 3) {
+      if (keywords && keywords.length > 0) {
+        let bestDigitScore = 0;
+        for (const kw of keywords) {
+          if (!kw) continue;
+          const kwStr = String(kw);
+          if (/[a-z]/i.test(kwStr)) continue;
+          const kwDigits = kwStr.replace(/\D/g, '');
+          if (kwDigits && kwDigits.includes(searchDigits)) {
+            const score = kwDigits.startsWith(searchDigits) ? 500 : 80;
+            if (score > bestDigitScore) bestDigitScore = score;
+          }
+        }
+        if (bestDigitScore > 0) return bestDigitScore;
+      }
+      const valueChunks = valueLower.split(/\s+/);
+      let bestChunkScore = 0;
+      for (const chunk of valueChunks) {
+        if (/[a-z]/i.test(chunk)) continue;
+        const chunkDigits = chunk.replace(/\D/g, '');
+        if (chunkDigits.length >= 7 && chunkDigits.includes(searchDigits)) {
+          const score = chunkDigits.startsWith(searchDigits) ? 350 : 60;
+          if (score > bestChunkScore) bestChunkScore = score;
         }
       }
-    }
-    const valueDigits = valueLower.replace(/\D/g, '');
-    if (valueDigits && valueDigits.includes(searchDigits)) {
-      return valueDigits.startsWith(searchDigits) ? 350 : 60;
+      if (bestChunkScore > 0) return bestChunkScore;
     }
   }
 
@@ -178,6 +195,23 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   // The first ArrowDown on the CommandInput will pre-fill that value instead of
   // navigating the list.  Any other key (or a second ArrowDown) disarms it.
   const awaitFirstArrowDown = React.useRef(false)
+
+  // Filter and sort options explicitly in React rather than relying on cmdk's
+  // internal DOM reordering, which can leave newly mounted items out of score order.
+  const filterFn = filter || defaultComboboxFilter;
+  const filteredOptions = React.useMemo(() => {
+    if (!inputValue.trim()) return options;
+    const scored: { option: ComboboxOption; score: number }[] = [];
+    for (const opt of options) {
+      const val = opt.searchString || String(opt.label);
+      const score = filterFn(val, inputValue, opt.keywords);
+      if (score > 0) {
+        scored.push({ option: opt, score });
+      }
+    }
+    scored.sort((a, b) => b.score - a.score);
+    return scored.map((s) => s.option);
+  }, [options, inputValue, filterFn]);
 
   const handleFocus = React.useCallback(() => {
     if (skipOpen.current || isPointerDown.current) {
@@ -237,8 +271,8 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
     }
 
     // 4. Fallback to first option if popover is open
-    if (activeValue === undefined && open && options.length > 0) {
-      activeValue = options[0].value;
+    if (activeValue === undefined && open && filteredOptions.length > 0) {
+      activeValue = filteredOptions[0].value;
     }
 
     if (activeValue !== undefined && activeValue !== null && activeValue !== '') {
@@ -249,7 +283,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
       return true;
     }
     return false;
-  }, [onPageDown, commandValue, options, value, open]);
+  }, [onPageDown, commandValue, options, filteredOptions, value, open]);
 
   // Intercept keydowns on CommandInput
   const handleCommandInputKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -344,7 +378,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
         <Command
           value={commandValue}
           onValueChange={(val) => setCommandValue(val)}
-          filter={filter || defaultComboboxFilter}
+          shouldFilter={false}
           onKeyDown={(e) => triggerPageDown(e)}
         >
           <CommandInput
@@ -422,7 +456,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
                 </CommandItem>
               )}
 
-              {options.map((option) => (
+              {filteredOptions.map((option) => (
                 <CommandItem
                   key={option.value}
                   data-option-value={String(option.value)}
