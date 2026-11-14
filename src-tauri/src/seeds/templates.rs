@@ -26,6 +26,9 @@ const GST_STD_BG_BYTES: &[u8] = include_bytes!("../../resources/templates/tax_in
 const DELIVERY_NOTE_HTML: &str = include_str!("../../resources/templates/delivery_note_a4.html");
 const DELIVERY_NOTE_CSS: &str = include_str!("../../resources/templates/delivery_note_a4.css");
 
+const EXPORT_INVOICE_HTML: &str = include_str!("../../resources/templates/export_invoice.html");
+const EXPORT_INVOICE_CSS: &str = include_str!("../../resources/templates/export_invoice.css");
+
 fn split_template(html: &str) -> (String, String, String) {
     let sections: Vec<&str> = html.split("<!-- [").collect();
     let mut header = String::new();
@@ -417,6 +420,44 @@ pub async fn seed_handlebars_templates(
         .bind(&gst_b)
         .bind(&gst_f)
         .bind(GST_TAX_INVOICE_CSS)
+        .execute(pool)
+        .await?;
+
+    // ==================== EXPORT INVOICE TEMPLATE ====================
+
+    let (exp_h, exp_b, exp_f) = split_template(EXPORT_INVOICE_HTML);
+
+    // Sales — Export Invoice (LUT / Bond)
+    sqlx::query(
+        "INSERT OR IGNORE INTO invoice_templates (
+            id, template_number, name, description, voucher_type, template_format, design_mode,
+            header_html, body_html, footer_html, styles_css,
+            show_gstin, show_item_hsn, is_default
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(Uuid::now_v7().to_string())
+    .bind("TPL-SI-EXP-001")
+    .bind("Export Invoice Design")
+    .bind("Export Invoice under bond or LUT with country of origin/destination and export data details")
+    .bind("sales_invoice")
+    .bind("a4_portrait")
+    .bind("standard")
+    .bind(&exp_h)
+    .bind(&exp_b)
+    .bind(&exp_f)
+    .bind(EXPORT_INVOICE_CSS)
+    .bind(1) // show_gstin
+    .bind(1) // show_item_hsn
+    .bind(0) // not default
+    .execute(pool)
+    .await?;
+
+    // Refresh Export template on startup (unless user has customised via designer)
+    sqlx::query("UPDATE invoice_templates SET header_html = ?, body_html = ?, footer_html = ?, styles_css = ?, layout_config = NULL WHERE template_number = 'TPL-SI-EXP-001' AND design_mode != 'designer'")
+        .bind(&exp_h)
+        .bind(&exp_b)
+        .bind(&exp_f)
+        .bind(EXPORT_INVOICE_CSS)
         .execute(pool)
         .await?;
 

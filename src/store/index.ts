@@ -1509,6 +1509,7 @@ export interface CompanyProfileState {
     gstin: string;
     pan: string;
     cin: string;
+    lut_no?: string;
     logo_data: string;
     bank_name: string;
     bank_account_no: string;
@@ -1540,6 +1541,7 @@ const companyProfileInitialState: CompanyProfileState = {
     gstin: '',
     pan: '',
     cin: '',
+    lut_no: '',
     logo_data: '',
     bank_name: '',
     bank_account_no: '',

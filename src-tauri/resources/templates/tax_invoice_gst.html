@@ -59,6 +59,13 @@
             <span class="addr-field-colon">:</span>
             <span class="addr-field-value">{{company.state}}{{#if company.state_code}}, <span class="field-key">Code :</span> {{company.state_code}}{{/if}}</span>
           </div>
+          {{#if company.lut_no}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">LUT No</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{company.lut_no}}</span>
+          </div>
+          {{/if}}
           {{#if company.phone}}
           <div class="addr-field-row">
             <span class="addr-field-label">Mobile</span>
@@ -185,6 +192,30 @@
           <tr>
             <td class="meta-label" colspan="4">Terms of Delivery &nbsp; {{terms_of_delivery}}</td>
           </tr>
+          {{#if has_export_details}}
+          <tr>
+            <td class="meta-label">Country of Origin</td>
+            <td class="meta-value">{{export_details.country_of_origin}}</td>
+            <td class="meta-label">Country of Destination</td>
+            <td class="meta-value">{{export_details.country_of_destination}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Pre-Carriage by</td>
+            <td class="meta-value">{{export_details.pre_carriage_by}}</td>
+            <td class="meta-label">Place of Receipt</td>
+            <td class="meta-value">{{export_details.place_of_receipt}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Port of Loading</td>
+            <td class="meta-value">{{export_details.port_of_loading}}</td>
+            <td class="meta-label">Port of Discharge</td>
+            <td class="meta-value">{{export_details.port_of_discharge}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Final Destination</td>
+            <td class="meta-value" colspan="3">{{export_details.final_destination}}</td>
+          </tr>
+          {{/if}}
         </table>
       </td>
     </tr>

@@ -120,6 +120,8 @@ pub struct CreateSalesQuotation {
     pub gst_disabled: Option<bool>,
     #[serde(default)]
     pub ship_to: Option<crate::commands::invoices::ShipToAddress>,
+    #[serde(default)]
+    pub export_details: Option<crate::commands::invoices::ExportDetails>,
 }
 
 #[tauri::command]
@@ -286,6 +288,9 @@ pub async fn create_sales_quotation(
     if let Some(ship_to) = &quotation.ship_to {
         meta_obj["ship_to"] = serde_json::json!(ship_to);
     }
+    if let Some(exp) = &quotation.export_details {
+        meta_obj["export_details"] = serde_json::json!(exp);
+    }
     let metadata = meta_obj.to_string();
 
     let voucher_id = Uuid::now_v7().to_string();
@@ -445,6 +450,9 @@ pub async fn update_sales_quotation(
     }
     if let Some(ship_to) = &quotation.ship_to {
         meta_obj["ship_to"] = serde_json::json!(ship_to);
+    }
+    if let Some(exp) = &quotation.export_details {
+        meta_obj["export_details"] = serde_json::json!(exp);
     }
     let metadata = meta_obj.to_string();
 

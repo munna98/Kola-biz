@@ -2139,6 +2139,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
             gstin TEXT,
             pan TEXT,
             cin TEXT,
+            lut_no TEXT,
             logo_data TEXT,
             bank_name TEXT,
             bank_account_no TEXT,
@@ -2159,6 +2160,9 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
         .execute(pool)
         .await;
     let _ = sqlx::query("ALTER TABLE company_profile ADD COLUMN currency_display TEXT DEFAULT 'symbol'")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE company_profile ADD COLUMN lut_no TEXT")
         .execute(pool)
         .await;
 
@@ -2424,6 +2428,7 @@ pub async fn init_schema(pool: &SqlitePool) -> Result<(), Box<dyn std::error::Er
     let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN state TEXT").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN city TEXT").execute(pool).await;
     let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN postal_code TEXT").execute(pool).await;
+    let _ = sqlx::query("ALTER TABLE chart_of_accounts ADD COLUMN country TEXT").execute(pool).await;
 
     // Backfill: sync GSTIN/address from customers → chart_of_accounts for records saved before sync existed
     // Also matches by `account_name` if `party_id` is NULL, which handles malformed external synced data.

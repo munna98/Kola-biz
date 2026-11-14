@@ -73,8 +73,9 @@ import { Product, ProductGroup, ProductUnitConversion, Unit, Employee, GstTaxSla
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
 import { ShipToPopover, ShipToAddress } from '@/components/voucher/ShipToPopover';
+import { ExportDetailsPopover, ExportDetails } from '@/components/voucher/ExportDetailsPopover';
 import { useCurrencyLabel, useMoney, useForexMoney } from '@/hooks/useMoney';
-import { useMultiCurrencyEnabled } from '@/hooks/useMultiCurrency';
+import { useMultiCurrencyEnabled, useExportBusiness } from '@/hooks/useMultiCurrency';
 
 
 
@@ -85,6 +86,7 @@ interface Party {
   group: string;
   address_line_1?: string;
   phone?: string;
+  country?: string;
 }
 
 export default function SalesInvoicePage() {
@@ -93,6 +95,8 @@ export default function SalesInvoicePage() {
   const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
   const user = useSelector((state: RootState) => state.auth.user);
   const isExportBusiness = useMultiCurrencyEnabled();
+  const isExportBusinessType = useExportBusiness();
+  const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
   const money = useMoney();
   const currencyLabel = useCurrencyLabel();
   const forexMoney = useForexMoney(salesState.foreign_currency_code, salesState.foreign_currency_symbol);
@@ -206,6 +210,14 @@ export default function SalesInvoicePage() {
     dispatch(setSalesHasUnsavedChanges(true));
   };
 
+  // Export Details State
+  const [exportDetailsMap, setExportDetailsMap] = useState<Record<string, ExportDetails | undefined>>({});
+  const activeExportDetails = exportDetailsMap[salesState.activeTabId];
+  const setActiveExportDetails = (details: ExportDetails | undefined) => {
+    setExportDetailsMap(prev => ({ ...prev, [salesState.activeTabId]: details }));
+    dispatch(setSalesHasUnsavedChanges(true));
+  };
+
   // Custom Orders Integration
   const [customOrdersEnabled, setCustomOrdersEnabled] = useState(false);
   const [linkedCustomOrder, setLinkedCustomOrder] = useState<{ id: string; order_no: string } | null>(null);
@@ -272,6 +284,7 @@ export default function SalesInvoicePage() {
           group: acc.account_group as string,
           address_line_1: acc.address_line_1 as string | undefined,
           phone: acc.phone as string | undefined,
+          country: acc.country as string | undefined,
         }));
         setParties(combinedParties);
       } catch (error) {
@@ -929,6 +942,7 @@ export default function SalesInvoicePage() {
             is_margin_scheme_invoice: salesState.form.is_margin_scheme_invoice,
             return_items: buildSalesReturnDraftPayload(),
             ship_to: activeShipTo,
+            export_details: activeExportDetails,
           },
         });
         toast.success('Sales invoice updated successfully');
@@ -988,6 +1002,7 @@ export default function SalesInvoicePage() {
             is_margin_scheme_invoice: salesState.form.is_margin_scheme_invoice,
             return_items: buildSalesReturnDraftPayload(),
             ship_to: activeShipTo,
+            export_details: activeExportDetails,
           },
         });
         toast.success('Sales invoice created successfully');
@@ -1106,6 +1121,20 @@ export default function SalesInvoicePage() {
         roundOff: loadedRoundOff,
         grandTotal: quotation.grand_total,
       }));
+
+      if (quotation.metadata) {
+        try {
+          const meta = JSON.parse(quotation.metadata);
+          if (meta.ship_to) {
+            setShipToMap(prev => ({ ...prev, [salesState.activeTabId]: meta.ship_to }));
+          }
+          if (meta.export_details) {
+            setExportDetailsMap(prev => ({ ...prev, [salesState.activeTabId]: meta.export_details }));
+          }
+        } catch (e) {
+          console.error("Failed to parse quotation metadata", e);
+        }
+      }
       
       // Clear the param so it doesn't trigger on every mount
       dispatch(setActiveSectionWithParams({ section: 'sales', params: undefined }));
@@ -1183,7 +1212,7 @@ export default function SalesInvoicePage() {
         dispatch(clearSalesForex());
       }
 
-      // Parse Ship To Address
+      // Parse Ship To Address & Export Details
       if (invoice.metadata) {
         try {
           const meta = JSON.parse(invoice.metadata);
@@ -1192,12 +1221,19 @@ export default function SalesInvoicePage() {
           } else {
             setShipToMap(prev => ({ ...prev, [id]: undefined }));
           }
+          if (meta.export_details) {
+            setExportDetailsMap(prev => ({ ...prev, [id]: meta.export_details }));
+          } else {
+            setExportDetailsMap(prev => ({ ...prev, [id]: undefined }));
+          }
         } catch (e) {
           console.error("Failed to parse metadata", e);
           setShipToMap(prev => ({ ...prev, [id]: undefined }));
+          setExportDetailsMap(prev => ({ ...prev, [id]: undefined }));
         }
       } else {
         setShipToMap(prev => ({ ...prev, [id]: undefined }));
+        setExportDetailsMap(prev => ({ ...prev, [id]: undefined }));
       }
 
       // Populate Items
@@ -1529,6 +1565,7 @@ export default function SalesInvoicePage() {
         group: acc.account_group as string,
         address_line_1: acc.address_line_1 as string | undefined,
         phone: acc.phone as string | undefined,
+        country: acc.country as string | undefined,
       }));
       setParties(combinedParties);
 
@@ -1918,6 +1955,16 @@ export default function SalesInvoicePage() {
                       name: salesState.form.customer_name,
                       address_line_1: parties.find(p => p.id === salesState.form.customer_id)?.address_line_1
                     } : undefined}
+                    disabled={isReadOnly || !salesState.form.customer_id}
+                    partyId={salesState.form.customer_id ? String(salesState.form.customer_id) : undefined}
+                  />
+                )}
+                {isExportBusinessType && (
+                  <ExportDetailsPopover
+                    exportDetails={activeExportDetails}
+                    onChange={setActiveExportDetails}
+                    defaultOriginCountry={companyProfile?.country || 'India'}
+                    defaultDestinationCountry={parties.find(p => p.id === salesState.form.customer_id)?.country}
                     disabled={isReadOnly || !salesState.form.customer_id}
                     partyId={salesState.form.customer_id ? String(salesState.form.customer_id) : undefined}
                   />

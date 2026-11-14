@@ -29,6 +29,7 @@ pub struct ChartOfAccount {
     pub city: Option<String>,
     pub state: Option<String>,
     pub postal_code: Option<String>,
+    pub country: Option<String>,
     pub gstin: Option<String>,
     pub price_category_id: Option<String>,
     pub deleted_at: Option<String>,
@@ -57,7 +58,14 @@ const COA_SELECT_COLS: &str =
      COALESCE(opening_balance_type, 'Dr') as opening_balance_type,
      is_active, is_system, party_id, party_type,
      COALESCE(chart_of_accounts.phone, (SELECT c.phone FROM customers c WHERE c.id = chart_of_accounts.party_id OR (chart_of_accounts.party_id IS NULL AND c.name = chart_of_accounts.account_name) LIMIT 1), (SELECT s.phone FROM suppliers s WHERE s.id = chart_of_accounts.party_id OR (chart_of_accounts.party_id IS NULL AND s.name = chart_of_accounts.account_name) LIMIT 1)) AS phone,
-     address_line_1, address_line_2, city, state, postal_code, gstin,
+     address_line_1, address_line_2, city, state, postal_code,
+     COALESCE(
+         (SELECT co.name FROM countries co WHERE co.id = COALESCE(chart_of_accounts.country, (SELECT c.country FROM customers c WHERE c.id = chart_of_accounts.party_id OR (chart_of_accounts.party_id IS NULL AND c.name = chart_of_accounts.account_name) LIMIT 1), (SELECT s.country FROM suppliers s WHERE s.id = chart_of_accounts.party_id OR (chart_of_accounts.party_id IS NULL AND s.name = chart_of_accounts.account_name) LIMIT 1)) OR co.name = chart_of_accounts.country OR co.code = chart_of_accounts.country LIMIT 1),
+         chart_of_accounts.country,
+         (SELECT c.country FROM customers c WHERE c.id = chart_of_accounts.party_id OR (chart_of_accounts.party_id IS NULL AND c.name = chart_of_accounts.account_name) LIMIT 1),
+         (SELECT s.country FROM suppliers s WHERE s.id = chart_of_accounts.party_id OR (chart_of_accounts.party_id IS NULL AND s.name = chart_of_accounts.account_name) LIMIT 1)
+     ) AS country,
+     gstin,
      price_category_id,
      deleted_at, created_at, updated_at";
 

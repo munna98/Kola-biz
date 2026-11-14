@@ -21,6 +21,8 @@ export const DATA_FIELD_CATALOG: DataFieldCategory[] = [
             { key: 'company.website', label: 'Website', example: 'www.acme.com' },
             { key: 'company.gstin', label: 'GSTIN', example: '27AABCU9603R1ZM' },
             { key: 'company.pan', label: 'PAN', example: 'AABCU9603R' },
+            { key: 'company.cin', label: 'CIN', example: 'L17110MH1973PLC019786' },
+            { key: 'company.lut_no', label: 'LUT No', example: 'AD270324000001G' },
         ],
     },
     {
@@ -32,6 +34,19 @@ export const DATA_FIELD_CATALOG: DataFieldCategory[] = [
             { key: 'party.phone', label: 'Party Phone', example: '+91 99887 76655' },
             { key: 'party.email', label: 'Party Email', example: 'john@example.com' },
             { key: 'party.gstin', label: 'Party GSTIN', example: '29AADCB2230M1ZP' },
+        ],
+    },
+    {
+        name: 'Export Details',
+        icon: 'IconPlaneDeparture',
+        fields: [
+            { key: 'export_details.country_of_origin', label: 'Country of Origin', example: 'India' },
+            { key: 'export_details.country_of_destination', label: 'Country of Destination', example: 'United States' },
+            { key: 'export_details.pre_carriage_by', label: 'Pre-Carriage by', example: 'AI 101' },
+            { key: 'export_details.place_of_receipt', label: 'Place of Receipt', example: 'ICD Bangalore' },
+            { key: 'export_details.port_of_loading', label: 'Port of Loading', example: 'Chennai Port' },
+            { key: 'export_details.port_of_discharge', label: 'Port of Discharge', example: 'Port of Rotterdam' },
+            { key: 'export_details.final_destination', label: 'Final Destination', example: 'Amsterdam, Netherlands' },
         ],
     },
     {
@@ -96,6 +111,7 @@ export const DATA_FIELD_CATALOG: DataFieldCategory[] = [
  */
 export const ITEM_TABLE_COLUMNS = [
     { key: 'serial_no', label: 'S.No', defaultWidth: 5, align: 'center' as const, format: 'text' as const },
+    { key: 'country_of_origin', label: 'Country of Origin', defaultWidth: 14, align: 'center' as const, format: 'text' as const },
     { key: 'product_code', label: 'Product Code', defaultWidth: 12, align: 'left' as const, format: 'text' as const },
     { key: 'product_name', label: 'Product Name', defaultWidth: 25, align: 'left' as const, format: 'text' as const },
     { key: 'description', label: 'Description', defaultWidth: 15, align: 'left' as const, format: 'text' as const },

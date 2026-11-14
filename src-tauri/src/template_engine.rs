@@ -179,16 +179,53 @@ impl TemplateEngine {
         }
 
         // Add company data
-        let currency_code = company
-            .base_currency
-            .clone()
-            .filter(|code| !code.trim().is_empty())
-            .unwrap_or_else(|| "INR".to_string());
-        let currency_symbol = company
-            .base_currency_symbol
-            .clone()
-            .filter(|symbol| !symbol.trim().is_empty())
-            .unwrap_or_else(|| "\u{20B9}".to_string());
+        let is_foreign_currency = voucher_data
+            .get("is_foreign_currency")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        let currency_code = if is_foreign_currency {
+            voucher_data
+                .get("currency_code")
+                .and_then(|v| v.as_str())
+                .filter(|code| !code.trim().is_empty())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    company
+                        .base_currency
+                        .clone()
+                        .filter(|code| !code.trim().is_empty())
+                        .unwrap_or_else(|| "INR".to_string())
+                })
+        } else {
+            company
+                .base_currency
+                .clone()
+                .filter(|code| !code.trim().is_empty())
+                .unwrap_or_else(|| "INR".to_string())
+        };
+
+        let currency_symbol = if is_foreign_currency {
+            voucher_data
+                .get("currency_symbol")
+                .and_then(|v| v.as_str())
+                .filter(|symbol| !symbol.trim().is_empty())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    company
+                        .base_currency_symbol
+                        .clone()
+                        .filter(|symbol| !symbol.trim().is_empty())
+                        .unwrap_or_else(|| "\u{20B9}".to_string())
+                })
+        } else {
+            company
+                .base_currency_symbol
+                .clone()
+                .filter(|symbol| !symbol.trim().is_empty())
+                .unwrap_or_else(|| "\u{20B9}".to_string())
+        };
+
         let currency_display = company
             .currency_display
             .clone()
@@ -213,6 +250,7 @@ impl TemplateEngine {
             "gstin": company.gstin,
             "pan": company.pan,
             "cin": company.cin,
+            "lut_no": company.lut_no,
             "logo": company.logo_data,
             "has_logo": company.logo_data.is_some(),
             "base_currency": company.base_currency,
@@ -234,19 +272,34 @@ impl TemplateEngine {
         voucher_data["has_terms"] = json!(company.terms_and_conditions.is_some());
 
         // Convert amount to words if grand_total exists
+        let currency_name = voucher_data
+            .get("currency_name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         if let Some(total) = voucher_data.get("grand_total").and_then(|v| v.as_f64()) {
-            voucher_data["grand_total_words"] = json!(crate::utils::number_to_words_indian(total));
+            voucher_data["grand_total_words"] = json!(crate::utils::number_to_words_currency(
+                total,
+                &currency_code,
+                currency_name.as_deref(),
+            ));
         }
         if let Some(net_payable) = voucher_data.get("net_payable").and_then(|v| v.as_f64()) {
-            voucher_data["net_payable_words"] =
-                json!(crate::utils::number_to_words_indian(net_payable));
+            voucher_data["net_payable_words"] = json!(crate::utils::number_to_words_currency(
+                net_payable,
+                &currency_code,
+                currency_name.as_deref(),
+            ));
             if voucher_data
                 .get("has_returns")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false)
             {
-                voucher_data["grand_total_words"] =
-                    json!(crate::utils::number_to_words_indian(net_payable));
+                voucher_data["grand_total_words"] = json!(crate::utils::number_to_words_currency(
+                    net_payable,
+                    &currency_code,
+                    currency_name.as_deref(),
+                ));
             }
         }
 
@@ -308,7 +361,7 @@ use handlebars::{
     Context, Handlebars as HB, Helper, HelperResult, Output, RenderContext, RenderErrorReason,
 };
 
-// Format currency in Indian format
+// Format currency in Indian or international standard format
 fn format_currency_helper(
     h: &Helper,
     _: &HB,
@@ -321,8 +374,6 @@ fn format_currency_helper(
     let is_negative = value < -0.001;
     let abs_val = value.abs();
 
-    // Indian number format: 1,23,456.78
-    let formatted = format_indian_currency(abs_val);
     let data = ctx.data();
     let display = data
         .get("currency_display")
@@ -338,6 +389,12 @@ fn format_currency_helper(
         .filter(|s| !s.trim().is_empty())
         .unwrap_or("\u{20B9}");
 
+    let formatted = if code.to_uppercase() == "INR" {
+        format_indian_currency(abs_val)
+    } else {
+        format_standard_currency(abs_val)
+    };
+
     let prefix = if is_negative { "-" } else { "" };
 
     match display {
@@ -346,6 +403,25 @@ fn format_currency_helper(
         _ => out.write(&format!("{}{}{}", prefix, symbol, formatted))?,
     }
     Ok(())
+}
+
+fn format_standard_currency(num: f64) -> String {
+    let int_part = num.floor() as i64;
+    let frac_part = ((num - num.floor()) * 100.0).round() as i64;
+
+    let s = int_part.to_string();
+    let mut result = String::new();
+    let chars: Vec<char> = s.chars().collect();
+    let len = chars.len();
+
+    for (i, c) in chars.into_iter().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            result.push(',');
+        }
+        result.push(c);
+    }
+
+    format!("{}.{:02}", result, frac_part)
 }
 
 fn format_indian_currency(num: f64) -> String {

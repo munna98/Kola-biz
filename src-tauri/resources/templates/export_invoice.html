@@ -1,0 +1,363 @@
+<!-- [HEADER] -->
+<div class="invoice-wrapper">
+
+{{#if irn}}
+<div class="einvoice-block">
+  <div class="einvoice-left">
+    <div class="einvoice-badge">e-Invoice</div>
+    <table class="einvoice-table">
+      <tr>
+        <td class="ei-label">IRN</td>
+        <td class="ei-colon">:</td>
+        <td class="ei-value irn-value">{{irn}}</td>
+      </tr>
+      <tr>
+        <td class="ei-label">Ack No.</td>
+        <td class="ei-colon">:</td>
+        <td class="ei-value">{{ack_no}}</td>
+      </tr>
+      <tr>
+        <td class="ei-label">Ack Date</td>
+        <td class="ei-colon">:</td>
+        <td class="ei-value"><strong>{{format_date ack_date}}</strong></td>
+      </tr>
+    </table>
+  </div>
+  {{#if qr_code_data}}
+  <div class="einvoice-right">
+    <img class="einvoice-qr" src="{{qr_code_data}}" alt="e-Invoice QR Code" />
+  </div>
+  {{/if}}
+</div>
+{{/if}}
+
+<div class="invoice-title-row">
+  {{#if header_title}}{{header_title}}{{else}}INVOICE{{/if}}
+</div>
+<div class="invoice-subtitle-row">
+  Supply meant for export under bond or letter of undertaking without payment of integrated tax
+</div>
+
+<table class="header-outer">
+  <tbody>
+    <tr>
+      <!-- LEFT COLUMN: 3 stacked address blocks (Company, Consignee, Buyer) -->
+      <td class="addr-col">
+
+        <!-- Block 1: Company Details -->
+        <div class="addr-block addr-company">
+          <strong class="company-name">{{company.name}}</strong>
+          {{#if show_company_address}}
+          {{#if company.address_line1}}<div class="addr-line">{{company.address_line1}}</div>{{/if}}
+          {{#if company.address_line2}}<div class="addr-line">{{company.address_line2}}</div>{{/if}}
+          {{#if company.city}}<div class="addr-line">{{company.city}}{{#if company.state}}, {{company.state}}{{/if}}{{#if company.pincode}} - {{company.pincode}}{{/if}}</div>{{/if}}
+          {{#if company.country}}<div class="addr-line">{{company.country}}</div>{{/if}}
+          {{/if}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">GSTIN/UIN</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{company.gstin}}</span>
+          </div>
+          <div class="addr-field-row">
+            <span class="addr-field-label">State Name</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{company.state}}{{#if company.state_code}}, <span class="field-key">Code :</span> {{company.state_code}}{{/if}}</span>
+          </div>
+          {{#if company.lut_no}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">LUT No</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{company.lut_no}}</span>
+          </div>
+          {{/if}}
+          {{#if company.phone}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">Mobile</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{company.phone}}</span>
+          </div>
+          {{/if}}
+        </div>
+
+        <div class="addr-separator"></div>
+
+        <!-- Block 2: Consignee / Ship To -->
+        <div class="addr-block">
+          <div class="addr-section-label">Consignee (Ship to)</div>
+          <strong>{{ship_to.name}}</strong>
+          {{#if ship_to.address_line_1}}<div class="addr-line">{{ship_to.address_line_1}}</div>{{/if}}
+          {{#if ship_to.city}}<div class="addr-line">{{ship_to.city}}{{#if ship_to.state}}, {{ship_to.state}}{{/if}}{{#if ship_to.postal_code}} - {{ship_to.postal_code}}{{/if}}</div>{{/if}}
+          {{#if ship_to.country}}<div class="addr-line">{{ship_to.country}}</div>{{/if}}
+          {{#if ship_to.gstin}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">GSTIN/UIN</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{ship_to.gstin}}</span>
+          </div>
+          {{/if}}
+          {{#if ship_to.state}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">State Name</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{ship_to.state}}{{#if ship_to.state_code}}, <span class="field-key">Code :</span> {{ship_to.state_code}}{{/if}}</span>
+          </div>
+          {{/if}}
+        </div>
+
+        <div class="addr-separator"></div>
+
+        <!-- Block 3: Buyer / Bill To -->
+        {{#if show_party_name}}
+        <div class="addr-block">
+          <div class="addr-section-label">Buyer (Bill to)</div>
+          <strong>{{party.name}}</strong>
+          {{#if show_party_address}}
+          {{#if party.address_line_1}}<div class="addr-line">{{party.address_line_1}}</div>{{/if}}
+          {{#if party.city}}<div class="addr-line">{{party.city}}{{#if party.state}}, {{party.state}}{{/if}}{{#if party.postal_code}} - {{party.postal_code}}{{/if}}</div>{{/if}}
+          {{#if party.country}}<div class="addr-line">{{party.country}}</div>{{/if}}
+          {{#if party.gstin}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">GSTIN/UIN</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{party.gstin}}</span>
+          </div>
+          {{/if}}
+          {{#if party.state}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">State Name</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{party.state}}{{#if party.state_code}}, <span class="field-key">Code :</span> {{party.state_code}}{{/if}}</span>
+          </div>
+          {{/if}}
+          {{#if party.phone}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">Mobile</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{party.phone}}</span>
+          </div>
+          {{/if}}
+          {{/if}}
+        </div>
+        {{else}}
+        {{#if show_party_address}}
+        <div class="addr-block">
+          <div class="addr-section-label">Buyer (Bill to)</div>
+          {{#if party.address_line_1}}<div class="addr-line">{{party.address_line_1}}</div>{{/if}}
+          {{#if party.city}}<div class="addr-line">{{party.city}}{{#if party.state}}, {{party.state}}{{/if}}{{#if party.postal_code}} - {{party.postal_code}}{{/if}}</div>{{/if}}
+          {{#if party.country}}<div class="addr-line">{{party.country}}</div>{{/if}}
+          {{#if party.gstin}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">GSTIN/UIN</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{party.gstin}}</span>
+          </div>
+          {{/if}}
+          {{#if party.state}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">State Name</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{party.state}}{{#if party.state_code}}, <span class="field-key">Code :</span> {{party.state_code}}{{/if}}</span>
+          </div>
+          {{/if}}
+          {{#if party.phone}}
+          <div class="addr-field-row">
+            <span class="addr-field-label">Mobile</span>
+            <span class="addr-field-colon">:</span>
+            <span class="addr-field-value">{{party.phone}}</span>
+          </div>
+          {{/if}}
+        </div>
+        {{/if}}
+        {{/if}}
+
+      </td>
+
+      <!-- RIGHT COLUMN: Invoice Master Details + 2 Export Columns -->
+      <td class="meta-outer-cell">
+        <table class="meta-table">
+          <tr>
+            <td class="meta-label">Invoice No.</td>
+            <td class="meta-value"><strong>{{voucher_no}}</strong></td>
+            <td class="meta-label">Dated</td>
+            <td class="meta-value"><strong>{{format_date voucher_date}}</strong></td>
+          </tr>
+          <tr>
+            <td class="meta-label">Delivery Note</td>
+            <td class="meta-value">{{delivery_note}}</td>
+            <td class="meta-label">Mode/Terms of Payment</td>
+            <td class="meta-value">{{payment_terms}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Reference No. &amp; Date.</td>
+            <td class="meta-value">{{reference}}</td>
+            <td class="meta-label">Other References</td>
+            <td class="meta-value">{{other_references}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Buyer's Order No.</td>
+            <td class="meta-value">{{buyer_order_no}}</td>
+            <td class="meta-label">Dated</td>
+            <td class="meta-value">{{buyer_order_date}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Dispatch Doc No.</td>
+            <td class="meta-value">{{dispatch_doc_no}}</td>
+            <td class="meta-label">Delivery Note Date</td>
+            <td class="meta-value">{{delivery_note_date}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Dispatched through</td>
+            <td class="meta-value">{{dispatched_through}}</td>
+            <td class="meta-label">Terms of Delivery</td>
+            <td class="meta-value">{{terms_of_delivery}}</td>
+          </tr>
+        </table>
+
+        <!-- SEPARATE BORDERED EXPORT DETAILS SECTION -->
+        <table class="meta-table export-meta-table">
+          <tr class="export-header-row">
+            <th colspan="2" class="export-col-header export-col-left">Country of Origin &amp; Export Details</th>
+            <th colspan="2" class="export-col-header export-col-right">Country of Final Destination &amp; Export Details</th>
+          </tr>
+          <tr>
+            <td class="meta-label">Country of Origin</td>
+            <td class="meta-value export-col-sep"><strong>{{#if export_details.country_of_origin}}{{export_details.country_of_origin}}{{else}}{{#if company.country}}{{company.country}}{{else}}India{{/if}}{{/if}}</strong></td>
+            <td class="meta-label">Country of Final Destination</td>
+            <td class="meta-value"><strong>{{#if export_details.country_of_destination}}{{export_details.country_of_destination}}{{else}}{{party.country}}{{/if}}</strong></td>
+          </tr>
+          <tr>
+            <td class="meta-label">Pre-Carriage by</td>
+            <td class="meta-value export-col-sep">{{export_details.pre_carriage_by}}</td>
+            <td class="meta-label">Port of Discharge</td>
+            <td class="meta-value">{{export_details.port_of_discharge}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Place of Receipt</td>
+            <td class="meta-value export-col-sep">{{export_details.place_of_receipt}}</td>
+            <td class="meta-label" rowspan="2">Final Destination</td>
+            <td class="meta-value" rowspan="2">{{#if export_details.final_destination}}{{export_details.final_destination}}{{else}}{{destination}}{{/if}}</td>
+          </tr>
+          <tr>
+            <td class="meta-label">Port of Loading</td>
+            <td class="meta-value export-col-sep">{{export_details.port_of_loading}}</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- [BODY] -->
+<style>
+.items-table th,
+.items-table td {
+    padding: {{#if table_row_padding}}{{table_row_padding}}{{else}}5{{/if}}px 6px !important;
+}
+</style>
+<table class="items-table">
+  <thead>
+    <tr class="items-thead-row">
+      <th class="col-slno">Sl<br/>No.</th>
+      <th class="col-origin">Country of Origin</th>
+      <th class="col-hsn">HSN/SAC</th>
+      <th class="col-desc">Description of Goods</th>
+      <th class="col-qty">Quantity</th>
+      <th class="col-rate">Rate</th>
+      <th class="col-amount">Amount</th>
+    </tr>
+  </thead>
+  <tbody class="items-tbody">
+    {{#each items}}
+    <tr class="item-row">
+      <td class="center">{{increment @index}}</td>
+      <td class="center col-origin">{{#if country_of_origin}}{{country_of_origin}}{{else}}{{#if @root.export_details.country_of_origin}}{{@root.export_details.country_of_origin}}{{else}}{{#if @root.company.country}}{{@root.company.country}}{{else}}India{{/if}}{{/if}}{{/if}}</td>
+      <td class="center">{{hsn_sac_code}}</td>
+      <td>
+        <strong>{{product_name}}</strong>
+        {{#if description}}<br/><small class="item-desc">{{description}}</small>{{/if}}
+      </td>
+      <td class="right">{{format_number initial_quantity 2}}{{#if unit}} {{unit}}{{/if}}</td>
+      <td class="right">{{format_number rate 2}}</td>
+      <td class="right">{{format_number amount 2}}</td>
+    </tr>
+    {{/each}}
+
+    <!-- Spacer: individual cells so column dividers continue through empty space -->
+    <tr class="spacer-row">
+      <td class="sp-slno"></td>
+      <td class="sp-origin"></td>
+      <td class="sp-hsn"></td>
+      <td class="sp-desc"></td>
+      <td class="sp-qty"></td>
+      <td class="sp-rate"></td>
+      <td class="sp-amount"></td>
+    </tr>
+
+    <!-- Summary footer row: Qty, Total label, and grand total -->
+    <tr class="summary-footer-row">
+      <td colspan="4" class="sf-left-empty"></td>
+      <td class="right sf-qty"><strong>{{total_quantity_display}}</strong></td>
+      <td class="right sf-disc-total-label">
+        {{#if has_discount}}
+        <span class="sf-disc-label">Disc</span><br/>
+        {{/if}}
+        <strong>Total</strong>
+      </td>
+      <td class="right sf-amount-cell">
+        {{#if has_discount}}
+        <span class="sf-subtotal-ghost">{{format_number bill_discount 2}}</span><br/>
+        {{/if}}
+        <strong class="sf-grand-total">{{format_currency grand_total}}</strong>
+      </td>
+    </tr>
+
+    {{#if has_returns}}
+    <tr class="summary-footer-row">
+      <td colspan="6" class="right sf-disc-total-label">Less Returns</td>
+      <td class="right sf-amount-cell">-{{format_currency return_total}}</td>
+    </tr>
+    <tr class="summary-footer-row">
+      <td colspan="6" class="right sf-disc-total-label"><strong>Net Payable</strong></td>
+      <td class="right sf-amount-cell"><strong class="sf-grand-total">{{format_currency net_payable}}</strong></td>
+    </tr>
+    {{/if}}
+  </tbody>
+</table>
+
+<!-- Amount chargeable in words -->
+<div class="amount-words-bar">
+  <span class="amount-words-label">Amount Chargeable (in words)</span>
+  <span class="eoe">E. &amp; O.E</span>
+</div>
+<div class="amount-words-value">
+  <strong>{{grand_total_words}}</strong>
+</div>
+
+<!-- [FOOTER] -->
+<div class="declaration-signature-row">
+  <div class="declaration-block">
+    {{#if show_bank_details}}
+    {{#if bank.has_details}}
+    <div class="bank-block">
+      <div class="declaration-title">Company's Bank Details</div>
+      <div class="bank-row"><span class="bank-lbl">Bank Name:</span> <strong>{{bank.name}}</strong></div>
+      <div class="bank-row"><span class="bank-lbl">A/c No.:</span> <strong>{{bank.account_no}}</strong></div>
+      <div class="bank-row"><span class="bank-lbl">Branch &amp; IFSC:</span> {{bank.branch}}{{#if bank.branch}} &amp; {{/if}}{{bank.ifsc}}</div>
+    </div>
+    {{/if}}
+    {{/if}}
+    <div class="declaration-title" style="margin-top: 5px;">Declaration</div>
+    <div class="declaration-text">
+      We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
+    </div>
+  </div>
+  <div class="signature-block">
+    <div class="for-company">for <strong>{{company.name}}</strong></div>
+    <div class="signature-space"></div>
+    <div class="authorised-label">Authorised Signatory</div>
+  </div>
+</div>
+
+<div class="page-foot">This is a Computer Generated Invoice</div>
+
+</div>{{! closes invoice-wrapper }}

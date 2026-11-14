@@ -118,6 +118,8 @@ pub struct CreateDeliveryNote {
     pub gst_disabled: Option<bool>,
     #[serde(default)]
     pub ship_to: Option<crate::commands::invoices::ShipToAddress>,
+    #[serde(default)]
+    pub export_details: Option<crate::commands::invoices::ExportDetails>,
 }
 
 // ─── READ ────────────────────────────────────────────────────────────────────
@@ -282,7 +284,10 @@ pub async fn create_delivery_note(
 
     let voucher_id = Uuid::now_v7().to_string();
     
-    let metadata_obj = serde_json::json!({ "ship_to": note.ship_to });
+    let metadata_obj = serde_json::json!({
+        "ship_to": note.ship_to,
+        "export_details": note.export_details,
+    });
     let metadata_json = metadata_obj.to_string();
 
     sqlx::query(
@@ -435,7 +440,10 @@ pub async fn update_delivery_note(
     let round_off = note.round_off.unwrap_or(0.0);
     let grand_total = round2(total_amount + total_tax + freight_charge + round_off);
 
-    let metadata_obj = serde_json::json!({ "ship_to": note.ship_to });
+    let metadata_obj = serde_json::json!({
+        "ship_to": note.ship_to,
+        "export_details": note.export_details,
+    });
     let metadata_json = metadata_obj.to_string();
 
     sqlx::query(

@@ -742,6 +742,11 @@ pub async fn reset_template_to_default(
                 (html.to_string(), css.to_string())
             }
         }
+        "TPL-SI-EXP-001" => {
+            let html = include_str!("../../resources/templates/export_invoice.html");
+            let css = include_str!("../../resources/templates/export_invoice.css");
+            (html.to_string(), css.to_string())
+        }
         "TPL-RC-002" => {
             let html = include_str!("../../resources/templates/thermal_receipt.html");
             let css = include_str!("../../resources/templates/thermal_80mm.css");
@@ -808,9 +813,9 @@ async fn get_purchase_invoice_data(
         crate::commands::invoices::get_purchase_invoice_items_with_pool(pool, &id).await?;
 
     // Fetch forex info for this voucher (if any)
-    let forex_info: Option<(Option<String>, f64, f64, Option<String>, Option<String>)> = sqlx::query_as(
+    let forex_info: Option<(Option<String>, f64, f64, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT v.currency_id, COALESCE(v.exchange_rate, 1.0), COALESCE(v.foreign_total, 0),
-                cur.code, cur.symbol
+                cur.code, cur.symbol, cur.name
          FROM vouchers v
          LEFT JOIN currencies cur ON v.currency_id = cur.id
          WHERE v.id = ?"
@@ -820,9 +825,10 @@ async fn get_purchase_invoice_data(
     .await
     .unwrap_or(None);
     
-    let (forex_currency_id, forex_rate, forex_foreign_total, forex_code, forex_symbol) = 
-        forex_info.unwrap_or((None, 1.0, 0.0, None, None));
-    let is_foreign_currency = forex_currency_id.is_some();
+    let (forex_currency_id, forex_rate, forex_foreign_total, forex_code, forex_symbol, forex_name) = 
+        forex_info.unwrap_or((None, 1.0, 0.0, None, None, None));
+    let is_foreign_currency = forex_currency_id.is_some() && forex_code.as_deref().unwrap_or("INR") != "INR";
+    let safe_forex_rate = if forex_rate > 0.0001 { forex_rate } else { 1.0 };
 
     let coa_details: Option<(Option<String>, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT party_id, account_name, gstin, address_line_1, state, city, postal_code FROM chart_of_accounts WHERE id = ?"
@@ -920,12 +926,15 @@ async fn get_purchase_invoice_data(
         .map(|(iid, hsn, unit)| (iid, (hsn.unwrap_or_default(), unit.unwrap_or_default())))
         .collect();
 
+    let origin_country = "India".to_string();
+
     // Format items with calculated fields for template
     let formatted_items: Vec<serde_json::Value> = items
         .into_iter()
         .map(|item| {
             let mut item_val = serde_json::to_value(&item).unwrap_or(json!({}));
             if let Some(obj) = item_val.as_object_mut() {
+                obj.insert("country_of_origin".to_string(), json!(origin_country));
                 // item.amount = gross (original, before invoice discount)
                 // item.net_amount = net after invoice discount (taxable base for tax calc)
                 let taxable_amt = item.net_amount;
@@ -1064,10 +1073,33 @@ async fn get_purchase_invoice_data(
             obj.insert("ship_to".to_string(), party_obj); // defaults to same
 
             // Calculate subtotal for template
-            let bill_discount = invoice.discount_amount.unwrap_or(0.0);
-            let freight_charge = invoice.freight_charge;
-            let round_off = invoice.round_off;
-            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge - round_off + bill_discount;
+            let bill_discount = if is_foreign_currency {
+                round2(invoice.discount_amount.unwrap_or(0.0) / safe_forex_rate)
+            } else {
+                invoice.discount_amount.unwrap_or(0.0)
+            };
+            let freight_charge = if is_foreign_currency {
+                round2(invoice.freight_charge / safe_forex_rate)
+            } else {
+                invoice.freight_charge
+            };
+            let round_off = if is_foreign_currency {
+                round2(invoice.round_off / safe_forex_rate)
+            } else {
+                invoice.round_off
+            };
+            let tax_amount = if is_foreign_currency {
+                round2(invoice.tax_amount / safe_forex_rate)
+            } else {
+                invoice.tax_amount
+            };
+            let grand_total = if is_foreign_currency {
+                if forex_foreign_total > 0.0 { forex_foreign_total } else { round2(invoice.grand_total / safe_forex_rate) }
+            } else {
+                invoice.grand_total
+            };
+            let subtotal = round2(grand_total - tax_amount - freight_charge - round_off + bill_discount);
+
             // Total item-level discount (sum of per-line discount_amount)
             let total_item_discount: f64 = formatted_items.iter()
                 .filter_map(|item| item.get("discount_amount").and_then(|v| v.as_f64()))
@@ -1080,24 +1112,25 @@ async fn get_purchase_invoice_data(
             obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
             obj.insert("round_off".to_string(), json!(round2(round_off)));
             obj.insert("has_round_off".to_string(), json!(round_off.abs() > 0.001));
-            obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
+            obj.insert("tax_total".to_string(), json!(tax_amount));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
             obj.insert("bill_discount".to_string(), json!(round2(bill_discount)));
             obj.insert("total_item_discount".to_string(), json!(round2(total_item_discount)));
             obj.insert("has_item_discount".to_string(), json!(total_item_discount > 0.001));
             obj.insert("total_discount".to_string(), json!(total_discount));
             obj.insert("has_any_discount".to_string(), json!(total_discount > 0.001));
+            obj.insert("grand_total".to_string(), json!(grand_total));
 
             // Detect cash/bank purchase (no meaningful balance to show)
             let is_cash = is_cash_or_bank_party(pool, &invoice.supplier_id, &invoice.supplier_name).await;
             obj.insert("is_cash".to_string(), json!(is_cash));
 
             // Add Balance Details
-            let balance_due = old_balance - invoice.grand_total + paid_amount;
+            let balance_due = old_balance - grand_total + paid_amount;
             obj.insert("old_balance".to_string(), json!(old_balance));
             obj.insert("paid_amount".to_string(), json!(paid_amount));
 
-            let total_balance = old_balance - invoice.grand_total;
+            let total_balance = old_balance - grand_total;
             obj.insert("total_balance".to_string(), json!(total_balance));
             obj.insert("balance_due".to_string(), json!(balance_due));
 
@@ -1105,8 +1138,10 @@ async fn get_purchase_invoice_data(
             obj.insert("is_foreign_currency".to_string(), json!(is_foreign_currency));
             obj.insert("currency_code".to_string(), json!(forex_code.as_deref().unwrap_or("")));
             obj.insert("currency_symbol".to_string(), json!(forex_symbol.as_deref().unwrap_or("")));
+            obj.insert("currency_name".to_string(), json!(forex_name.as_deref().unwrap_or("")));
             obj.insert("exchange_rate".to_string(), json!(forex_rate));
             obj.insert("foreign_total".to_string(), json!(forex_foreign_total));
+            obj.insert("base_grand_total".to_string(), json!(invoice.grand_total));
 
             // ======= GST Context =======
             let inter_state = tax_utils::is_inter_state(
@@ -1131,9 +1166,9 @@ async fn get_sales_invoice_data(
         crate::commands::invoices::get_sales_invoice_items_with_pool(pool, &id).await?;
 
     // Fetch forex info for this voucher (if any)
-    let forex_info: Option<(Option<String>, f64, f64, Option<String>, Option<String>)> = sqlx::query_as(
+    let forex_info: Option<(Option<String>, f64, f64, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT v.currency_id, COALESCE(v.exchange_rate, 1.0), COALESCE(v.foreign_total, 0),
-                cur.code, cur.symbol
+                cur.code, cur.symbol, cur.name
          FROM vouchers v
          LEFT JOIN currencies cur ON v.currency_id = cur.id
          WHERE v.id = ?"
@@ -1143,9 +1178,10 @@ async fn get_sales_invoice_data(
     .await
     .unwrap_or(None);
     
-    let (forex_currency_id, forex_rate, forex_foreign_total, forex_code, forex_symbol) = 
-        forex_info.unwrap_or((None, 1.0, 0.0, None, None));
-    let is_foreign_currency = forex_currency_id.is_some();
+    let (forex_currency_id, forex_rate, forex_foreign_total, forex_code, forex_symbol, forex_name) = 
+        forex_info.unwrap_or((None, 1.0, 0.0, None, None, None));
+    let is_foreign_currency = forex_currency_id.is_some() && forex_code.as_deref().unwrap_or("INR") != "INR";
+    let safe_forex_rate = if forex_rate > 0.0001 { forex_rate } else { 1.0 };
 
     let coa_details: Option<(Option<String>, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT party_id, account_name, gstin, address_line_1, state, city, postal_code FROM chart_of_accounts WHERE id = ?"
@@ -1263,12 +1299,21 @@ async fn get_sales_invoice_data(
         .map(|(iid, hsn, unit)| (iid, (hsn.unwrap_or_default(), unit.unwrap_or_default())))
         .collect();
 
+    let export_details_obj = extract_export_details(&invoice.metadata);
+    let origin_country = export_details_obj.as_ref()
+        .and_then(|exp| exp.get("country_of_origin"))
+        .and_then(|c| c.as_str())
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or("India")
+        .to_string();
+
     // Format items with calculated fields for template
     let formatted_items: Vec<serde_json::Value> = items
         .into_iter()
         .map(|item| {
             let mut item_val = serde_json::to_value(&item).unwrap_or(json!({}));
             if let Some(obj) = item_val.as_object_mut() {
+                obj.insert("country_of_origin".to_string(), json!(origin_country));
                 let resolved_name = item.product_name.as_deref()
                     .filter(|s| !s.trim().is_empty())
                     .or(item.description.as_deref())
@@ -1427,12 +1472,39 @@ async fn get_sales_invoice_data(
             let has_ship_to = ship_to_obj != party_obj;
             obj.insert("ship_to".to_string(), ship_to_obj);
             obj.insert("has_ship_to".to_string(), json!(has_ship_to));
+            let export_details_obj = extract_export_details(&invoice.metadata);
+            let has_export_details = export_details_obj.is_some();
+            obj.insert("export_details".to_string(), export_details_obj.unwrap_or_else(|| json!({})));
+            obj.insert("has_export_details".to_string(), json!(has_export_details));
 
             // Calculate subtotal for template
-            let bill_discount = invoice.discount_amount.unwrap_or(0.0);
-            let freight_charge = invoice.freight_charge;
-            let round_off = invoice.round_off;
-            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge - round_off + bill_discount;
+            let bill_discount = if is_foreign_currency {
+                round2(invoice.discount_amount.unwrap_or(0.0) / safe_forex_rate)
+            } else {
+                invoice.discount_amount.unwrap_or(0.0)
+            };
+            let freight_charge = if is_foreign_currency {
+                round2(invoice.freight_charge / safe_forex_rate)
+            } else {
+                invoice.freight_charge
+            };
+            let round_off = if is_foreign_currency {
+                round2(invoice.round_off / safe_forex_rate)
+            } else {
+                invoice.round_off
+            };
+            let tax_amount = if is_foreign_currency {
+                round2(invoice.tax_amount / safe_forex_rate)
+            } else {
+                invoice.tax_amount
+            };
+            let grand_total = if is_foreign_currency {
+                if forex_foreign_total > 0.0 { forex_foreign_total } else { round2(invoice.grand_total / safe_forex_rate) }
+            } else {
+                invoice.grand_total
+            };
+            let subtotal = round2(grand_total - tax_amount - freight_charge - round_off + bill_discount);
+
             // Total item-level discount (sum of per-line discount_amount)
             let total_item_discount: f64 = formatted_items.iter()
                 .filter_map(|item| item.get("discount_amount").and_then(|v| v.as_f64()))
@@ -1445,7 +1517,7 @@ async fn get_sales_invoice_data(
             obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
             obj.insert("round_off".to_string(), json!(round2(round_off)));
             obj.insert("has_round_off".to_string(), json!(round_off.abs() > 0.001));
-            obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
+            obj.insert("tax_total".to_string(), json!(tax_amount));
             obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
             obj.insert("bill_discount".to_string(), json!(round2(bill_discount)));
@@ -1453,6 +1525,7 @@ async fn get_sales_invoice_data(
             obj.insert("has_item_discount".to_string(), json!(total_item_discount > 0.001));
             obj.insert("total_discount".to_string(), json!(total_discount));
             obj.insert("has_any_discount".to_string(), json!(total_discount > 0.001));
+            obj.insert("grand_total".to_string(), json!(grand_total));
 
             let (formatted_return_items, return_total) = if let Some(linked_return_id) = invoice.linked_return_id.as_deref() {
                 let return_items: Vec<crate::commands::sales_returns::SalesReturnItem> = sqlx::query_as(
@@ -1469,7 +1542,7 @@ async fn get_sales_invoice_data(
                 .unwrap_or_default();
 
                 let total: f64 = sqlx::query_scalar(
-                    "SELECT COALESCE(grand_total, total_amount, 0) FROM vouchers WHERE id = ? AND voucher_type = 'sales_return' AND deleted_at IS NULL",
+                    "SELECT COALESCE(foreign_total, grand_total, total_amount, 0) FROM vouchers WHERE id = ? AND voucher_type = 'sales_return' AND deleted_at IS NULL",
                 )
                 .bind(linked_return_id)
                 .fetch_optional(pool)
@@ -1530,7 +1603,7 @@ async fn get_sales_invoice_data(
             obj.insert("return_items".to_string(), serde_json::to_value(&formatted_return_items).unwrap_or(json!([])));
             obj.insert("return_total".to_string(), json!(round2(return_total)));
             obj.insert("has_returns".to_string(), json!(return_total > 0.0 || !formatted_return_items.is_empty()));
-            obj.insert("net_payable".to_string(), json!(round2((invoice.grand_total - return_total).max(0.0))));
+            obj.insert("net_payable".to_string(), json!(round2((grand_total - return_total).max(0.0))));
 
             // Detect cash/bank sale (no meaningful balance to show)
             let is_cash = is_cash_or_bank_party(pool, &invoice.customer_id, &invoice.customer_name).await;
@@ -1541,19 +1614,21 @@ async fn get_sales_invoice_data(
             obj.insert("paid_amount".to_string(), json!(paid_amount));
 
             // Balance Due = Old Balance + Current Bill - Paid Amount
-            let balance_due = old_balance + invoice.grand_total - paid_amount;
+            let balance_due = old_balance + grand_total - paid_amount;
             obj.insert("balance_due".to_string(), json!(balance_due));
 
             // Total Balance = Old Balance + Bill Amount (Grand Total)
-            let total_balance = old_balance + invoice.grand_total;
+            let total_balance = old_balance + grand_total;
             obj.insert("total_balance".to_string(), json!(total_balance));
 
             // ======= Forex / Multi-Currency Context =======
             obj.insert("is_foreign_currency".to_string(), json!(is_foreign_currency));
             obj.insert("currency_code".to_string(), json!(forex_code.as_deref().unwrap_or("")));
             obj.insert("currency_symbol".to_string(), json!(forex_symbol.as_deref().unwrap_or("")));
+            obj.insert("currency_name".to_string(), json!(forex_name.as_deref().unwrap_or("")));
             obj.insert("exchange_rate".to_string(), json!(forex_rate));
             obj.insert("foreign_total".to_string(), json!(forex_foreign_total));
+            obj.insert("base_grand_total".to_string(), json!(invoice.grand_total));
 
             // ======= GST Context =======
             let inter_state = tax_utils::is_inter_state(
@@ -1692,12 +1767,15 @@ async fn get_sales_quotation_data(
         .map(|(iid, hsn, unit)| (iid, (hsn.unwrap_or_default(), unit.unwrap_or_default())))
         .collect();
 
+    let origin_country = "India".to_string();
+
     // Format items with calculated fields for template
     let formatted_items: Vec<serde_json::Value> = items
         .into_iter()
         .map(|item| {
             let mut item_val = serde_json::to_value(&item).unwrap_or(json!({}));
             if let Some(obj) = item_val.as_object_mut() {
+                obj.insert("country_of_origin".to_string(), json!(origin_country));
                 // item.amount = gross (original, before invoice discount)
                 // item.net_amount = net after invoice discount (taxable base for tax calc)
                 let taxable_amt = item.net_amount;
@@ -1837,6 +1915,10 @@ async fn get_sales_quotation_data(
             let has_ship_to = ship_to_obj != party_obj;
             obj.insert("ship_to".to_string(), ship_to_obj);
             obj.insert("has_ship_to".to_string(), json!(has_ship_to));
+            let export_details_obj = extract_export_details(&invoice.metadata);
+            let has_export_details = export_details_obj.is_some();
+            obj.insert("export_details".to_string(), export_details_obj.unwrap_or_else(|| json!({})));
+            obj.insert("has_export_details".to_string(), json!(has_export_details));
 
             // Calculate subtotal for template
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
@@ -1980,11 +2062,14 @@ async fn get_delivery_note_data(
         .map(|(iid, hsn, unit)| (iid, (hsn.unwrap_or_default(), unit.unwrap_or_default())))
         .collect();
 
+    let origin_country = "India".to_string();
+
     let formatted_items: Vec<serde_json::Value> = items
         .into_iter()
         .map(|item| {
             let mut item_val = serde_json::to_value(&item).unwrap_or(json!({}));
             if let Some(obj) = item_val.as_object_mut() {
+                obj.insert("country_of_origin".to_string(), json!(origin_country));
                 let taxable_amt = item.net_amount;
                 let item_level_taxable_amt = round2((item.amount - item.discount_amount).max(0.0));
                 let display_amt = item.amount;
@@ -2103,6 +2188,10 @@ async fn get_delivery_note_data(
             let has_ship_to = ship_to_obj != party_obj;
             obj.insert("ship_to".to_string(), ship_to_obj);
             obj.insert("has_ship_to".to_string(), json!(has_ship_to));
+            let export_details_obj = extract_export_details(&invoice.metadata);
+            let has_export_details = export_details_obj.is_some();
+            obj.insert("export_details".to_string(), export_details_obj.unwrap_or_else(|| json!({})));
+            obj.insert("has_export_details".to_string(), json!(has_export_details));
 
             let bill_discount = invoice.discount_amount.unwrap_or(0.0);
             let freight_charge = invoice.freight_charge;
@@ -2208,6 +2297,24 @@ async fn get_sales_return_data(
     .await
     .map_err(|e| e.to_string())?;
 
+    // Fetch forex info for this voucher (if any)
+    let forex_info: Option<(Option<String>, f64, f64, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
+        "SELECT v.currency_id, COALESCE(v.exchange_rate, 1.0), COALESCE(v.foreign_total, 0),
+                cur.code, cur.symbol, cur.name
+         FROM vouchers v
+         LEFT JOIN currencies cur ON v.currency_id = cur.id
+         WHERE v.id = ?"
+    )
+    .bind(&id)
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+    
+    let (forex_currency_id, forex_rate, forex_foreign_total, forex_code, forex_symbol, forex_name) = 
+        forex_info.unwrap_or((None, 1.0, 0.0, None, None, None));
+    let is_foreign_currency = forex_currency_id.is_some() && forex_code.as_deref().unwrap_or("INR") != "INR";
+    let safe_forex_rate = if forex_rate > 0.0001 { forex_rate } else { 1.0 };
+
     let coa_details: Option<(Option<String>, String, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>)> = sqlx::query_as(
         "SELECT party_id, account_name, gstin, address_line_1, state, city, postal_code FROM chart_of_accounts WHERE id = ?"
     )
@@ -2289,11 +2396,14 @@ async fn get_sales_return_data(
         .map(|(iid, hsn, unit)| (iid, (hsn.unwrap_or_default(), unit.unwrap_or_default())))
         .collect();
 
+    let origin_country = "India".to_string();
+
     let formatted_items: Vec<serde_json::Value> = items
         .into_iter()
         .map(|item| {
             let mut item_val = serde_json::to_value(&item).unwrap_or(json!({}));
             if let Some(obj) = item_val.as_object_mut() {
+                obj.insert("country_of_origin".to_string(), json!(origin_country));
                 let taxable_amt = item.net_amount;
                 let item_level_taxable_amt = round2((item.amount - item.discount_amount).max(0.0));
                 let display_amt = item.amount;
@@ -2417,10 +2527,32 @@ async fn get_sales_return_data(
             obj.insert("party".to_string(), party_obj.clone());
             obj.insert("ship_to".to_string(), party_obj);
 
-            let bill_discount = invoice.discount_amount.unwrap_or(0.0);
-            let freight_charge = invoice.freight_charge;
-            let round_off = invoice.round_off;
-            let subtotal = invoice.grand_total - invoice.tax_amount - freight_charge - round_off + bill_discount;
+            let bill_discount = if is_foreign_currency {
+                round2(invoice.discount_amount.unwrap_or(0.0) / safe_forex_rate)
+            } else {
+                invoice.discount_amount.unwrap_or(0.0)
+            };
+            let freight_charge = if is_foreign_currency {
+                round2(invoice.freight_charge / safe_forex_rate)
+            } else {
+                invoice.freight_charge
+            };
+            let round_off = if is_foreign_currency {
+                round2(invoice.round_off / safe_forex_rate)
+            } else {
+                invoice.round_off
+            };
+            let tax_amount = if is_foreign_currency {
+                round2(invoice.tax_amount / safe_forex_rate)
+            } else {
+                invoice.tax_amount
+            };
+            let grand_total = if is_foreign_currency {
+                if forex_foreign_total > 0.0 { forex_foreign_total } else { round2(invoice.grand_total / safe_forex_rate) }
+            } else {
+                invoice.grand_total
+            };
+            let subtotal = round2(grand_total - tax_amount - freight_charge - round_off + bill_discount);
             // Total item-level discount (sum of per-line discount_amount)
             let total_item_discount: f64 = formatted_items.iter()
                 .filter_map(|item| item.get("discount_amount").and_then(|v| v.as_f64()))
@@ -2433,7 +2565,7 @@ async fn get_sales_return_data(
             obj.insert("has_freight_charge".to_string(), json!(freight_charge > 0.0));
             obj.insert("round_off".to_string(), json!(round2(round_off)));
             obj.insert("has_round_off".to_string(), json!(round_off.abs() > 0.001));
-            obj.insert("tax_total".to_string(), json!(invoice.tax_amount));
+            obj.insert("tax_total".to_string(), json!(tax_amount));
             obj.insert("tax_inclusive".to_string(), json!(tax_inclusive));
             obj.insert("has_discount".to_string(), json!(bill_discount > 0.0));
             obj.insert("bill_discount".to_string(), json!(round2(bill_discount)));
@@ -2441,13 +2573,14 @@ async fn get_sales_return_data(
             obj.insert("has_item_discount".to_string(), json!(total_item_discount > 0.001));
             obj.insert("total_discount".to_string(), json!(total_discount));
             obj.insert("has_any_discount".to_string(), json!(total_discount > 0.001));
+            obj.insert("grand_total".to_string(), json!(grand_total));
 
             let formatted_return_items: Vec<serde_json::Value> = Vec::new();
             let return_total = 0.0;
             obj.insert("return_items".to_string(), serde_json::to_value(&formatted_return_items).unwrap_or(json!([])));
             obj.insert("return_total".to_string(), json!(round2(return_total)));
             obj.insert("has_returns".to_string(), json!(false));
-            obj.insert("net_payable".to_string(), json!(round2(invoice.grand_total.max(0.0))));
+            obj.insert("net_payable".to_string(), json!(round2(grand_total.max(0.0))));
 
             let is_cash = is_cash_or_bank_party(pool, &invoice.customer_id, &invoice.customer_name).await;
             obj.insert("is_cash".to_string(), json!(is_cash));
@@ -2455,13 +2588,22 @@ async fn get_sales_return_data(
             obj.insert("old_balance".to_string(), json!(old_balance));
             obj.insert("paid_amount".to_string(), json!(paid_amount));
 
-            let balance_due = old_balance - invoice.grand_total;
+            let balance_due = old_balance - grand_total;
             obj.insert("balance_due".to_string(), json!(balance_due));
 
-            let total_balance = old_balance - invoice.grand_total;
+            let total_balance = old_balance - grand_total;
             obj.insert("total_balance".to_string(), json!(total_balance));
 
             obj.insert("voucher_type".to_string(), json!("sales_return"));
+
+            // ======= Forex / Multi-Currency Context =======
+            obj.insert("is_foreign_currency".to_string(), json!(is_foreign_currency));
+            obj.insert("currency_code".to_string(), json!(forex_code.as_deref().unwrap_or("")));
+            obj.insert("currency_symbol".to_string(), json!(forex_symbol.as_deref().unwrap_or("")));
+            obj.insert("currency_name".to_string(), json!(forex_name.as_deref().unwrap_or("")));
+            obj.insert("exchange_rate".to_string(), json!(forex_rate));
+            obj.insert("foreign_total".to_string(), json!(forex_foreign_total));
+            obj.insert("base_grand_total".to_string(), json!(invoice.grand_total));
 
             let inter_state = tax_utils::is_inter_state(
                 Some(&company_state),
@@ -2594,6 +2736,15 @@ async fn get_payment_data(
             .map(|i| i.description.clone())
             .collect::<Vec<String>>()
             .join(", ");
+        let is_foreign_currency = voucher.currency_id.is_some() && voucher.currency_code.as_deref().unwrap_or("INR") != "INR";
+        let forex_rate = voucher.exchange_rate.unwrap_or(1.0);
+        let safe_forex_rate = if forex_rate > 0.0001 { forex_rate } else { 1.0 };
+        let grand_total = if is_foreign_currency {
+            if voucher.foreign_total.unwrap_or(0.0) > 0.0 { voucher.foreign_total.unwrap_or(0.0) } else { round2(voucher.grand_total / safe_forex_rate) }
+        } else {
+            voucher.grand_total
+        };
+
         obj.insert(
             "items".to_string(),
             serde_json::to_value(&items).unwrap_or(json!([])),
@@ -2602,8 +2753,15 @@ async fn get_payment_data(
         obj.insert("old_balance".to_string(), json!(old_balance));
         obj.insert("balance_due".to_string(), json!(balance_due));
         obj.insert("total_balance".to_string(), json!(total_balance));
-        obj.insert("paid_amount".to_string(), json!(voucher.grand_total));
+        obj.insert("grand_total".to_string(), json!(grand_total));
+        obj.insert("paid_amount".to_string(), json!(grand_total));
         obj.insert("is_cash".to_string(), json!(is_cash));
+        obj.insert("is_foreign_currency".to_string(), json!(is_foreign_currency));
+        obj.insert("currency_code".to_string(), json!(voucher.currency_code.as_deref().unwrap_or("")));
+        obj.insert("currency_symbol".to_string(), json!(voucher.currency_symbol.as_deref().unwrap_or("")));
+        obj.insert("exchange_rate".to_string(), json!(forex_rate));
+        obj.insert("foreign_total".to_string(), json!(voucher.foreign_total.unwrap_or(0.0)));
+        obj.insert("base_grand_total".to_string(), json!(voucher.grand_total));
         // Capitalise payment_method (cash → Cash, bank → Bank)
         if let Some(method) = obj.get("payment_method").and_then(|v| v.as_str()) {
             let capitalized = match method {
@@ -2736,6 +2894,15 @@ async fn get_receipt_data(
 
     let mut val = serde_json::to_value(&voucher).map_err(|e| e.to_string())?;
     if let Some(obj) = val.as_object_mut() {
+        let is_foreign_currency = voucher.currency_id.is_some() && voucher.currency_code.as_deref().unwrap_or("INR") != "INR";
+        let forex_rate = voucher.exchange_rate.unwrap_or(1.0);
+        let safe_forex_rate = if forex_rate > 0.0001 { forex_rate } else { 1.0 };
+        let grand_total = if is_foreign_currency {
+            if voucher.foreign_total.unwrap_or(0.0) > 0.0 { voucher.foreign_total.unwrap_or(0.0) } else { round2(voucher.grand_total / safe_forex_rate) }
+        } else {
+            voucher.grand_total
+        };
+
         obj.insert(
             "items".to_string(),
             serde_json::to_value(items).unwrap_or(json!([])),
@@ -2744,8 +2911,15 @@ async fn get_receipt_data(
         obj.insert("old_balance".to_string(), json!(old_balance));
         obj.insert("balance_due".to_string(), json!(balance_due));
         obj.insert("total_balance".to_string(), json!(total_balance));
-        obj.insert("paid_amount".to_string(), json!(voucher.grand_total));
+        obj.insert("grand_total".to_string(), json!(grand_total));
+        obj.insert("paid_amount".to_string(), json!(grand_total));
         obj.insert("is_cash".to_string(), json!(is_cash));
+        obj.insert("is_foreign_currency".to_string(), json!(is_foreign_currency));
+        obj.insert("currency_code".to_string(), json!(voucher.currency_code.as_deref().unwrap_or("")));
+        obj.insert("currency_symbol".to_string(), json!(voucher.currency_symbol.as_deref().unwrap_or("")));
+        obj.insert("exchange_rate".to_string(), json!(forex_rate));
+        obj.insert("foreign_total".to_string(), json!(voucher.foreign_total.unwrap_or(0.0)));
+        obj.insert("base_grand_total".to_string(), json!(voucher.grand_total));
         if let Some(c) = company {
             obj.insert("company".to_string(), serde_json::to_value(c).unwrap_or(json!({})));
         }
@@ -2910,8 +3084,15 @@ async fn inject_gst_context(
     obj.insert("hsn_summary".to_string(), json!(hsn_summary));
 
     // 6. Tax total in words
-    let tax_words = number_to_words_indian(tax_total);
-    obj.insert("tax_total_words".to_string(), json!(format!("Indian Rupee {} Only", tax_words)));
+    let is_foreign = obj.get("is_foreign_currency").and_then(|v| v.as_bool()).unwrap_or(false);
+    let cur_code = obj.get("currency_code").and_then(|v| v.as_str()).unwrap_or("INR");
+    let cur_name = obj.get("currency_name").and_then(|v| v.as_str());
+    let tax_words = if is_foreign {
+        crate::utils::number_to_words_currency(tax_total, cur_code, cur_name)
+    } else {
+        format!("Indian Rupee {} Only", number_to_words_indian(tax_total))
+    };
+    obj.insert("tax_total_words".to_string(), json!(tax_words));
 }
 
 fn round2(v: f64) -> f64 {
@@ -3224,6 +3405,24 @@ fn build_ship_to_obj(
     }
     // Fallback: ship-to = billing party
     billing_party.clone()
+}
+
+fn extract_export_details(metadata: &Option<String>) -> Option<serde_json::Value> {
+    if let Some(meta_str) = metadata {
+        if let Ok(meta) = serde_json::from_str::<serde_json::Value>(meta_str) {
+            if let Some(exp) = meta.get("export_details") {
+                if !exp.is_null() && exp.is_object() {
+                    let has_any = exp.as_object().map_or(false, |map| {
+                        map.values().any(|v| v.as_str().map_or(false, |s| !s.trim().is_empty()))
+                    });
+                    if has_any {
+                        return Some(exp.clone());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 async fn is_cash_or_bank_party(pool: &SqlitePool, account_id: &str, party_name: &str) -> bool {

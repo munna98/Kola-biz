@@ -58,6 +58,7 @@ pub struct CompanyProfile {
     pub gstin: Option<String>,
     pub pan: Option<String>,
     pub cin: Option<String>,
+    pub lut_no: Option<String>,
     pub logo_data: Option<String>,
     pub bank_name: Option<String>,
     pub bank_account_no: Option<String>,
@@ -88,6 +89,7 @@ pub struct UpdateCompanyProfile {
     pub gstin: Option<String>,
     pub pan: Option<String>,
     pub cin: Option<String>,
+    pub lut_no: Option<String>,
     pub logo_data: Option<String>,
     pub bank_name: Option<String>,
     pub bank_account_no: Option<String>,
@@ -165,6 +167,7 @@ pub async fn update_company_profile(
             gstin = ?,
             pan = ?,
             cin = ?,
+            lut_no = ?,
             logo_data = ?,
             bank_name = ?,
             bank_account_no = ?,
@@ -191,6 +194,7 @@ pub async fn update_company_profile(
     .bind(&profile.gstin)
     .bind(&profile.pan)
     .bind(&profile.cin)
+    .bind(&profile.lut_no)
     .bind(&profile.logo_data)
     .bind(&profile.bank_name)
     .bind(&profile.bank_account_no)

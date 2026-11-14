@@ -1676,6 +1676,17 @@ pub struct ShipToAddress {
     pub gstin: Option<String>,
 }
 
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+pub struct ExportDetails {
+    pub country_of_origin: Option<String>,
+    pub country_of_destination: Option<String>,
+    pub pre_carriage_by: Option<String>,
+    pub place_of_receipt: Option<String>,
+    pub port_of_loading: Option<String>,
+    pub port_of_discharge: Option<String>,
+    pub final_destination: Option<String>,
+}
+
 // ============= SALES INVOICE =============
 #[derive(Serialize, Deserialize, sqlx::FromRow)]
 pub struct SalesInvoice {
@@ -1806,6 +1817,8 @@ pub struct CreateSalesInvoice {
     pub is_margin_scheme_invoice: bool,
     #[serde(default)]
     pub ship_to: Option<ShipToAddress>,
+    #[serde(default)]
+    pub export_details: Option<ExportDetails>,
 }
 
 #[tauri::command]
@@ -2159,7 +2172,10 @@ pub async fn create_sales_invoice(
 
     let voucher_id = Uuid::now_v7().to_string();
     
-    let metadata_obj = serde_json::json!({ "ship_to": invoice.ship_to });
+    let metadata_obj = serde_json::json!({
+        "ship_to": invoice.ship_to,
+        "export_details": invoice.export_details,
+    });
     let metadata_json = metadata_obj.to_string();
 
     let _ = sqlx::query(
@@ -2629,7 +2645,10 @@ pub async fn update_sales_invoice(
     .fetch_one(&mut *tx)
     .await
     .map_err(|e| e.to_string())?;
-    let metadata_obj = serde_json::json!({ "ship_to": invoice.ship_to });
+    let metadata_obj = serde_json::json!({
+        "ship_to": invoice.ship_to,
+        "export_details": invoice.export_details,
+    });
     let metadata_json = metadata_obj.to_string();
 
     let _ = sqlx::query(
@@ -3503,4 +3522,66 @@ pub async fn get_recent_ship_to_addresses(
 
     Ok(results)
 }
+
+#[tauri::command]
+pub async fn get_recent_export_details(
+    registry: State<'_, Arc<DbRegistry>>,
+    party_id: String,
+) -> Result<Vec<ExportDetails>, String> {
+    let pool = registry.active_pool().await?;
+    let rows: Vec<(Option<String>,)> = sqlx::query_as(
+        "SELECT metadata FROM vouchers 
+         WHERE party_id = ? AND metadata IS NOT NULL AND deleted_at IS NULL
+         ORDER BY voucher_date DESC, id DESC
+         LIMIT 30",
+    )
+    .bind(&party_id)
+    .fetch_all(&pool)
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut results: Vec<ExportDetails> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    for (meta_opt,) in rows {
+        if let Some(meta_str) = meta_opt {
+            if let Ok(val) = serde_json::from_str::<serde_json::Value>(&meta_str) {
+                if let Some(exp_val) = val.get("export_details") {
+                    if !exp_val.is_null() {
+                        if let Ok(exp) = serde_json::from_value::<ExportDetails>(exp_val.clone()) {
+                            let origin = exp.country_of_origin.as_deref().unwrap_or("").trim();
+                            let dest = exp.country_of_destination.as_deref().unwrap_or("").trim();
+                            let pre_c = exp.pre_carriage_by.as_deref().unwrap_or("").trim();
+                            let place_r = exp.place_of_receipt.as_deref().unwrap_or("").trim();
+                            let port_l = exp.port_of_loading.as_deref().unwrap_or("").trim();
+                            let port_d = exp.port_of_discharge.as_deref().unwrap_or("").trim();
+                            let final_d = exp.final_destination.as_deref().unwrap_or("").trim();
+
+                            if origin.is_empty() && dest.is_empty() && port_l.is_empty() && port_d.is_empty() && pre_c.is_empty() {
+                                continue;
+                            }
+                            let key = format!(
+                                "{}:{}:{}:{}:{}:{}:{}",
+                                origin.to_lowercase(),
+                                dest.to_lowercase(),
+                                pre_c.to_lowercase(),
+                                place_r.to_lowercase(),
+                                port_l.to_lowercase(),
+                                port_d.to_lowercase(),
+                                final_d.to_lowercase()
+                            );
+                            if !seen.contains(&key) {
+                                seen.insert(key);
+                                results.push(exp);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(results)
+}
+
 

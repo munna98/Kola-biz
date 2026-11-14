@@ -295,7 +295,7 @@ pub async fn update_customer(
 
     // Sync address/gstin/phone to chart_of_accounts
     sqlx::query(
-        "UPDATE chart_of_accounts SET account_name = ?, phone = ?, address_line_1 = ?, address_line_2 = ?, city = ?, state = ?, postal_code = ?, gstin = ?, updated_at = CURRENT_TIMESTAMP WHERE party_id = ?"
+        "UPDATE chart_of_accounts SET account_name = ?, phone = ?, address_line_1 = ?, address_line_2 = ?, city = ?, state = ?, postal_code = ?, country = ?, gstin = ?, updated_at = CURRENT_TIMESTAMP WHERE party_id = ?"
     )
     .bind(&customer.name)
     .bind(&customer.phone)
@@ -304,6 +304,7 @@ pub async fn update_customer(
     .bind(&customer.city)
     .bind(&customer.state)
     .bind(&customer.postal_code)
+    .bind(&customer.country)
     .bind(&customer.gstin)
     .bind(&id)
     .execute(&pool)

@@ -181,6 +181,7 @@ pub fn run() {
             get_sales_invoice,
             get_sales_invoice_items,
             get_recent_ship_to_addresses,
+            get_recent_export_details,
             create_sales_invoice,
             update_sales_invoice,
             delete_sales_invoice,

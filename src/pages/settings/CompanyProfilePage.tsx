@@ -369,7 +369,7 @@ export default function CompanyProfilePage() {
                             </CardDescription>
                         </CardHeader>
                         <CardContent className="space-y-4">
-                            <div className="grid grid-cols-3 gap-4">
+                            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                 <div className="space-y-2">
                                     <Label htmlFor="gstin">GSTIN</Label>
                                     <Input
@@ -398,6 +398,16 @@ export default function CompanyProfilePage() {
                                         onChange={(e) => handleInputChange('cin', e.target.value.toUpperCase())}
                                         placeholder="Corporate Identification Number"
                                         maxLength={21}
+                                    />
+                                </div>
+                                <div className="space-y-2">
+                                    <Label htmlFor="lut_no">LUT No</Label>
+                                    <Input
+                                        id="lut_no"
+                                        value={profile.lut_no || ''}
+                                        onChange={(e) => handleInputChange('lut_no', e.target.value.toUpperCase())}
+                                        placeholder="Letter of Undertaking (LUT)"
+                                        maxLength={30}
                                     />
                                 </div>
                             </div>
