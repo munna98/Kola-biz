@@ -12,6 +12,7 @@ import {
     setOpeningStockDate,
     setOpeningStockNarration,
     addOpeningStockItem,
+    setOpeningStockItems,
     updateOpeningStockItem,
     removeOpeningStockItem,
     setOpeningStockTotal,
@@ -126,27 +127,19 @@ export default function OpeningStockPage() {
             dispatch(setOpeningStockNarration(voucher.narration || ''));
             dispatch(setOpeningStockCreatedByName(voucher.created_by_name));
 
-            dispatch(resetOpeningStockForm());
-
-            // Restore date and narration again as reset cleared them
-            dispatch(setOpeningStockDate(voucher.voucher_date));
-            dispatch(setOpeningStockNarration(voucher.narration || ''));
-            dispatch(setOpeningStockCreatedByName(voucher.created_by_name));
-
-            items.forEach(item => {
-                dispatch(addOpeningStockItem({
-                    id: item.id,
-                    product_id: item.product_id,
-                    product_name: item.product_name,
-                    unit_id: item.unit_id,
-                    base_quantity: item.base_quantity,
-                    description: item.description || '',
-                    initial_quantity: item.quantity,
-                    quantity: item.quantity,
-                    rate: item.rate,
-                    amount: item.amount,
-                }));
-            });
+            const loadedItems = items.map(item => ({
+                id: item.id,
+                product_id: item.product_id,
+                product_name: item.product_name,
+                unit_id: item.unit_id,
+                base_quantity: item.base_quantity,
+                description: item.description || '',
+                initial_quantity: item.quantity,
+                quantity: item.quantity,
+                rate: item.rate,
+                amount: item.amount,
+            }));
+            dispatch(setOpeningStockItems(loadedItems));
 
             dispatch(setOpeningStockMode('viewing'));
             dispatch(setOpeningStockHasUnsavedChanges(false));

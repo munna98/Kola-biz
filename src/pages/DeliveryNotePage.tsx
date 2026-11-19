@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import {
   setDeliveryNoteDiscountAmount,
   setDeliveryNoteFreightCharge,
   addDeliveryNoteItem,
+  setDeliveryNoteItems,
   updateDeliveryNoteItem,
   removeDeliveryNoteItem,
   setDeliveryNoteTotals,
@@ -573,7 +574,6 @@ export default function DeliveryNotePage() {
     try {
       dispatch(setDeliveryNoteLoading(true));
       dispatch(setDeliveryNoteHasUnsavedChanges(false));
-      dispatch(resetDeliveryNoteForm());
 
       const note = await invoke<any>('get_delivery_note', { id });
       const items = await invoke<any[]>('get_delivery_note_items', { voucherId: id });
@@ -609,10 +609,11 @@ export default function DeliveryNotePage() {
         setShipToMap(prev => ({ ...prev, [id]: undefined }));
       }
 
-      items.forEach(item => {
+      const loadedItems = items.map(item => {
         const storedGstRate = item.resolved_gst_rate || item.tax_rate || 0;
         const displayRate = loadedTaxInclusive ? item.rate * (1 + (storedGstRate / 100)) : item.rate;
-        dispatch(addDeliveryNoteItem({
+        return {
+          id: `loaded-${item.id}`,
           item_type: item.item_type || (item.service_id ? 'service' : 'product'),
           product_id: item.product_id || 0,
           service_id: item.service_id || null,
@@ -637,35 +638,9 @@ export default function DeliveryNotePage() {
           tax_rate: item.tax_rate,
           discount_percent: item.discount_percent || 0,
           discount_amount: item.discount_amount || 0,
-        }));
+        };
       });
-
-      const loadedItems = items.map(item => ({
-        id: `loaded-${item.id}`,
-        item_type: item.item_type || (item.service_id ? 'service' : 'product'),
-        product_id: item.product_id || 0,
-        service_id: item.service_id || null,
-        product_code: item.product_code,
-        product_name: item.product_name || item.description,
-        unit_id: item.unit_id,
-        hsn_sac_code: item.hsn_sac_code,
-        gst_slab_id: item.gst_slab_id,
-        resolved_gst_rate: item.resolved_gst_rate,
-        cgst_rate: item.cgst_rate,
-        sgst_rate: item.sgst_rate,
-        igst_rate: item.igst_rate,
-        cgst_amount: item.cgst_amount,
-        sgst_amount: item.sgst_amount,
-        igst_amount: item.igst_amount,
-        description: item.description,
-        initial_quantity: item.initial_quantity,
-        count: item.count,
-        deduction_per_unit: item.deduction_per_unit,
-        rate: loadedTaxInclusive ? item.rate * (1 + (((item.resolved_gst_rate || item.tax_rate) || 0) / 100)) : item.rate,
-        tax_rate: item.tax_rate,
-        discount_percent: item.discount_percent || 0,
-        discount_amount: item.discount_amount || 0,
-      }));
+      dispatch(setDeliveryNoteItems(loadedItems as any));
 
       const loadedGstDisabled = (note as any).gst_disabled !== undefined && (note as any).gst_disabled !== null
         ? Boolean((note as any).gst_disabled)
@@ -878,6 +853,66 @@ export default function DeliveryNotePage() {
     setShowCreateProduct(false); setCreatingProductRowIndex(null);
   };
 
+  const gstSlabMap = useMemo(() => new Map(gstSlabs.map(s => [s.id, s])), [gstSlabs]);
+  const productGstMap = useMemo(() => new Map(products.map(p => [String(p.id), p.gst_slab_id])), [products]);
+
+  const discountCalculation = useMemo(() => {
+    return calculateVoucherDiscounts(noteState.items, {
+      discountRate: noteState.form.discount_rate,
+      discountAmount: noteState.form.discount_amount,
+      taxInclusive: isTaxInclusive,
+      resolveGstRate: (item) => {
+        if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
+          return item.resolved_gst_rate;
+        }
+        if (item.tax_rate) {
+          return item.tax_rate;
+        }
+        const slabId = item.gst_slab_id || (item.product_id ? productGstMap.get(String(item.product_id)) : undefined);
+        if (slabId) {
+          const savedSlab = gstSlabMap.get(slabId);
+          if (savedSlab) {
+            return savedSlab.is_dynamic === 1
+              ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
+              : savedSlab.fixed_rate;
+          }
+        }
+        return 0;
+      },
+    });
+  }, [noteState.items, noteState.form.discount_rate, noteState.form.discount_amount, isTaxInclusive, gstSlabMap, productGstMap]);
+
+  const lineAmountsMap = useMemo(() => {
+    const map = new Map<string, { finalQty: number; amount: number; taxAmount: number; total: number }>();
+    discountCalculation.lines.forEach((line, idx) => {
+      const it = noteState.items[idx];
+      if (it) {
+        const idKey = it.id ? String(it.id) : String(idx);
+        map.set(idKey, {
+          finalQty: line.finalQty,
+          amount: line.netBeforeInvoiceDiscount,
+          taxAmount: line.taxAmount,
+          total: line.total,
+        });
+      }
+    });
+    return map;
+  }, [discountCalculation, noteState.items]);
+
+  const getItemAmount = useCallback((item: typeof noteState.items[0]) => {
+    const key = item.id ? String(item.id) : '';
+    const cached = key ? lineAmountsMap.get(key) : undefined;
+    if (cached) return cached;
+    const finalQty = item.initial_quantity - (item.count ?? 1) * (item.deduction_per_unit ?? 0);
+    const gross = finalQty * (item.rate ?? 0);
+    return {
+      finalQty,
+      amount: gross,
+      taxAmount: 0,
+      total: gross,
+    };
+  }, [lineAmountsMap]);
+
   if (isInitializing) {
     return (
       <div className="flex items-center justify-center h-full bg-background">
@@ -885,33 +920,6 @@ export default function DeliveryNotePage() {
       </div>
     );
   }
-
-  const getItemAmount = (item: typeof noteState.items[0]) => {
-    let gstRate = item.tax_rate || 0;
-    if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
-      gstRate = item.resolved_gst_rate;
-    } else if (item.gst_slab_id) {
-      const savedSlab = gstSlabs.find(s => s.id === item.gst_slab_id);
-      if (savedSlab) gstRate = savedSlab.is_dynamic === 1 ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate) : savedSlab.fixed_rate;
-    } else {
-      const product = products.find(p => String(p.id) === String(item.product_id));
-      if (product?.gst_slab_id) {
-        const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
-        if (slab) gstRate = slab.is_dynamic === 1 ? (item.rate <= slab.threshold ? slab.below_rate : slab.above_rate) : slab.fixed_rate;
-      }
-    }
-    const sourceItems = noteState.items.some((candidate) => candidate.id === item.id) ? noteState.items : [item];
-    const calculation = calculateVoucherDiscounts(sourceItems, {
-      discountRate: noteState.form.discount_rate,
-      discountAmount: noteState.form.discount_amount,
-      taxInclusive: isTaxInclusive,
-      resolveGstRate: () => gstRate,
-    });
-    const lineIndex = sourceItems.length === 1 ? 0 : sourceItems.findIndex((candidate) => candidate.id === item.id);
-    const line = calculation.lines[Math.max(lineIndex, 0)];
-    const grossTax = Math.round(line.netBeforeInvoiceDiscount * (gstRate / 100) * 100) / 100;
-    return { finalQty: line.finalQty, amount: line.netBeforeInvoiceDiscount, taxAmount: grossTax, total: Math.round((line.netBeforeInvoiceDiscount + grossTax) * 100) / 100 };
-  };
 
   const isReadOnly = noteState.mode === 'viewing';
   const currentCustomerParty = parties.find(p => p.id === noteState.form.customer_id);

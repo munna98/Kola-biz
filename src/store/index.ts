@@ -411,6 +411,12 @@ const purchaseInvoiceSlice = createSlice({
         state.items.push(itemWithId as any);
       }
     },
+    setPurchaseItems: (state, action: PayloadAction<PurchaseInvoiceItem[]>) => {
+      state.items = action.payload.map(item => ({
+        ...item,
+        id: item.id || `temp-${Date.now()}-${Math.random()}`
+      }));
+    },
     updateItem: (state, action: PayloadAction<{ index: number; data: Partial<PurchaseInvoiceItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
     },
@@ -480,6 +486,7 @@ export const {
   setDiscountAmount,
   setFreightCharge,
   addItem,
+  setPurchaseItems,
   updateItem,
   removeItem,
   setTotals,
@@ -1056,6 +1063,12 @@ const openingBalanceSlice = createSlice({
         state.lines.push(itemWithId as any);
       }
     },
+    setOpeningBalanceLines: (state, action: PayloadAction<OpeningBalanceLine[]>) => {
+      state.lines = action.payload.map(line => ({
+        ...line,
+        id: line.id || `temp-${Date.now()}-${Math.random()}`
+      }));
+    },
     updateOpeningBalanceLine: (state, action: PayloadAction<{ index: number; data: Partial<OpeningBalanceLine> }>) => {
       state.lines[action.payload.index] = { ...state.lines[action.payload.index], ...action.payload.data };
     },
@@ -1094,6 +1107,7 @@ export const {
   setOpeningBalanceReference,
   setOpeningBalanceNarration,
   addOpeningBalanceLine,
+  setOpeningBalanceLines,
   updateOpeningBalanceLine,
   removeOpeningBalanceLine,
   setOpeningBalanceTotals,
@@ -1286,6 +1300,12 @@ const salesInvoiceSlice = createSlice({
         state.items.push(itemWithId as any);
       }
     },
+    setSalesItems: (state, action: PayloadAction<SalesInvoiceItem[]>) => {
+      state.items = action.payload.map(item => ({
+        ...item,
+        id: item.id || `temp-${Date.now()}-${Math.random()}`
+      }));
+    },
     updateSalesItem: (state, action: PayloadAction<{ index: number; data: Partial<SalesInvoiceItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
     },
@@ -1474,6 +1494,7 @@ export const {
   setSalesDiscountAmount,
   setSalesFreightCharge,
   addSalesItem,
+  setSalesItems,
   updateSalesItem,
   removeSalesItem,
   setSalesTotals,
@@ -1719,6 +1740,12 @@ const purchaseReturnSlice = createSlice({
         state.items.push(itemWithId as any);
       }
     },
+    setPurchaseReturnItems: (state, action: PayloadAction<PurchaseReturnItem[]>) => {
+      state.items = action.payload.map(item => ({
+        ...item,
+        id: item.id || `temp-${Date.now()}-${Math.random()}`
+      }));
+    },
     updatePurchaseReturnItem: (state, action: PayloadAction<{ index: number; data: Partial<PurchaseReturnItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
     },
@@ -1787,6 +1814,7 @@ export const {
   setPurchaseReturnDiscountAmount,
   setPurchaseReturnFreightCharge,
   addPurchaseReturnItem,
+  setPurchaseReturnItems,
   updatePurchaseReturnItem,
   removePurchaseReturnItem,
   setPurchaseReturnTotals,
@@ -1943,6 +1971,12 @@ const salesReturnSlice = createSlice({
         state.items.push(itemWithId as any);
       }
     },
+    setSalesReturnItems: (state, action: PayloadAction<SalesReturnItem[]>) => {
+      state.items = action.payload.map(item => ({
+        ...item,
+        id: item.id || `temp-${Date.now()}-${Math.random()}`
+      }));
+    },
     updateSalesReturnItem: (state, action: PayloadAction<{ index: number; data: Partial<SalesReturnItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
     },
@@ -2016,6 +2050,7 @@ export const {
   setSalesReturnDiscountAmount,
   setSalesReturnFreightCharge,
   addSalesReturnItem,
+  setSalesReturnItems,
   updateSalesReturnItem,
   removeSalesReturnItem,
   setSalesReturnTotals,
@@ -2107,6 +2142,12 @@ const openingStockSlice = createSlice({
         state.items.push(itemWithId as any);
       }
     },
+    setOpeningStockItems: (state, action: PayloadAction<OpeningStockItem[]>) => {
+      state.items = action.payload.map(item => ({
+        ...item,
+        id: item.id || `temp-${Date.now()}-${Math.random()}`
+      }));
+    },
     updateOpeningStockItem: (state, action: PayloadAction<{ index: number; data: Partial<OpeningStockItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
     },
@@ -2144,6 +2185,7 @@ export const {
   setOpeningStockDate,
   setOpeningStockNarration,
   addOpeningStockItem,
+  setOpeningStockItems,
   updateOpeningStockItem,
   removeOpeningStockItem,
   setOpeningStockTotal,
@@ -2308,6 +2350,12 @@ const salesQuotationSlice = createSlice({
         const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
         state.items.push(itemWithId as any);
       }
+    },
+    setQuotationItems: (state, action: PayloadAction<SalesQuotationItem[]>) => {
+      state.items = action.payload.map(item => ({
+        ...item,
+        id: item.id || `temp-${Date.now()}-${Math.random()}`
+      }));
     },
     updateQuotationItem: (state, action: PayloadAction<{ index: number; data: Partial<SalesQuotationItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
@@ -2663,6 +2711,7 @@ export const {
   setQuotationDiscountAmount,
   setQuotationFreightCharge,
   addQuotationItem,
+  setQuotationItems,
   updateQuotationItem,
   removeQuotationItem,
   setQuotationTotals,
@@ -2827,6 +2876,12 @@ const deliveryNoteSlice = createSlice({
         const itemWithId = { ...itemData, id: itemData.id || `temp-${Date.now()}-${Math.random()}` };
         state.items.push(itemWithId as any);
       }
+    },
+    setDeliveryNoteItems: (state, action: PayloadAction<DeliveryNoteItem[]>) => {
+      state.items = action.payload.map(item => ({
+        ...item,
+        id: item.id || `temp-${Date.now()}-${Math.random()}`
+      }));
     },
     updateDeliveryNoteItem: (state, action: PayloadAction<{ index: number; data: Partial<DeliveryNoteItem> }>) => {
       state.items[action.payload.index] = { ...state.items[action.payload.index], ...action.payload.data };
@@ -3021,6 +3076,7 @@ export const {
   setDeliveryNoteDiscountAmount,
   setDeliveryNoteFreightCharge,
   addDeliveryNoteItem,
+  setDeliveryNoteItems,
   updateDeliveryNoteItem,
   removeDeliveryNoteItem,
   setDeliveryNoteTotals,

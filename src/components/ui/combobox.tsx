@@ -200,6 +200,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
   // internal DOM reordering, which can leave newly mounted items out of score order.
   const filterFn = filter || defaultComboboxFilter;
   const filteredOptions = React.useMemo(() => {
+    if (!open) return [];
     if (!inputValue.trim()) return options;
     const scored: { option: ComboboxOption; score: number }[] = [];
     for (const opt of options) {
@@ -211,7 +212,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
     }
     scored.sort((a, b) => b.score - a.score);
     return scored.map((s) => s.option);
-  }, [options, inputValue, filterFn]);
+  }, [options, inputValue, filterFn, open]);
 
   const handleFocus = React.useCallback(() => {
     if (skipOpen.current || isPointerDown.current) {
@@ -303,7 +304,9 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
     awaitFirstArrowDown.current = false;
   };
 
-  const selectedOption = options.find((opt) => opt.value === value)
+  const selectedOption = React.useMemo(() => {
+    return options.find((opt) => opt.value === value);
+  }, [options, value]);
   const widthMatch = popoverClassName?.match(/w-\[(\d+)px\]/);
   const popoverWidthStyle = widthMatch ? { width: `${widthMatch[1]}px`, maxWidth: '95vw' } : undefined;
 
@@ -375,6 +378,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
           }
         }}
       >
+        {open && (
         <Command
           value={commandValue}
           onValueChange={(val) => setCommandValue(val)}
@@ -521,6 +525,7 @@ export const Combobox = React.forwardRef<HTMLButtonElement, ComboboxProps & { di
             </CommandGroup>
           </CommandList>
         </Command>
+        )}
       </PopoverContent>
     </Popover>
   )

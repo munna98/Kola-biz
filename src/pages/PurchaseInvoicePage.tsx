@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import {
   setDiscountAmount,
   setFreightCharge,
   addItem,
+  setPurchaseItems,
   updateItem,
   removeItem,
   setTotals,
@@ -317,7 +318,6 @@ export default function PurchaseInvoicePage() {
       const items = await invoke<any[]>('get_purchase_invoice_items', { voucherId: id });
 
       // Setup Items
-      dispatch(resetForm()); // Clear items first
 
       // Set the actual voucher number (after resetForm to prevent it from being cleared)
       dispatch(setPurchaseCurrentVoucherNo(voucher.voucher_no));
@@ -391,7 +391,7 @@ export default function PurchaseInvoicePage() {
 
 
 
-      mappedItems.forEach(item => dispatch(addItem(item)));
+      dispatch(setPurchaseItems(mappedItems));
 
       const loadedGstDisabled = (voucher as any).gst_disabled !== undefined && (voucher as any).gst_disabled !== null
         ? Boolean((voucher as any).gst_disabled)
@@ -1284,6 +1284,67 @@ export default function PurchaseInvoicePage() {
 
 
 
+  const gstSlabMap = useMemo(() => new Map(gstSlabs.map(s => [s.id, s])), [gstSlabs]);
+  const productGstMap = useMemo(() => new Map(products.map(p => [String(p.id), p.gst_slab_id])), [products]);
+
+  const discountCalculation = useMemo(() => {
+    return calculateVoucherDiscounts(purchaseState.items, {
+      discountRate: purchaseState.form.discount_rate,
+      discountAmount: purchaseState.form.discount_amount,
+      taxInclusive: !!voucherSettings?.taxInclusive,
+      resolveGstRate: (item) => {
+        if (gstDisabled) return 0;
+        if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
+          return item.resolved_gst_rate;
+        }
+        if (item.tax_rate) {
+          return item.tax_rate;
+        }
+        const slabId = item.gst_slab_id || (item.product_id ? productGstMap.get(String(item.product_id)) : undefined);
+        if (slabId) {
+          const savedSlab = gstSlabMap.get(slabId);
+          if (savedSlab) {
+            return savedSlab.is_dynamic === 1
+              ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
+              : savedSlab.fixed_rate;
+          }
+        }
+        return 0;
+      },
+    });
+  }, [purchaseState.items, purchaseState.form.discount_rate, purchaseState.form.discount_amount, voucherSettings?.taxInclusive, gstDisabled, gstSlabMap, productGstMap]);
+
+  const lineAmountsMap = useMemo(() => {
+    const map = new Map<string, { finalQty: number; amount: number; taxAmount: number; total: number }>();
+    discountCalculation.lines.forEach((line, idx) => {
+      const it = purchaseState.items[idx];
+      if (it) {
+        const idKey = it.id ? String(it.id) : String(idx);
+        map.set(idKey, {
+          finalQty: line.finalQty,
+          amount: line.netBeforeInvoiceDiscount,
+          taxAmount: line.taxAmount,
+          total: line.total,
+        });
+      }
+    });
+    return map;
+  }, [discountCalculation, purchaseState.items]);
+
+  const getItemAmount = useCallback((item: typeof purchaseState.items[0]) => {
+    const key = item.id ? String(item.id) : '';
+    const cached = key ? lineAmountsMap.get(key) : undefined;
+    if (cached) return cached;
+    const finalQty = item.initial_quantity - (item.count ?? 1) * (item.deduction_per_unit ?? 0);
+    const gross = finalQty * (item.rate ?? 0);
+    return {
+      finalQty,
+      amount: gross,
+      taxAmount: 0,
+      total: gross,
+    };
+  }, [lineAmountsMap]);
+
   if (isInitializing) {
     return (
       <div className="flex items-center justify-center h-full bg-background">
@@ -1291,49 +1352,6 @@ export default function PurchaseInvoicePage() {
       </div>
     );
   }
-
-  const getItemAmount = (item: typeof purchaseState.items[0]) => {
-    let gstRate = gstDisabled ? 0 : (item.tax_rate || 0);
-    if (!gstDisabled) {
-      if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
-        gstRate = item.resolved_gst_rate;
-      } else if (item.gst_slab_id) {
-        const savedSlab = gstSlabs.find(s => s.id === item.gst_slab_id);
-        if (savedSlab) {
-          gstRate = savedSlab.is_dynamic === 1
-            ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
-            : savedSlab.fixed_rate;
-        }
-      } else {
-        const product = products.find(p => String(p.id) === String(item.product_id));
-        if (product?.gst_slab_id) {
-          const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
-          if (slab) {
-            gstRate = slab.is_dynamic === 1
-              ? (item.rate <= slab.threshold ? slab.below_rate : slab.above_rate)
-              : slab.fixed_rate;
-          }
-        }
-      }
-    }
-
-    const sourceItems = purchaseState.items.some((candidate) => candidate.id === item.id) ? purchaseState.items : [item];
-    const calculation = calculateVoucherDiscounts(sourceItems, {
-      discountRate: purchaseState.form.discount_rate,
-      discountAmount: purchaseState.form.discount_amount,
-      taxInclusive: !!voucherSettings?.taxInclusive,
-      resolveGstRate: () => gstRate,
-    });
-    const lineIndex = sourceItems.length === 1 ? 0 : sourceItems.findIndex((candidate) => candidate.id === item.id);
-    const line = calculation.lines[Math.max(lineIndex, 0)];
-    const grossTax = Math.round(line.netBeforeInvoiceDiscount * (gstRate / 100) * 100) / 100;
-    return {
-      finalQty: line.finalQty,
-      amount: line.netBeforeInvoiceDiscount,
-      taxAmount: grossTax,
-      total: Math.round((line.netBeforeInvoiceDiscount + grossTax) * 100) / 100
-    };
-  };
 
   // Determine if form should be disabled (viewing mode)
   const isReadOnly = purchaseState.mode === 'viewing';

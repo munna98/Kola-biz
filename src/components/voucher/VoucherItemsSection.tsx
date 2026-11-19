@@ -634,6 +634,73 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
         </div>
     );
 
+    const productMap = useMemo(() => {
+        const map = new Map<string, Product>();
+        for (const p of products) {
+            map.set(String(p.id), p);
+        }
+        return map;
+    }, [products]);
+
+    const fullProductMap = useMemo(() => {
+        const map = new Map<string, TauriProduct>();
+        for (const p of fullProducts) {
+            map.set(String(p.id), p);
+        }
+        return map;
+    }, [fullProducts]);
+
+    const gstSlabMap = useMemo(() => {
+        const map = new Map<string, GstTaxSlab>();
+        for (const s of gstSlabs) {
+            map.set(s.id, s);
+        }
+        return map;
+    }, [gstSlabs]);
+
+    const unitsMap = useMemo(() => {
+        const map = new Map<string, Unit>();
+        for (const u of units) {
+            map.set(String(u.id), u);
+        }
+        return map;
+    }, [units]);
+
+    const baseProductOptions = useMemo(() => {
+        return products.map(p => {
+            const opt = buildProductComboboxOption({
+                product: p as any,
+                groups,
+                brands,
+                displaySettings: comboboxDisplaySettings,
+                stockMap,
+                moneyFormatter: (amt) => (amt !== undefined && amt !== null ? money(amt) : ''),
+            });
+            return {
+                ...opt,
+                value: `p:${p.id}`,
+            };
+        });
+    }, [products, groups, brands, comboboxDisplaySettings, stockMap, money]);
+
+    const serviceOptions = useMemo(() => {
+        return (services ?? []).map(s => ({
+            value: `s:${s.id}`,
+            label: s.code ? `${s.code} ${s.name}` : s.name,
+            itemLabel: s.name,
+            columns: s.code ? { code: s.code } : undefined,
+            searchString: `${s.code || ''} ${s.name}`,
+            keywords: [s.code, s.name].filter(Boolean) as string[],
+        }));
+    }, [services]);
+
+    const baseCatalogOptions = useMemo(() => {
+        return [...baseProductOptions, ...serviceOptions];
+    }, [baseProductOptions, serviceOptions]);
+
+    const cbHeaderCols = useMemo(() => getProductComboboxHeaderColumns(comboboxDisplaySettings, columnWidths), [comboboxDisplaySettings, columnWidths]);
+    const cbWidthClass = useMemo(() => getProductComboboxWidthClass(comboboxDisplaySettings, columnWidths), [comboboxDisplaySettings, columnWidths]);
+
     return (
     <>
         <VoucherItemsTable
@@ -646,7 +713,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
         >
             {items.map((item, idx) => {
                 const calc = getItemAmount(item);
-                const product = products.find(p => String(p.id) === String(item.product_id));
+                const product = item.product_id ? productMap.get(String(item.product_id)) : undefined;
                 const productUnits = product ? (productUnitsByProduct?.[product.id] ?? []) : [];
                 const resolvedUnitId = item.unit_id
                     ? String(item.unit_id)
@@ -655,19 +722,19 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                         : undefined) ?? '';
 
                 // Prefer the saved voucher-item snapshot for GST display on posted vouchers.
-                const fullProduct = fullProducts.find(p => String(p.id) === String(item.product_id));
+                const fullProduct = item.product_id ? fullProductMap.get(String(item.product_id)) : undefined;
                 let resolvedGstRate = item.tax_rate || 0;
                 if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
                     resolvedGstRate = item.resolved_gst_rate;
                 } else if (item.gst_slab_id && gstSlabs.length > 0) {
-                    const savedSlab = gstSlabs.find(s => s.id === item.gst_slab_id);
+                    const savedSlab = gstSlabMap.get(item.gst_slab_id);
                     if (savedSlab) {
                         resolvedGstRate = savedSlab.is_dynamic === 1
                             ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
                             : savedSlab.fixed_rate;
                     }
                 } else if (fullProduct?.gst_slab_id && gstSlabs.length > 0) {
-                    const slab = gstSlabs.find(s => s.id === fullProduct.gst_slab_id);
+                    const slab = gstSlabMap.get(fullProduct.gst_slab_id);
                     if (slab) {
                         resolvedGstRate = slab.is_dynamic === 1
                             ? (item.rate <= slab.threshold ? slab.below_rate : slab.above_rate)
@@ -714,29 +781,6 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 </div>
                             );
                         case 'product': {
-                            const productList = products;
-                            const productOptions = productList.map(p => {
-                                const opt = buildProductComboboxOption({
-                                    product: p as any,
-                                    groups,
-                                    brands,
-                                    displaySettings: comboboxDisplaySettings,
-                                    stockMap,
-                                    moneyFormatter: (amt) => (amt !== undefined && amt !== null ? money(amt) : ''),
-                                });
-                                return {
-                                    ...opt,
-                                    value: `p:${p.id}`,
-                                };
-                            });
-                            const serviceOptions = (services ?? []).map(s => ({
-                                value: `s:${s.id}`,
-                                label: s.code ? `${s.code} ${s.name}` : s.name,
-                                itemLabel: s.name,
-                                columns: s.code ? { code: s.code } : undefined,
-                                searchString: `${s.code || ''} ${s.name}`,
-                                keywords: [s.code, s.name].filter(Boolean) as string[],
-                            }));
                             const itemDescOrName = item.product_name || item.description || '';
                             const hasCatalogItem = (item.item_type === 'service' && item.service_id) || Boolean(item.product_id);
                             const customOption = (!hasCatalogItem && itemDescOrName) ? [{
@@ -746,7 +790,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                 searchString: itemDescOrName,
                                 keywords: [itemDescOrName],
                             }] : [];
-                            const allOptions = [...productOptions, ...serviceOptions, ...customOption];
+                            const allOptions = customOption.length > 0 ? [...baseCatalogOptions, ...customOption] : baseCatalogOptions;
                             const currentValue = item.item_type === 'service' && item.service_id
                                 ? `s:${item.service_id}`
                                 : item.product_id
@@ -754,8 +798,6 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     : itemDescOrName
                                         ? `custom:${item.id || idx}`
                                         : null;
-                            const cbHeaderCols = getProductComboboxHeaderColumns(comboboxDisplaySettings, columnWidths);
-                            const cbWidthClass = getProductComboboxWidthClass(comboboxDisplaySettings, columnWidths);
                             return (
                                 <Combobox
                                     key={col.id}
@@ -989,7 +1031,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                     </SelectTrigger>
                                     <SelectContent>
                                         {productUnits.length > 0 ? productUnits.map((conversion) => {
-                                            const unit = units.find(u => u.id === conversion.unit_id);
+                                            const unit = unitsMap.get(String(conversion.unit_id));
                                             return (
                                                 <SelectItem key={conversion.id} value={String(conversion.unit_id)}>
                                                     {unit ? unit.symbol : conversion.unit_symbol}
@@ -997,7 +1039,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                             );
                                         }) : (
                                             <SelectItem value={product?.unit_id ? String(product.unit_id) : 'none'} disabled>
-                                                {units.find(u => u.id === resolvedUnitId)?.symbol || '-'}
+                                                {unitsMap.get(resolvedUnitId)?.symbol || '-'}
                                             </SelectItem>
                                         )}
                                     </SelectContent>

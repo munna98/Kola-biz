@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import {
     setSalesReturnDiscountAmount,
     setSalesReturnFreightCharge,
     addSalesReturnItem,
+    setSalesReturnItems,
     updateSalesReturnItem,
     removeSalesReturnItem,
     setSalesReturnTotals,
@@ -185,9 +186,9 @@ export default function SalesReturnPage() {
                         : 'Return against current Sales Invoice'));
                     dispatch(setSalesReturnMarginScheme(!!invoicePrefill.isMarginSchemeInvoice));
                     if (invoicePrefill.returnDraft) {
-                        invoicePrefill.returnDraft.items?.forEach((item: any) => {
-                            dispatch(addSalesReturnItem(item));
-                        });
+                        if (invoicePrefill.returnDraft.items?.length) {
+                            dispatch(setSalesReturnItems(invoicePrefill.returnDraft.items));
+                        }
                         dispatch(setSalesReturnDiscountRate(invoicePrefill.returnDraft.totals?.discount ? invoicePrefill.returnDraft.form?.discount_rate || 0 : 0));
                         dispatch(setSalesReturnDiscountAmount(invoicePrefill.returnDraft.totals?.discount || 0));
                         dispatch(setSalesReturnTotals(invoicePrefill.returnDraft.totals || {
@@ -688,7 +689,6 @@ export default function SalesReturnPage() {
         try {
             dispatch(setSalesReturnLoading(true));
             dispatch(setSalesReturnHasUnsavedChanges(false));
-            dispatch(resetSalesReturnForm()); // Clear first
 
             // Fetch header and items using existing commands
             const invoice = await invoke<any>('get_sales_return', { id });
@@ -724,35 +724,7 @@ export default function SalesReturnPage() {
                 dispatch(clearSalesReturnForex());
             }
 
-            // Populate Items
-            items.forEach(item => {
-                dispatch(addSalesReturnItem({
-                    product_id: item.product_id || 0,
-                    product_name: item.description, // Fallback
-                    unit_id: item.unit_id,
-                    base_quantity: item.base_quantity,
-                    hsn_sac_code: item.hsn_sac_code,
-                    gst_slab_id: item.gst_slab_id,
-                    resolved_gst_rate: item.resolved_gst_rate,
-                    cgst_rate: item.cgst_rate,
-                    sgst_rate: item.sgst_rate,
-                    igst_rate: item.igst_rate,
-                    cgst_amount: item.cgst_amount,
-                    sgst_amount: item.sgst_amount,
-                    igst_amount: item.igst_amount,
-                    description: item.description,
-                    initial_quantity: item.initial_quantity,
-                    count: item.count,
-                    deduction_per_unit: item.deduction_per_unit,
-                    rate: item.rate,
-                    tax_rate: item.tax_rate,
-                    discount_percent: item.discount_percent || 0,
-                    discount_amount: item.discount_amount || 0,
-                    purchase_cost: item.purchase_cost || 0,
-                }));
-            });
-
-            // Calculate totals
+            // Populate Items and calculate totals
             const loadedItems = items.map(item => ({
                 id: `loaded-${item.id}`,
                 product_id: item.product_id || 0,
@@ -778,6 +750,7 @@ export default function SalesReturnPage() {
                 discount_amount: item.discount_amount || 0,
                 purchase_cost: item.purchase_cost || 0,
             }));
+            dispatch(setSalesReturnItems(loadedItems));
 
             const loadedGstDisabled = (invoice as any).gst_disabled !== undefined && (invoice as any).gst_disabled !== null
                 ? Boolean((invoice as any).gst_disabled)
@@ -895,6 +868,68 @@ export default function SalesReturnPage() {
 
 
 
+    const gstSlabMap = useMemo(() => new Map(gstSlabs.map(s => [s.id, s])), [gstSlabs]);
+    const productGstMap = useMemo(() => new Map(products.map(p => [String(p.id), p.gst_slab_id])), [products]);
+
+    const discountCalculation = useMemo(() => {
+        return calculateVoucherDiscounts(salesReturnState.items, {
+            discountRate: salesReturnState.form.discount_rate,
+            discountAmount: salesReturnState.form.discount_amount,
+            taxInclusive: !!voucherSettings?.taxInclusive,
+            resolveGstRate: (item) => {
+                if (gstDisabled) return 0;
+                if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
+                    return item.resolved_gst_rate;
+                }
+                if (item.tax_rate) {
+                    return item.tax_rate;
+                }
+                const slabId = item.gst_slab_id || (item.product_id ? productGstMap.get(String(item.product_id)) : undefined);
+                if (slabId) {
+                    const savedSlab = gstSlabMap.get(slabId);
+                    if (savedSlab) {
+                        return savedSlab.is_dynamic === 1
+                            ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
+                            : savedSlab.fixed_rate;
+                    }
+                }
+                return 0;
+            },
+            isMarginScheme: salesReturnState.form.is_margin_scheme_invoice,
+        });
+    }, [salesReturnState.items, salesReturnState.form.discount_rate, salesReturnState.form.discount_amount, voucherSettings?.taxInclusive, gstDisabled, gstSlabMap, productGstMap, salesReturnState.form.is_margin_scheme_invoice]);
+
+    const lineAmountsMap = useMemo(() => {
+        const map = new Map<string, { finalQty: number; amount: number; taxAmount: number; total: number }>();
+        discountCalculation.lines.forEach((line, idx) => {
+            const it = salesReturnState.items[idx];
+            if (it) {
+                const idKey = it.id ? String(it.id) : String(idx);
+                map.set(idKey, {
+                    finalQty: line.finalQty,
+                    amount: line.netBeforeInvoiceDiscount,
+                    taxAmount: line.taxAmount,
+                    total: line.total,
+                });
+            }
+        });
+        return map;
+    }, [discountCalculation, salesReturnState.items]);
+
+    const getItemAmount = useCallback((item: typeof salesReturnState.items[0]) => {
+        const key = item.id ? String(item.id) : '';
+        const cached = key ? lineAmountsMap.get(key) : undefined;
+        if (cached) return cached;
+        const finalQty = item.initial_quantity - (item.count ?? 1) * (item.deduction_per_unit ?? 0);
+        const gross = finalQty * (item.rate ?? 0);
+        return {
+            finalQty,
+            amount: gross,
+            taxAmount: 0,
+            total: gross,
+        };
+    }, [lineAmountsMap]);
+
     if (isInitializing) {
         return (
             <div className="flex items-center justify-center h-full bg-background">
@@ -902,44 +937,6 @@ export default function SalesReturnPage() {
             </div>
         );
     }
-
-    const getItemAmount = (item: typeof salesReturnState.items[0]) => {
-        let gstRate = gstDisabled ? 0 : (item.tax_rate || 0);
-        if (!gstDisabled) {
-            if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
-                gstRate = item.resolved_gst_rate;
-            } else if (item.gst_slab_id) {
-                const savedSlab = gstSlabs.find(s => s.id === item.gst_slab_id);
-                if (savedSlab) {
-                    gstRate = savedSlab.is_dynamic === 1
-                        ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
-                        : savedSlab.fixed_rate;
-                }
-            } else {
-                const product = products.find(p => String(p.id) === String(item.product_id));
-                if (product?.gst_slab_id) {
-                    const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
-                    if (slab) {
-                        gstRate = slab.is_dynamic === 1
-                            ? (item.rate <= slab.threshold ? slab.below_rate : slab.above_rate)
-                            : slab.fixed_rate;
-                    }
-                }
-            }
-        }
-
-        const sourceItems = salesReturnState.items.some((candidate) => candidate.id === item.id) ? salesReturnState.items : [item];
-        const calculation = calculateVoucherDiscounts(sourceItems, {
-            discountRate: salesReturnState.form.discount_rate,
-            discountAmount: salesReturnState.form.discount_amount,
-            taxInclusive: !!voucherSettings?.taxInclusive,
-            resolveGstRate: () => gstRate,
-            isMarginScheme: salesReturnState.form.is_margin_scheme_invoice,
-        });
-        const lineIndex = sourceItems.length === 1 ? 0 : sourceItems.findIndex((candidate) => candidate.id === item.id);
-        const line = calculation.lines[Math.max(lineIndex, 0)];
-        return { finalQty: line.finalQty, amount: line.netBeforeInvoiceDiscount, taxAmount: line.taxAmount, total: line.total };
-    };
 
     // Determine if form should be disabled (viewing mode)
     const isReadOnly = salesReturnState.mode === 'viewing';

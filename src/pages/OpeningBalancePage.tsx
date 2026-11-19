@@ -7,6 +7,7 @@ import {
     setOpeningBalanceReference,
     setOpeningBalanceNarration,
     addOpeningBalanceLine,
+    setOpeningBalanceLines,
     updateOpeningBalanceLine,
     removeOpeningBalanceLine,
     setOpeningBalanceTotals,
@@ -93,8 +94,6 @@ export default function OpeningBalancePage() {
             const entry = await invoke<any>('get_opening_balance', { id });
             const lines = await invoke<any[]>('get_opening_balance_lines', { voucherId: id });
 
-            dispatch(resetOpeningBalanceForm());
-
             // Populate Form
             dispatch(setOpeningBalanceCurrentVoucherNo(entry.voucher_no));
             dispatch(setOpeningBalanceDate(entry.voucher_date));
@@ -102,9 +101,7 @@ export default function OpeningBalancePage() {
             dispatch(setOpeningBalanceNarration(entry.narration || ''));
 
             // Add lines
-            for (const line of lines) {
-                dispatch(addOpeningBalanceLine(line));
-            }
+            dispatch(setOpeningBalanceLines(lines));
 
             // Recalculate totals
             const totalDebit = lines.reduce((sum, line) => sum + (line.debit || 0), 0);

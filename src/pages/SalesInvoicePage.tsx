@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
@@ -11,6 +11,7 @@ import {
   setSalesDiscountAmount,
   setSalesFreightCharge,
   addSalesItem,
+  setSalesItems,
   updateSalesItem,
   removeSalesItem,
   setSalesTotals,
@@ -1083,12 +1084,12 @@ export default function SalesInvoicePage() {
       dispatch(setSalesReturnDraft(undefined));
 
       // Populate Items
-      items.forEach(item => {
+      const mappedQuotationLines = items.map(item => {
         const storedGstRate = item.resolved_gst_rate || item.tax_rate || 0;
         const displayRate = loadedTaxInclusive
           ? item.rate * (1 + (storedGstRate / 100))
           : item.rate;
-        dispatch(addSalesItem({
+        return {
           item_type: item.item_type || (item.service_id ? 'service' : 'product'),
           product_id: item.product_id || 0,
           service_id: item.service_id || null,
@@ -1106,8 +1107,9 @@ export default function SalesInvoicePage() {
           discount_percent: item.discount_percent || 0,
           discount_amount: item.discount_amount || 0,
           resolved_gst_rate: storedGstRate,
-        }));
+        };
       });
+      dispatch(setSalesItems(mappedQuotationLines as any));
 
       const loadedRoundOff = typeof (quotation as any).round_off === 'number' ? (quotation as any).round_off : 0;
       const hasRoundOff = Math.abs(loadedRoundOff) > 0.0001 || globalAutoRoundOff;
@@ -1154,7 +1156,6 @@ export default function SalesInvoicePage() {
     try {
       dispatch(setSalesLoading(true));
       dispatch(setSalesHasUnsavedChanges(false));
-      dispatch(resetSalesForm()); // Clear first
       dispatch(clearSalesForex());
 
       // Fetch header and items using existing commands
@@ -1239,12 +1240,13 @@ export default function SalesInvoicePage() {
       // Populate Items
       // Clear default empty item
       // Note: resetSalesForm sets items to [], so we just add
-      items.forEach(item => {
+      const loadedItems = items.map(item => {
         const storedGstRate = item.resolved_gst_rate || item.tax_rate || 0;
         const displayRate = loadedTaxInclusive
           ? item.rate * (1 + (storedGstRate / 100))
           : item.rate;
-        dispatch(addSalesItem({
+        return {
+          id: `loaded-${item.id}`,
           item_type: item.item_type || (item.service_id ? 'service' : 'product'),
           product_id: item.product_id || 0,
           service_id: item.service_id || null,
@@ -1270,41 +1272,9 @@ export default function SalesInvoicePage() {
           discount_percent: item.discount_percent || 0,
           discount_amount: item.discount_amount || 0,
           purchase_cost: item.purchase_cost ?? 0,
-        }));
+        };
       });
-
-      // Calculate totals
-      // We need to pass the loaded items to updateTotals
-      // Construct items array locally for total calculation
-      const loadedItems = items.map(item => ({
-        id: `loaded-${item.id}`,
-        item_type: item.item_type || (item.service_id ? 'service' : 'product'),
-        product_id: item.product_id || 0,
-        service_id: item.service_id || null,
-        product_code: item.product_code,
-        product_name: item.product_name || item.description,
-        unit_id: item.unit_id,
-        hsn_sac_code: item.hsn_sac_code,
-        gst_slab_id: item.gst_slab_id,
-        resolved_gst_rate: item.resolved_gst_rate,
-        cgst_rate: item.cgst_rate,
-        sgst_rate: item.sgst_rate,
-        igst_rate: item.igst_rate,
-        cgst_amount: item.cgst_amount,
-        sgst_amount: item.sgst_amount,
-        igst_amount: item.igst_amount,
-        description: item.description,
-        initial_quantity: item.initial_quantity,
-        count: item.count,
-        deduction_per_unit: item.deduction_per_unit,
-        rate: loadedTaxInclusive
-          ? item.rate * (1 + (((item.resolved_gst_rate || item.tax_rate) || 0) / 100))
-          : item.rate,
-        tax_rate: item.tax_rate,
-        discount_percent: item.discount_percent || 0,
-        discount_amount: item.discount_amount || 0,
-        purchase_cost: item.purchase_cost ?? 0,
-      }));
+      dispatch(setSalesItems(loadedItems as any));
 
       const loadedGstDisabled = (invoice as any).gst_disabled !== undefined && (invoice as any).gst_disabled !== null
         ? Boolean((invoice as any).gst_disabled)
@@ -1639,6 +1609,68 @@ export default function SalesInvoicePage() {
 
 
 
+  const gstSlabMap = useMemo(() => new Map(gstSlabs.map(s => [s.id, s])), [gstSlabs]);
+  const productGstMap = useMemo(() => new Map(products.map(p => [String(p.id), p.gst_slab_id])), [products]);
+
+  const discountCalculation = useMemo(() => {
+    return calculateVoucherDiscounts(salesState.items, {
+      discountRate: salesState.form.discount_rate,
+      discountAmount: salesState.form.discount_amount,
+      taxInclusive: isTaxInclusive,
+      resolveGstRate: (item) => {
+        if (gstDisabled) return 0;
+        if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
+          return item.resolved_gst_rate;
+        }
+        if (item.tax_rate) {
+          return item.tax_rate;
+        }
+        const slabId = item.gst_slab_id || (item.product_id ? productGstMap.get(String(item.product_id)) : undefined);
+        if (slabId) {
+          const savedSlab = gstSlabMap.get(slabId);
+          if (savedSlab) {
+            return savedSlab.is_dynamic === 1
+              ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
+              : savedSlab.fixed_rate;
+          }
+        }
+        return 0;
+      },
+      isMarginScheme: salesState.form.is_margin_scheme_invoice,
+    });
+  }, [salesState.items, salesState.form.discount_rate, salesState.form.discount_amount, isTaxInclusive, gstDisabled, gstSlabMap, productGstMap, salesState.form.is_margin_scheme_invoice]);
+
+  const lineAmountsMap = useMemo(() => {
+    const map = new Map<string, { finalQty: number; amount: number; taxAmount: number; total: number }>();
+    discountCalculation.lines.forEach((line, idx) => {
+      const it = salesState.items[idx];
+      if (it) {
+        const idKey = it.id ? String(it.id) : String(idx);
+        map.set(idKey, {
+          finalQty: line.finalQty,
+          amount: line.netBeforeInvoiceDiscount,
+          taxAmount: line.taxAmount,
+          total: line.total,
+        });
+      }
+    });
+    return map;
+  }, [discountCalculation, salesState.items]);
+
+  const getItemAmount = useCallback((item: typeof salesState.items[0]) => {
+    const key = item.id ? String(item.id) : '';
+    const cached = key ? lineAmountsMap.get(key) : undefined;
+    if (cached) return cached;
+    const finalQty = item.initial_quantity - (item.count ?? 1) * (item.deduction_per_unit ?? 0);
+    const gross = finalQty * (item.rate ?? 0);
+    return {
+      finalQty,
+      amount: gross,
+      taxAmount: 0,
+      total: gross,
+    };
+  }, [lineAmountsMap]);
+
   if (isInitializing) {
     return (
       <div className="flex items-center justify-center h-full bg-background">
@@ -1646,49 +1678,6 @@ export default function SalesInvoicePage() {
       </div>
     );
   }
-
-  const getItemAmount = (item: typeof salesState.items[0]) => {
-    let gstRate = gstDisabled ? 0 : (item.tax_rate || 0);
-    if (!gstDisabled) {
-      if (typeof item.resolved_gst_rate === 'number' && item.resolved_gst_rate > 0) {
-        gstRate = item.resolved_gst_rate;
-      } else if (item.gst_slab_id) {
-        const savedSlab = gstSlabs.find(s => s.id === item.gst_slab_id);
-        if (savedSlab) {
-          gstRate = savedSlab.is_dynamic === 1
-            ? (item.rate <= savedSlab.threshold ? savedSlab.below_rate : savedSlab.above_rate)
-            : savedSlab.fixed_rate;
-        }
-      } else {
-        const product = products.find(p => String(p.id) === String(item.product_id));
-        if (product?.gst_slab_id) {
-          const slab = gstSlabs.find(s => s.id === product.gst_slab_id);
-          if (slab) {
-            gstRate = slab.is_dynamic === 1
-              ? (item.rate <= slab.threshold ? slab.below_rate : slab.above_rate)
-              : slab.fixed_rate;
-          }
-        }
-      }
-    }
-
-    const sourceItems = salesState.items.some((candidate) => candidate.id === item.id) ? salesState.items : [item];
-    const calculation = calculateVoucherDiscounts(sourceItems, {
-      discountRate: salesState.form.discount_rate,
-      discountAmount: salesState.form.discount_amount,
-      taxInclusive: isTaxInclusive,
-      resolveGstRate: () => gstRate,
-      isMarginScheme: salesState.form.is_margin_scheme_invoice,
-    });
-    const lineIndex = sourceItems.length === 1 ? 0 : sourceItems.findIndex((candidate) => candidate.id === item.id);
-    const line = calculation.lines[Math.max(lineIndex, 0)];
-    return {
-      finalQty: line.finalQty,
-      amount: line.netBeforeInvoiceDiscount,
-      taxAmount: line.taxAmount,
-      total: line.total
-    };
-  };
 
   const isReadOnly = salesState.mode === 'viewing';
 
