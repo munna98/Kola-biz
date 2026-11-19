@@ -1146,7 +1146,7 @@ export interface SalesInvoiceItem {
   discount_percent: number;
   discount_amount: number;
   discount_type?: 'percent' | 'amount';
-  /** Purchase cost per unit Ã¢â‚¬â€ used for margin scheme GST calculation */
+  /** Purchase cost per unit — used for margin scheme GST calculation */
   purchase_cost?: number;
 }
 
@@ -1571,7 +1571,7 @@ const companyProfileInitialState: CompanyProfileState = {
     terms_and_conditions: '',
     base_currency: 'INR',
     currency_display: 'symbol',
-    base_currency_symbol: 'Ã¢â€šÂ¹',
+    base_currency_symbol: '₹',
   },
   loading: false,
 };
