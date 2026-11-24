@@ -900,10 +900,6 @@ export async function connectCloudCompany(input: ConnectCloudCompanyInput): Prom
       cloudToken: input.cloudToken,
       devicePrefix: input.devicePrefix || null,
       customName: input.customName || null,
-      cloud_url: input.cloudUrl,
-      cloud_token: input.cloudToken,
-      device_prefix: input.devicePrefix || null,
-      custom_name: input.customName || null,
     },
   });
 }
