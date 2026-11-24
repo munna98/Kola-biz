@@ -879,3 +879,21 @@ export async function triggerManualSync(companyId?: string | null): Promise<Sync
   return invoke<SyncReport>('trigger_manual_sync', { companyId: companyId || null });
 }
 
+export interface ConnectCloudCompanyInput {
+  cloudUrl: string;
+  cloudToken: string;
+  devicePrefix?: string | null;
+  customName?: string | null;
+}
+
+export interface ConnectCloudCompanyResult {
+  company_id: string;
+  company_name: string;
+  pulled_count: number;
+  message: string;
+}
+
+export async function connectCloudCompany(input: ConnectCloudCompanyInput): Promise<ConnectCloudCompanyResult> {
+  return invoke<ConnectCloudCompanyResult>('connect_cloud_company', { input });
+}
+

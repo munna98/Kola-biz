@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { loginSuccess, loginFailure } from '@/store';
 import { toast } from 'sonner';
+import { Cloud } from 'lucide-react';
+import ConnectCloudCompanyDialog from '@/components/dialogs/ConnectCloudCompanyDialog';
 import {
     IconLock,
     IconUser,
@@ -148,6 +150,16 @@ export default function LoginPage() {
     };
 
     const [importing, setImporting] = useState(false);
+    const [showConnectCloud, setShowConnectCloud] = useState(false);
+
+    const handleCloudConnected = async (res: any) => {
+        await refreshCompanies();
+        if (res?.company_id) {
+            await invoke('switch_company', { companyId: res.company_id });
+            setSelectedCompanyId(res.company_id);
+            await refreshCompanies();
+        }
+    };
 
     const handleCreateCompany = async () => {
         if (!newName.trim()) { toast.error('Name required'); return; }
@@ -347,7 +359,7 @@ export default function LoginPage() {
                                                 disabled={importing}
                                             >
                                                 <IconUpload size={14} className={importing ? 'animate-spin' : ''} />
-                                                {importing ? 'Importing...' : 'Import Backup'}
+                                                {importing ? 'Importing...' : 'Import'}
                                             </button>
                                             <button
                                                 type="button"
@@ -355,7 +367,15 @@ export default function LoginPage() {
                                                 onClick={() => setShowCreate(true)}
                                             >
                                                 <IconPlus size={14} />
-                                                New Company
+                                                New
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs hover:bg-accent transition-colors text-emerald-600 dark:text-emerald-400 font-medium"
+                                                onClick={() => setShowConnectCloud(true)}
+                                            >
+                                                <Cloud size={14} />
+                                                Join Cloud
                                             </button>
                                         </div>
                                     )}
@@ -428,6 +448,12 @@ export default function LoginPage() {
                     </form>
                 </CardContent>
             </Card>
+
+            <ConnectCloudCompanyDialog
+                open={showConnectCloud}
+                onClose={() => setShowConnectCloud(false)}
+                onSuccess={handleCloudConnected}
+            />
         </div>
     );
 }

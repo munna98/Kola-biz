@@ -79,6 +79,7 @@ pub fn run() {
             update_company_cloud_config,
             get_company_cloud_config,
             trigger_manual_sync,
+            connect_cloud_company,
             // Units
             get_units,
             create_unit,

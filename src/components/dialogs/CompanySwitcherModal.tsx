@@ -21,6 +21,8 @@ import {
     AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
+import { Cloud } from 'lucide-react';
+import ConnectCloudCompanyDialog from './ConnectCloudCompanyDialog';
 import {
     IconBuilding,
     IconTrash,
@@ -66,6 +68,7 @@ export function CompanySwitcherModal({ open, onClose, onSwitched }: CompanySwitc
 
     const [renameTarget, setRenameTarget] = useState<string | null>(null);
     const [renameName, setRenameName] = useState('');
+    const [showConnectCloud, setShowConnectCloud] = useState(false);
 
     const loadCompanies = useCallback(async () => {
         setLoading(true);
@@ -150,11 +153,21 @@ export function CompanySwitcherModal({ open, onClose, onSwitched }: CompanySwitc
         <>
             <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
                 <DialogContent className="max-w-lg" aria-describedby={undefined}>
-                    <DialogHeader>
+                    <DialogHeader className="flex flex-row items-center justify-between space-y-0">
                         <DialogTitle className="flex items-center gap-2 text-xl">
                             <IconBuilding size={22} className="text-primary" />
                             Company Manager
                         </DialogTitle>
+                        <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setShowConnectCloud(true)}
+                            className="gap-1.5 text-xs h-8 border-emerald-500/30 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10"
+                        >
+                            <Cloud size={14} />
+                            Join Cloud Company
+                        </Button>
                     </DialogHeader>
 
                     <div className="space-y-2 mt-1">
@@ -324,6 +337,15 @@ export function CompanySwitcherModal({ open, onClose, onSwitched }: CompanySwitc
                     </AlertDialogFooter>
                 </AlertDialogContent>
             </AlertDialog>
+
+            <ConnectCloudCompanyDialog
+                open={showConnectCloud}
+                onClose={() => setShowConnectCloud(false)}
+                onSuccess={(res) => {
+                    loadCompanies();
+                    toast.success(`Joined "${res.company_name}" from cloud! Please switch to it.`);
+                }}
+            />
         </>
     );
 }

@@ -254,6 +254,96 @@ pub async fn trigger_manual_sync(
     Ok(report)
 }
 
+#[derive(Debug, serde::Deserialize)]
+pub struct ConnectCloudCompanyInput {
+    pub cloud_url: String,
+    pub cloud_token: String,
+    pub device_prefix: Option<String>,
+    pub custom_name: Option<String>,
+}
+
+#[derive(Debug, serde::Serialize)]
+pub struct ConnectCloudCompanyResult {
+    pub company_id: String,
+    pub company_name: String,
+    pub pulled_count: usize,
+    pub message: String,
+}
+
+/// Connect to an existing cloud database on another PC without going through the setup wizard.
+#[tauri::command]
+pub async fn connect_cloud_company(
+    registry: State<'_, Arc<DbRegistry>>,
+    app_handle: tauri::AppHandle,
+    input: ConnectCloudCompanyInput,
+) -> Result<ConnectCloudCompanyResult, String> {
+    let clean_url = input.cloud_url.trim();
+    let clean_token = input.cloud_token.trim();
+    if clean_url.is_empty() || clean_token.is_empty() {
+        return Err("Database URL and Auth Token are required.".to_string());
+    }
+
+    // 1. Connect to Turso to test and retrieve company name from remote company_profile
+    let db = libsql::Builder::new_remote(clean_url.to_string(), clean_token.to_string())
+        .build()
+        .await
+        .map_err(|e| format!("Failed to connect to cloud database: {}", e))?;
+    let conn = db.connect().map_err(|e| format!("Connection error: {}", e))?;
+
+    let mut remote_name: Option<String> = None;
+    if let Ok(mut rows) = conn.query("SELECT company_name FROM company_profile LIMIT 1", ()).await {
+        if let Ok(Some(row)) = rows.next().await {
+            if let Ok(libsql::Value::Text(name)) = row.get_value(0) {
+                if !name.trim().is_empty() {
+                    remote_name = Some(name.trim().to_string());
+                }
+            }
+        }
+    }
+
+    let final_name = input
+        .custom_name
+        .and_then(|n| if n.trim().is_empty() { None } else { Some(n.trim().to_string()) })
+        .or(remote_name)
+        .unwrap_or_else(|| "Cloud Company".to_string());
+
+    let prefix = input
+        .device_prefix
+        .and_then(|p| if p.trim().is_empty() { None } else { Some(p.trim().to_uppercase()) })
+        .unwrap_or_else(|| "POS2".to_string());
+
+    // 2. Create the local company already configured in 'online' mode
+    let company_id = registry
+        .create_company(
+            &final_name,
+            None,
+            Some("online".to_string()),
+            Some(clean_url.to_string()),
+            Some(clean_token.to_string()),
+            Some(prefix.clone()),
+            &app_handle,
+        )
+        .await?;
+
+    // 3. Set as active company and acquire pool
+    let _ = registry.set_active_company(&company_id, &app_handle).await?;
+    let pool = registry.active_pool().await?;
+
+    // 4. Run initial full sync (pull everything from Turso into the new local DB)
+    let sync_report = crate::cloud_sync::sync_company_data(&pool, clean_url, clean_token, None).await?;
+    let _ = registry.update_last_synced(&company_id).await;
+
+    Ok(ConnectCloudCompanyResult {
+        company_id,
+        company_name: final_name,
+        pulled_count: sync_report.pulled_count,
+        message: format!(
+            "Connected successfully! Synced {} records from cloud.",
+            sync_report.pulled_count
+        ),
+    })
+}
+
 
 /// Rename an existing company.
 #[tauri::command]

@@ -6,11 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Combobox } from '@/components/ui/combobox';
-import { setNeedsCompanySetup } from '@/store';
+import { setNeedsCompanySetup, setCompanyProfile } from '@/store';
 
 // Mark that company setup is complete
 import { toast } from 'sonner';
 import { IconBuilding, IconMapPin, IconPhone, IconWorld } from '@tabler/icons-react';
+import { Cloud } from 'lucide-react';
+import ConnectCloudCompanyDialog from '@/components/dialogs/ConnectCloudCompanyDialog';
 
 interface Country {
     id: number;
@@ -28,6 +30,16 @@ export default function CompanySetupPage() {
         phone: '',
     });
     const [isLoading, setIsLoading] = useState(false);
+    const [showConnectCloud, setShowConnectCloud] = useState(false);
+
+    const handleCloudConnected = async (res: any) => {
+        dispatch(setNeedsCompanySetup(false));
+        const profile: any = await invoke('get_company_profile').catch(() => null);
+        if (profile) {
+            dispatch(setCompanyProfile(profile));
+        }
+        toast.success(`Connected to "${res.company_name}" from cloud! Setup skipped.`);
+    };
 
     // Load countries on mount
     useEffect(() => {
@@ -91,7 +103,27 @@ export default function CompanySetupPage() {
                         Let's set up your company profile
                     </CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
+                    <div className="p-3 rounded-lg border border-emerald-500/30 bg-emerald-500/10 flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                            <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-300">
+                                Existing Cloud Company?
+                            </p>
+                            <p className="text-[11px] text-muted-foreground truncate">
+                                Skip setup & connect directly to your cloud database
+                            </p>
+                        </div>
+                        <Button
+                            type="button"
+                            size="sm"
+                            onClick={() => setShowConnectCloud(true)}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-7.5 px-3 shrink-0 gap-1.5"
+                        >
+                            <Cloud size={13} />
+                            Join Cloud
+                        </Button>
+                    </div>
+
                     <form onSubmit={handleSubmit} className="space-y-4">
                         <div className="space-y-2">
                             <Label htmlFor="companyName">Company Name *</Label>
@@ -173,6 +205,12 @@ export default function CompanySetupPage() {
                     </form>
                 </CardContent>
             </Card>
+
+            <ConnectCloudCompanyDialog
+                open={showConnectCloud}
+                onClose={() => setShowConnectCloud(false)}
+                onSuccess={handleCloudConnected}
+            />
         </div>
     );
 }
