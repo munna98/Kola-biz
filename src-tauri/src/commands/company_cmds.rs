@@ -9,6 +9,20 @@ use tauri::State;
 pub struct CreateCompanyInput {
     pub name: String,
     pub custom_path: Option<String>,
+    pub sync_mode: Option<String>,
+    pub cloud_url: Option<String>,
+    pub cloud_token: Option<String>,
+    pub device_prefix: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct CompanyCloudConfig {
+    pub company_id: String,
+    pub sync_mode: String,
+    pub cloud_url: Option<String>,
+    pub cloud_token: Option<String>,
+    pub last_synced_at: Option<String>,
+    pub device_prefix: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -43,7 +57,7 @@ pub async fn create_first_company(
 
     // 1. Create company DB
     let company_id = registry
-        .create_company(input.name.trim(), None, &app_handle)
+        .create_company(input.name.trim(), None, None, None, None, None, &app_handle)
         .await?;
 
     // 2. Activate it so pool is reachable
@@ -109,9 +123,135 @@ pub async fn create_company(
     if input.name.trim().is_empty() {
         return Err("Company name cannot be empty.".to_string());
     }
+
+    // If online mode, bootstrap cloud database
+    if input.sync_mode.as_deref() == Some("online") {
+        if let (Some(url), Some(token)) = (&input.cloud_url, &input.cloud_token) {
+            if !url.trim().is_empty() && !token.trim().is_empty() {
+                let _ = crate::cloud_sync::bootstrap_cloud_schema(url, token).await?;
+            }
+        }
+    }
+
     registry
-        .create_company(input.name.trim(), input.custom_path, &app_handle)
+        .create_company(
+            input.name.trim(),
+            input.custom_path,
+            input.sync_mode,
+            input.cloud_url,
+            input.cloud_token,
+            input.device_prefix,
+            &app_handle,
+        )
         .await
+}
+
+/// Test connection to a remote Turso/libSQL database.
+#[tauri::command]
+pub async fn test_cloud_connection(
+    cloud_url: String,
+    cloud_token: String,
+) -> Result<String, String> {
+    crate::cloud_sync::test_cloud_connection(&cloud_url, &cloud_token).await
+}
+
+/// Bootstrap tables in a remote Turso/libSQL database.
+#[tauri::command]
+pub async fn bootstrap_cloud_database(
+    cloud_url: String,
+    cloud_token: String,
+) -> Result<String, String> {
+    crate::cloud_sync::bootstrap_cloud_schema(&cloud_url, &cloud_token).await
+}
+
+/// Update company cloud settings (mode, URL, token, device prefix).
+#[tauri::command]
+pub async fn update_company_cloud_config(
+    registry: State<'_, Arc<DbRegistry>>,
+    company_id: String,
+    sync_mode: String,
+    cloud_url: Option<String>,
+    cloud_token: Option<String>,
+    device_prefix: Option<String>,
+) -> Result<(), String> {
+    // If setting to online, bootstrap tables on the remote database
+    if sync_mode == "online" {
+        if let (Some(url), Some(token)) = (&cloud_url, &cloud_token) {
+            if !url.trim().is_empty() && !token.trim().is_empty() {
+                let _ = crate::cloud_sync::bootstrap_cloud_schema(url, token).await?;
+            }
+        }
+    }
+
+    registry
+        .update_company_cloud_settings(
+            &company_id,
+            &sync_mode,
+            cloud_url.as_deref(),
+            cloud_token.as_deref(),
+            device_prefix.as_deref(),
+        )
+        .await
+}
+
+/// Get cloud configuration for a company.
+#[tauri::command]
+pub async fn get_company_cloud_config(
+    registry: State<'_, Arc<DbRegistry>>,
+    company_id: String,
+) -> Result<Option<CompanyCloudConfig>, String> {
+    let company = registry.get_company_by_id(&company_id).await?;
+    Ok(company.map(|c| CompanyCloudConfig {
+        company_id: c.id,
+        sync_mode: c.sync_mode,
+        cloud_url: c.cloud_url,
+        cloud_token: c.cloud_token,
+        last_synced_at: c.last_synced_at,
+        device_prefix: c.device_prefix,
+    }))
+}
+
+/// Trigger an on-demand bidirectional sync with Turso Cloud.
+#[tauri::command]
+pub async fn trigger_manual_sync(
+    registry: State<'_, Arc<DbRegistry>>,
+    company_id: Option<String>,
+) -> Result<crate::cloud_sync::SyncReport, String> {
+    let target_id = match company_id {
+        Some(id) => id,
+        None => registry
+            .active_company_id()
+            .await
+            .ok_or_else(|| "No active company selected.".to_string())?,
+    };
+
+    let company = registry
+        .get_company_by_id(&target_id)
+        .await?
+        .ok_or_else(|| "Company not found.".to_string())?;
+
+    if company.sync_mode != "online" {
+        return Err("This company is configured in Local (Offline) mode. Switch to Online mode in Database Settings to enable Cloud Sync.".to_string());
+    }
+
+    let url = company
+        .cloud_url
+        .ok_or_else(|| "No cloud database URL configured.".to_string())?;
+    let token = company
+        .cloud_token
+        .ok_or_else(|| "No cloud auth token configured.".to_string())?;
+
+    let pool = registry.active_pool().await?;
+    let report = crate::cloud_sync::sync_company_data(
+        &pool,
+        &url,
+        &token,
+        company.last_synced_at.as_deref(),
+    )
+    .await?;
+
+    let _ = registry.update_last_synced(&target_id).await;
+    Ok(report)
 }
 
 

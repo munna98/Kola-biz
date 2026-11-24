@@ -1,4 +1,5 @@
 mod commands;
+pub mod cloud_sync;
 mod company_db;
 mod db;
 pub mod license;
@@ -45,6 +46,7 @@ pub fn run() {
 
             // Start automated backups task
             setup_automated_backups(app.handle().clone(), registry.clone());
+            cloud_sync::start_background_sync(registry.clone(), 30);
 
             app.manage(registry);
 
@@ -72,6 +74,11 @@ pub fn run() {
             pick_database_file,
             import_company_database,
             restore_active_company_from_backup,
+            test_cloud_connection,
+            bootstrap_cloud_database,
+            update_company_cloud_config,
+            get_company_cloud_config,
+            trigger_manual_sync,
             // Units
             get_units,
             create_unit,

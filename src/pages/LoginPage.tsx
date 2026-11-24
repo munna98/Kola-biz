@@ -30,6 +30,10 @@ interface Company {
     is_active: boolean;
     is_primary: boolean;
     is_secondary: boolean;
+    sync_mode?: string;
+    cloud_url?: string | null;
+    last_synced_at?: string | null;
+    device_prefix?: string | null;
 }
 
 export default function LoginPage() {
@@ -274,6 +278,11 @@ export default function LoginPage() {
                                                     >
                                                         <IconBuilding size={13} className="shrink-0 text-muted-foreground" />
                                                         <span className="truncate">{c.name}</span>
+                                                        {c.sync_mode === 'online' ? (
+                                                            <span className="text-[10px] px-1 py-0.2 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 rounded font-semibold shrink-0">
+                                                                Cloud
+                                                            </span>
+                                                        ) : null}
                                                         {c.is_active && <IconCheck size={13} className="text-primary shrink-0" />}
                                                     </button>
 

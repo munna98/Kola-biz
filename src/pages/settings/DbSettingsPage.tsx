@@ -27,6 +27,10 @@ import {
   RotateCcw,
   CheckCircle2,
   FileCheck,
+  Cloud,
+  Globe,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 import { useConfirm } from '@/hooks/useConfirm';
@@ -141,6 +145,134 @@ export default function DbSettingsPage() {
   const [autoRetentionDays, setAutoRetentionDays] = useState(14);
   const [autoBackupOnExit, setAutoBackupOnExit] = useState(true);
 
+  // Cloud Database state
+  const [cloudSyncMode, setCloudSyncMode] = useState<'offline' | 'online'>('offline');
+  const [cloudUrl, setCloudUrl] = useState('');
+  const [cloudToken, setCloudToken] = useState('');
+  const [showToken, setShowToken] = useState(false);
+  const [devicePrefix, setDevicePrefix] = useState('POS1');
+  const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
+  const [testingConnection, setTestingConnection] = useState(false);
+  const [bootstrappingCloud, setBootstrappingCloud] = useState(false);
+  const [syncingNow, setSyncingNow] = useState(false);
+  const [savingCloud, setSavingCloud] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<{ success: boolean; message: string } | null>(null);
+
+  const loadCloudConfig = async () => {
+    try {
+      const comp = await invoke<any>('get_active_company');
+      if (comp) {
+        setActiveCompany(comp);
+        const cloud = await invoke<any>('get_company_cloud_config', { companyId: comp.id });
+        if (cloud) {
+          setCloudSyncMode(cloud.sync_mode === 'online' ? 'online' : 'offline');
+          setCloudUrl(cloud.cloud_url || '');
+          setCloudToken(cloud.cloud_token || '');
+          setDevicePrefix(cloud.device_prefix || 'POS1');
+          setLastSyncedAt(cloud.last_synced_at || null);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load cloud config:', err);
+    }
+  };
+
+  const handleTestCloudConnection = async () => {
+    if (!cloudUrl.trim() || !cloudToken.trim()) {
+      toast.error('Please enter both Database URL and Auth Token');
+      return;
+    }
+    setTestingConnection(true);
+    setConnectionStatus(null);
+    try {
+      const res = await invoke<string>('test_cloud_connection', {
+        cloudUrl: cloudUrl.trim(),
+        cloudToken: cloudToken.trim(),
+      });
+      setConnectionStatus({ success: true, message: res });
+      toast.success(res);
+    } catch (e: any) {
+      setConnectionStatus({ success: false, message: `${e}` });
+      toast.error(`Connection failed: ${e}`);
+    } finally {
+      setTestingConnection(false);
+    }
+  };
+
+  const handleBootstrapCloud = async () => {
+    if (!cloudUrl.trim() || !cloudToken.trim()) {
+      toast.error('Please enter both Database URL and Auth Token');
+      return;
+    }
+    setBootstrappingCloud(true);
+    try {
+      const res = await invoke<string>('bootstrap_cloud_database', {
+        cloudUrl: cloudUrl.trim(),
+        cloudToken: cloudToken.trim(),
+      });
+      toast.success(res || 'Cloud schema initialized successfully!');
+    } catch (e: any) {
+      toast.error(`Schema initialization failed: ${e}`);
+    } finally {
+      setBootstrappingCloud(false);
+    }
+  };
+
+  const handleManualSync = async () => {
+    if (!activeCompany?.id) {
+      toast.error('No active company selected');
+      return;
+    }
+    setSyncingNow(true);
+    try {
+      const report = await invoke<{
+        success: boolean;
+        pushed_count: number;
+        pulled_count: number;
+        message: string;
+        timestamp: string;
+      }>('trigger_manual_sync', { companyId: activeCompany.id });
+
+      if (report.success) {
+        toast.success(`Sync complete! Pushed: ${report.pushed_count}, Pulled: ${report.pulled_count}`);
+        setLastSyncedAt(report.timestamp);
+      } else {
+        toast.error(`Sync error: ${report.message}`);
+      }
+    } catch (e: any) {
+      toast.error(`Sync failed: ${e}`);
+    } finally {
+      setSyncingNow(false);
+    }
+  };
+
+  const handleSaveCloudSettings = async () => {
+    if (!activeCompany?.id) {
+      toast.error('No active company selected');
+      return;
+    }
+    if (cloudSyncMode === 'online' && (!cloudUrl.trim() || !cloudToken.trim())) {
+      toast.error('Database URL and Auth Token are required for Online mode');
+      return;
+    }
+    setSavingCloud(true);
+    try {
+      await invoke('update_company_cloud_config', {
+        companyId: activeCompany.id,
+        syncMode: cloudSyncMode,
+        cloudUrl: cloudSyncMode === 'online' ? cloudUrl.trim() : null,
+        cloudToken: cloudSyncMode === 'online' ? cloudToken.trim() : null,
+        devicePrefix: devicePrefix.trim() || 'POS1',
+      });
+      toast.success(`Cloud settings updated! Company set to ${cloudSyncMode === 'online' ? 'Cloud Online' : 'Local Offline'}.`);
+      await loadCloudConfig();
+    } catch (e: any) {
+      toast.error(`Failed to save cloud config: ${e}`);
+    } finally {
+      setSavingCloud(false);
+    }
+  };
+
   // Get current user from Redux store
   const { user } = useSelector((state: RootState) => state.auth);
 
@@ -180,6 +312,7 @@ export default function DbSettingsPage() {
   useEffect(() => {
     loadBackupConfig();
     loadRecentBackups();
+    loadCloudConfig();
   }, []);
 
   const handlePickAutoFolder = async () => {
@@ -476,10 +609,14 @@ export default function DbSettingsPage() {
       <div className="flex-1 overflow-auto p-6">
         <div className="max-w-5xl mx-auto space-y-6">
           <Tabs defaultValue="backups" className="w-full">
-            <TabsList className="grid w-full grid-cols-3 mb-6">
+            <TabsList className="grid w-full grid-cols-4 mb-6">
               <TabsTrigger value="backups" className="flex items-center gap-2">
                 <HardDrive className="w-4 h-4" />
                 Database Backups
+              </TabsTrigger>
+              <TabsTrigger value="cloud" className="flex items-center gap-2">
+                <Cloud className="w-4 h-4 text-emerald-500" />
+                Cloud Database
               </TabsTrigger>
               <TabsTrigger value="reset" className="flex items-center gap-2">
                 <RotateCcw className="w-4 h-4" />
@@ -870,6 +1007,210 @@ export default function DbSettingsPage() {
                       </p>
                     </div>
                   )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            {/* TAB: CLOUD DATABASE (TURSO) */}
+            <TabsContent value="cloud" className="space-y-6">
+              <Card className="border-emerald-500/20 shadow-sm">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Cloud className="w-5 h-5 text-emerald-500" />
+                        Cloud Database Configuration (Turso)
+                      </CardTitle>
+                      <CardDescription>
+                        Connect this company to Turso Cloud SQLite. Online mode syncs data across multiple devices while retaining local speed.
+                      </CardDescription>
+                    </div>
+                    {cloudSyncMode === 'online' ? (
+                      <Badge className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 gap-1.5 px-3 py-1">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                        Online Mode Active
+                      </Badge>
+                    ) : (
+                      <Badge variant="outline" className="border-muted-foreground/30 text-muted-foreground px-3 py-1">
+                        Local Mode Active
+                      </Badge>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {/* Mode Selector */}
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold">Operating Mode</Label>
+                    <RadioGroup
+                      value={cloudSyncMode}
+                      onValueChange={(val) => setCloudSyncMode(val as 'offline' | 'online')}
+                      className="grid grid-cols-2 gap-4"
+                    >
+                      <div
+                        className={`flex items-start space-x-3 p-4 rounded-lg border cursor-pointer transition-all ${
+                          cloudSyncMode === 'offline'
+                            ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                            : 'border-border hover:bg-muted/30'
+                        }`}
+                        onClick={() => setCloudSyncMode('offline')}
+                      >
+                        <RadioGroupItem value="offline" id="mode-offline" className="mt-1" />
+                        <div>
+                          <Label htmlFor="mode-offline" className="font-semibold cursor-pointer">
+                            Local Only (Offline)
+                          </Label>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Data is stored 100% locally on this computer in SQLite. Zero cloud dependency.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div
+                        className={`flex items-start space-x-3 p-4 rounded-lg border cursor-pointer transition-all ${
+                          cloudSyncMode === 'online'
+                            ? 'border-emerald-500 bg-emerald-500/5 ring-1 ring-emerald-500/20'
+                            : 'border-border hover:bg-muted/30'
+                        }`}
+                        onClick={() => setCloudSyncMode('online')}
+                      >
+                        <RadioGroupItem value="online" id="mode-online" className="mt-1" />
+                        <div>
+                          <Label htmlFor="mode-online" className="font-semibold cursor-pointer text-emerald-600 dark:text-emerald-400">
+                            Cloud Database (Online)
+                          </Label>
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Connects to Turso Cloud SQLite. Enables multi-user real-time access and remote reporting.
+                          </p>
+                        </div>
+                      </div>
+                    </RadioGroup>
+                  </div>
+
+                  {cloudSyncMode === 'online' && (
+                    <div className="space-y-4 pt-2 border-t">
+                      <div className="space-y-2">
+                        <Label htmlFor="cloud-url">Turso Database URL</Label>
+                        <Input
+                          id="cloud-url"
+                          placeholder="libsql://your-db-name-your-org.turso.io"
+                          value={cloudUrl}
+                          onChange={(e) => setCloudUrl(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Find this in your Turso dashboard under your database details.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="cloud-token">Turso Auth Token</Label>
+                        <div className="relative">
+                          <Input
+                            id="cloud-token"
+                            type={showToken ? 'text' : 'password'}
+                            placeholder="eyJhbGciOiJFZERT..."
+                            value={cloudToken}
+                            onChange={(e) => setCloudToken(e.target.value)}
+                            className="pr-10"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowToken(!showToken)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                          >
+                            {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                          </button>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Generate this token in your Turso dashboard under the "Connect" or "Tokens" tab.
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label htmlFor="device-prefix">Terminal / Device Prefix</Label>
+                        <Input
+                          id="device-prefix"
+                          placeholder="POS1, COUNTER1, LAPTOP2..."
+                          value={devicePrefix}
+                          onChange={(e) => setDevicePrefix(e.target.value)}
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Used to prevent sequential invoice number clashes across multiple cash counters.
+                        </p>
+                      </div>
+
+                      {connectionStatus && (
+                        <div
+                          className={`p-3 rounded-md text-xs flex items-center gap-2 ${
+                            connectionStatus.success
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                              : 'bg-destructive/10 text-destructive border border-destructive/20'
+                          }`}
+                        >
+                          {connectionStatus.success ? (
+                            <CheckCircle2 className="w-4 h-4 shrink-0" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 shrink-0" />
+                          )}
+                          <span>{connectionStatus.message}</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {lastSyncedAt && (
+                    <div className="text-xs text-muted-foreground flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" />
+                      <span>Last cloud sync: {new Date(lastSyncedAt).toLocaleString()}</span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t">
+                    {cloudSyncMode === 'online' ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="outline"
+                          type="button"
+                          onClick={handleTestCloudConnection}
+                          disabled={testingConnection || bootstrappingCloud || syncingNow}
+                          className="gap-2"
+                        >
+                          <Globe className={`w-4 h-4 ${testingConnection ? 'animate-spin' : ''}`} />
+                          {testingConnection ? 'Testing Connection...' : 'Test Connection'}
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          type="button"
+                          onClick={handleBootstrapCloud}
+                          disabled={testingConnection || bootstrappingCloud || syncingNow}
+                          className="gap-2"
+                        >
+                          <Database className={`w-4 h-4 ${bootstrappingCloud ? 'animate-spin' : ''}`} />
+                          {bootstrappingCloud ? 'Initializing Tables...' : 'Initialize Cloud Schema'}
+                        </Button>
+
+                        <Button
+                          variant="secondary"
+                          type="button"
+                          onClick={handleManualSync}
+                          disabled={testingConnection || bootstrappingCloud || syncingNow}
+                          className="gap-2"
+                        >
+                          <RefreshCw className={`w-4 h-4 ${syncingNow ? 'animate-spin' : ''}`} />
+                          {syncingNow ? 'Syncing...' : 'Sync Now'}
+                        </Button>
+                      </div>
+                    ) : <div />}
+
+                    <Button
+                      onClick={handleSaveCloudSettings}
+                      disabled={savingCloud}
+                      className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    >
+                      <Save className="w-4 h-4" />
+                      {savingCloud ? 'Saving Settings...' : 'Save Cloud Settings'}
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </TabsContent>

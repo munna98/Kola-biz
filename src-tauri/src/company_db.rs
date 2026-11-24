@@ -22,9 +22,15 @@ pub struct CompanyInfo {
     pub is_secondary: i64,
     pub created_at: String,
     pub last_opened: Option<String>,
+    #[sqlx(default)]
+    pub sync_mode: String,
+    pub cloud_url: Option<String>,
+    pub cloud_token: Option<String>,
+    pub last_synced_at: Option<String>,
+    pub device_prefix: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompanyListItem {
     pub id: String,
     pub name: String,
@@ -34,6 +40,10 @@ pub struct CompanyListItem {
     pub is_secondary: bool,
     pub created_at: String,
     pub last_opened: Option<String>,
+    pub sync_mode: String,
+    pub cloud_url: Option<String>,
+    pub last_synced_at: Option<String>,
+    pub device_prefix: Option<String>,
 }
 
 // ===================== REGISTRY =====================
@@ -174,7 +184,9 @@ impl DbRegistry {
     ) -> Result<CompanyInfo, String> {
         // Fetch company info from master.db
         let company = sqlx::query_as::<_, CompanyInfo>(
-            "SELECT id, name, slug, db_path, is_deleted, is_primary, is_secondary, created_at, last_opened
+            "SELECT id, name, slug, db_path, is_deleted, is_primary, is_secondary, created_at, last_opened,
+                    COALESCE(sync_mode, 'offline') as sync_mode, cloud_url, cloud_token, last_synced_at,
+                    COALESCE(device_prefix, 'POS1') as device_prefix
              FROM companies WHERE id = ? AND is_deleted = 0",
         )
         .bind(company_id)
@@ -209,6 +221,26 @@ impl DbRegistry {
             *active = Some(company_id.to_string());
         }
 
+        // Synchronize device_prefix in app_settings (if online, save prefix; if offline, remove)
+        if let Ok(pool) = self.active_pool().await {
+            if company.sync_mode == "online" {
+                if let Some(ref prefix) = company.device_prefix {
+                    let _ = sqlx::query(
+                        "INSERT INTO app_settings (id, setting_key, setting_value, updated_at) 
+                         VALUES ('device_prefix', 'device_prefix', ?, CURRENT_TIMESTAMP)
+                         ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = CURRENT_TIMESTAMP"
+                    )
+                    .bind(prefix)
+                    .execute(&pool)
+                    .await;
+                }
+            } else {
+                let _ = sqlx::query("DELETE FROM app_settings WHERE setting_key = 'device_prefix'")
+                    .execute(&pool)
+                    .await;
+            }
+        }
+
         // Update last_opened in master.db
         let _ = sqlx::query(
             "UPDATE companies SET last_opened = CURRENT_TIMESTAMP WHERE id = ?",
@@ -231,7 +263,9 @@ impl DbRegistry {
         self.auto_discover_companies().await;
 
         let all: Vec<CompanyInfo> = sqlx::query_as::<_, CompanyInfo>(
-            "SELECT id, name, slug, db_path, is_deleted, is_primary, is_secondary, created_at, last_opened
+            "SELECT id, name, slug, db_path, is_deleted, is_primary, is_secondary, created_at, last_opened,
+                    COALESCE(sync_mode, 'offline') as sync_mode, cloud_url, cloud_token, last_synced_at,
+                    COALESCE(device_prefix, 'POS1') as device_prefix
              FROM companies WHERE is_deleted = 0 ORDER BY is_primary DESC, last_opened DESC, name ASC",
         )
         .fetch_all(&self.master_pool)
@@ -251,6 +285,10 @@ impl DbRegistry {
                 is_secondary: c.is_secondary != 0,
                 created_at: c.created_at,
                 last_opened: c.last_opened,
+                sync_mode: c.sync_mode,
+                cloud_url: c.cloud_url,
+                last_synced_at: c.last_synced_at,
+                device_prefix: c.device_prefix,
             })
             .collect();
 
@@ -262,6 +300,10 @@ impl DbRegistry {
         &self,
         name: &str,
         custom_path: Option<String>,
+        sync_mode: Option<String>,
+        cloud_url: Option<String>,
+        cloud_token: Option<String>,
+        device_prefix: Option<String>,
         _app_handle: &tauri::AppHandle,
     ) -> Result<String, String> {
         let id = uuid::Uuid::now_v7().to_string();
@@ -298,14 +340,22 @@ impl DbRegistry {
             .await
             .map_err(|e| e.to_string())?;
 
+        let mode = sync_mode.unwrap_or_else(|| "offline".to_string());
+        let dev_prefix = device_prefix.unwrap_or_else(|| "POS1".to_string());
+
         // Insert into master.db
         sqlx::query(
-            "INSERT INTO companies (id, name, slug, db_path) VALUES (?, ?, ?, ?)",
+            "INSERT INTO companies (id, name, slug, db_path, sync_mode, cloud_url, cloud_token, device_prefix)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(name)
         .bind(&slug)
         .bind(&db_path_str)
+        .bind(&mode)
+        .bind(&cloud_url)
+        .bind(&cloud_token)
+        .bind(&dev_prefix)
         .execute(&self.master_pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -470,7 +520,9 @@ impl DbRegistry {
         drop(active_id);
 
         let company = sqlx::query_as::<_, CompanyInfo>(
-            "SELECT id, name, slug, db_path, is_deleted, is_primary, is_secondary, created_at, last_opened
+            "SELECT id, name, slug, db_path, is_deleted, is_primary, is_secondary, created_at, last_opened,
+                    COALESCE(sync_mode, 'offline') as sync_mode, cloud_url, cloud_token, last_synced_at,
+                    COALESCE(device_prefix, 'POS1') as device_prefix
              FROM companies WHERE id = ?",
         )
         .bind(&id)
@@ -479,6 +531,79 @@ impl DbRegistry {
         .map_err(|e| e.to_string())?;
 
         Ok(company)
+    }
+
+    /// Fetch full company info by id (including cloud configuration).
+    pub async fn get_company_by_id(&self, company_id: &str) -> Result<Option<CompanyInfo>, String> {
+        sqlx::query_as::<_, CompanyInfo>(
+            "SELECT id, name, slug, db_path, is_deleted, is_primary, is_secondary, created_at, last_opened,
+                    COALESCE(sync_mode, 'offline') as sync_mode, cloud_url, cloud_token, last_synced_at,
+                    COALESCE(device_prefix, 'POS1') as device_prefix
+             FROM companies WHERE id = ? AND is_deleted = 0",
+        )
+        .bind(company_id)
+        .fetch_optional(&self.master_pool)
+        .await
+        .map_err(|e| e.to_string())
+    }
+
+    /// Update company cloud configuration (sync mode, URL, token, device prefix).
+    pub async fn update_company_cloud_settings(
+        &self,
+        company_id: &str,
+        sync_mode: &str,
+        cloud_url: Option<&str>,
+        cloud_token: Option<&str>,
+        device_prefix: Option<&str>,
+    ) -> Result<(), String> {
+        sqlx::query(
+            "UPDATE companies
+             SET sync_mode = ?,
+                 cloud_url = ?,
+                 cloud_token = ?,
+                 device_prefix = COALESCE(?, device_prefix)
+             WHERE id = ?",
+        )
+        .bind(sync_mode)
+        .bind(cloud_url)
+        .bind(cloud_token)
+        .bind(device_prefix)
+        .bind(company_id)
+        .execute(&self.master_pool)
+        .await
+        .map_err(|e| e.to_string())?;
+
+        // Synchronize device_prefix in app_settings if pool is loaded
+        if let Some(pool) = self.pools.read().await.get(company_id).cloned() {
+            if sync_mode == "online" {
+                if let Some(dp) = device_prefix {
+                    let _ = sqlx::query(
+                        "INSERT INTO app_settings (id, setting_key, setting_value, updated_at) 
+                         VALUES ('device_prefix', 'device_prefix', ?, CURRENT_TIMESTAMP)
+                         ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = CURRENT_TIMESTAMP"
+                    )
+                    .bind(dp)
+                    .execute(&pool)
+                    .await;
+                }
+            } else {
+                let _ = sqlx::query("DELETE FROM app_settings WHERE setting_key = 'device_prefix'")
+                    .execute(&pool)
+                    .await;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Update the last_synced_at timestamp to now.
+    pub async fn update_last_synced(&self, company_id: &str) -> Result<(), String> {
+        sqlx::query("UPDATE companies SET last_synced_at = CURRENT_TIMESTAMP WHERE id = ?")
+            .bind(company_id)
+            .execute(&self.master_pool)
+            .await
+            .map_err(|e| e.to_string())?;
+        Ok(())
     }
 }
 
@@ -545,7 +670,12 @@ pub async fn init_registry(
             is_secondary INTEGER NOT NULL DEFAULT 0,
             deleted_at  DATETIME,
             created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
-            last_opened DATETIME
+            last_opened DATETIME,
+            sync_mode   TEXT NOT NULL DEFAULT 'offline',
+            cloud_url   TEXT,
+            cloud_token TEXT,
+            last_synced_at DATETIME,
+            device_prefix TEXT DEFAULT 'POS1'
         )",
     )
     .execute(&master_pool)
@@ -562,6 +692,21 @@ pub async fn init_registry(
         .execute(&master_pool)
         .await;
     let _ = sqlx::query("ALTER TABLE companies ADD COLUMN is_secondary INTEGER NOT NULL DEFAULT 0")
+        .execute(&master_pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE companies ADD COLUMN sync_mode TEXT NOT NULL DEFAULT 'offline'")
+        .execute(&master_pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE companies ADD COLUMN cloud_url TEXT")
+        .execute(&master_pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE companies ADD COLUMN cloud_token TEXT")
+        .execute(&master_pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE companies ADD COLUMN last_synced_at DATETIME")
+        .execute(&master_pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE companies ADD COLUMN device_prefix TEXT DEFAULT 'POS1'")
         .execute(&master_pool)
         .await;
 

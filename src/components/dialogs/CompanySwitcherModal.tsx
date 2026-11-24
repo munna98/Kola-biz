@@ -41,6 +41,10 @@ interface Company {
     is_primary: boolean;
     is_secondary: boolean;
     created_at: string;
+    sync_mode?: string;
+    cloud_url?: string | null;
+    last_synced_at?: string | null;
+    device_prefix?: string | null;
 }
 
 interface CompanySwitcherModalProps {
@@ -190,6 +194,15 @@ export function CompanySwitcherModal({ open, onClose, onSwitched }: CompanySwitc
                                                     {company.is_active && (
                                                         <Badge variant="default" className="text-[10px] py-0 px-1.5 h-4">
                                                             <IconCheck size={10} className="mr-0.5" /> Active
+                                                        </Badge>
+                                                    )}
+                                                    {company.sync_mode === 'online' ? (
+                                                        <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4 border-emerald-500/40 text-emerald-600 bg-emerald-50/50 dark:bg-emerald-950/20">
+                                                            🟢 Cloud
+                                                        </Badge>
+                                                    ) : (
+                                                        <Badge variant="outline" className="text-[10px] py-0 px-1.5 h-4 border-muted-foreground/30 text-muted-foreground">
+                                                            Local
                                                         </Badge>
                                                     )}
                                                 </div>

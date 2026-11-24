@@ -44,6 +44,21 @@ export default function Topbar() {
 
     // Active company display
     const [companyName, setCompanyName] = useState<string>('');
+    const [syncMode, setSyncMode] = useState<'offline' | 'online'>('offline');
+    const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+
+    useEffect(() => {
+        const handleOnline = () => setIsOnline(true);
+        const handleOffline = () => setIsOnline(false);
+
+        window.addEventListener('online', handleOnline);
+        window.addEventListener('offline', handleOffline);
+
+        return () => {
+            window.removeEventListener('online', handleOnline);
+            window.removeEventListener('offline', handleOffline);
+        };
+    }, []);
     const [coEnabled, setCoEnabled] = useState(false);
     const [switcherOpen, setSwitcherOpen] = useState(false);
     const [isBackingUp, setIsBackingUp] = useState(false);
@@ -70,6 +85,9 @@ export default function Topbar() {
     const fetchCompanyName = () => {
         invoke<any>('get_active_company')
             .then((c) => {
+                if (c?.sync_mode) {
+                    setSyncMode(c.sync_mode === 'online' ? 'online' : 'offline');
+                }
                 if (c?.name) {
                     setCompanyName(c.name);
                 } else {
@@ -269,15 +287,32 @@ export default function Topbar() {
                     <span>{isBackingUp ? 'Backing Up...' : 'Backup Now'}</span>
                 </button>
 
-                {/* Company display */}
+                {/* Company display & Sync Mode Badge */}
                 {companyName && (
-                    <div
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm font-medium
-                                   bg-primary/8 border border-primary/20 text-foreground max-w-[200px]"
-                        title={companyName}
-                    >
-                        <IconBuilding size={14} className="text-primary shrink-0" />
-                        <span className="truncate">{companyName}</span>
+                    <div className="flex items-center gap-2">
+                        {syncMode === 'online' && (
+                            <span
+                                className="relative flex h-3 w-3 items-center justify-center cursor-default"
+                                title={isOnline ? 'Connected to cloud' : 'Disconnected from cloud (offline)'}
+                            >
+                                {isOnline ? (
+                                    <>
+                                        <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
+                                        <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                                    </>
+                                ) : (
+                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-500" />
+                                )}
+                            </span>
+                        )}
+                        <div
+                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm font-medium
+                                       bg-primary/8 border border-primary/20 text-foreground max-w-[200px]"
+                            title={companyName}
+                        >
+                            <IconBuilding size={14} className="text-primary shrink-0" />
+                            <span className="truncate">{companyName}</span>
+                        </div>
                     </div>
                 )}
                 <ThemeToggle />

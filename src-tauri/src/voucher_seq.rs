@@ -74,12 +74,26 @@ pub async fn get_next_voucher_number_in_tx(
     let mut curr_num = seq.next_number;
     let sep = &seq.separator;
 
+    // Optional device prefix for multi-terminal sync (e.g. POS1, POS2)
+    let device_prefix: Option<String> = sqlx::query_scalar(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'device_prefix' AND setting_value IS NOT NULL AND setting_value != ''"
+    )
+    .fetch_optional(&mut **tx)
+    .await
+    .unwrap_or(None);
+
     let voucher_no = loop {
         let number = format!("{:0>width$}", curr_num, width = seq.padding as usize);
 
         let mut parts: Vec<String> = Vec::new();
         if !seq.prefix.is_empty() {
             parts.push(seq.prefix.clone());
+        }
+        if let Some(ref dp) = device_prefix {
+            let clean = dp.trim();
+            if !clean.is_empty() {
+                parts.push(clean.to_string());
+            }
         }
         if seq.include_financial_year {
             parts.push(current_financial_year());
@@ -231,9 +245,22 @@ pub async fn preview_voucher_number_for(
     let number = format!("{:0>width$}", seq.next_number, width = seq.padding as usize);
     let sep = &seq.separator;
 
+    let device_prefix: Option<String> = sqlx::query_scalar(
+        "SELECT setting_value FROM app_settings WHERE setting_key = 'device_prefix' AND setting_value IS NOT NULL AND setting_value != ''"
+    )
+    .fetch_optional(pool)
+    .await
+    .unwrap_or(None);
+
     let mut parts: Vec<String> = Vec::new();
     if !seq.prefix.is_empty() {
         parts.push(seq.prefix.clone());
+    }
+    if let Some(ref dp) = device_prefix {
+        let clean = dp.trim();
+        if !clean.is_empty() {
+            parts.push(clean.to_string());
+        }
     }
     if seq.include_financial_year {
         parts.push(current_financial_year());

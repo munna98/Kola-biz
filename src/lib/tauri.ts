@@ -828,3 +828,54 @@ export function can(
   return pagePerm[action] === true;
 }
 
+// ======= CLOUD SYNC & COMPANY CONFIG =======
+
+export interface CompanyCloudConfig {
+  company_id: string;
+  sync_mode: string;
+  cloud_url?: string | null;
+  cloud_token?: string | null;
+  last_synced_at?: string | null;
+  device_prefix?: string | null;
+}
+
+export async function testCloudConnection(cloudUrl: string, cloudToken: string): Promise<string> {
+  return invoke<string>('test_cloud_connection', { cloudUrl, cloudToken });
+}
+
+export async function bootstrapCloudDatabase(cloudUrl: string, cloudToken: string): Promise<string> {
+  return invoke<string>('bootstrap_cloud_database', { cloudUrl, cloudToken });
+}
+
+export async function updateCompanyCloudConfig(
+  companyId: string,
+  syncMode: string,
+  cloudUrl?: string | null,
+  cloudToken?: string | null,
+  devicePrefix?: string | null
+): Promise<void> {
+  return invoke<void>('update_company_cloud_config', {
+    companyId,
+    syncMode,
+    cloudUrl: cloudUrl || null,
+    cloudToken: cloudToken || null,
+    devicePrefix: devicePrefix || null,
+  });
+}
+
+export async function getCompanyCloudConfig(companyId: string): Promise<CompanyCloudConfig | null> {
+  return invoke<CompanyCloudConfig | null>('get_company_cloud_config', { companyId });
+}
+
+export interface SyncReport {
+  success: boolean;
+  pushed_count: number;
+  pulled_count: number;
+  message: string;
+  timestamp: string;
+}
+
+export async function triggerManualSync(companyId?: string | null): Promise<SyncReport> {
+  return invoke<SyncReport>('trigger_manual_sync', { companyId: companyId || null });
+}
+
