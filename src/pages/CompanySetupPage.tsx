@@ -38,7 +38,8 @@ export default function CompanySetupPage() {
         if (profile) {
             dispatch(setCompanyProfile(profile));
         }
-        toast.success(`Connected to "${res.company_name}" from cloud! Setup skipped.`);
+        const name = res?.company_name || res?.companyName || 'Cloud Company';
+        toast.success(`Connected to "${name}" from cloud! Setup skipped.`);
     };
 
     // Load countries on mount

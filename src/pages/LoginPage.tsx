@@ -154,9 +154,10 @@ export default function LoginPage() {
 
     const handleCloudConnected = async (res: any) => {
         await refreshCompanies();
-        if (res?.company_id) {
-            await invoke('switch_company', { companyId: res.company_id });
-            setSelectedCompanyId(res.company_id);
+        const cid = res?.company_id || res?.companyId;
+        if (cid) {
+            await invoke('switch_company', { companyId: cid });
+            setSelectedCompanyId(cid);
             await refreshCompanies();
         }
     };

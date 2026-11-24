@@ -894,6 +894,17 @@ export interface ConnectCloudCompanyResult {
 }
 
 export async function connectCloudCompany(input: ConnectCloudCompanyInput): Promise<ConnectCloudCompanyResult> {
-  return invoke<ConnectCloudCompanyResult>('connect_cloud_company', { input });
+  return invoke<ConnectCloudCompanyResult>('connect_cloud_company', {
+    input: {
+      cloudUrl: input.cloudUrl,
+      cloudToken: input.cloudToken,
+      devicePrefix: input.devicePrefix || null,
+      customName: input.customName || null,
+      cloud_url: input.cloudUrl,
+      cloud_token: input.cloudToken,
+      device_prefix: input.devicePrefix || null,
+      custom_name: input.customName || null,
+    },
+  });
 }
 

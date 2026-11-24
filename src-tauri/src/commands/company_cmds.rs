@@ -6,12 +6,18 @@ use tauri::State;
 // ===================== TYPES =====================
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CreateCompanyInput {
     pub name: String,
+    #[serde(alias = "custom_path")]
     pub custom_path: Option<String>,
+    #[serde(alias = "sync_mode")]
     pub sync_mode: Option<String>,
+    #[serde(alias = "cloud_url")]
     pub cloud_url: Option<String>,
+    #[serde(alias = "cloud_token")]
     pub cloud_token: Option<String>,
+    #[serde(alias = "device_prefix")]
     pub device_prefix: Option<String>,
 }
 
@@ -255,10 +261,15 @@ pub async fn trigger_manual_sync(
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ConnectCloudCompanyInput {
+    #[serde(alias = "cloud_url")]
     pub cloud_url: String,
+    #[serde(alias = "cloud_token")]
     pub cloud_token: String,
+    #[serde(alias = "device_prefix")]
     pub device_prefix: Option<String>,
+    #[serde(alias = "custom_name")]
     pub custom_name: Option<String>,
 }
 

@@ -341,9 +341,10 @@ export function CompanySwitcherModal({ open, onClose, onSwitched }: CompanySwitc
             <ConnectCloudCompanyDialog
                 open={showConnectCloud}
                 onClose={() => setShowConnectCloud(false)}
-                onSuccess={(res) => {
+                onSuccess={(res: any) => {
                     loadCompanies();
-                    toast.success(`Joined "${res.company_name}" from cloud! Please switch to it.`);
+                    const name = res?.company_name || res?.companyName || 'Cloud Company';
+                    toast.success(`Joined "${name}" from cloud! Please switch to it.`);
                 }}
             />
         </>
