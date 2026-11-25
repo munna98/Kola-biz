@@ -15,7 +15,7 @@ pub async fn seed_initial_data(pool: &SqlitePool) -> Result<(), Box<dyn std::err
         ("Current Liabilities",    "Liability"),
         ("Non-Current Liabilities","Liability"),
         ("Accounts Payable",       "Liability"),
-        ("Tax Payable",            "Liability"),
+        ("Tax Payable",            "Liability"), 
         ("Duties & Taxes",         "Liability"),
         ("Equity",                 "Equity"),
         ("Sales Accounts",         "Income"),
