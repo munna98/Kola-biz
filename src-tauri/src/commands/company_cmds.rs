@@ -344,9 +344,22 @@ pub async fn connect_cloud_company(
         true,
     )
     .await?;
-    if sync_report.success {
-        let _ = registry.update_sync_cursors(&company_id, sync_report.remote_seq).await;
+    if !sync_report.success {
+        // Disarm online mode so background sync never pushes a half-pulled local DB back over Turso
+        let _ = registry
+            .update_company_cloud_settings(
+                &company_id,
+                "offline",
+                Some(clean_url),
+                Some(clean_token),
+            )
+            .await;
+        return Err(format!(
+            "Initial cloud download had errors ({}). Switched to offline mode to protect cloud data; please check your connection and retry Full Resync.",
+            sync_report.message
+        ));
     }
+    let _ = registry.update_sync_cursors(&company_id, sync_report.remote_seq).await;
 
     Ok(ConnectCloudCompanyResult {
         company_id,
@@ -521,6 +534,14 @@ pub async fn import_company_database(
 
     std::fs::copy(&source_path, &dest_path)
         .map_err(|e| format!("Failed to copy database file: {}", e))?;
+    // Preserve SQLite WAL/SHM sidecars if the source database had uncheckpointed frames
+    for suffix in ["-wal", "-shm"] {
+        let src_sidecar = std::path::PathBuf::from(format!("{}{}", source_path.display(), suffix));
+        if src_sidecar.exists() {
+            let dst_sidecar = std::path::PathBuf::from(format!("{}{}", dest_path.display(), suffix));
+            let _ = std::fs::copy(&src_sidecar, &dst_sidecar);
+        }
+    }
 
     let dest_path_str = dest_path.to_string_lossy().to_string();
 

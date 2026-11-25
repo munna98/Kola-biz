@@ -442,7 +442,11 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
     // A Combobox closes in a portal and restores focus asynchronously. Keep the
     // requested target here until its close lifecycle has completed instead of
     // relying on a timing-dependent timeout.
-    const postSelectionFocusRef = useRef<number | null>(null);
+    const postSelectionFocusRef = useRef<{
+        sourceRowIdx: number;
+        mode: 'nextField' | 'rowProduct' | 'rowQty';
+        targetRowIdx: number;
+    } | null>(null);
     // Stores the last keyword the user typed in any row's product search box so
     // that pressing ↓ on the next (empty) row pre-fills that search term.
     const lastProductSearchRef = useRef<string>('');
@@ -529,6 +533,55 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                 return;
             }
         }
+    };
+
+    /** Run a callback once the DOM row for rowIndex is mounted, retrying across animation frames. */
+    const withMountedRow = (rowIndex: number, onRow: (row: Element) => void, attemptsLeft = 6) => {
+        const row = document.querySelector(`[data-row-index="${rowIndex}"]`);
+        if (row) {
+            onRow(row);
+        } else if (attemptsLeft > 0) {
+            requestAnimationFrame(() => withMountedRow(rowIndex, onRow, attemptsLeft - 1));
+        }
+    };
+
+    /** Focus the product Combobox (or first editable input) in a row and open its popover. */
+    const focusRowProduct = (rowIndex: number) => {
+        withMountedRow(rowIndex, (row) => {
+            const target = (
+                row.querySelector('button[role="combobox"]:not([data-unit-trigger="true"]):not([disabled])') ||
+                row.querySelector('input:not([disabled]), button:not([disabled])')
+            ) as HTMLElement | null;
+            if (!target) return;
+
+            const wasFocused = document.activeElement === target;
+            target.focus();
+            if (target instanceof HTMLInputElement) {
+                target.select();
+            } else if (target instanceof HTMLButtonElement) {
+                // Combobox opens automatically on focus when openOnFocus=true.
+                // Only click if focus() couldn't fire onFocus (already focused) or
+                // if the popover is still closed after React commits.
+                if (wasFocused && target.getAttribute('aria-expanded') !== 'true') {
+                    target.click();
+                } else {
+                    requestAnimationFrame(() => {
+                        if (document.activeElement === target && target.getAttribute('aria-expanded') !== 'true') {
+                            target.click();
+                        }
+                    });
+                }
+            }
+        });
+    };
+
+    /** Focus the quantity input in a given row and select its contents. */
+    const focusRowQuantity = (rowIndex: number) => {
+        withMountedRow(rowIndex, (row) => {
+            const qtyInput = row.querySelector('[data-field="quantity"]') as HTMLElement | null;
+            qtyInput?.focus();
+            if (qtyInput instanceof HTMLInputElement) qtyInput.select();
+        });
     };
 
     // Expose methods to parent component
@@ -822,6 +875,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                                 );
                                                 if (existingIdx !== -1) {
                                                     const existingQty = items[existingIdx].initial_quantity || 0;
+                                                    const isCurrentRowEmpty = !items[idx].product_id;
                                                     // Remove the current (new/empty) row FIRST (synchronously),
                                                     // THEN call onUpdateItem to increment qty.
                                                     //
@@ -834,7 +888,7 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                                     // call to updateTotalsWithItems. The empty row contributes ₹0 to
                                                     // the total, so the calculation in onUpdateItem (which still reads
                                                     // the stale items array including the empty row) is still correct.
-                                                    if (!items[idx].product_id) {
+                                                    if (isCurrentRowEmpty) {
                                                         onRemoveItem(idx);
                                                     }
                                                     onUpdateItem(existingIdx, 'initial_quantity', existingQty + 1);
@@ -842,45 +896,39 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                                     // When skipToNextRowAfterProduct is also on, focus the next product input
                                                     // so the user can keep scanning/selecting products without interruption.
                                                     if (settings?.skipToNextRowAfterProduct) {
-                                                        setTimeout(() => {
-                                                            // After removing the empty row, the last row's product should be focused
-                                                            // Find the last row and focus its product combobox, or add a new row
-                                                            const allRows = document.querySelectorAll('[data-row-index]');
-                                                            const lastRow = allRows[allRows.length - 1];
-                                                            if (lastRow) {
-                                                                // Check if the last row already has a product selected
-                                                                const lastRowIdx = parseInt(lastRow.getAttribute('data-row-index') || '0');
-                                                                const lastItem = items[lastRowIdx];
-                                                                if (lastItem && lastItem.product_id) {
-                                                                    // All rows have products, need a new empty row
-                                                                    onAddItem();
-                                                                    setTimeout(() => {
-                                                                        const newRows = document.querySelectorAll('[data-row-index]');
-                                                                        const newRow = newRows[newRows.length - 1];
-                                                                        const productBtn = newRow?.querySelector('button:not([disabled])') as HTMLElement;
-                                                                        if (productBtn) {
-                                                                            productBtn.focus();
-                                                                            productBtn.click();
-                                                                        }
-                                                                    }, 50);
-                                                                } else {
-                                                                    // Last row is empty, focus its product input
-                                                                    const productBtn = lastRow.querySelector('button:not([disabled])') as HTMLElement;
-                                                                    if (productBtn) {
-                                                                        productBtn.focus();
-                                                                        productBtn.click();
-                                                                    }
-                                                                }
-                                                            }
-                                                        }, 50);
+                                                        const remainingCount = isCurrentRowEmpty ? items.length - 1 : items.length;
+                                                        const lastRemainingItem = isCurrentRowEmpty
+                                                            ? (idx === items.length - 1 ? items[items.length - 2] : items[items.length - 1])
+                                                            : items[items.length - 1];
+                                                        const needsNewRow = remainingCount === 0 || Boolean(lastRemainingItem?.product_id || lastRemainingItem?.service_id);
+                                                        const targetRowIdx = needsNewRow ? remainingCount : remainingCount - 1;
+                                                        if (needsNewRow) {
+                                                            onAddItem();
+                                                        }
+                                                        if (isCurrentRowEmpty) {
+                                                            // Current row unmounts immediately, so its onAfterSelect won't fire.
+                                                            requestAnimationFrame(() => focusRowProduct(targetRowIdx));
+                                                        } else {
+                                                            document.body.setAttribute('data-voucher-selecting', 'true');
+                                                            postSelectionFocusRef.current = {
+                                                                sourceRowIdx: idx,
+                                                                mode: 'rowProduct',
+                                                                targetRowIdx,
+                                                            };
+                                                        }
                                                     } else {
                                                         // Default: focus the incremented row's quantity field
-                                                        setTimeout(() => {
-                                                            const targetRow = document.querySelector(`[data-row-index="${existingIdx}"]`);
-                                                            const qtyInput = targetRow?.querySelector('[data-field="quantity"]') as HTMLElement | null;
-                                                            qtyInput?.focus();
-                                                            if (qtyInput instanceof HTMLInputElement) qtyInput.select();
-                                                        }, 50);
+                                                        const targetQtyRowIdx = (isCurrentRowEmpty && existingIdx > idx) ? existingIdx - 1 : existingIdx;
+                                                        if (isCurrentRowEmpty) {
+                                                            requestAnimationFrame(() => focusRowQuantity(targetQtyRowIdx));
+                                                        } else {
+                                                            document.body.setAttribute('data-voucher-selecting', 'true');
+                                                            postSelectionFocusRef.current = {
+                                                                sourceRowIdx: idx,
+                                                                mode: 'rowQty',
+                                                                targetRowIdx: targetQtyRowIdx,
+                                                            };
+                                                        }
                                                     }
                                                     return;
                                                 }
@@ -890,50 +938,48 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                             // Set a flag so the RateCell knows to reject transient focus.
                                             document.body.setAttribute('data-voucher-selecting', 'true');
                                             if (settings?.skipToNextRowAfterProduct) {
+                                                postSelectionFocusRef.current = {
+                                                    sourceRowIdx: idx,
+                                                    mode: 'rowProduct',
+                                                    targetRowIdx: idx + 1,
+                                                };
                                                 onUpdateItem(idx, 'product_id', prodId, { initialQuantity: 1 });
-                                                // Jump to next row (add new if needed)
-                                                setTimeout(() => {
-                                                    document.body.removeAttribute('data-voucher-selecting');
-                                                    const currentRow = document.querySelector(`[data-row-index="${idx}"]`);
-                                                    if (currentRow) {
-                                                        const nextRow = currentRow.nextElementSibling;
-                                                        if (nextRow) {
-                                                            const firstInput = nextRow.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
-                                                            if (firstInput) {
-                                                                firstInput.focus();
-                                                                if (firstInput instanceof HTMLButtonElement) firstInput.click();
-                                                            }
-                                                        } else {
-                                                            onAddItem();
-                                                            setTimeout(() => {
-                                                                const newRow = currentRow.parentElement?.lastElementChild;
-                                                                const firstInput = newRow?.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
-                                                                if (firstInput) {
-                                                                    firstInput.focus();
-                                                                    if (firstInput instanceof HTMLButtonElement) firstInput.click();
-                                                                }
-                                                            }, 50);
-                                                        }
-                                                    }
-                                                }, 100);
+                                                if (idx >= items.length - 1) {
+                                                    onAddItem();
+                                                }
                                             } else {
-                                                postSelectionFocusRef.current = idx;
+                                                postSelectionFocusRef.current = {
+                                                    sourceRowIdx: idx,
+                                                    mode: 'nextField',
+                                                    targetRowIdx: idx,
+                                                };
                                                 onUpdateItem(idx, 'product_id', prodId);
                                             }
                                         } else if (strVal.startsWith('s:')) {
                                             const svcId = strVal.slice(2);
                                             document.body.setAttribute('data-voucher-selecting', 'true');
-                                            postSelectionFocusRef.current = idx;
+                                            postSelectionFocusRef.current = {
+                                                sourceRowIdx: idx,
+                                                mode: 'nextField',
+                                                targetRowIdx: idx,
+                                            };
                                             onUpdateItem(idx, 'service_id', svcId);
                                         }
                                     }}
                                     onAfterSelect={() => {
-                                        if (postSelectionFocusRef.current !== idx) return;
+                                        const pending = postSelectionFocusRef.current;
+                                        if (!pending || pending.sourceRowIdx !== idx) return;
 
                                         postSelectionFocusRef.current = null;
                                         requestAnimationFrame(() => {
                                             document.body.removeAttribute('data-voucher-selecting');
-                                            focusFirstEditableAfterProduct(idx);
+                                            if (pending.mode === 'rowProduct') {
+                                                focusRowProduct(pending.targetRowIdx);
+                                            } else if (pending.mode === 'rowQty') {
+                                                focusRowQuantity(pending.targetRowIdx);
+                                            } else {
+                                                focusFirstEditableAfterProduct(pending.targetRowIdx);
+                                            }
                                         });
                                     }}
                                     placeholder="Select product"
@@ -964,32 +1010,12 @@ export const VoucherItemsSection = React.forwardRef<VoucherItemsSectionRef, Vouc
                                             } else if (settings?.skipToNextRowAfterQty) {
                                                 e.preventDefault();
                                                 e.stopPropagation();
-                                                
-                                                const currentRow = e.currentTarget.closest('[data-row-index]');
-                                                if (currentRow) {
-                                                    const nextRow = currentRow.nextElementSibling;
-                                                    if (nextRow) {
-                                                        const firstInput = nextRow.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
-                                                        if (firstInput) {
-                                                            firstInput.focus();
-                                                            if (firstInput instanceof HTMLButtonElement) {
-                                                                firstInput.click();
-                                                            }
-                                                        }
-                                                    } else {
-                                                        onAddItem();
-                                                        setTimeout(() => {
-                                                            const newRow = currentRow.parentElement?.lastElementChild;
-                                                            const firstInput = newRow?.querySelector('input:not([disabled]), button:not([disabled])') as HTMLElement;
-                                                            if (firstInput) {
-                                                                firstInput.focus();
-                                                                if (firstInput instanceof HTMLButtonElement) {
-                                                                    firstInput.click();
-                                                                }
-                                                            }
-                                                        }, 50);
-                                                    }
+
+                                                const nextRowIdx = idx + 1;
+                                                if (idx >= items.length - 1) {
+                                                    onAddItem();
                                                 }
+                                                requestAnimationFrame(() => focusRowProduct(nextRowIdx));
                                             }
                                         }
                                     }}
