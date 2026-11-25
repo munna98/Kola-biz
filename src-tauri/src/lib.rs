@@ -6,7 +6,7 @@ pub mod license;
 mod seeds;
 pub mod template_engine; // Public so commands can use it
 pub mod utils;
-pub mod voucher_seq; // Shared voucher number generation
+pub mod voucher_seq; // Shared voucher number generation 
 
 use commands::*;
 use tauri::Manager;
