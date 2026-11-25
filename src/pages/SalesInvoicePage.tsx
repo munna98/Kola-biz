@@ -71,7 +71,7 @@ import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialo
 import { usePrint } from '@/hooks/usePrint';
 import CustomerDialog from '@/components/dialogs/CustomerDialog';
 import ProductDialog from '@/components/dialogs/ProductDialog';
-import { Product, ProductGroup, ProductUnitConversion, Unit, Employee, GstTaxSlab, api } from '@/lib/tauri';
+import { Product, ProductGroup, ProductUnitConversion, Unit, Employee, GstTaxSlab, api , triggerManualSync } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
 import { ShipToPopover, ShipToAddress } from '@/components/voucher/ShipToPopover';
@@ -985,6 +985,7 @@ export default function SalesInvoicePage() {
           },
         });
         toast.success('Sales invoice updated successfully');
+        triggerManualSync(null, false).catch(console.error);
 
         toast.success('Sales invoice updated successfully');
 
@@ -1045,6 +1046,7 @@ export default function SalesInvoicePage() {
           },
         });
         toast.success('Sales invoice created successfully');
+        triggerManualSync(null, false).catch(console.error);
 
         // Auto-prompt for payment after creating invoice
         setSavedInvoiceAmount(netPayableTotal);
@@ -1424,6 +1426,7 @@ export default function SalesInvoicePage() {
         // Delete the invoice (backend will handle cleanup of related data)
         await invoke('delete_sales_invoice', { id: salesState.currentVoucherId });
         toast.success('Voucher and all associated entries deleted');
+        triggerManualSync(null, false).catch(console.error);
         handleNewInvoice();
       } catch (e) {
         toast.error('Failed to delete voucher');

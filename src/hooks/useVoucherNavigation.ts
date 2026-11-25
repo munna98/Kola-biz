@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import { useDispatch } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { ActionCreatorWithPayload, ActionCreatorWithoutPayload } from '@reduxjs/toolkit';
@@ -60,6 +61,20 @@ export function useVoucherNavigation({
         }
     }, [mode, currentVoucherId, voucherType]);
 
+    // Listen for background cloud sync events so navigation flags and last voucher update in real time
+    useEffect(() => {
+        const unlisten = listen('sync:data-changed', () => {
+            if (mode === 'new') {
+                fetchNewModeData();
+            } else if (currentVoucherId) {
+                checkNavigation(currentVoucherId);
+            }
+        });
+        return () => {
+            unlisten.then((fn) => fn());
+        };
+    }, [mode, currentVoucherId, voucherType]);
+
     const hasLastVoucher = lastVoucherId !== null;
 
     // Check for previous/next IDs when current ID changes
@@ -104,35 +119,48 @@ export function useVoucherNavigation({
     };
 
     const handleNavigateToLast = async () => {
-        if (!lastVoucherId) return;
         if (mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
         }
+        // Quick sync to ensure the newest voucher from another device is pulled
+        try {
+            await triggerManualSync(null, false);
+        } catch { /* offline / ignore */ }
+
+        // Always query the freshest last voucher id from the database
+        const freshLastId = await invoke<string | null>('get_last_voucher_id', { voucherType }).catch(() => null);
+        const targetId = freshLastId || lastVoucherId;
+        if (!targetId) return;
+
         dispatch(actions.setHasUnsavedChanges(false));
         dispatch(actions.setMode('viewing'));
-        dispatch(actions.setCurrentVoucherId(lastVoucherId));
-        await onLoadVoucher(lastVoucherId);
+        dispatch(actions.setCurrentVoucherId(targetId));
+        await onLoadVoucher(targetId);
     };
 
     const handleNavigatePrevious = async () => {
         if (mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
         }
-        if (mode === 'new' && hasLastVoucher) {
+        if (mode === 'new') {
             await handleNavigateToLast();
             return;
         }
-        // Fire-and-forget sync so any vouchers created on another device are pulled first
-        triggerManualSync(null, false).then((report) => {
-            if (report.pulled_count > 0) {
-                // Re-check prev/next after pull so navigation reflects cloud changes
-                if (navigationData.previousId) checkNavigation(navigationData.previousId);
-            }
-        }).catch(() => { /* ignore offline errors */ });
-        if (navigationData.previousId) {
+        // Quick sync so any vouchers created on another device are pulled first
+        try {
+            await triggerManualSync(null, false);
+        } catch { /* offline / ignore */ }
+
+        const freshPrevId = currentVoucherId
+            ? await invoke<string | null>('get_previous_voucher_id', { voucherType, currentId: currentVoucherId }).catch(() => null)
+            : null;
+        const targetId = freshPrevId || navigationData.previousId;
+
+        if (targetId) {
+            dispatch(actions.setHasUnsavedChanges(false));
             dispatch(actions.setMode('viewing'));
-            dispatch(actions.setCurrentVoucherId(navigationData.previousId));
-            await onLoadVoucher(navigationData.previousId);
+            dispatch(actions.setCurrentVoucherId(targetId));
+            await onLoadVoucher(targetId);
         }
     };
 
@@ -140,19 +168,23 @@ export function useVoucherNavigation({
         if (mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
         }
-        // Fire-and-forget sync so any vouchers created on another device are pulled first
-        triggerManualSync(null, false).then((report) => {
-            if (report.pulled_count > 0) {
-                if (navigationData.nextId) checkNavigation(navigationData.nextId);
-                else checkNavigation(currentVoucherId ?? '');
-            }
-        }).catch(() => { /* ignore offline errors */ });
-        if (navigationData.nextId) {
+        // Quick sync so any vouchers created on another device are pulled first
+        try {
+            await triggerManualSync(null, false);
+        } catch { /* offline / ignore */ }
+
+        const freshNextId = currentVoucherId
+            ? await invoke<string | null>('get_next_voucher_id', { voucherType, currentId: currentVoucherId }).catch(() => null)
+            : null;
+        const targetId = freshNextId || navigationData.nextId;
+
+        if (targetId) {
+            dispatch(actions.setHasUnsavedChanges(false));
             dispatch(actions.setMode('viewing'));
-            dispatch(actions.setCurrentVoucherId(navigationData.nextId));
-            await onLoadVoucher(navigationData.nextId);
+            dispatch(actions.setCurrentVoucherId(targetId));
+            await onLoadVoucher(targetId);
         } else if (mode === 'viewing' || mode === 'editing') {
-            // PageDown / Alt+Right or clicking > on the last saved voucher transitions back to new mode
+            // Reached the end (latest voucher) -> transition to new mode
             await handleNew();
         }
     };

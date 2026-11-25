@@ -61,7 +61,7 @@ import SupplierDialog from '@/components/dialogs/SupplierDialog';
 import ProductDialog from '@/components/dialogs/ProductDialog';
 import BarcodeLabelDialog from '@/components/dialogs/BarcodeLabelDialog';
 import PriceCategoryQuickEditDialog from '@/components/dialogs/PriceCategoryQuickEditDialog';
-import { Product, ProductGroup, ProductUnitConversion, Unit, GstTaxSlab, api } from '@/lib/tauri';
+import { Product, ProductGroup, ProductUnitConversion, Unit, GstTaxSlab, api , triggerManualSync } from '@/lib/tauri';
 import { buildProductUnitMap, getDefaultProductUnitId, getProductUnitRate } from '@/lib/product-units';
 import { calculateVoucherDiscounts } from '@/lib/voucher-discount';
 import { useCurrencyLabel, useMoney, useForexMoney } from '@/hooks/useMoney';
@@ -869,6 +869,7 @@ export default function PurchaseInvoicePage() {
         });
 
         toast.success('Purchase invoice updated successfully');
+        triggerManualSync(null, false).catch(console.error);
 
         if (voucherSettings?.updateRatesOnPurchase || masterProductsEnabled) {
           const ratesToUpdate = purchaseState.items
@@ -983,6 +984,7 @@ export default function PurchaseInvoicePage() {
           },
         });
         toast.success('Purchase invoice created successfully');
+        triggerManualSync(null, false).catch(console.error);
 
         // Capture the new voucher ID for barcode product fetch after the branch
         savedVoucherIdForBarcode = newInvoiceId;

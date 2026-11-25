@@ -46,7 +46,7 @@ pub fn run() {
 
             // Start automated backups task
             setup_automated_backups(app.handle().clone(), registry.clone());
-            cloud_sync::start_background_sync(registry.clone(), 30);
+            cloud_sync::start_background_sync(registry.clone(), 10);
 
             // Store AppHandle so background sync can emit Tauri events to the frontend
             let reg_for_handle = registry.clone();
