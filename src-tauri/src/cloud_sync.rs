@@ -734,7 +734,7 @@ pub async fn sync_company_data(
 
 /// Background task that periodically synchronizes the active company's data.
 pub fn start_background_sync(registry: Arc<DbRegistry>, interval_secs: u64) {
-    tokio::spawn(async move {
+    tauri::async_runtime::spawn(async move {
         let interval = Duration::from_secs(interval_secs);
         loop {
             sleep(interval).await;
