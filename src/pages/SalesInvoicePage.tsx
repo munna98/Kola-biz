@@ -63,6 +63,7 @@ import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet'
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
+import { useSyncRefresh } from '@/hooks/useSyncRefresh';
 import { VoucherItemsSection, ColumnSettings, VoucherItemsSectionRef } from '@/components/voucher/VoucherItemsSection';
 import { VoucherPartyBalance } from '@/components/voucher/VoucherPartyBalance';
 
@@ -298,6 +299,43 @@ export default function SalesInvoicePage() {
 
     loadData();
   }, [dispatch]);
+
+  // Re-fetch products + re-check voucher navigation after background cloud sync pulls new data
+  useSyncRefresh({
+    onProductsChange: useCallback(() => {
+      invoke<Product[]>('get_products').then(setProducts).catch(console.error);
+      invoke<ProductUnitConversion[]>('get_all_product_unit_conversions').then(setProductUnitConversions).catch(console.error);
+      invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable', 'Cash', 'Bank Account'] })
+        .then((accountsData) => {
+          setParties(accountsData.map(acc => ({
+            id: acc.id,
+            name: acc.account_name,
+            type: acc.account_group === 'Accounts Receivable' ? 'customer' as const : 'supplier' as const,
+            group: acc.account_group as string,
+            address_line_1: acc.address_line_1 as string | undefined,
+            phone: acc.phone as string | undefined,
+            country: acc.country as string | undefined,
+          })));
+        })
+        .catch(console.error);
+    }, []),
+    onVouchersChange: useCallback(() => {
+      // Refresh navigation arrows so vouchers created on other devices appear
+      if (salesState.currentVoucherId) {
+        Promise.all([
+          invoke<string | null>('get_previous_voucher_id', { voucherType: 'sales_invoice', currentId: salesState.currentVoucherId }),
+          invoke<string | null>('get_next_voucher_id', { voucherType: 'sales_invoice', currentId: salesState.currentVoucherId }),
+        ]).then(([prevId, nextId]) => {
+          dispatch(setSalesNavigationData({
+            hasPrevious: prevId !== null,
+            hasNext: nextId !== null,
+            previousId: prevId,
+            nextId: nextId,
+          }));
+        }).catch(console.error);
+      }
+    }, [salesState.currentVoucherId, dispatch]),
+  });
 
   // Load price categories once (only if feature enabled)
   useEffect(() => {

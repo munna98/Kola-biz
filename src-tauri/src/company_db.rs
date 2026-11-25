@@ -60,6 +60,8 @@ pub struct DbRegistry {
     pools: RwLock<HashMap<String, SqlitePool>>,
     // in-memory per app instance, not persisted to master.db
     active_id: RwLock<Option<String>>,
+    // cached AppHandle so background tasks can emit Tauri events
+    app_handle: RwLock<Option<tauri::AppHandle>>,
 }
 
 impl DbRegistry {
@@ -69,7 +71,19 @@ impl DbRegistry {
             companies_dir,
             pools: RwLock::new(HashMap::new()),
             active_id: RwLock::new(None),
+            app_handle: RwLock::new(None),
         })
+    }
+
+    /// Store the AppHandle so background async tasks can emit events to the frontend.
+    pub async fn set_app_handle(&self, handle: tauri::AppHandle) {
+        let mut h = self.app_handle.write().await;
+        *h = Some(handle);
+    }
+
+    /// Retrieve the cached AppHandle (if any).
+    pub async fn app_handle(&self) -> Option<tauri::AppHandle> {
+        self.app_handle.read().await.clone()
     }
 
     /// Automatically discover and register any .db files found in the companies directory

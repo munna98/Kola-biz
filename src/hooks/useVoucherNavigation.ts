@@ -3,6 +3,7 @@ import { useDispatch } from 'react-redux';
 import { invoke } from '@tauri-apps/api/core';
 import { ActionCreatorWithPayload, ActionCreatorWithoutPayload } from '@reduxjs/toolkit';
 import { useConfirm } from './useConfirm';
+import { triggerManualSync } from '@/lib/tauri';
 
 interface VoucherNavigationActions {
     setMode: ActionCreatorWithPayload<'new' | 'viewing' | 'editing'>;
@@ -121,6 +122,13 @@ export function useVoucherNavigation({
             await handleNavigateToLast();
             return;
         }
+        // Fire-and-forget sync so any vouchers created on another device are pulled first
+        triggerManualSync(null, false).then((report) => {
+            if (report.pulled_count > 0) {
+                // Re-check prev/next after pull so navigation reflects cloud changes
+                if (navigationData.previousId) checkNavigation(navigationData.previousId);
+            }
+        }).catch(() => { /* ignore offline errors */ });
         if (navigationData.previousId) {
             dispatch(actions.setMode('viewing'));
             dispatch(actions.setCurrentVoucherId(navigationData.previousId));
@@ -132,6 +140,13 @@ export function useVoucherNavigation({
         if (mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
         }
+        // Fire-and-forget sync so any vouchers created on another device are pulled first
+        triggerManualSync(null, false).then((report) => {
+            if (report.pulled_count > 0) {
+                if (navigationData.nextId) checkNavigation(navigationData.nextId);
+                else checkNavigation(currentVoucherId ?? '');
+            }
+        }).catch(() => { /* ignore offline errors */ });
         if (navigationData.nextId) {
             dispatch(actions.setMode('viewing'));
             dispatch(actions.setCurrentVoucherId(navigationData.nextId));

@@ -261,6 +261,19 @@ pub async fn trigger_manual_sync(
 
     if report.success {
         let _ = registry.update_sync_cursors(&target_id, report.remote_seq).await;
+        if report.pulled_count > 0 {
+            if let Some(app_handle) = registry.app_handle().await {
+                use tauri::Emitter;
+                let _ = app_handle.emit(
+                    "sync:data-changed",
+                    serde_json::json!({
+                        "company_id": target_id,
+                        "pulled": report.pulled_count,
+                        "pushed": report.pushed_count,
+                    }),
+                );
+            }
+        }
     }
     Ok(report)
 }

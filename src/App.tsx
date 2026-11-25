@@ -3,6 +3,7 @@ import { Provider, useSelector, useDispatch } from 'react-redux';
 import { store, RootState } from './store';
 import { setAuthLoading, setNeedsCompanySetup, loginSuccess, setIsFirstRun, setCompanyProfile, goBack, setPermissions } from './store';
 import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { api, mergePermissions, can } from './lib/tauri';
 import ProductsPage from './pages/ProductsPage';
 import ServicesPage from './pages/ServicesPage';
@@ -97,6 +98,14 @@ function AppContent() {
     const { isAuthenticated, isLoading, needsCompanySetup, token, isFirstRun, user, permissions } = useSelector((state: RootState) => state.auth);
 
     const [productPageKey, setProductPageKey] = useState(0);
+
+    // Whenever background cloud sync pulls new rows, bump page keys so list views auto-refresh
+    useEffect(() => {
+        const unlisten = listen('sync:data-changed', () => {
+            setProductPageKey(prev => prev + 1);
+        });
+        return () => { unlisten.then((fn: () => void) => fn()); };
+    }, []);
 
     const loadPermissions = async (userId: string) => {
         try {

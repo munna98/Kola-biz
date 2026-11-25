@@ -48,6 +48,13 @@ pub fn run() {
             setup_automated_backups(app.handle().clone(), registry.clone());
             cloud_sync::start_background_sync(registry.clone(), 30);
 
+            // Store AppHandle so background sync can emit Tauri events to the frontend
+            let reg_for_handle = registry.clone();
+            let handle_clone = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                reg_for_handle.set_app_handle(handle_clone).await;
+            });
+
             app.manage(registry);
 
             // Initialize session store for authentication

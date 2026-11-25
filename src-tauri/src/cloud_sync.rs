@@ -4,6 +4,7 @@ use sqlx::SqlitePool;
 use sqlx::{Row, ValueRef};
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock, RwLock};
+use tauri::Emitter;
 use tokio::time::{sleep, timeout, Duration};
 
 use crate::company_db::DbRegistry;
@@ -2073,6 +2074,17 @@ pub fn start_background_sync(registry: Arc<DbRegistry>, interval_secs: u64) {
                                             }
                                             if report.success {
                                                 let _ = registry.update_sync_cursors(&company_id, report.remote_seq).await;
+
+                                                // Notify the UI that cloud data has changed so it can refresh
+                                                if report.pulled_count > 0 {
+                                                    if let Some(app_handle) = registry.app_handle().await {
+                                                        let _ = app_handle.emit("sync:data-changed", serde_json::json!({
+                                                            "company_id": company_id,
+                                                            "pulled": report.pulled_count,
+                                                            "pushed": report.pushed_count,
+                                                        }));
+                                                    }
+                                                }
                                             }
                                         }
                                         Err(e) => {

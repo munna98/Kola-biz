@@ -52,6 +52,7 @@ import { VoucherListViewSheet } from '@/components/voucher/VoucherListViewSheet'
 import { useVoucherShortcuts } from '@/hooks/useVoucherShortcuts';
 
 import { useVoucherNavigation } from '@/hooks/useVoucherNavigation';
+import { useSyncRefresh } from '@/hooks/useSyncRefresh';
 import { VoucherItemsSection, ColumnSettings, VoucherItemsSectionRef } from '@/components/voucher/VoucherItemsSection';
 import { VoucherPartyBalance } from '@/components/voucher/VoucherPartyBalance';
 import PaymentManagementDialog from '@/components/dialogs/PaymentManagementDialog';
@@ -238,6 +239,42 @@ export default function PurchaseInvoicePage() {
 
     loadData();
   }, [dispatch]);
+
+  // Re-fetch products + re-check voucher navigation after background cloud sync pulls new data
+  useSyncRefresh({
+    onProductsChange: useCallback(() => {
+      invoke<Product[]>('get_products').then(setProducts).catch(console.error);
+      invoke<ProductUnitConversion[]>('get_all_product_unit_conversions').then(setProductUnitConversions).catch(console.error);
+      invoke<any[]>('get_accounts_by_groups', { groups: ['Accounts Receivable', 'Accounts Payable', 'Cash', 'Bank Account'] })
+        .then((accountsData) => {
+          setParties(accountsData.map(acc => ({
+            id: acc.id,
+            name: acc.account_name,
+            type: acc.account_group === 'Accounts Payable' ? 'supplier' as const : 'customer' as const,
+            group: acc.account_group as string,
+            address_line_1: acc.address_line_1 as string | undefined,
+            phone: acc.phone as string | undefined,
+          })));
+        })
+        .catch(console.error);
+    }, []),
+    onVouchersChange: useCallback(() => {
+      if (purchaseState.currentVoucherId) {
+        Promise.all([
+          invoke<string | null>('get_previous_voucher_id', { voucherType: 'purchase_invoice', currentId: purchaseState.currentVoucherId }),
+          invoke<string | null>('get_next_voucher_id', { voucherType: 'purchase_invoice', currentId: purchaseState.currentVoucherId }),
+        ]).then(([prevId, nextId]) => {
+          dispatch(setPurchaseNavigationData({
+            hasPrevious: prevId !== null,
+            hasNext: nextId !== null,
+            previousId: prevId,
+            nextId: nextId,
+          }));
+        }).catch(console.error);
+      }
+    }, [purchaseState.currentVoucherId, dispatch]),
+  });
+
 
   useEffect(() => {
     if (purchaseState.currentVoucherId) {
