@@ -32,6 +32,8 @@ pub struct CompanyInfo {
     pub last_synced_at: Option<String>,
     #[sqlx(default)]
     pub device_prefix: Option<String>,
+    #[sqlx(default)]
+    pub last_remote_seq: i64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -528,7 +530,8 @@ impl DbRegistry {
         let company = sqlx::query_as::<_, CompanyInfo>(
             "SELECT id, name, slug, db_path, is_deleted, is_primary, is_secondary, created_at, last_opened,
                     COALESCE(sync_mode, 'offline') as sync_mode, cloud_url, cloud_token, last_synced_at,
-                    COALESCE(device_prefix, 'POS1') as device_prefix
+                    COALESCE(device_prefix, 'POS1') as device_prefix,
+                    COALESCE(last_remote_seq, 0) as last_remote_seq
              FROM companies WHERE id = ?",
         )
         .bind(&id)
@@ -544,7 +547,8 @@ impl DbRegistry {
         sqlx::query_as::<_, CompanyInfo>(
             "SELECT id, name, slug, db_path, is_deleted, is_primary, is_secondary, created_at, last_opened,
                     COALESCE(sync_mode, 'offline') as sync_mode, cloud_url, cloud_token, last_synced_at,
-                    COALESCE(device_prefix, 'POS1') as device_prefix
+                    COALESCE(device_prefix, 'POS1') as device_prefix,
+                    COALESCE(last_remote_seq, 0) as last_remote_seq
              FROM companies WHERE id = ? AND is_deleted = 0",
         )
         .bind(company_id)
@@ -607,6 +611,26 @@ impl DbRegistry {
                 .await;
         }
 
+        Ok(())
+    }
+
+    /// Update the last_synced_at timestamp and remote changelog cursor.
+    pub async fn update_sync_cursors(
+        &self,
+        company_id: &str,
+        remote_seq: i64,
+    ) -> Result<(), String> {
+        sqlx::query(
+            "UPDATE companies
+             SET last_synced_at = CURRENT_TIMESTAMP,
+                 last_remote_seq = MAX(COALESCE(last_remote_seq, 0), ?)
+             WHERE id = ?",
+        )
+        .bind(remote_seq)
+        .bind(company_id)
+        .execute(&self.master_pool)
+        .await
+        .map_err(|e| e.to_string())?;
         Ok(())
     }
 
@@ -721,6 +745,9 @@ pub async fn init_registry(
         .execute(&master_pool)
         .await;
     let _ = sqlx::query("ALTER TABLE companies ADD COLUMN device_prefix TEXT DEFAULT 'POS1'")
+        .execute(&master_pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE companies ADD COLUMN last_remote_seq INTEGER NOT NULL DEFAULT 0")
         .execute(&master_pool)
         .await;
 

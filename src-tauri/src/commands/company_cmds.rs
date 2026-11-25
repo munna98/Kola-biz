@@ -211,6 +211,7 @@ pub async fn get_company_cloud_config(
 pub async fn trigger_manual_sync(
     registry: State<'_, Arc<DbRegistry>>,
     company_id: Option<String>,
+    full_resync: Option<bool>,
 ) -> Result<crate::cloud_sync::SyncReport, String> {
     let target_id = match company_id {
         Some(id) => id,
@@ -236,16 +237,31 @@ pub async fn trigger_manual_sync(
         .cloud_token
         .ok_or_else(|| "No cloud auth token configured.".to_string())?;
 
+    let last_sync = if full_resync.unwrap_or(false) {
+        None
+    } else {
+        company.last_synced_at.as_deref()
+    };
+    let last_seq = if full_resync.unwrap_or(false) {
+        0
+    } else {
+        company.last_remote_seq
+    };
+
     let pool = registry.active_pool().await?;
-    let report = crate::cloud_sync::sync_company_data(
+    let report = crate::cloud_sync::sync_company_with_cursor(
         &pool,
         &url,
         &token,
-        company.last_synced_at.as_deref(),
+        last_sync,
+        last_seq,
+        false,
     )
     .await?;
 
-    let _ = registry.update_last_synced(&target_id).await;
+    if report.success {
+        let _ = registry.update_sync_cursors(&target_id, report.remote_seq).await;
+    }
     Ok(report)
 }
 
@@ -319,15 +335,18 @@ pub async fn connect_cloud_company(
     let pool = registry.active_pool().await?;
 
     // 4. Run initial full pull (import everything from Turso into the new local DB without pushing defaults)
-    let sync_report = crate::cloud_sync::sync_company_data_with_mode(
+    let sync_report = crate::cloud_sync::sync_company_with_cursor(
         &pool,
         clean_url,
         clean_token,
         None,
+        0,
         true,
     )
     .await?;
-    let _ = registry.update_last_synced(&company_id).await;
+    if sync_report.success {
+        let _ = registry.update_sync_cursors(&company_id, sync_report.remote_seq).await;
+    }
 
     Ok(ConnectCloudCompanyResult {
         company_id,

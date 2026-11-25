@@ -216,7 +216,7 @@ export default function DbSettingsPage() {
     }
   };
 
-  const handleManualSync = async () => {
+  const handleManualSync = async (fullResync = false) => {
     if (!activeCompany?.id) {
       toast.error('No active company selected');
       return;
@@ -229,10 +229,10 @@ export default function DbSettingsPage() {
         pulled_count: number;
         message: string;
         timestamp: string;
-      }>('trigger_manual_sync', { companyId: activeCompany.id });
+      }>('trigger_manual_sync', { companyId: activeCompany.id, fullResync });
 
       if (report.success) {
-        toast.success(`Sync complete! Pushed: ${report.pushed_count}, Pulled: ${report.pulled_count}`);
+        toast.success(`${fullResync ? 'Full resync' : 'Sync'} complete! Pushed: ${report.pushed_count}, Pulled: ${report.pulled_count}`);
         setLastSyncedAt(report.timestamp);
       } else {
         toast.error(`Sync error: ${report.message}`);
@@ -1176,12 +1176,24 @@ export default function DbSettingsPage() {
                         <Button
                           variant="secondary"
                           type="button"
-                          onClick={handleManualSync}
+                          onClick={() => handleManualSync(false)}
                           disabled={testingConnection || bootstrappingCloud || syncingNow}
                           className="gap-2"
                         >
                           <RefreshCw className={`w-4 h-4 ${syncingNow ? 'animate-spin' : ''}`} />
                           {syncingNow ? 'Syncing...' : 'Sync Now'}
+                        </Button>
+
+                        <Button
+                          variant="outline"
+                          type="button"
+                          onClick={() => handleManualSync(true)}
+                          disabled={testingConnection || bootstrappingCloud || syncingNow}
+                          className="gap-2"
+                          title="Re-push and re-pull all records & settings from scratch"
+                        >
+                          <RefreshCw className={`w-4 h-4 ${syncingNow ? 'animate-spin' : ''}`} />
+                          Full Resync
                         </Button>
                       </div>
                     ) : <div />}

@@ -872,8 +872,8 @@ export interface SyncReport {
   timestamp: string;
 }
 
-export async function triggerManualSync(companyId?: string | null): Promise<SyncReport> {
-  return invoke<SyncReport>('trigger_manual_sync', { companyId: companyId || null });
+export async function triggerManualSync(companyId?: string | null, fullResync?: boolean): Promise<SyncReport> {
+  return invoke<SyncReport>('trigger_manual_sync', { companyId: companyId || null, fullResync: fullResync || false });
 }
 
 export interface ConnectCloudCompanyInput {
