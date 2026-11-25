@@ -61,6 +61,7 @@ interface ProductGroup {
 
 export default function StockReportPage() {
     const { navigateTo } = useAppNavigation();
+    const activeSectionParams = useSelector((state: RootState) => state.app.activeSectionParams);
     const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
     const [stockData, setStockData] = useState<StockSummary[]>([]);
     const [productGroups, setProductGroups] = useState<ProductGroup[]>([]);
@@ -78,6 +79,13 @@ export default function StockReportPage() {
         loadProductGroups();
         loadReport();
     }, []);
+
+    useEffect(() => {
+        if (activeSectionParams?.productId) {
+            setExpandedProduct(activeSectionParams.productId);
+            loadMovements(activeSectionParams.productId);
+        }
+    }, [activeSectionParams?.productId]);
 
     const loadProductGroups = async () => {
         try {

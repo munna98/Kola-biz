@@ -4,7 +4,7 @@ import { store, RootState } from './store';
 import { setAuthLoading, setNeedsCompanySetup, loginSuccess, setIsFirstRun, setCompanyProfile, goBack, setPermissions } from './store';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { api, mergePermissions, can } from './lib/tauri';
+import { api, mergePermissions, can, triggerManualSync } from './lib/tauri';
 import ProductsPage from './pages/ProductsPage';
 import ServicesPage from './pages/ServicesPage';
 import CustomersPage from './pages/CustomersPage';
@@ -92,20 +92,35 @@ const ALWAYS_ALLOWED_SECTIONS = new Set([
     'product_settings', 'tax_settings', 'invoice_designer',
 ]);
 
+
+const REPORT_SECTIONS = new Set([
+    'trial', 'ledger', 'ledger_group', 'balance_sheet', 'profit_loss',
+    'cash_flow', 'day_book', 'outstanding', 'stock_report', 'product_profit',
+    'transactions', 'sales_return_report', 'expense_report',
+    'custom_orders_report', 'technician_report', 'gstr1', 'gstr3b'
+]);
+
 function AppContent() {
     const dispatch = useDispatch();
     const { activeSection, activeSectionParams } = useSelector((state: RootState) => state.app);
     const { isAuthenticated, isLoading, needsCompanySetup, token, isFirstRun, user, permissions } = useSelector((state: RootState) => state.auth);
 
-    const [productPageKey, setProductPageKey] = useState(0);
+    const [syncKey, setSyncKey] = useState(0);
 
-    // Whenever background cloud sync pulls new rows, bump page keys so list views auto-refresh
+    // Whenever background cloud sync pulls new rows, bump syncKey so reports, dashboard, and list views auto-refresh
     useEffect(() => {
         const unlisten = listen('sync:data-changed', () => {
-            setProductPageKey(prev => prev + 1);
+            setSyncKey(prev => prev + 1);
         });
         return () => { unlisten.then((fn: () => void) => fn()); };
     }, []);
+
+    // When switching to any report, dashboard, or party list, trigger a quick sync to ensure latest data
+    useEffect(() => {
+        if (REPORT_SECTIONS.has(activeSection) || activeSection === 'dashboard' || activeSection === 'products' || activeSection === 'customers' || activeSection === 'suppliers') {
+            triggerManualSync(null, false).catch(() => {});
+        }
+    }, [activeSection]);
 
     const loadPermissions = async (userId: string) => {
         try {
@@ -178,7 +193,7 @@ function AppContent() {
 
     useEffect(() => {
         if (activeSection === 'products') {
-            setProductPageKey(prev => prev + 1);
+            setSyncKey(prev => prev + 1);
         }
     }, [activeSection]);
 
@@ -229,11 +244,11 @@ function AppContent() {
         }
 
         switch (activeSection) {
-            case 'dashboard': return <DashboardPage />;
-            case 'products': return <ProductsPage key={productPageKey} />;
+            case 'dashboard': return <DashboardPage key={syncKey} />;
+            case 'products': return <ProductsPage key={syncKey} />;
             case 'services': return <ServicesPage />;
-            case 'customers': return <CustomersPage />;
-            case 'suppliers': return <SuppliersPage />;
+            case 'customers': return <CustomersPage key={syncKey} />;
+            case 'suppliers': return <SuppliersPage key={syncKey} />;
             case 'employees': return <EmployeesPage />;
             case 'coa': return <ChartOfAccountsPage />;
             case 'purchase': return <PurchaseInvoicePage />;
@@ -251,23 +266,23 @@ function AppContent() {
             case 'opening_stock': return <OpeningStockPage />;
             case 'stock_journal': return <StockJournalPage />;
             case 'stock_adjustment': return <StockAdjustmentPage />;
-            case 'trial': return <TrialBalancePage />;
-            case 'ledger': return <LedgerReportPage />;
-            case 'ledger_group': return <LedgerGroupBalancePage />;
-            case 'balance_sheet': return <BalanceSheetPage />;
-            case 'profit_loss': return <ProfitLossPage />;
-            case 'cash_flow': return <CashFlowPage />;
-            case 'day_book': return <DayBookPage />;
-            case 'outstanding': return <PartyOutstandingPage />;
-            case 'stock_report': return <StockReportPage />;
-            case 'product_profit': return <ProductProfitPage />;
-            case 'transactions': return <TransactionReportPage />;
-            case 'sales_return_report': return <SalesReturnReportPage />;
-            case 'expense_report': return <ExpenseReportPage />;
-            case 'custom_orders_report': return <CustomOrdersReportPage />;
-            case 'technician_report': return <TechnicianCommissionReportPage />;
-            case 'gstr1': return <Gstr1ReportPage />;
-            case 'gstr3b': return <Gstr3bReportPage />;
+            case 'trial': return <TrialBalancePage key={syncKey} />;
+            case 'ledger': return <LedgerReportPage key={syncKey} />;
+            case 'ledger_group': return <LedgerGroupBalancePage key={syncKey} />;
+            case 'balance_sheet': return <BalanceSheetPage key={syncKey} />;
+            case 'profit_loss': return <ProfitLossPage key={syncKey} />;
+            case 'cash_flow': return <CashFlowPage key={syncKey} />;
+            case 'day_book': return <DayBookPage key={syncKey} />;
+            case 'outstanding': return <PartyOutstandingPage key={syncKey} />;
+            case 'stock_report': return <StockReportPage key={syncKey} />;
+            case 'product_profit': return <ProductProfitPage key={syncKey} />;
+            case 'transactions': return <TransactionReportPage key={syncKey} />;
+            case 'sales_return_report': return <SalesReturnReportPage key={syncKey} />;
+            case 'expense_report': return <ExpenseReportPage key={syncKey} />;
+            case 'custom_orders_report': return <CustomOrdersReportPage key={syncKey} />;
+            case 'technician_report': return <TechnicianCommissionReportPage key={syncKey} />;
+            case 'gstr1': return <Gstr1ReportPage key={syncKey} />;
+            case 'gstr3b': return <Gstr3bReportPage key={syncKey} />;
             case 'users': return <UsersPage />;
             case 'roles': return <RolesPage />;
             default: return <div className="p-6 text-muted-foreground">Coming soon...</div>;

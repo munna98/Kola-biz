@@ -4,9 +4,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { IconDownload, IconPrinter, IconRefresh } from '@tabler/icons-react';
+import { IconDownload, IconPrinter, IconRefresh, IconArrowUpRight } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 interface SalesReturnReportRow {
   id: string;
@@ -27,10 +28,15 @@ const getTypeLabel = (type: SalesReturnReportRow['voucher_type']) =>
   type === 'sales_invoice' ? 'Sale' : 'Return';
 
 export default function SalesReturnReportPage() {
+  const { navigateTo } = useAppNavigation();
   const [rows, setRows] = useState<SalesReturnReportRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [fromDate, setFromDate] = useState(today);
   const [toDate, setToDate] = useState(today);
+
+  const handleVoucherClick = (id: string, type: 'sales_invoice' | 'sales_return') => {
+    navigateTo(type === 'sales_invoice' ? 'sales' : 'sales_return', { voucherId: id });
+  };
 
   const loadReport = async () => {
     try {
@@ -174,20 +180,31 @@ export default function SalesReturnReportPage() {
                       <th className="p-3 text-left text-sm font-semibold">Reference</th>
                       <th className="p-3 text-right text-sm font-semibold">Sales</th>
                       <th className="p-3 text-right text-sm font-semibold">Returns</th>
+                      <th className="p-3 text-center text-sm font-semibold w-20 print:hidden">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rows.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="p-8 text-center text-muted-foreground">
+                        <td colSpan={8} className="p-8 text-center text-muted-foreground">
                           No sales or returns found for this period
                         </td>
                       </tr>
                     ) : (
                       rows.map((row) => (
-                        <tr key={row.id} className="border-b hover:bg-muted/30">
+                        <tr key={row.id} className="border-b hover:bg-muted/30 transition-colors">
                           <td className="p-3 text-sm">{formatDate(row.voucher_date)}</td>
-                          <td className="p-3 font-mono text-sm">{row.voucher_no}</td>
+                          <td className="p-3 font-mono text-sm">
+                            <button
+                              type="button"
+                              onClick={() => handleVoucherClick(row.id, row.voucher_type)}
+                              className="text-primary hover:underline font-mono font-medium text-left cursor-pointer focus:outline-none inline-flex items-center gap-1 group"
+                              title={`Drill down to view ${getTypeLabel(row.voucher_type)} (${row.voucher_no})`}
+                            >
+                              <span>{row.voucher_no}</span>
+                              <IconArrowUpRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-primary shrink-0" />
+                            </button>
+                          </td>
                           <td className="p-3 text-sm">
                             <span className="px-2 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wider bg-muted/50 text-muted-foreground">
                               {getTypeLabel(row.voucher_type)}
@@ -200,6 +217,18 @@ export default function SalesReturnReportPage() {
                           </td>
                           <td className="p-3 text-right font-mono text-sm">
                             {row.voucher_type === 'sales_return' ? formatCurrency(row.amount) : '-'}
+                          </td>
+                          <td className="p-3 text-center print:hidden">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs text-primary hover:text-primary hover:bg-primary/10 gap-1"
+                              onClick={() => handleVoucherClick(row.id, row.voucher_type)}
+                              title={`Drill down to ${getTypeLabel(row.voucher_type)} (${row.voucher_no})`}
+                            >
+                              <IconArrowUpRight size={14} />
+                              <span className="hidden sm:inline">View</span>
+                            </Button>
                           </td>
                         </tr>
                       ))
@@ -214,12 +243,14 @@ export default function SalesReturnReportPage() {
                       <td className="p-3 text-right font-mono font-bold text-sm">
                         {formatCurrency(totals.returnTotal)}
                       </td>
+                      <td className="p-3 print:hidden"></td>
                     </tr>
                     <tr>
                       <td colSpan={6} className="p-3 font-bold text-sm">DIFFERENCE</td>
                       <td className={`p-3 text-right font-mono font-bold text-sm ${totals.difference >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
                         {formatCurrency(totals.difference)}
                       </td>
+                      <td className="p-3 print:hidden"></td>
                     </tr>
                   </tfoot>
                 </table>

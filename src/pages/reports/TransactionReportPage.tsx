@@ -16,10 +16,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { IconDownload, IconPrinter, IconRefresh, IconFilter, IconX, IconSortAscending, IconSortDescending } from '@tabler/icons-react';
+import { IconDownload, IconPrinter, IconRefresh, IconFilter, IconX, IconSortAscending, IconSortDescending, IconArrowUpRight } from '@tabler/icons-react';
 import { toast } from 'sonner';
 import { formatDate } from '@/lib/utils';
 import { useMoney } from '@/hooks/useMoney';
+import { useAppNavigation } from '@/hooks/useAppNavigation';
 
 interface Transaction {
   id: string;
@@ -84,6 +85,70 @@ export default function TransactionReportPage() {
   const companyProfile = useSelector((state: RootState) => state.companyProfile.profile);
   const [isPrinting, setIsPrinting] = useState(false);
   const [dateSortOrder, setDateSortOrder] = useState<'desc' | 'asc'>('desc');
+  const { navigateTo } = useAppNavigation();
+
+  const handleVoucherClick = (id: string, type: string) => {
+    let section = '';
+    switch (type) {
+      case 'sales_invoice':
+        section = 'sales';
+        break;
+      case 'co_invoice':
+        section = coEnabled ? 'custom_orders' : 'sales';
+        break;
+      case 'sales_return':
+        section = 'sales_return';
+        break;
+      case 'purchase_invoice':
+        section = 'purchase';
+        break;
+      case 'purchase_return':
+        section = 'purchase_return';
+        break;
+      case 'payment':
+        section = 'payments';
+        break;
+      case 'receipt':
+        section = 'receipts';
+        break;
+      case 'journal':
+        section = 'journal';
+        break;
+      case 'opening_balance':
+        section = 'opening';
+        break;
+      case 'delivery_note':
+        section = 'delivery_note';
+        break;
+      case 'sales_quotation':
+      case 'quotation':
+        section = 'sales_quotation';
+        break;
+      case 'stock_journal':
+        section = 'stock_journal';
+        break;
+      case 'opening_stock':
+        section = 'opening_stock';
+        break;
+      case 'stock_adjustment':
+        section = 'stock_adjustment';
+        break;
+      default:
+        toast.info(`Voucher type: ${type}`);
+        return;
+    }
+
+    navigateTo(section, { voucherId: id });
+  };
+
+  const handlePartyClick = (partyId: string) => {
+    navigateTo('ledger', { accountId: partyId });
+  };
+
+  const handleProductClick = (productId: string) => {
+    if (!productId) return;
+    navigateTo('stock_report', { productId });
+  };
 
   const isProductType = (type: string) =>
     ['sales_invoice', 'co_invoice', 'purchase_invoice', 'sales_return', 'purchase_return'].includes(type);
@@ -527,7 +592,7 @@ export default function TransactionReportPage() {
           <div>
             <h1 className="text-xl font-bold">Transaction Report</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Filter and analyze all business transactions
+              Filter and analyze all business transactions. Click any voucher number, party, or product to drill down.
             </p>
           </div>
           <div className="flex gap-2">
@@ -700,31 +765,68 @@ export default function TransactionReportPage() {
                       <th className="p-3 text-left text-sm font-semibold">Party</th>
                       <th className="p-3 text-left text-sm font-semibold">Narration</th>
                       <th className="p-3 text-right text-sm font-semibold">Amount</th>
+                      <th className="p-3 text-center text-sm font-semibold w-20 print:hidden">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sortedTransactions.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-8 text-center text-muted-foreground">
+                        <td colSpan={7} className="p-8 text-center text-muted-foreground">
                           No transactions found
                         </td>
                       </tr>
                     ) : (
                       sortedTransactions.map((txn) => (
-                        <tr key={txn.id} className="border-b hover:bg-muted/30">
+                        <tr key={txn.id} className="border-b hover:bg-muted/30 transition-colors">
                           <td className="p-3 text-sm">{formatDate(txn.voucher_date)}</td>
-                          <td className="p-3 font-mono text-sm">{txn.voucher_no}</td>
+                          <td className="p-3 font-mono text-sm">
+                            <button
+                              type="button"
+                              onClick={() => handleVoucherClick(txn.id, txn.voucher_type)}
+                              className="text-primary hover:underline font-mono font-medium text-left cursor-pointer focus:outline-none inline-flex items-center gap-1 group"
+                              title={`Drill down to view ${getTypeLabel(txn.voucher_type)} (${txn.voucher_no})`}
+                            >
+                              <span>{txn.voucher_no}</span>
+                              <IconArrowUpRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-primary shrink-0" />
+                            </button>
+                          </td>
                           <td className="p-3 text-sm">
                             <span className={`px-2 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wider ${getTypeBadgeClass(txn.voucher_type)}`}>
                               {getTypeLabel(txn.voucher_type)}
                             </span>
                           </td>
-                          <td className="p-3 text-sm">{txn.party_name || '-'}</td>
+                          <td className="p-3 text-sm">
+                            {txn.party_id && txn.party_name ? (
+                              <button
+                                type="button"
+                                onClick={() => handlePartyClick(txn.party_id!)}
+                                className="text-foreground hover:text-primary hover:underline text-left cursor-pointer focus:outline-none inline-flex items-center gap-1 group"
+                                title={`Drill down to ledger report for ${txn.party_name}`}
+                              >
+                                <span>{txn.party_name}</span>
+                                <IconArrowUpRight size={13} className="opacity-0 group-hover:opacity-100 text-primary transition-opacity shrink-0" />
+                              </button>
+                            ) : (
+                              <span>{txn.party_name || '-'}</span>
+                            )}
+                          </td>
                           <td className="p-3 text-sm text-muted-foreground truncate max-w-xs">
                             {txn.narration || '-'}
                           </td>
                           <td className="p-3 text-right font-mono text-sm font-bold">
                             {money(txn.amount)}
+                          </td>
+                          <td className="p-3 text-center print:hidden">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs text-primary hover:text-primary hover:bg-primary/10 gap-1"
+                              onClick={() => handleVoucherClick(txn.id, txn.voucher_type)}
+                              title={`Drill down to ${getTypeLabel(txn.voucher_type)} (${txn.voucher_no})`}
+                            >
+                              <IconArrowUpRight size={14} />
+                              <span className="hidden sm:inline">View</span>
+                            </Button>
                           </td>
                         </tr>
                       ))
@@ -737,6 +839,7 @@ export default function TransactionReportPage() {
                         <td className="p-3 text-right font-mono font-bold text-sm">
                           {money(totalAmount)}
                         </td>
+                        <td className="p-3 print:hidden"></td>
                       </tr>
                     </tfoot>
                   )}
@@ -793,20 +896,31 @@ export default function TransactionReportPage() {
                         <th className="p-3 text-left text-sm font-semibold">Description</th>
                       )}
                       <th className="p-3 text-right text-sm font-semibold">Amount</th>
+                      <th className="p-3 text-center text-sm font-semibold w-20 print:hidden">Action</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sortedProductRows.length === 0 ? (
                       <tr>
-                        <td colSpan={isProductType(voucherType) ? 8 : 7} className="p-8 text-center text-muted-foreground">
+                        <td colSpan={isProductType(voucherType) ? 9 : 8} className="p-8 text-center text-muted-foreground">
                           {isProductType(voucherType) ? 'No product items found' : 'No voucher items found'}
                         </td>
                       </tr>
                     ) : (
                       sortedProductRows.map((row, idx) => (
-                        <tr key={`${row.voucher_id}-${row.product_id}-${idx}`} className="border-b hover:bg-muted/30">
+                        <tr key={`${row.voucher_id}-${row.product_id}-${idx}`} className="border-b hover:bg-muted/30 transition-colors">
                           <td className="p-3 text-sm">{formatDate(row.voucher_date)}</td>
-                          <td className="p-3 font-mono text-sm">{row.voucher_no}</td>
+                          <td className="p-3 font-mono text-sm">
+                            <button
+                              type="button"
+                              onClick={() => handleVoucherClick(row.voucher_id, row.voucher_type)}
+                              className="text-primary hover:underline font-mono font-medium text-left cursor-pointer focus:outline-none inline-flex items-center gap-1 group"
+                              title={`Drill down to view ${getTypeLabel(row.voucher_type)} (${row.voucher_no})`}
+                            >
+                              <span>{row.voucher_no}</span>
+                              <IconArrowUpRight size={13} className="opacity-0 group-hover:opacity-100 transition-opacity text-primary shrink-0" />
+                            </button>
+                          </td>
                           <td className="p-3 text-sm">
                             <span className={`px-2 py-0.5 rounded border text-[10px] font-bold uppercase tracking-wider ${getTypeBadgeClass(row.voucher_type)}`}>
                               {getTypeLabel(row.voucher_type)}
@@ -815,7 +929,19 @@ export default function TransactionReportPage() {
                           <td className="p-3 text-sm">{row.party_name || '-'}</td>
                           <td className="p-3 text-sm">
                             <div className="flex flex-col">
-                              <span className="font-medium">{row.product_name}</span>
+                              {isProductType(voucherType) && row.product_id ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handleProductClick(row.product_id)}
+                                  className="text-foreground hover:text-primary hover:underline text-left cursor-pointer focus:outline-none font-medium inline-flex items-center gap-1 group"
+                                  title={`Drill down to stock report for ${row.product_name}`}
+                                >
+                                  <span>{row.product_name}</span>
+                                  <IconArrowUpRight size={12} className="opacity-0 group-hover:opacity-100 text-primary transition-opacity shrink-0" />
+                                </button>
+                              ) : (
+                                <span className="font-medium">{row.product_name}</span>
+                              )}
                               {row.product_code && (
                                 <span className="text-xs text-muted-foreground font-mono">{row.product_code}</span>
                               )}
@@ -841,6 +967,18 @@ export default function TransactionReportPage() {
                           <td className="p-3 text-right font-mono text-sm font-bold">
                             {money(row.net_amount || row.amount)}
                           </td>
+                          <td className="p-3 text-center print:hidden">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs text-primary hover:text-primary hover:bg-primary/10 gap-1"
+                              onClick={() => handleVoucherClick(row.voucher_id, row.voucher_type)}
+                              title={`Drill down to ${getTypeLabel(row.voucher_type)} (${row.voucher_no})`}
+                            >
+                              <IconArrowUpRight size={14} />
+                              <span className="hidden sm:inline">View</span>
+                            </Button>
+                          </td>
                         </tr>
                       ))
                     )}
@@ -852,6 +990,7 @@ export default function TransactionReportPage() {
                         <td className="p-3 text-right font-mono font-bold text-sm">
                           {money(productTotalValue)}
                         </td>
+                        <td className="p-3 print:hidden"></td>
                       </tr>
                     </tfoot>
                   )}

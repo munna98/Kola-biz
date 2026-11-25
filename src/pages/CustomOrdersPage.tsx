@@ -492,6 +492,19 @@ export default function CustomOrdersPage() {
                     await checkNavigation(detail.order.id);
                 })
                 .catch(err => console.error('order from params:', err));
+        } else if (activeSectionParams?.voucherId && activeSectionParams.voucherId !== lastLoadedOrderIdRef.current) {
+            lastLoadedOrderIdRef.current = activeSectionParams.voucherId;
+            invoke<CustomOrder | null>('get_custom_order_by_invoice', { invoiceId: activeSectionParams.voucherId })
+                .then(async co => {
+                    if (co) {
+                        const detail = await invoke<CustomOrderDetail>('get_custom_order', { id: co.id });
+                        dispatch(setCustomOrderCurrentOrder(detail.order));
+                        dispatch(setCustomOrderCurrentDetail(detail));
+                        dispatch(setCustomOrderMode('viewing'));
+                        await checkNavigation(detail.order.id);
+                    }
+                })
+                .catch(err => console.error('order from voucherId:', err));
         }
     }, [activeSectionParams, checkNavigation, dispatch]);
 
