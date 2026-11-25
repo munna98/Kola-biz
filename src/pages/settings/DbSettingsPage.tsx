@@ -150,7 +150,6 @@ export default function DbSettingsPage() {
   const [cloudUrl, setCloudUrl] = useState('');
   const [cloudToken, setCloudToken] = useState('');
   const [showToken, setShowToken] = useState(false);
-  const [devicePrefix, setDevicePrefix] = useState('POS1');
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
   const [testingConnection, setTestingConnection] = useState(false);
   const [bootstrappingCloud, setBootstrappingCloud] = useState(false);
@@ -168,7 +167,6 @@ export default function DbSettingsPage() {
           setCloudSyncMode(cloud.sync_mode === 'online' ? 'online' : 'offline');
           setCloudUrl(cloud.cloud_url || '');
           setCloudToken(cloud.cloud_token || '');
-          setDevicePrefix(cloud.device_prefix || 'POS1');
           setLastSyncedAt(cloud.last_synced_at || null);
         }
       }
@@ -262,7 +260,6 @@ export default function DbSettingsPage() {
         syncMode: cloudSyncMode,
         cloudUrl: cloudSyncMode === 'online' ? cloudUrl.trim() : null,
         cloudToken: cloudSyncMode === 'online' ? cloudToken.trim() : null,
-        devicePrefix: devicePrefix.trim() || 'POS1',
       });
       toast.success(`Cloud settings updated! Company set to ${cloudSyncMode === 'online' ? 'Cloud Online' : 'Local Offline'}.`);
       await loadCloudConfig();
@@ -1122,19 +1119,6 @@ export default function DbSettingsPage() {
                         </div>
                         <p className="text-xs text-muted-foreground">
                           Generate this token in your Turso dashboard under the "Connect" or "Tokens" tab.
-                        </p>
-                      </div>
-
-                      <div className="space-y-2">
-                        <Label htmlFor="device-prefix">Terminal / Device Prefix</Label>
-                        <Input
-                          id="device-prefix"
-                          placeholder="POS1, COUNTER1, LAPTOP2..."
-                          value={devicePrefix}
-                          onChange={(e) => setDevicePrefix(e.target.value)}
-                        />
-                        <p className="text-xs text-muted-foreground">
-                          Used to prevent sequential invoice number clashes across multiple cash counters.
                         </p>
                       </div>
 

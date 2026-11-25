@@ -24,9 +24,13 @@ pub struct CompanyInfo {
     pub last_opened: Option<String>,
     #[sqlx(default)]
     pub sync_mode: String,
+    #[sqlx(default)]
     pub cloud_url: Option<String>,
+    #[sqlx(default)]
     pub cloud_token: Option<String>,
+    #[sqlx(default)]
     pub last_synced_at: Option<String>,
+    #[sqlx(default)]
     pub device_prefix: Option<String>,
 }
 
@@ -43,7 +47,6 @@ pub struct CompanyListItem {
     pub sync_mode: String,
     pub cloud_url: Option<String>,
     pub last_synced_at: Option<String>,
-    pub device_prefix: Option<String>,
 }
 
 // ===================== REGISTRY =====================
@@ -221,24 +224,31 @@ impl DbRegistry {
             *active = Some(company_id.to_string());
         }
 
-        // Synchronize device_prefix in app_settings (if online, save prefix; if offline, remove)
-        if let Ok(pool) = self.active_pool().await {
-            if company.sync_mode == "online" {
-                if let Some(ref prefix) = company.device_prefix {
-                    let _ = sqlx::query(
-                        "INSERT INTO app_settings (id, setting_key, setting_value, updated_at) 
-                         VALUES ('device_prefix', 'device_prefix', ?, CURRENT_TIMESTAMP)
-                         ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = CURRENT_TIMESTAMP"
-                    )
-                    .bind(prefix)
-                    .execute(&pool)
-                    .await;
+        // Sync active cloud config cache for atomic sequence allocation and clean up any legacy device_prefix
+        if company.sync_mode == "online" {
+            if let (Some(url), Some(token)) = (&company.cloud_url, &company.cloud_token) {
+                if !url.trim().is_empty() && !token.trim().is_empty() {
+                    crate::cloud_sync::set_active_cloud_config(Some(
+                        crate::cloud_sync::ActiveCloudConfig {
+                            company_id: company.id.clone(),
+                            url: url.trim().to_string(),
+                            token: token.trim().to_string(),
+                        },
+                    ));
+                } else {
+                    crate::cloud_sync::set_active_cloud_config(None);
                 }
             } else {
-                let _ = sqlx::query("DELETE FROM app_settings WHERE setting_key = 'device_prefix'")
-                    .execute(&pool)
-                    .await;
+                crate::cloud_sync::set_active_cloud_config(None);
             }
+        } else {
+            crate::cloud_sync::set_active_cloud_config(None);
+        }
+
+        if let Ok(pool) = self.active_pool().await {
+            let _ = sqlx::query("DELETE FROM app_settings WHERE setting_key = 'device_prefix'")
+                .execute(&pool)
+                .await;
         }
 
         // Update last_opened in master.db
@@ -288,7 +298,6 @@ impl DbRegistry {
                 sync_mode: c.sync_mode,
                 cloud_url: c.cloud_url,
                 last_synced_at: c.last_synced_at,
-                device_prefix: c.device_prefix,
             })
             .collect();
 
@@ -303,7 +312,6 @@ impl DbRegistry {
         sync_mode: Option<String>,
         cloud_url: Option<String>,
         cloud_token: Option<String>,
-        device_prefix: Option<String>,
         _app_handle: &tauri::AppHandle,
     ) -> Result<String, String> {
         let id = uuid::Uuid::now_v7().to_string();
@@ -341,12 +349,11 @@ impl DbRegistry {
             .map_err(|e| e.to_string())?;
 
         let mode = sync_mode.unwrap_or_else(|| "offline".to_string());
-        let dev_prefix = device_prefix.unwrap_or_else(|| "POS1".to_string());
 
         // Insert into master.db
         sqlx::query(
-            "INSERT INTO companies (id, name, slug, db_path, sync_mode, cloud_url, cloud_token, device_prefix)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO companies (id, name, slug, db_path, sync_mode, cloud_url, cloud_token)
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&id)
         .bind(name)
@@ -355,7 +362,6 @@ impl DbRegistry {
         .bind(&mode)
         .bind(&cloud_url)
         .bind(&cloud_token)
-        .bind(&dev_prefix)
         .execute(&self.master_pool)
         .await
         .map_err(|e| e.to_string())?;
@@ -547,50 +553,58 @@ impl DbRegistry {
         .map_err(|e| e.to_string())
     }
 
-    /// Update company cloud configuration (sync mode, URL, token, device prefix).
+    /// Update company cloud configuration (sync mode, URL, token).
     pub async fn update_company_cloud_settings(
         &self,
         company_id: &str,
         sync_mode: &str,
         cloud_url: Option<&str>,
         cloud_token: Option<&str>,
-        device_prefix: Option<&str>,
     ) -> Result<(), String> {
         sqlx::query(
             "UPDATE companies
              SET sync_mode = ?,
                  cloud_url = ?,
                  cloud_token = ?,
-                 device_prefix = COALESCE(?, device_prefix)
+                 device_prefix = NULL
              WHERE id = ?",
         )
         .bind(sync_mode)
         .bind(cloud_url)
         .bind(cloud_token)
-        .bind(device_prefix)
         .bind(company_id)
         .execute(&self.master_pool)
         .await
         .map_err(|e| e.to_string())?;
 
-        // Synchronize device_prefix in app_settings if pool is loaded
-        if let Some(pool) = self.pools.read().await.get(company_id).cloned() {
+        // Refresh active cloud config cache if this is the active company
+        if self.active_id.read().await.as_deref() == Some(company_id) {
             if sync_mode == "online" {
-                if let Some(dp) = device_prefix {
-                    let _ = sqlx::query(
-                        "INSERT INTO app_settings (id, setting_key, setting_value, updated_at) 
-                         VALUES ('device_prefix', 'device_prefix', ?, CURRENT_TIMESTAMP)
-                         ON CONFLICT(setting_key) DO UPDATE SET setting_value = excluded.setting_value, updated_at = CURRENT_TIMESTAMP"
-                    )
-                    .bind(dp)
-                    .execute(&pool)
-                    .await;
+                if let (Some(u), Some(t)) = (cloud_url, cloud_token) {
+                    if !u.trim().is_empty() && !t.trim().is_empty() {
+                        crate::cloud_sync::set_active_cloud_config(Some(
+                            crate::cloud_sync::ActiveCloudConfig {
+                                company_id: company_id.to_string(),
+                                url: u.trim().to_string(),
+                                token: t.trim().to_string(),
+                            },
+                        ));
+                    } else {
+                        crate::cloud_sync::set_active_cloud_config(None);
+                    }
+                } else {
+                    crate::cloud_sync::set_active_cloud_config(None);
                 }
             } else {
-                let _ = sqlx::query("DELETE FROM app_settings WHERE setting_key = 'device_prefix'")
-                    .execute(&pool)
-                    .await;
+                crate::cloud_sync::set_active_cloud_config(None);
             }
+        }
+
+        // Remove any legacy device_prefix setting from app_settings
+        if let Some(pool) = self.pools.read().await.get(company_id).cloned() {
+            let _ = sqlx::query("DELETE FROM app_settings WHERE setting_key = 'device_prefix'")
+                .execute(&pool)
+                .await;
         }
 
         Ok(())

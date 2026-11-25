@@ -706,6 +706,8 @@ pub async fn update_voucher_sequence(
     .await
     .map_err(|e| e.to_string())?;
 
+    crate::cloud_sync::push_voucher_sequence_update(&pool, &id).await;
+
     Ok(())
 }
 

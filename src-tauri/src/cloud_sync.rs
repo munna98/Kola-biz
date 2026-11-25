@@ -1,11 +1,310 @@
 use libsql::Builder;
 use serde::Serialize;
-use sqlx::{Row, ValueRef};
 use sqlx::SqlitePool;
-use std::sync::Arc;
-use tokio::time::{sleep, Duration};
+use sqlx::{Row, ValueRef};
+use std::collections::HashMap;
+use std::sync::{Arc, OnceLock, RwLock};
+use tokio::time::{sleep, timeout, Duration};
 
 use crate::company_db::DbRegistry;
+use crate::voucher_seq::{format_voucher_no, target_table_and_col, VoucherSeqRow};
+
+#[derive(Debug, Clone)]
+pub struct ActiveCloudConfig {
+    pub company_id: String,
+    pub url: String,
+    pub token: String,
+}
+
+static ACTIVE_CLOUD_CONFIG: OnceLock<RwLock<Option<ActiveCloudConfig>>> = OnceLock::new();
+
+pub fn set_active_cloud_config(config: Option<ActiveCloudConfig>) {
+    let lock = ACTIVE_CLOUD_CONFIG.get_or_init(|| RwLock::new(None));
+    if let Ok(mut guard) = lock.write() {
+        *guard = config;
+    }
+}
+
+pub fn get_active_cloud_config() -> Option<ActiveCloudConfig> {
+    let lock = ACTIVE_CLOUD_CONFIG.get_or_init(|| RwLock::new(None));
+    lock.read().ok().and_then(|g| g.clone())
+}
+
+fn val_to_string(v: Result<libsql::Value, libsql::Error>) -> String {
+    match v {
+        Ok(libsql::Value::Text(s)) => s,
+        Ok(libsql::Value::Integer(n)) => n.to_string(),
+        Ok(libsql::Value::Real(f)) => f.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn val_to_i64(v: Result<libsql::Value, libsql::Error>) -> i64 {
+    match v {
+        Ok(libsql::Value::Integer(n)) => n,
+        Ok(libsql::Value::Text(s)) => s.parse::<i64>().unwrap_or(0),
+        Ok(libsql::Value::Real(f)) => f as i64,
+        _ => 0,
+    }
+}
+
+async fn connect_remote(url: &str, token: &str) -> Result<libsql::Connection, String> {
+    let clean_url = url.trim();
+    let clean_token = token.trim();
+    if clean_url.is_empty() || clean_token.is_empty() {
+        return Err("Database URL and Auth Token are required.".to_string());
+    }
+    let db = Builder::new_remote(clean_url.to_string(), clean_token.to_string())
+        .build()
+        .await
+        .map_err(|e| format!("Failed to initialize cloud client: {}", e))?;
+    db.connect().map_err(|e| format!("Connection error: {}", e))
+}
+
+/// Atomically allocate the next sequential number on Turso for a given voucher_type.
+pub async fn reserve_next_cloud_number_conn(
+    conn: &libsql::Connection,
+    seed: &VoucherSeqRow,
+    voucher_type: &str,
+) -> Result<(i64, String), String> {
+    // Ensure the sequence row exists on Turso before updating
+    conn.execute(
+        "INSERT OR IGNORE INTO voucher_sequences
+         (id, voucher_type, prefix, suffix, separator, next_number, padding, include_financial_year, reset_yearly)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        vec![
+            libsql::Value::Text(seed.id.clone()),
+            libsql::Value::Text(voucher_type.to_string()),
+            libsql::Value::Text(seed.prefix.clone()),
+            libsql::Value::Text(seed.suffix.clone()),
+            libsql::Value::Text(seed.separator.clone()),
+            libsql::Value::Integer(seed.next_number),
+            libsql::Value::Integer(seed.padding),
+            libsql::Value::Integer(if seed.include_financial_year { 1 } else { 0 }),
+            libsql::Value::Integer(if seed.reset_yearly { 1 } else { 0 }),
+        ],
+    )
+    .await
+    .map_err(|e| format!("Failed to ensure cloud sequence row: {}", e))?;
+
+    let (table, col) = target_table_and_col(voucher_type);
+
+    for _ in 0..500 {
+        let mut rows = conn
+            .query(
+                "UPDATE voucher_sequences
+                 SET next_number = next_number + 1
+                 WHERE voucher_type = ?
+                 RETURNING prefix, COALESCE(suffix, ''), COALESCE(separator, '-'),
+                           next_number - 1, padding, COALESCE(include_financial_year, 0)",
+                vec![libsql::Value::Text(voucher_type.to_string())],
+            )
+            .await
+            .map_err(|e| format!("Failed to increment cloud sequence: {}", e))?;
+
+        let row = rows
+            .next()
+            .await
+            .map_err(|e| format!("Failed to read cloud sequence response: {}", e))?
+            .ok_or_else(|| format!("Cloud voucher sequence missing for '{}'", voucher_type))?;
+
+        let prefix = val_to_string(row.get_value(0));
+        let suffix = val_to_string(row.get_value(1));
+        let separator = {
+            let s = val_to_string(row.get_value(2));
+            if s.is_empty() { "-".to_string() } else { s }
+        };
+        let allocated_num = val_to_i64(row.get_value(3));
+        let padding = val_to_i64(row.get_value(4));
+        let include_fy = val_to_i64(row.get_value(5)) != 0;
+
+        let candidate = format_voucher_no(
+            &prefix,
+            &suffix,
+            &separator,
+            padding,
+            include_fy,
+            allocated_num,
+            None,
+        );
+
+        let check_sql = format!("SELECT EXISTS(SELECT 1 FROM {} WHERE {} = ?)", table, col);
+        let exists_remote = match conn
+            .query(&check_sql, vec![libsql::Value::Text(candidate.clone())])
+            .await
+        {
+            Ok(mut check_rows) => match check_rows.next().await {
+                Ok(Some(r)) => val_to_i64(r.get_value(0)) != 0,
+                _ => false,
+            },
+            // Target table might not exist on Turso yet (e.g., custom_orders); treat as free
+            Err(_) => false,
+        };
+
+        if !exists_remote {
+            return Ok((allocated_num, candidate));
+        }
+    }
+
+    Err(format!(
+        "Exhausted cloud sequence retries finding unused number for '{}'",
+        voucher_type
+    ))
+}
+
+/// Fast timeout-bounded atomic reservation on Turso for interactive voucher saving.
+pub async fn reserve_next_cloud_number(
+    url: &str,
+    token: &str,
+    seed: &VoucherSeqRow,
+    voucher_type: &str,
+) -> Result<(i64, String), String> {
+    timeout(Duration::from_secs(3), async {
+        let conn = connect_remote(url, token).await?;
+        reserve_next_cloud_number_conn(&conn, seed, voucher_type).await
+    })
+    .await
+    .map_err(|_| "Cloud sequence request timed out".to_string())?
+}
+
+/// Non-mutating peek at the next cloud voucher number for preview badges.
+pub async fn peek_next_cloud_number(
+    url: &str,
+    token: &str,
+    voucher_type: &str,
+) -> Result<Option<String>, String> {
+    timeout(Duration::from_millis(1500), async {
+        let conn = connect_remote(url, token).await?;
+        let mut rows = conn
+            .query(
+                "SELECT prefix, COALESCE(suffix, ''), COALESCE(separator, '-'),
+                        next_number, padding, COALESCE(include_financial_year, 0)
+                 FROM voucher_sequences WHERE voucher_type = ?",
+                vec![libsql::Value::Text(voucher_type.to_string())],
+            )
+            .await
+            .map_err(|e| format!("Cloud peek failed: {}", e))?;
+
+        let Some(row) = rows
+            .next()
+            .await
+            .map_err(|e| format!("Cloud peek read failed: {}", e))?
+        else {
+            return Ok(None);
+        };
+
+        let prefix = val_to_string(row.get_value(0));
+        let suffix = val_to_string(row.get_value(1));
+        let separator = {
+            let s = val_to_string(row.get_value(2));
+            if s.is_empty() { "-".to_string() } else { s }
+        };
+        let mut next_num = val_to_i64(row.get_value(3));
+        let padding = val_to_i64(row.get_value(4));
+        let include_fy = val_to_i64(row.get_value(5)) != 0;
+
+        let (table, col) = target_table_and_col(voucher_type);
+        let check_sql = format!("SELECT EXISTS(SELECT 1 FROM {} WHERE {} = ?)", table, col);
+        for _ in 0..20 {
+            let candidate = format_voucher_no(
+                &prefix,
+                &suffix,
+                &separator,
+                padding,
+                include_fy,
+                next_num,
+                None,
+            );
+            let exists_remote = match conn
+                .query(&check_sql, vec![libsql::Value::Text(candidate.clone())])
+                .await
+            {
+                Ok(mut r_rows) => match r_rows.next().await {
+                    Ok(Some(r)) => val_to_i64(r.get_value(0)) != 0,
+                    _ => false,
+                },
+                Err(_) => false,
+            };
+            if !exists_remote {
+                return Ok(Some(candidate));
+            }
+            next_num += 1;
+        }
+
+        Ok(Some(format_voucher_no(
+            &prefix,
+            &suffix,
+            &separator,
+            padding,
+            include_fy,
+            next_num,
+            None,
+        )))
+    })
+    .await
+    .map_err(|_| "Cloud sequence peek timed out".to_string())?
+}
+
+/// Push updated voucher sequence formatting/counter settings to Turso when in Cloud Online mode.
+pub async fn push_voucher_sequence_update(pool: &SqlitePool, id: &str) {
+    let Some(cfg) = get_active_cloud_config() else {
+        return;
+    };
+    let row = sqlx::query(
+        "SELECT id, voucher_type, prefix, COALESCE(suffix, '') as suffix, COALESCE(separator, '-') as separator,
+                next_number, padding, COALESCE(include_financial_year, 0) as include_financial_year,
+                COALESCE(reset_yearly, 0) as reset_yearly
+         FROM voucher_sequences WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    let Some(r) = row else { return };
+    let seq_id: String = r.get("id");
+    let vtype: String = r.get("voucher_type");
+    let prefix: String = r.get("prefix");
+    let suffix: String = r.get("suffix");
+    let separator: String = r.get("separator");
+    let next_number: i64 = r.get("next_number");
+    let padding: i64 = r.get("padding");
+    let include_fy: i64 = r.get("include_financial_year");
+    let reset_yearly: i64 = r.get("reset_yearly");
+
+    let _ = timeout(Duration::from_secs(3), async {
+        if let Ok(conn) = connect_remote(&cfg.url, &cfg.token).await {
+            let _ = conn
+                .execute(
+                    "INSERT INTO voucher_sequences
+                     (id, voucher_type, prefix, suffix, separator, next_number, padding, include_financial_year, reset_yearly)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     ON CONFLICT(voucher_type) DO UPDATE SET
+                       prefix = excluded.prefix,
+                       suffix = excluded.suffix,
+                       separator = excluded.separator,
+                       next_number = excluded.next_number,
+                       padding = excluded.padding,
+                       include_financial_year = excluded.include_financial_year,
+                       reset_yearly = excluded.reset_yearly",
+                    vec![
+                        libsql::Value::Text(seq_id),
+                        libsql::Value::Text(vtype),
+                        libsql::Value::Text(prefix),
+                        libsql::Value::Text(suffix),
+                        libsql::Value::Text(separator),
+                        libsql::Value::Integer(next_number),
+                        libsql::Value::Integer(padding),
+                        libsql::Value::Integer(include_fy),
+                        libsql::Value::Integer(reset_yearly),
+                    ],
+                )
+                .await;
+        }
+    })
+    .await;
+}
 
 #[derive(Debug, Serialize)]
 pub struct SyncReport {
@@ -504,12 +803,320 @@ pub async fn bootstrap_cloud_schema(url: &str, token: &str) -> Result<String, St
     Ok("Cloud schema bootstrapped successfully!".to_string())
 }
 
+async fn fetch_local_seq_seed(pool: &SqlitePool, voucher_type: &str) -> Option<VoucherSeqRow> {
+    sqlx::query_as::<_, VoucherSeqRow>(
+        "SELECT id, prefix, COALESCE(suffix, '') as suffix, COALESCE(separator, '-') as separator,
+                next_number, padding, COALESCE(include_financial_year, 0) as include_financial_year,
+                COALESCE(reset_yearly, 0) as reset_yearly
+         FROM voucher_sequences WHERE voucher_type = ?",
+    )
+    .bind(voucher_type)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten()
+}
+
+/// Promote any locally-saved provisional (`TMP-...`) vouchers to official sequential cloud numbers.
+async fn promote_provisional_vouchers(
+    pool: &SqlitePool,
+    conn: &libsql::Connection,
+) -> Result<usize, String> {
+    let rows: Vec<(String, String, String)> = sqlx::query_as(
+        "SELECT id, voucher_no, voucher_type
+         FROM vouchers
+         WHERE voucher_no LIKE 'TMP-%'
+         ORDER BY created_at ASC, id ASC",
+    )
+    .fetch_all(pool)
+    .await
+    .map_err(|e| format!("Failed to scan provisional vouchers: {}", e))?;
+
+    let mut promoted = 0usize;
+    for (id, old_no, voucher_type) in rows {
+        let Some(seed) = fetch_local_seq_seed(pool, &voucher_type).await else {
+            continue;
+        };
+
+        let (allocated_num, new_no) =
+            reserve_next_cloud_number_conn(conn, &seed, &voucher_type).await?;
+
+        sqlx::query(
+            "UPDATE vouchers
+             SET voucher_no = ?, updated_at = datetime('now', '+1 second')
+             WHERE id = ?",
+        )
+        .bind(&new_no)
+        .bind(&id)
+        .execute(pool)
+        .await
+        .map_err(|e| format!("Failed to promote voucher {} to {}: {}", old_no, new_no, e))?;
+
+        // Update any offline vouchers that stored the provisional number as `reference`
+        let _ = sqlx::query(
+            "UPDATE vouchers
+             SET reference = ?, updated_at = datetime('now', '+1 second')
+             WHERE reference = ?",
+        )
+        .bind(&new_no)
+        .bind(&old_no)
+        .execute(pool)
+        .await;
+
+        let _ = sqlx::query(
+            "UPDATE voucher_sequences SET next_number = MAX(next_number, ?) WHERE voucher_type = ?",
+        )
+        .bind(allocated_num + 1)
+        .bind(&voucher_type)
+        .execute(pool)
+        .await;
+
+        println!("[CloudSync] Promoted provisional voucher {} -> {}", old_no, new_no);
+        promoted += 1;
+    }
+
+    Ok(promoted)
+}
+
+/// Sync `voucher_sequences` monotonically (`MAX(local.next_number, remote.next_number)`)
+/// so a slower/older PC never rolls back the shared sequence counter.
+async fn sync_voucher_sequences(
+    pool: &SqlitePool,
+    conn: &libsql::Connection,
+    pull_only: bool,
+) -> Result<(usize, usize), String> {
+    // Ensure voucher_sequences exists remotely
+    let table_exists_remote: bool = {
+        let mut r = conn
+            .query(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='voucher_sequences'",
+                (),
+            )
+            .await
+            .map_err(|e| e.to_string())?;
+        r.next().await.unwrap_or(None).is_some()
+    };
+    if !table_exists_remote {
+        if let Ok(Some(ddl)) = sqlx::query_scalar::<_, String>(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name = 'voucher_sequences'",
+        )
+        .fetch_optional(pool)
+        .await
+        {
+            let _ = conn.execute(&ddl, ()).await;
+        }
+    }
+
+    #[derive(Clone)]
+    struct SeqFull {
+        id: String,
+        voucher_type: String,
+        prefix: String,
+        suffix: String,
+        separator: String,
+        next_number: i64,
+        padding: i64,
+        include_fy: i64,
+        reset_yearly: i64,
+    }
+
+    let mut remote_map: HashMap<String, SeqFull> = HashMap::new();
+    if let Ok(mut r_rows) = conn
+        .query(
+            "SELECT id, voucher_type, prefix, COALESCE(suffix, ''), COALESCE(separator, '-'),
+                    next_number, padding, COALESCE(include_financial_year, 0), COALESCE(reset_yearly, 0)
+             FROM voucher_sequences",
+            (),
+        )
+        .await
+    {
+        while let Ok(Some(r)) = r_rows.next().await {
+            let vtype = val_to_string(r.get_value(1));
+            if vtype.is_empty() {
+                continue;
+            }
+            remote_map.insert(
+                vtype.clone(),
+                SeqFull {
+                    id: val_to_string(r.get_value(0)),
+                    voucher_type: vtype,
+                    prefix: val_to_string(r.get_value(2)),
+                    suffix: val_to_string(r.get_value(3)),
+                    separator: {
+                        let s = val_to_string(r.get_value(4));
+                        if s.is_empty() { "-".to_string() } else { s }
+                    },
+                    next_number: val_to_i64(r.get_value(5)),
+                    padding: val_to_i64(r.get_value(6)),
+                    include_fy: val_to_i64(r.get_value(7)),
+                    reset_yearly: val_to_i64(r.get_value(8)),
+                },
+            );
+        }
+    }
+
+    let local_rows = sqlx::query(
+        "SELECT id, voucher_type, prefix, COALESCE(suffix, '') as suffix, COALESCE(separator, '-') as separator,
+                next_number, padding, COALESCE(include_financial_year, 0) as include_financial_year,
+                COALESCE(reset_yearly, 0) as reset_yearly
+         FROM voucher_sequences",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap_or_default();
+
+    let mut local_map: HashMap<String, SeqFull> = HashMap::new();
+    for r in local_rows {
+        let vtype: String = r.get("voucher_type");
+        local_map.insert(
+            vtype.clone(),
+            SeqFull {
+                id: r.get("id"),
+                voucher_type: vtype,
+                prefix: r.get("prefix"),
+                suffix: r.get("suffix"),
+                separator: r.get("separator"),
+                next_number: r.get("next_number"),
+                padding: r.get("padding"),
+                include_fy: r.get("include_financial_year"),
+                reset_yearly: r.get("reset_yearly"),
+            },
+        );
+    }
+
+    let mut pushed = 0usize;
+    let mut pulled = 0usize;
+
+    if pull_only {
+        for rem in remote_map.values() {
+            let _ = sqlx::query(
+                "INSERT OR REPLACE INTO voucher_sequences
+                 (id, voucher_type, prefix, suffix, separator, next_number, padding, include_financial_year, reset_yearly)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            )
+            .bind(&rem.id)
+            .bind(&rem.voucher_type)
+            .bind(&rem.prefix)
+            .bind(&rem.suffix)
+            .bind(&rem.separator)
+            .bind(rem.next_number)
+            .bind(rem.padding)
+            .bind(rem.include_fy)
+            .bind(rem.reset_yearly)
+            .execute(pool)
+            .await;
+            pulled += 1;
+        }
+        return Ok((0, pulled));
+    }
+
+    // Push local-only sequences
+    for (vtype, loc) in &local_map {
+        if !remote_map.contains_key(vtype) {
+            if conn
+                .execute(
+                    "INSERT OR IGNORE INTO voucher_sequences
+                     (id, voucher_type, prefix, suffix, separator, next_number, padding, include_financial_year, reset_yearly)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    vec![
+                        libsql::Value::Text(loc.id.clone()),
+                        libsql::Value::Text(loc.voucher_type.clone()),
+                        libsql::Value::Text(loc.prefix.clone()),
+                        libsql::Value::Text(loc.suffix.clone()),
+                        libsql::Value::Text(loc.separator.clone()),
+                        libsql::Value::Integer(loc.next_number),
+                        libsql::Value::Integer(loc.padding),
+                        libsql::Value::Integer(loc.include_fy),
+                        libsql::Value::Integer(loc.reset_yearly),
+                    ],
+                )
+                .await
+                .is_ok()
+            {
+                pushed += 1;
+            }
+        }
+    }
+
+    // Pull remote-only sequences & merge matching ones monotonically
+    for (vtype, rem) in &remote_map {
+        match local_map.get(vtype) {
+            None => {
+                if sqlx::query(
+                    "INSERT OR REPLACE INTO voucher_sequences
+                     (id, voucher_type, prefix, suffix, separator, next_number, padding, include_financial_year, reset_yearly)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                )
+                .bind(&rem.id)
+                .bind(&rem.voucher_type)
+                .bind(&rem.prefix)
+                .bind(&rem.suffix)
+                .bind(&rem.separator)
+                .bind(rem.next_number)
+                .bind(rem.padding)
+                .bind(rem.include_fy)
+                .bind(rem.reset_yearly)
+                .execute(pool)
+                .await
+                .is_ok()
+                {
+                    pulled += 1;
+                }
+            }
+            Some(loc) => {
+                let merged = loc.next_number.max(rem.next_number);
+                if merged > rem.next_number {
+                    if conn
+                        .execute(
+                            "UPDATE voucher_sequences SET next_number = MAX(next_number, ?) WHERE voucher_type = ?",
+                            vec![
+                                libsql::Value::Integer(merged),
+                                libsql::Value::Text(vtype.clone()),
+                            ],
+                        )
+                        .await
+                        .is_ok()
+                    {
+                        pushed += 1;
+                    }
+                }
+                if merged > loc.next_number {
+                    if sqlx::query(
+                        "UPDATE voucher_sequences SET next_number = MAX(next_number, ?) WHERE voucher_type = ?",
+                    )
+                    .bind(merged)
+                    .bind(vtype)
+                    .execute(pool)
+                    .await
+                    .is_ok()
+                    {
+                        pulled += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok((pushed, pulled))
+}
+
 /// Perform a full two-way synchronization run between local SQLite and Turso Cloud.
 pub async fn sync_company_data(
     pool: &SqlitePool,
     url: &str,
     token: &str,
     last_synced_at: Option<&str>,
+) -> Result<SyncReport, String> {
+    sync_company_data_with_mode(pool, url, token, last_synced_at, false).await
+}
+
+/// Synchronization with explicit `pull_only` support (used when joining a cloud company on a new PC).
+pub async fn sync_company_data_with_mode(
+    pool: &SqlitePool,
+    url: &str,
+    token: &str,
+    last_synced_at: Option<&str>,
+    pull_only: bool,
 ) -> Result<SyncReport, String> {
     let clean_url = url.trim();
     let clean_token = token.trim();
@@ -531,7 +1138,35 @@ pub async fn sync_company_data(
     // Disable foreign keys on local SQLite while applying pulled records
     let _ = sqlx::query("PRAGMA foreign_keys = OFF").execute(pool).await;
 
+    if pull_only {
+        // Clear fresh-install seed rows so remote cloud IDs & records import cleanly without pushing defaults
+        for seed_table in ["chart_of_accounts", "account_groups", "gst_tax_slabs", "voucher_sequences"] {
+            let _ = sqlx::query(&format!("DELETE FROM {}", seed_table))
+                .execute(pool)
+                .await;
+        }
+    } else {
+        // 1. Promote any offline provisional TMP-... vouchers to official cloud numbers before pushing
+        if let Err(e) = promote_provisional_vouchers(pool, &conn).await {
+            eprintln!("[CloudSync] Provisional voucher promotion warning: {}", e);
+        }
+    }
+
+    // 2. Sync voucher_sequences monotonically before regular table sync
+    match sync_voucher_sequences(pool, &conn, pull_only).await {
+        Ok((p, q)) => {
+            pushed_count += p;
+            pulled_count += q;
+        }
+        Err(e) => eprintln!("[CloudSync] Sequence sync warning: {}", e),
+    }
+
     for table in SYNC_TABLES {
+        // Handled separately with monotonic MAX merge above
+        if *table == "voucher_sequences" {
+            continue;
+        }
+
         // ── 1. Check if table exists locally
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?)"
@@ -606,56 +1241,101 @@ pub async fn sync_company_data(
         let has_updated_at = col_names.iter().any(|c| c == "updated_at");
         let has_created_at = col_names.iter().any(|c| c == "created_at");
 
-        // ── 3. PUSH: Local -> Turso Cloud
-        let push_sql = if let Some(last_sync) = last_synced_at {
-            if has_updated_at {
-                format!("SELECT {} FROM {} WHERE updated_at > '{}'", col_names.join(", "), table, last_sync)
-            } else if has_created_at {
-                format!("SELECT {} FROM {} WHERE created_at > '{}'", col_names.join(", "), table, last_sync)
+        // Static seed tables without timestamps (e.g. countries, currencies) only sync on initial sync
+        if !pull_only && last_synced_at.is_some() && !has_updated_at && !has_created_at {
+            continue;
+        }
+
+        let id_col_idx = col_names.iter().position(|c| c == "id");
+        let vno_col_idx = col_names.iter().position(|c| c == "voucher_no");
+        let vtype_col_idx = col_names.iter().position(|c| c == "voucher_type");
+
+        // ── 3. PUSH: Local -> Turso Cloud (skipped in pull_only initial join mode)
+        if !pull_only {
+            let push_sql = if let Some(last_sync) = last_synced_at {
+                if has_updated_at {
+                    format!("SELECT {} FROM {} WHERE updated_at > '{}'", col_names.join(", "), table, last_sync)
+                } else if has_created_at {
+                    format!("SELECT {} FROM {} WHERE created_at > '{}'", col_names.join(", "), table, last_sync)
+                } else {
+                    format!("SELECT {} FROM {}", col_names.join(", "), table)
+                }
             } else {
                 format!("SELECT {} FROM {}", col_names.join(", "), table)
-            }
-        } else {
-            format!("SELECT {} FROM {}", col_names.join(", "), table)
-        };
+            };
 
-        if let Ok(local_rows) = sqlx::query(&push_sql).fetch_all(pool).await {
-            for row in local_rows {
-                let mut values: Vec<libsql::Value> = Vec::with_capacity(col_names.len());
-                for (i, _) in col_names.iter().enumerate() {
-                    let raw = row.try_get_raw(i).ok();
-                    let val = match raw {
-                        Some(r) if r.is_null() => libsql::Value::Null,
-                        Some(r) => {
-                            let type_name = r.type_info().to_string();
-                            match type_name.as_str() {
-                                "INTEGER" | "INT" | "BOOLEAN" => {
-                                    row.try_get::<i64, _>(i).map(libsql::Value::Integer).unwrap_or(libsql::Value::Null)
+            if let Ok(local_rows) = sqlx::query(&push_sql).fetch_all(pool).await {
+                for row in local_rows {
+                    let mut values: Vec<libsql::Value> = Vec::with_capacity(col_names.len());
+                    for (i, _) in col_names.iter().enumerate() {
+                        let raw = row.try_get_raw(i).ok();
+                        let val = match raw {
+                            Some(r) if r.is_null() => libsql::Value::Null,
+                            Some(r) => {
+                                let type_name = r.type_info().to_string();
+                                match type_name.as_str() {
+                                    "INTEGER" | "INT" | "BOOLEAN" => {
+                                        row.try_get::<i64, _>(i).map(libsql::Value::Integer).unwrap_or(libsql::Value::Null)
+                                    }
+                                    "REAL" | "FLOAT" | "DOUBLE" => {
+                                        row.try_get::<f64, _>(i).map(libsql::Value::Real).unwrap_or(libsql::Value::Null)
+                                    }
+                                    _ => {
+                                        row.try_get::<String, _>(i).map(libsql::Value::Text).unwrap_or(libsql::Value::Null)
+                                    }
                                 }
-                                "REAL" | "FLOAT" | "DOUBLE" => {
-                                    row.try_get::<f64, _>(i).map(libsql::Value::Real).unwrap_or(libsql::Value::Null)
-                                }
-                                _ => {
-                                    row.try_get::<String, _>(i).map(libsql::Value::Text).unwrap_or(libsql::Value::Null)
+                            }
+                            None => libsql::Value::Null,
+                        };
+                        values.push(val);
+                    }
+
+                    // Guard vouchers against voucher_no collision across distinct UUID ids
+                    if *table == "vouchers" {
+                        if let (Some(id_i), Some(vno_i), Some(vt_i)) = (id_col_idx, vno_col_idx, vtype_col_idx) {
+                            if let (libsql::Value::Text(loc_id), libsql::Value::Text(loc_vno), libsql::Value::Text(loc_vt)) =
+                                (&values[id_i], &values[vno_i], &values[vt_i])
+                            {
+                                let conflict = match conn
+                                    .query(
+                                        "SELECT id FROM vouchers WHERE voucher_no = ? AND id != ? LIMIT 1",
+                                        vec![libsql::Value::Text(loc_vno.clone()), libsql::Value::Text(loc_id.clone())],
+                                    )
+                                    .await
+                                {
+                                    Ok(mut cr) => cr.next().await.unwrap_or(None).is_some(),
+                                    Err(_) => false,
+                                };
+
+                                if conflict {
+                                    if let Some(seed) = fetch_local_seq_seed(pool, loc_vt).await {
+                                        if let Ok((_, new_no)) = reserve_next_cloud_number_conn(&conn, &seed, loc_vt).await {
+                                            let _ = sqlx::query("UPDATE vouchers SET voucher_no = ? WHERE id = ?")
+                                                .bind(&new_no)
+                                                .bind(loc_id)
+                                                .execute(pool)
+                                                .await;
+                                            println!("[CloudSync] Resolved voucher_no collision on push: {} -> {}", loc_vno, new_no);
+                                            values[vno_i] = libsql::Value::Text(new_no);
+                                        }
+                                    }
                                 }
                             }
                         }
-                        None => libsql::Value::Null,
-                    };
-                    values.push(val);
-                }
+                    }
 
-                let placeholders = vec!["?"; col_names.len()].join(", ");
-                let insert_sql = format!(
-                    "INSERT OR REPLACE INTO {} ({}) VALUES ({})",
-                    table,
-                    col_names.join(", "),
-                    placeholders
-                );
+                    let placeholders = vec!["?"; col_names.len()].join(", ");
+                    let insert_sql = format!(
+                        "INSERT OR REPLACE INTO {} ({}) VALUES ({})",
+                        table,
+                        col_names.join(", "),
+                        placeholders
+                    );
 
-                match conn.execute(&insert_sql, values).await {
-                    Ok(_) => pushed_count += 1,
-                    Err(e) => eprintln!("Push error on table {}: {}", table, e),
+                    match conn.execute(&insert_sql, values).await {
+                        Ok(_) => pushed_count += 1,
+                        Err(e) => eprintln!("Push error on table {}: {}", table, e),
+                    }
                 }
             }
         }
@@ -675,6 +1355,34 @@ pub async fn sync_company_data(
 
         if let Ok(mut turso_rows) = conn.query(&pull_sql, ()).await {
             while let Ok(Some(row)) = turso_rows.next().await {
+                // Guard local vouchers from being silently deleted by INSERT OR REPLACE on voucher_no clash
+                if *table == "vouchers" {
+                    if let (Some(id_i), Some(vno_i)) = (id_col_idx, vno_col_idx) {
+                        let rem_id = val_to_string(row.get_value(id_i as i32));
+                        let rem_vno = val_to_string(row.get_value(vno_i as i32));
+                        if !rem_id.is_empty() && !rem_vno.is_empty() {
+                            if let Ok(Some((loc_id, loc_vt))) = sqlx::query_as::<_, (String, String)>(
+                                "SELECT id, voucher_type FROM vouchers WHERE voucher_no = ? AND id != ? LIMIT 1"
+                            )
+                            .bind(&rem_vno)
+                            .bind(&rem_id)
+                            .fetch_optional(pool)
+                            .await
+                            {
+                                let parked = format!("TMP-{}", rem_vno);
+                                let _ = sqlx::query(
+                                    "UPDATE vouchers SET voucher_no = ?, updated_at = datetime('now', '+1 second') WHERE id = ?"
+                                )
+                                .bind(&parked)
+                                .bind(&loc_id)
+                                .execute(pool)
+                                .await;
+                                println!("[CloudSync] Parked colliding local voucher {} ({}) as {} before pull", loc_id, loc_vt, parked);
+                            }
+                        }
+                    }
+                }
+
                 let placeholders = vec!["?"; col_names.len()].join(", ");
                 let insert_local_sql = format!(
                     "INSERT OR REPLACE INTO {} ({}) VALUES ({})",

@@ -35,7 +35,6 @@ interface Company {
     sync_mode?: string;
     cloud_url?: string | null;
     last_synced_at?: string | null;
-    device_prefix?: string | null;
 }
 
 export default function LoginPage() {

@@ -836,7 +836,6 @@ export interface CompanyCloudConfig {
   cloud_url?: string | null;
   cloud_token?: string | null;
   last_synced_at?: string | null;
-  device_prefix?: string | null;
 }
 
 export async function testCloudConnection(cloudUrl: string, cloudToken: string): Promise<string> {
@@ -851,15 +850,13 @@ export async function updateCompanyCloudConfig(
   companyId: string,
   syncMode: string,
   cloudUrl?: string | null,
-  cloudToken?: string | null,
-  devicePrefix?: string | null
+  cloudToken?: string | null
 ): Promise<void> {
   return invoke<void>('update_company_cloud_config', {
     companyId,
     syncMode,
     cloudUrl: cloudUrl || null,
     cloudToken: cloudToken || null,
-    devicePrefix: devicePrefix || null,
   });
 }
 
@@ -882,7 +879,6 @@ export async function triggerManualSync(companyId?: string | null): Promise<Sync
 export interface ConnectCloudCompanyInput {
   cloudUrl: string;
   cloudToken: string;
-  devicePrefix?: string | null;
   customName?: string | null;
 }
 
@@ -898,7 +894,6 @@ export async function connectCloudCompany(input: ConnectCloudCompanyInput): Prom
     input: {
       cloudUrl: input.cloudUrl,
       cloudToken: input.cloudToken,
-      devicePrefix: input.devicePrefix || null,
       customName: input.customName || null,
     },
   });

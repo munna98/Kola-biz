@@ -28,7 +28,6 @@ export default function ConnectCloudCompanyDialog({
     const [cloudUrl, setCloudUrl] = useState('');
     const [cloudToken, setCloudToken] = useState('');
     const [showToken, setShowToken] = useState(false);
-    const [devicePrefix, setDevicePrefix] = useState('POS2');
     const [testing, setTesting] = useState(false);
     const [connecting, setConnecting] = useState(false);
     const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -62,7 +61,6 @@ export default function ConnectCloudCompanyDialog({
             const res = await connectCloudCompany({
                 cloudUrl: cloudUrl.trim(),
                 cloudToken: cloudToken.trim(),
-                devicePrefix: devicePrefix.trim() || 'POS2',
             });
             toast.success(res.message);
             onSuccess(res);
@@ -120,24 +118,6 @@ export default function ConnectCloudCompanyDialog({
                                 {showToken ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                             </button>
                         </div>
-                    </div>
-
-                    <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                            <Label htmlFor="device-prefix-input" className="text-xs font-semibold">This PC Terminal Prefix</Label>
-                            <span className="text-[10px] text-muted-foreground">e.g. POS2, COUNTER2</span>
-                        </div>
-                        <Input
-                            id="device-prefix-input"
-                            placeholder="POS2"
-                            value={devicePrefix}
-                            onChange={(e) => setDevicePrefix(e.target.value)}
-                            disabled={connecting}
-                            className="h-9 text-xs"
-                        />
-                        <p className="text-[11px] text-muted-foreground">
-                            Assigns a unique invoice sequence prefix for this computer to avoid conflicts with other counters.
-                        </p>
                     </div>
 
                     {testResult && (

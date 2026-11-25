@@ -13,7 +13,6 @@ pub struct CreateCompanyInput {
     pub sync_mode: Option<String>,
     pub cloud_url: Option<String>,
     pub cloud_token: Option<String>,
-    pub device_prefix: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -23,7 +22,6 @@ pub struct CompanyCloudConfig {
     pub cloud_url: Option<String>,
     pub cloud_token: Option<String>,
     pub last_synced_at: Option<String>,
-    pub device_prefix: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -58,7 +56,7 @@ pub async fn create_first_company(
 
     // 1. Create company DB
     let company_id = registry
-        .create_company(input.name.trim(), None, None, None, None, None, &app_handle)
+        .create_company(input.name.trim(), None, None, None, None, &app_handle)
         .await?;
 
     // 2. Activate it so pool is reachable
@@ -141,7 +139,6 @@ pub async fn create_company(
             input.sync_mode,
             input.cloud_url,
             input.cloud_token,
-            input.device_prefix,
             &app_handle,
         )
         .await
@@ -165,7 +162,7 @@ pub async fn bootstrap_cloud_database(
     crate::cloud_sync::bootstrap_cloud_schema(&cloud_url, &cloud_token).await
 }
 
-/// Update company cloud settings (mode, URL, token, device prefix).
+/// Update company cloud settings (mode, URL, token).
 #[tauri::command]
 pub async fn update_company_cloud_config(
     registry: State<'_, Arc<DbRegistry>>,
@@ -173,7 +170,6 @@ pub async fn update_company_cloud_config(
     sync_mode: String,
     cloud_url: Option<String>,
     cloud_token: Option<String>,
-    device_prefix: Option<String>,
 ) -> Result<(), String> {
     // If setting to online, bootstrap tables on the remote database
     if sync_mode == "online" {
@@ -190,7 +186,6 @@ pub async fn update_company_cloud_config(
             &sync_mode,
             cloud_url.as_deref(),
             cloud_token.as_deref(),
-            device_prefix.as_deref(),
         )
         .await
 }
@@ -208,7 +203,6 @@ pub async fn get_company_cloud_config(
         cloud_url: c.cloud_url,
         cloud_token: c.cloud_token,
         last_synced_at: c.last_synced_at,
-        device_prefix: c.device_prefix,
     }))
 }
 
@@ -260,7 +254,6 @@ pub async fn trigger_manual_sync(
 pub struct ConnectCloudCompanyInput {
     pub cloud_url: String,
     pub cloud_token: String,
-    pub device_prefix: Option<String>,
     pub custom_name: Option<String>,
 }
 
@@ -309,11 +302,6 @@ pub async fn connect_cloud_company(
         .or(remote_name)
         .unwrap_or_else(|| "Cloud Company".to_string());
 
-    let prefix = input
-        .device_prefix
-        .and_then(|p| if p.trim().is_empty() { None } else { Some(p.trim().to_uppercase()) })
-        .unwrap_or_else(|| "POS2".to_string());
-
     // 2. Create the local company already configured in 'online' mode
     let company_id = registry
         .create_company(
@@ -322,7 +310,6 @@ pub async fn connect_cloud_company(
             Some("online".to_string()),
             Some(clean_url.to_string()),
             Some(clean_token.to_string()),
-            Some(prefix.clone()),
             &app_handle,
         )
         .await?;
@@ -331,8 +318,15 @@ pub async fn connect_cloud_company(
     let _ = registry.set_active_company(&company_id, &app_handle).await?;
     let pool = registry.active_pool().await?;
 
-    // 4. Run initial full sync (pull everything from Turso into the new local DB)
-    let sync_report = crate::cloud_sync::sync_company_data(&pool, clean_url, clean_token, None).await?;
+    // 4. Run initial full pull (import everything from Turso into the new local DB without pushing defaults)
+    let sync_report = crate::cloud_sync::sync_company_data_with_mode(
+        &pool,
+        clean_url,
+        clean_token,
+        None,
+        true,
+    )
+    .await?;
     let _ = registry.update_last_synced(&company_id).await;
 
     Ok(ConnectCloudCompanyResult {
