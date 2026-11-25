@@ -17,6 +17,11 @@ pub struct ActiveCloudConfig {
 }
 
 static ACTIVE_CLOUD_CONFIG: OnceLock<RwLock<Option<ActiveCloudConfig>>> = OnceLock::new();
+static SYNC_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+fn sync_mutex() -> &'static tokio::sync::Mutex<()> {
+    SYNC_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
+}
 
 pub fn set_active_cloud_config(config: Option<ActiveCloudConfig>) {
     let lock = ACTIVE_CLOUD_CONFIG.get_or_init(|| RwLock::new(None));
@@ -1232,6 +1237,9 @@ pub async fn sync_company_with_cursor(
 
     let conn = db.connect().map_err(|e| format!("Failed to connect to cloud: {}", e))?;
 
+    // Serialize sync runs within this app instance so background & manual syncs never overlap
+    let _sync_guard = sync_mutex().lock().await;
+
     let mut pushed_count = 0usize;
     let mut pulled_count = 0usize;
     let mut sync_errors = 0usize;
@@ -1239,8 +1247,9 @@ pub async fn sync_company_with_cursor(
     let mut pulled_voucher_ids: Vec<String> = Vec::new();
     let safe_last_sync = last_synced_at.map(|s| s.trim().replace('\'', ""));
 
-    // Disable foreign keys on local SQLite while applying pulled records
+    // Disable foreign keys on local SQLite & Turso while applying synced records
     let _ = sqlx::query("PRAGMA foreign_keys = OFF").execute(pool).await;
+    let _ = conn.execute("PRAGMA foreign_keys = OFF", ()).await;
 
     // Ensure remote changelog exists
     let _ = conn
@@ -1493,18 +1502,6 @@ pub async fn sync_company_with_cursor(
 
         // ── 5. PUSH: Local -> Turso Cloud (skipped in pull_only initial join mode)
         if !pull_only {
-            // If parent vouchers were updated/pushed, clear stale child rows on Turso first before re-pushing
-            if is_voucher_child && !pushed_voucher_ids.is_empty() {
-                for vid in &pushed_voucher_ids {
-                    let _ = conn
-                        .execute(
-                            &format!("DELETE FROM {} WHERE voucher_id = ?", table),
-                            vec![libsql::Value::Text(vid.clone())],
-                        )
-                        .await;
-                }
-            }
-
             let push_sql = if let Some(ref last_sync) = safe_last_sync {
                 if extra_push_pks.len() > 200 {
                     format!("SELECT {} FROM {}", col_names.join(", "), table)
@@ -1550,13 +1547,37 @@ pub async fn sync_company_with_cursor(
                                     let type_name = r.type_info().to_string();
                                     match type_name.as_str() {
                                         "INTEGER" | "INT" | "BOOLEAN" => {
-                                            row.try_get::<i64, _>(i).map(libsql::Value::Integer).unwrap_or(libsql::Value::Null)
+                                            if let Ok(v) = row.try_get::<i64, _>(i) {
+                                                libsql::Value::Integer(v)
+                                            } else if let Ok(v) = row.try_get::<f64, _>(i) {
+                                                libsql::Value::Real(v)
+                                            } else if let Ok(v) = row.try_get::<String, _>(i) {
+                                                libsql::Value::Text(v)
+                                            } else {
+                                                libsql::Value::Null
+                                            }
                                         }
                                         "REAL" | "FLOAT" | "DOUBLE" => {
-                                            row.try_get::<f64, _>(i).map(libsql::Value::Real).unwrap_or(libsql::Value::Null)
+                                            if let Ok(v) = row.try_get::<f64, _>(i) {
+                                                libsql::Value::Real(v)
+                                            } else if let Ok(v) = row.try_get::<i64, _>(i) {
+                                                libsql::Value::Integer(v)
+                                            } else if let Ok(v) = row.try_get::<String, _>(i) {
+                                                libsql::Value::Text(v)
+                                            } else {
+                                                libsql::Value::Null
+                                            }
                                         }
                                         _ => {
-                                            row.try_get::<String, _>(i).map(libsql::Value::Text).unwrap_or(libsql::Value::Null)
+                                            if let Ok(v) = row.try_get::<String, _>(i) {
+                                                libsql::Value::Text(v)
+                                            } else if let Ok(v) = row.try_get::<i64, _>(i) {
+                                                libsql::Value::Integer(v)
+                                            } else if let Ok(v) = row.try_get::<f64, _>(i) {
+                                                libsql::Value::Real(v)
+                                            } else {
+                                                libsql::Value::Null
+                                            }
                                         }
                                     }
                                 }
@@ -1640,15 +1661,6 @@ pub async fn sync_company_with_cursor(
         }
 
         // ── 6. PULL: Turso Cloud -> Local
-        if is_voucher_child && !pulled_voucher_ids.is_empty() {
-            for vid in &pulled_voucher_ids {
-                let _ = sqlx::query(&format!("DELETE FROM {} WHERE voucher_id = ?", table))
-                    .bind(vid)
-                    .execute(pool)
-                    .await;
-            }
-        }
-
         let pull_sql = if let Some(ref last_sync) = safe_last_sync {
             if pull_pks_needed.len() > 200 {
                 format!("SELECT {} FROM {}", col_names.join(", "), table)
