@@ -1,13 +1,13 @@
 use libsql::Builder;
-use serde::{Deserialize, Serialize};
-use sqlx::sqlite::SqlitePool;
+use serde::Serialize;
 use sqlx::{Row, ValueRef};
+use sqlx::SqlitePool;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
 use crate::company_db::DbRegistry;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct SyncReport {
     pub success: bool,
     pub pushed_count: usize,
@@ -16,20 +16,33 @@ pub struct SyncReport {
     pub timestamp: String,
 }
 
-const SYNC_TABLES: &[&str] = &[
+pub const SYNC_TABLES: &[&str] = &[
     "company_profile",
+    "users",
+    "countries",
+    "currencies",
     "units",
+    "price_categories",
+    "product_price_list",
+    "gst_tax_slabs",
     "product_groups",
     "product_brands",
-    "gst_tax_slabs",
-    "chart_of_accounts",
-    "parties",
+    "product_colors",
     "products",
     "services",
+    "account_groups",
+    "chart_of_accounts",
+    "customers",
+    "suppliers",
+    "routes",
     "vouchers",
     "voucher_items",
+    "product_unit_conversions",
+    "journal_entries",
     "stock_movements",
-    "ledger_entries",
+    "payment_allocations",
+    "voucher_sequences",
+    "employees",
 ];
 
 /// Test connection to a remote Turso/libSQL database.
@@ -72,68 +85,36 @@ pub async fn bootstrap_cloud_schema(url: &str, token: &str) -> Result<String, St
 
     let conn = db.connect().map_err(|e| format!("Connection error: {}", e))?;
 
-    let schema_statements = [
-        // Company Profile
-        "CREATE TABLE IF NOT EXISTS company_profile (
-            id INTEGER PRIMARY KEY,
+    let schema_statements: &[&str] = &[
+        r#"CREATE TABLE IF NOT EXISTS company_profile (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             company_name TEXT NOT NULL,
-            trade_name TEXT,
-            legal_name TEXT,
-            tagline TEXT,
             business_type TEXT,
-            cin TEXT,
-            pan TEXT,
-            gstin TEXT,
-            lut_arn TEXT,
-            msme_reg_no TEXT,
             address_line1 TEXT,
             address_line2 TEXT,
             address_line3 TEXT,
             city TEXT,
             state TEXT,
             pincode TEXT,
-            country TEXT DEFAULT 'India',
+            country TEXT,
             phone TEXT,
-            mobile TEXT,
             email TEXT,
             website TEXT,
+            gstin TEXT,
+            pan TEXT,
+            cin TEXT,
+            logo_data TEXT,
             bank_name TEXT,
+            bank_account_no TEXT,
+            bank_ifsc TEXT,
             bank_branch TEXT,
-            account_number TEXT,
-            account_holder_name TEXT,
-            ifsc_code TEXT,
-            upi_id TEXT,
-            qr_code_image_path TEXT,
-            logo_image_path TEXT,
-            authorized_signatory_name TEXT,
-            authorized_signatory_designation TEXT,
-            signature_image_path TEXT,
-            declaration_text TEXT,
-            notes_terms TEXT,
-            show_bank_details INTEGER DEFAULT 1,
-            show_qr_code INTEGER DEFAULT 1,
-            show_signature INTEGER DEFAULT 1,
-            show_declaration INTEGER DEFAULT 1,
-            show_notes_terms INTEGER DEFAULT 1,
-            show_lut INTEGER DEFAULT 0,
-            show_pan INTEGER DEFAULT 1,
-            show_msme INTEGER DEFAULT 0,
-            currency_symbol TEXT DEFAULT '₹',
-            currency_code TEXT DEFAULT 'INR',
-            e_invoice_username TEXT,
-            e_invoice_password TEXT,
-            e_invoice_client_id TEXT,
-            e_invoice_client_secret TEXT,
-            e_invoice_gstin TEXT,
-            e_invoice_base_url TEXT,
-            e_invoice_environment TEXT DEFAULT 'sandbox',
-            e_way_bill_username TEXT,
-            e_way_bill_password TEXT,
+            terms_and_conditions TEXT,
+            base_currency TEXT DEFAULT 'INR',
+            currency_display TEXT DEFAULT 'symbol',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-
-        // Users
-        "CREATE TABLE IF NOT EXISTS users (
+        , lut_no TEXT)"#,
+        r#"CREATE TABLE IF NOT EXISTS users (
             id TEXT PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
@@ -143,61 +124,90 @@ pub async fn bootstrap_cloud_schema(url: &str, token: &str) -> Result<String, St
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             last_login DATETIME
-        )",
-
-        // Roles
-        "CREATE TABLE IF NOT EXISTS user_roles (
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS countries (
             id TEXT PRIMARY KEY,
             name TEXT UNIQUE NOT NULL,
-            is_builtin INTEGER DEFAULT 0,
-            permissions TEXT NOT NULL DEFAULT '{}',
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-
-        // Units
-        "CREATE TABLE IF NOT EXISTS units (
+            code TEXT UNIQUE NOT NULL
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS currencies (
+            id TEXT PRIMARY KEY,
+            code TEXT UNIQUE NOT NULL,
+            name TEXT NOT NULL,
+            symbol TEXT,
+            country TEXT
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS units (
             id TEXT PRIMARY KEY,
             name TEXT UNIQUE NOT NULL,
-            symbol TEXT UNIQUE NOT NULL,
+            symbol TEXT NOT NULL,
             is_default INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-
-        // Product Groups
-        "CREATE TABLE IF NOT EXISTS product_groups (
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS price_categories (
+            id          TEXT PRIMARY KEY,
+            name        TEXT UNIQUE NOT NULL,
+            description TEXT,
+            is_default  INTEGER DEFAULT 0,
+            is_active   INTEGER DEFAULT 1,
+            sort_order  INTEGER DEFAULT 0,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS product_price_list (
+            id                TEXT PRIMARY KEY,
+            price_category_id TEXT NOT NULL,
+            product_id        TEXT NOT NULL,
+            unit_id           TEXT NOT NULL,
+            sales_rate        REAL NOT NULL DEFAULT 0,
+            is_active         INTEGER DEFAULT 1,
+            updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE (price_category_id, product_id, unit_id),
+            FOREIGN KEY (price_category_id) REFERENCES price_categories(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+            FOREIGN KEY (unit_id) REFERENCES units(id)
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS gst_tax_slabs (
+            id            TEXT PRIMARY KEY,
+            name          TEXT NOT NULL,
+            is_dynamic    INTEGER DEFAULT 0,
+            fixed_rate    REAL DEFAULT 0,
+            threshold     REAL DEFAULT 0,
+            below_rate    REAL DEFAULT 0,
+            above_rate    REAL DEFAULT 0,
+            is_active     INTEGER DEFAULT 1,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS product_groups (
             id TEXT PRIMARY KEY,
             name TEXT UNIQUE NOT NULL,
             description TEXT,
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-
-        // Product Brands
-        "CREATE TABLE IF NOT EXISTS product_brands (
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS product_brands (
             id TEXT PRIMARY KEY,
             name TEXT UNIQUE NOT NULL,
             description TEXT,
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-
-        // GST Tax Slabs
-        "CREATE TABLE IF NOT EXISTS gst_tax_slabs (
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS product_colors (
             id TEXT PRIMARY KEY,
-            rate REAL UNIQUE NOT NULL,
-            cgst_rate REAL NOT NULL,
-            sgst_rate REAL NOT NULL,
-            igst_rate REAL NOT NULL,
+            name TEXT UNIQUE NOT NULL,
+            hex_code TEXT,
             description TEXT,
             is_active INTEGER DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-
-        // Products
-        "CREATE TABLE IF NOT EXISTS products (
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS products (
             id TEXT PRIMARY KEY,
             code TEXT UNIQUE NOT NULL,
             name TEXT NOT NULL,
@@ -207,16 +217,11 @@ pub async fn bootstrap_cloud_schema(url: &str, token: &str) -> Result<String, St
             sales_rate REAL NOT NULL,
             mrp REAL NOT NULL,
             barcode TEXT,
-            brand_id TEXT,
-            color_id TEXT,
+            brand_id TEXT REFERENCES product_brands(id),
             part_number TEXT,
-            serial_number TEXT,
-            imei TEXT,
-            warranty_months INTEGER,
-            battery_health TEXT,
-            supplier_id TEXT,
+            supplier_id TEXT REFERENCES chart_of_accounts(id),
             is_master INTEGER NOT NULL DEFAULT 0,
-            parent_product_id TEXT,
+            parent_product_id TEXT REFERENCES products(id),
             vehicle_make TEXT,
             vehicle_odometer REAL,
             vehicle_fuel_type TEXT,
@@ -228,70 +233,97 @@ pub async fn bootstrap_cloud_schema(url: &str, token: &str) -> Result<String, St
             vehicle_year INTEGER,
             cost REAL,
             is_margin_scheme_default INTEGER DEFAULT 0,
-            purchase_deduction REAL DEFAULT 0,
-            sales_deduction REAL DEFAULT 0,
-            hsn_code TEXT,
-            gst_slab_id TEXT,
-            cess_rate REAL DEFAULT 0,
             is_active INTEGER DEFAULT 1,
+            deleted_at DATETIME,
+            deleted_by TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            deleted_at DATETIME
-        )",
-
-        // Services
-        "CREATE TABLE IF NOT EXISTS services (
-            id TEXT PRIMARY KEY,
-            code TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
-            description TEXT,
-            unit_id TEXT,
-            hsn_sac_code TEXT,
-            gst_slab_id TEXT,
-            sales_rate REAL DEFAULT 0,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP, hsn_sac_code TEXT, gst_slab_id TEXT REFERENCES gst_tax_slabs(id), purchase_deduction REAL DEFAULT 0, sales_deduction REAL DEFAULT 0, color_id TEXT REFERENCES product_colors(id), serial_number TEXT, imei TEXT, warranty_months INTEGER, battery_health TEXT,
+            FOREIGN KEY (group_id) REFERENCES product_groups(id),
+            FOREIGN KEY (unit_id) REFERENCES units(id)
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS services (
+            id            TEXT PRIMARY KEY,
+            code          TEXT UNIQUE NOT NULL,
+            name          TEXT NOT NULL,
+            description   TEXT,
+            unit_id       TEXT,
+            hsn_sac_code  TEXT,
+            gst_slab_id   TEXT,
+            sales_rate    REAL DEFAULT 0,
             purchase_rate REAL DEFAULT 0,
-            is_active INTEGER DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            deleted_at DATETIME
-        )",
-
-        // Parties (Customers & Suppliers)
-        "CREATE TABLE IF NOT EXISTS parties (
+            is_active     INTEGER DEFAULT 1,
+            created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at    DATETIME,
+            FOREIGN KEY (unit_id) REFERENCES units(id)
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS account_groups (
             id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            party_type TEXT NOT NULL,
-            phone TEXT,
-            email TEXT,
-            address TEXT,
-            city TEXT,
-            state TEXT,
-            pincode TEXT,
-            gstin TEXT,
-            pan TEXT,
-            credit_limit REAL DEFAULT 0,
-            credit_period_days INTEGER DEFAULT 0,
-            is_active INTEGER DEFAULT 1,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            deleted_at DATETIME
-        )",
-
-        // Chart of Accounts (Ledgers)
-        "CREATE TABLE IF NOT EXISTS chart_of_accounts (
-            id TEXT PRIMARY KEY,
-            code TEXT UNIQUE NOT NULL,
-            name TEXT NOT NULL,
+            name TEXT UNIQUE NOT NULL,
             account_type TEXT NOT NULL,
-            parent_id TEXT,
+            parent_group_id TEXT REFERENCES account_groups(id),
             is_system INTEGER DEFAULT 0,
+            base_type TEXT,
             is_active INTEGER DEFAULT 1,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-
-        // Vouchers
-        "CREATE TABLE IF NOT EXISTS vouchers (
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS chart_of_accounts (
+            id TEXT PRIMARY KEY,
+            account_code TEXT UNIQUE NOT NULL,
+            account_name TEXT NOT NULL,
+            account_type TEXT NOT NULL,
+            account_group TEXT NOT NULL,
+            description TEXT,
+            opening_balance REAL DEFAULT 0.0,
+            opening_balance_type TEXT DEFAULT 'Dr',
+            party_id TEXT,
+            party_type TEXT,
+            gstin TEXT,
+            address_line_1 TEXT,
+            address_line_2 TEXT,
+            state TEXT,
+            city TEXT,
+            postal_code TEXT,
+            price_category_id TEXT REFERENCES price_categories(id),
+            is_active INTEGER DEFAULT 1,
+            is_system INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME
+        , phone TEXT, country TEXT)"#,
+        r#"CREATE TABLE IF NOT EXISTS customers (
+            id TEXT PRIMARY KEY,
+            code TEXT,
+            name TEXT NOT NULL,
+            email TEXT,
+            phone TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME,
+            currency TEXT
+        , gstin TEXT, address_line_1 TEXT, address_line_2 TEXT, address_line_3 TEXT, state TEXT, city TEXT, postal_code TEXT, country TEXT, route_id TEXT REFERENCES routes(id))"#,
+        r#"CREATE TABLE IF NOT EXISTS suppliers (
+            id TEXT PRIMARY KEY,
+            code TEXT,
+            name TEXT NOT NULL,
+            email TEXT,
+            phone TEXT,
+            is_active INTEGER DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME,
+            currency TEXT
+        , gstin TEXT, address_line_1 TEXT, address_line_2 TEXT, address_line_3 TEXT, state TEXT, city TEXT, postal_code TEXT, country TEXT, route_id TEXT REFERENCES routes(id))"#,
+        r#"CREATE TABLE IF NOT EXISTS routes (
+            id          TEXT PRIMARY KEY,
+            name        TEXT NOT NULL UNIQUE,
+            description TEXT,
+            is_active   INTEGER DEFAULT 1,
+            created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS vouchers (
             id TEXT PRIMARY KEY,
             voucher_no TEXT UNIQUE NOT NULL,
             voucher_type TEXT NOT NULL,
@@ -302,12 +334,10 @@ pub async fn bootstrap_cloud_schema(url: &str, token: &str) -> Result<String, St
             salesperson_id TEXT,
             account_id TEXT,
             subtotal REAL DEFAULT 0,
-            total_discount REAL DEFAULT 0,
-            total_tax REAL DEFAULT 0,
-            tax_rate REAL DEFAULT 0,
-            cgst_rate REAL DEFAULT 0,
-            sgst_rate REAL DEFAULT 0,
-            igst_rate REAL DEFAULT 0,
+            discount_rate REAL DEFAULT 0,
+            discount_amount REAL DEFAULT 0,
+            tax_amount REAL DEFAULT 0,
+            total_amount REAL DEFAULT 0,
             cgst_amount REAL DEFAULT 0,
             sgst_amount REAL DEFAULT 0,
             igst_amount REAL DEFAULT 0,
@@ -323,21 +353,17 @@ pub async fn bootstrap_cloud_schema(url: &str, token: &str) -> Result<String, St
             ack_no TEXT,
             ack_date DATE,
             is_margin_scheme_invoice INTEGER DEFAULT 0,
-            currency_id TEXT,
+            currency_id TEXT REFERENCES currencies(id),
             exchange_rate REAL DEFAULT 1.0,
             foreign_total REAL DEFAULT 0,
-            price_category_id TEXT,
-            freight_charge REAL DEFAULT 0.0,
-            round_off REAL DEFAULT 0.0,
+            price_category_id TEXT REFERENCES price_categories(id),
             metadata TEXT,
             created_by TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             deleted_at DATETIME
-        )",
-
-        // Voucher Items
-        "CREATE TABLE IF NOT EXISTS voucher_items (
+        , freight_charge REAL DEFAULT 0.0, round_off REAL DEFAULT 0.0)"#,
+        r#"CREATE TABLE IF NOT EXISTS voucher_items (
             id TEXT PRIMARY KEY,
             voucher_id TEXT NOT NULL,
             product_id TEXT,
@@ -348,34 +374,69 @@ pub async fn bootstrap_cloud_schema(url: &str, token: &str) -> Result<String, St
             initial_quantity REAL NOT NULL,
             count INTEGER NOT NULL,
             deduction_per_unit REAL DEFAULT 0,
-            quantity REAL NOT NULL,
+            final_quantity REAL,
             unit_id TEXT,
+            base_quantity REAL,
             rate REAL NOT NULL,
-            mrp REAL DEFAULT 0,
+            amount REAL NOT NULL,
+            net_amount REAL DEFAULT 0,
+            original_amount REAL DEFAULT 0,
             discount_percent REAL DEFAULT 0,
             discount_amount REAL DEFAULT 0,
-            amount REAL NOT NULL,
+            invoice_discount_amount REAL DEFAULT 0,
             tax_rate REAL DEFAULT 0,
             tax_amount REAL DEFAULT 0,
+            cgst_rate REAL DEFAULT 0,
+            sgst_rate REAL DEFAULT 0,
+            igst_rate REAL DEFAULT 0,
             cgst_amount REAL DEFAULT 0,
             sgst_amount REAL DEFAULT 0,
             igst_amount REAL DEFAULT 0,
-            cess_rate REAL DEFAULT 0,
-            cess_amount REAL DEFAULT 0,
-            net_amount REAL NOT NULL,
-            base_unit_id TEXT,
-            conversion_factor REAL DEFAULT 1.0,
-            base_quantity REAL,
-            barcode TEXT,
-            custom_order_id TEXT,
-            purchase_cost REAL DEFAULT 0.0,
-            margin_scheme INTEGER DEFAULT 0,
-            metadata TEXT,
-            sort_order INTEGER DEFAULT 0
-        )",
-
-        // Stock Movements
-        "CREATE TABLE IF NOT EXISTS stock_movements (
+            hsn_sac_code TEXT,
+            gst_slab_id TEXT,
+            resolved_gst_rate REAL DEFAULT 0,
+            is_margin_scheme INTEGER DEFAULT 0,
+            purchase_cost REAL DEFAULT 0,
+            margin_amount REAL DEFAULT 0,
+            remarks TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id),
+            FOREIGN KEY (service_id) REFERENCES services(id)
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS product_unit_conversions (
+            id TEXT PRIMARY KEY,
+            product_id TEXT NOT NULL,
+            unit_id TEXT NOT NULL,
+            factor_to_base REAL NOT NULL,
+            purchase_rate REAL NOT NULL DEFAULT 0,
+            sales_rate REAL NOT NULL DEFAULT 0,
+            is_default_sale INTEGER DEFAULT 0,
+            is_default_purchase INTEGER DEFAULT 0,
+            is_default_report INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(product_id, unit_id),
+            FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE,
+            FOREIGN KEY (unit_id) REFERENCES units(id)
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS journal_entries (
+            id TEXT PRIMARY KEY,
+            voucher_id TEXT NOT NULL,
+            account_id TEXT NOT NULL,
+            debit REAL DEFAULT 0,
+            credit REAL DEFAULT 0,
+            foreign_debit REAL DEFAULT 0,
+            foreign_credit REAL DEFAULT 0,
+            currency_id TEXT,
+            exchange_rate REAL DEFAULT 1.0,
+            is_manual INTEGER DEFAULT 0,
+            narration TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+            FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS stock_movements (
             id TEXT PRIMARY KEY,
             voucher_id TEXT NOT NULL,
             product_id TEXT NOT NULL,
@@ -386,20 +447,52 @@ pub async fn bootstrap_cloud_schema(url: &str, token: &str) -> Result<String, St
             amount REAL NOT NULL,
             cost_rate REAL DEFAULT 0,
             cost_amount REAL DEFAULT 0,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
-
-        // Ledger Entries (General Ledger)
-        "CREATE TABLE IF NOT EXISTS ledger_entries (
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+            FOREIGN KEY (product_id) REFERENCES products(id)
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS payment_allocations (
             id TEXT PRIMARY KEY,
-            voucher_id TEXT NOT NULL,
-            account_id TEXT NOT NULL,
-            entry_type TEXT NOT NULL,
-            amount REAL NOT NULL,
-            narration TEXT,
-            entry_date DATE NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )",
+            payment_voucher_id TEXT NOT NULL,
+            invoice_voucher_id TEXT NOT NULL,
+            allocated_amount REAL NOT NULL,
+            allocation_date DATE NOT NULL DEFAULT CURRENT_DATE,
+            remarks TEXT,
+            party_id TEXT,
+            party_type TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP, exchange_rate REAL DEFAULT 1.0, forex_difference REAL DEFAULT 0,
+            FOREIGN KEY (payment_voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE,
+            FOREIGN KEY (invoice_voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS voucher_sequences (
+            id TEXT PRIMARY KEY,
+            voucher_type TEXT UNIQUE NOT NULL,
+            prefix TEXT NOT NULL DEFAULT '',
+            suffix TEXT NOT NULL DEFAULT '',
+            separator TEXT NOT NULL DEFAULT '-',
+            next_number INTEGER DEFAULT 1,
+            padding INTEGER DEFAULT 4,
+            include_financial_year INTEGER DEFAULT 0,
+            reset_yearly INTEGER DEFAULT 0
+        )"#,
+        r#"CREATE TABLE IF NOT EXISTS employees (
+            id TEXT PRIMARY KEY,
+            user_id TEXT,
+            account_id TEXT,
+            code TEXT UNIQUE,
+            name TEXT NOT NULL,
+            designation TEXT,
+            phone TEXT,
+            email TEXT,
+            address TEXT,
+            joining_date DATE,
+            status TEXT DEFAULT 'active',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            deleted_at DATETIME, account_group TEXT,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (account_id) REFERENCES chart_of_accounts(id)
+        )"#,
     ];
 
     for stmt in schema_statements {
@@ -458,9 +551,52 @@ pub async fn sync_company_data(
             Err(_) => continue,
         };
 
-        let col_names: Vec<String> = pragma_rows
+        let local_cols: Vec<String> = pragma_rows
             .iter()
             .map(|r| r.get::<String, _>("name"))
+            .collect();
+
+        if local_cols.is_empty() {
+            continue;
+        }
+
+        // ── 2b. Check if table exists on Turso; if not, create it from local DDL!
+        let table_exists_remote: bool = {
+            let mut check_rows = match conn.query(&format!("SELECT 1 FROM sqlite_master WHERE type='table' AND name='{}'", table), ()).await {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            check_rows.next().await.unwrap_or(None).is_some()
+        };
+
+        if !table_exists_remote {
+            let create_sql: Option<String> = sqlx::query_scalar(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name = ?"
+            )
+            .bind(table)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None);
+
+            if let Some(ddl) = create_sql {
+                let _ = conn.execute(&ddl, ()).await;
+            }
+        }
+
+        // Get remote column names on Turso
+        let mut remote_cols: Vec<String> = Vec::new();
+        if let Ok(mut r_rows) = conn.query(&format!("PRAGMA table_info({})", table), ()).await {
+            while let Ok(Some(r)) = r_rows.next().await {
+                if let Ok(libsql::Value::Text(cname)) = r.get_value(1) {
+                    remote_cols.push(cname);
+                }
+            }
+        }
+
+        // Determine common columns
+        let col_names: Vec<String> = local_cols
+            .into_iter()
+            .filter(|c| remote_cols.contains(c))
             .collect();
 
         if col_names.is_empty() {
@@ -517,8 +653,9 @@ pub async fn sync_company_data(
                     placeholders
                 );
 
-                if conn.execute(&insert_sql, values).await.is_ok() {
-                    pushed_count += 1;
+                match conn.execute(&insert_sql, values).await {
+                    Ok(_) => pushed_count += 1,
+                    Err(e) => eprintln!("Push error on table {}: {}", table, e),
                 }
             }
         }
@@ -570,8 +707,9 @@ pub async fn sync_company_data(
                     }
                 }
 
-                if q.execute(pool).await.is_ok() {
-                    pulled_count += 1;
+                match q.execute(pool).await {
+                    Ok(_) => pulled_count += 1,
+                    Err(e) => eprintln!("Pull error on table {}: {}", table, e),
                 }
             }
         }
@@ -586,32 +724,50 @@ pub async fn sync_company_data(
         success: true,
         pushed_count,
         pulled_count,
-        message: format!("Sync complete: {} pushed to cloud, {} pulled locally.", pushed_count, pulled_count),
+        message: format!(
+            "Synchronization completed successfully. Pushed: {}, Pulled: {}.",
+            pushed_count, pulled_count
+        ),
         timestamp: now_str,
     })
 }
 
-/// Spawns a background worker that syncs the active company on an automated schedule.
+/// Background task that periodically synchronizes the active company's data.
 pub fn start_background_sync(registry: Arc<DbRegistry>, interval_secs: u64) {
-    let interval = if interval_secs < 5 { 5 } else { interval_secs };
-
-    tauri::async_runtime::spawn(async move {
+    tokio::spawn(async move {
+        let interval = Duration::from_secs(interval_secs);
         loop {
-            sleep(Duration::from_secs(interval)).await;
+            sleep(interval).await;
 
-            // Check if active company is online
             if let Some(company_id) = registry.active_company_id().await {
                 if let Ok(Some(company)) = registry.get_company_by_id(&company_id).await {
                     if company.sync_mode == "online" {
                         if let (Some(url), Some(token)) = (&company.cloud_url, &company.cloud_token) {
                             if !url.trim().is_empty() && !token.trim().is_empty() {
                                 if let Ok(pool) = registry.active_pool().await {
-                                    let last_sync = company.last_synced_at.as_deref();
-                                    if let Ok(report) = sync_company_data(&pool, url, token, last_sync).await {
-                                        if report.pushed_count > 0 || report.pulled_count > 0 {
-                                            println!("SYNC: Auto-sync success: {}", report.message);
+                                    match sync_company_data(
+                                        &pool,
+                                        url,
+                                        token,
+                                        company.last_synced_at.as_deref(),
+                                    )
+                                    .await
+                                    {
+                                        Ok(report) => {
+                                            if report.pushed_count > 0 || report.pulled_count > 0 {
+                                                println!(
+                                                    "[CloudSync] Synced company {} ({}): pushed {}, pulled {}",
+                                                    company.name, company.id, report.pushed_count, report.pulled_count
+                                                );
+                                            }
+                                            let _ = registry.update_last_synced(&company_id).await;
                                         }
-                                        let _ = registry.update_last_synced(&company_id).await;
+                                        Err(e) => {
+                                            eprintln!(
+                                                "[CloudSync] Background sync failed for {} ({}): {}",
+                                                company.name, company.id, e
+                                            );
+                                        }
                                     }
                                 }
                             }
