@@ -1,4 +1,6 @@
-import { IconMoon, IconSun, IconSettings, IconBuilding, IconArrowLeft, IconArrowRight, IconDownload, IconPower } from '@tabler/icons-react';
+import { IconMoon, IconSun, IconSettings, IconBuilding, IconArrowLeft, IconArrowRight, IconDownload, IconPower, IconRefresh } from '@tabler/icons-react';
+import { listen } from '@tauri-apps/api/event';
+import { triggerManualSync } from '@/lib/tauri';
 import { useTheme } from '../theme-provider';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState, logout } from '../../store';
@@ -62,6 +64,41 @@ export default function Topbar() {
     const [coEnabled, setCoEnabled] = useState(false);
     const [switcherOpen, setSwitcherOpen] = useState(false);
     const [isBackingUp, setIsBackingUp] = useState(false);
+    const [isSyncing, setIsSyncing] = useState(false);
+
+    const handleManualSync = async () => {
+        if (syncMode !== 'online') {
+            toast.info('This company is in Local (Offline) mode. Configure Cloud Sync in DB Settings.');
+            return;
+        }
+        setIsSyncing(true);
+        try {
+            const report = await triggerManualSync(null, false);
+            if (report.success) {
+                if (report.pulled_count > 0 || report.pushed_count > 0) {
+                    toast.success(`Sync complete: ${report.pushed_count} pushed, ${report.pulled_count} pulled`);
+                } else {
+                    toast.success('Sync complete. Everything is up to date.');
+                }
+            } else {
+                toast.error(report.message || 'Sync failed');
+            }
+        } catch (err: any) {
+            toast.error(typeof err === 'string' ? err : (err?.message || 'Failed to sync with cloud'));
+        } finally {
+            setIsSyncing(false);
+        }
+    };
+
+    useEffect(() => {
+        const unlisten = listen('sync:data-changed', () => {
+            setIsSyncing(true);
+            setTimeout(() => setIsSyncing(false), 1200);
+        });
+        return () => {
+            unlisten.then((fn: () => void) => fn());
+        };
+    }, []);
 
     const handleQuickBackup = async () => {
         setIsBackingUp(true);
@@ -275,7 +312,7 @@ export default function Topbar() {
                 </MenubarMenu>
             </Menubar>
 
-            <div className="ml-auto flex items-center gap-2.5">
+            <div className="ml-auto flex items-center gap-2">
                 {/* Instant Backup Now button */}
                 <button
                     onClick={handleQuickBackup}
@@ -287,25 +324,41 @@ export default function Topbar() {
                     <span>{isBackingUp ? 'Backing Up...' : 'Backup Now'}</span>
                 </button>
 
-                {/* Company display & Sync Mode Badge */}
+                {/* Cloud Sync Icon Button */}
+                <button
+                    onClick={handleManualSync}
+                    disabled={isSyncing}
+                    className={`p-2 rounded-md transition-colors ${
+                        isSyncing
+                            ? 'bg-primary/10 text-primary cursor-wait'
+                            : 'hover:bg-accent text-muted-foreground hover:text-foreground cursor-pointer'
+                    }`}
+                    title={
+                        syncMode === 'online'
+                            ? (isSyncing ? 'Syncing with cloud...' : 'Sync Now (Push & Pull)')
+                            : 'Company in Local mode (Configure cloud in DB Settings)'
+                    }
+                >
+                    <IconRefresh size={18} className={isSyncing ? 'animate-spin text-primary' : ''} />
+                </button>
+
+                {/* Company display Badge with green dot inside */}
                 {companyName && (
-                    <div className="flex items-center gap-2">
+                    <div
+                        className="flex items-center gap-2 px-2.5 py-1.5 rounded-md text-sm font-medium
+                                   bg-primary/8 border border-primary/20 text-foreground max-w-[220px]"
+                        title={`${companyName} (${syncMode === 'online' ? (isOnline ? 'Connected to cloud' : 'Cloud offline') : 'Local mode'})`}
+                    >
+                        <IconBuilding size={14} className="text-primary shrink-0" />
+                        <span className="truncate">{companyName}</span>
                         {syncMode === 'online' && (
                             <span
-                                className={`w-2 h-2 rounded-full shrink-0 cursor-default ${
+                                className={`w-2 h-2 rounded-full shrink-0 ${
                                     isOnline ? 'bg-emerald-500' : 'bg-amber-500'
                                 }`}
                                 title={isOnline ? 'Connected to cloud' : 'Disconnected from cloud (offline)'}
                             />
                         )}
-                        <div
-                            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-sm font-medium
-                                       bg-primary/8 border border-primary/20 text-foreground max-w-[200px]"
-                            title={companyName}
-                        >
-                            <IconBuilding size={14} className="text-primary shrink-0" />
-                            <span className="truncate">{companyName}</span>
-                        </div>
                     </div>
                 )}
                 <ThemeToggle />
