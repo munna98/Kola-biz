@@ -119,7 +119,7 @@ export function useVoucherNavigation({
     };
 
     const handleNavigateToLast = async () => {
-        if (hasUnsavedChanges) {
+        if (mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
         }
         // Non-blocking background sync so navigation is instantaneous (<10ms)
@@ -138,7 +138,7 @@ export function useVoucherNavigation({
     };
 
     const handleNavigatePrevious = async () => {
-        if (hasUnsavedChanges) {
+        if (mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
         }
         if (mode === 'new') {
@@ -163,7 +163,7 @@ export function useVoucherNavigation({
     };
 
     const handleNavigateNext = async () => {
-        if (hasUnsavedChanges) {
+        if (mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
         }
         // Non-blocking background sync so navigation is instantaneous (<10ms)
@@ -197,7 +197,7 @@ export function useVoucherNavigation({
     };
 
     const handleNew = async (force: boolean = false) => {
-        if (!force && hasUnsavedChanges) {
+        if (!force && mode === 'editing' && hasUnsavedChanges) {
             if (!await confirmDiscardChanges()) return;
         }
         dispatch(actions.resetForm());
