@@ -1412,6 +1412,10 @@ async fn sync_company_with_conn(
         }
     }
 
+    let changelog_pruned = remote_max_seq > 20000
+        && last_remote_seq > 0
+        && last_remote_seq < (remote_max_seq - 20000);
+
     if !pull_only {
         // 1. Promote any offline provisional TMP-... vouchers to official cloud numbers before pushing
         if let Err(e) = promote_provisional_vouchers(&mut *local_conn, conn).await {
@@ -1639,7 +1643,8 @@ async fn sync_company_with_conn(
         let has_pk_col = col_names.iter().any(|c| c == pk_col);
         let is_voucher_child = *table == "voucher_items"
             || *table == "journal_entries"
-            || *table == "stock_movements";
+            || *table == "stock_movements"
+            || *table == "payment_allocations";
 
         // Reconcile missing PKs if local_count != remote_count
         let mut extra_push_pks: Vec<String> = Vec::new();
@@ -1882,6 +1887,21 @@ async fn sync_company_with_conn(
         }
 
         // ── 6. PULL: Turso Cloud -> Local
+        // Skip remote queries entirely for tables with no remote changelog entries,
+        // matching row counts, and no pulled parent vouchers.
+        let should_pull = pull_only
+            || safe_last_sync.is_none()
+            || last_remote_seq == 0
+            || changelog_pruned
+            || !pull_pks_needed.is_empty()
+            || changelog_pks.contains_key(*table)
+            || local_counts.get(*table) != remote_counts.get(*table)
+            || (is_voucher_child && !pulled_voucher_ids.is_empty());
+
+        if !should_pull {
+            continue;
+        }
+
         let pull_sql = if let Some(ref last_sync) = safe_last_sync {
             if pull_pks_needed.len() > 200 {
                 format!("SELECT {} FROM {}", col_names.join(", "), table)

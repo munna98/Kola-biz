@@ -71,6 +71,7 @@ export default function Topbar() {
             toast.info('This company is in Local (Offline) mode. Configure Cloud Sync in DB Settings.');
             return;
         }
+        if (isSyncing) return;
         setIsSyncing(true);
         try {
             const report = await triggerManualSync(null, false);
@@ -92,8 +93,14 @@ export default function Topbar() {
 
     useEffect(() => {
         const unlisten = listen('sync:data-changed', () => {
-            setIsSyncing(true);
-            setTimeout(() => setIsSyncing(false), 1200);
+            // Only briefly flash spinning if not already in manual sync
+            setIsSyncing(prev => {
+                if (!prev) {
+                    setTimeout(() => setIsSyncing(false), 800);
+                    return true;
+                }
+                return prev;
+            });
         });
         return () => {
             unlisten.then((fn: () => void) => fn());
