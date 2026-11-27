@@ -91,7 +91,7 @@ export function VoucherPageHeader({
                             variant="outline"
                             size="icon"
                             className="h-8 w-8 shrink-0"
-                            disabled={mode === 'new' ? !hasPrevious : !hasPrevious}
+                            disabled={!hasPrevious}
                             onClick={mode === 'new' ? onNavigateToLast : onNavigatePrevious}
                             title={mode === 'new' ? 'Go to last voucher (Alt+Left)' : 'Previous (Alt+Left)'}
                         >
